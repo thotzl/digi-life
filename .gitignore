@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Production build outputs
+dist/
+
+# Local database files and save states (keep them untracked so they don't bloat the diff)
+species_db.json
+simulation_state.json
+
+# System / IDE specifics
+.idea/
+.DS_Store
+*.log
