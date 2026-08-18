@@ -12,3 +12,6 @@ simulation_state.json
 .idea/
 .DS_Store
 *.log
+
+# AI agent artifacts & custom cloned repositories
+.agents/artifacts/

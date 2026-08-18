@@ -7,20 +7,12 @@ import {
   classifySensoryPatch,
   getComplementaryChar,
   getComplementaryString,
-  mutateGenome
+  executeBrain
 } from "./biology/dna";
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { 
-  initDb, 
-  saveSpecies, 
-  getAliveSpecies, 
   getAllSpecies,
-  markSpeciesAsExtinct, 
   getSpeciesById, 
-  clearDb,
-  getSavedSimulationState,
-  saveSimulationState,
-  clearSimulationState,
   SpeciesRecord 
 } from "./biology/speciesDb";
 
@@ -96,23 +88,13 @@ interface FoodSpore {
 let creatures: CreatureAgent[] = [];
 let foodPellets: FoodSpore[] = [];
 let selectedAgentId: number | null = null;
-let nextAgentId = 1;
 let highestGeneration = 1;
 
 // Fine-Grained Reactive DOM Elements cache (Eradicates 60fps document.getElementById layouts-thrashing!)
 const svgElementCache = new Map<string, SVGElement>();
 
-// High-Speed Synchronous In-Memory Cache (Eradicates 60fps database file-thrashing!)
-let cachedAliveSpecies: SpeciesRecord[] = [];
-
-// Tracking active species sizes on canvas to monitor Extinction events
-let activeSpeciesOnCanvas = new Set<string>();
-
 // Bite impact flash tracking [x, y, age]
 let biteImpacts: { x: number; y: number; age: number }[] = [];
-
-// Automatic periodic state save throttling
-let lastStateSaveTime = 0;
 
 // Global animation frame state
 let lastTime = 0;        
@@ -741,68 +723,7 @@ function computeEmbodiedSensoryInputs(
   return inputs;
 }
 
-/**
- * Dynamic Deep MLP Feedforward signal execution
- */
-function executeBrain(
-  brain: any, 
-  inputs: number[], 
-  neuronStates: number[], 
-  neuronActivations: number[]
-): { outputs: number[], allLayerActivations: number[][] } {
-  const totalNodes = brain.neurons.length;
 
-  // Initialize or resize temporal membrane states in-memory instantly!
-  if (neuronStates.length !== totalNodes) {
-    neuronStates.length = totalNodes;
-    neuronStates.fill(0.0);
-  }
-  if (neuronActivations.length !== totalNodes) {
-    neuronActivations.length = totalNodes;
-    neuronActivations.fill(0.0);
-  }
-
-  const K = inputs.length - 1; // last input is the clock
-
-  // 1. Direct Sensory Follow: Assign sensory inputs directly to input nodes
-  for (let i = 0; i <= K; i++) {
-    neuronActivations[i] = inputs[i];
-  }
-
-  // 2. Continuous Euler Integration: Update hidden and output neurons
-  for (let i = K + 1; i < totalNodes; i++) {
-    const neuron = brain.neurons[i];
-
-    // Accumulate inputs from all incoming temporal synapses
-    let sum = 0.0;
-    brain.synapses.forEach((syn: any) => {
-      if (syn.toNode === i) {
-        sum += neuronActivations[syn.fromNode] * syn.weight;
-      }
-    });
-
-    // Euler integration step (dt = 1.0, tau_i is the genetically encoded decay time)
-    neuronStates[i] += (1.0 / neuron.tau) * (-neuronStates[i] + sum + neuron.bias);
-
-    // Bounded potential clamping to prevent numeric drift explosions
-    neuronStates[i] = Math.max(-4.0, Math.min(4.0, neuronStates[i]));
-
-    // Sigmoidal / Tanh activation function
-    neuronActivations[i] = Math.tanh(neuronStates[i]);
-  }
-
-  // 3. Map output node activations directly to the 4 motor directions
-  // Output nodes are compiled at indices K+1 to K+4
-  const outputs = [
-    neuronActivations[K + 1],
-    neuronActivations[K + 2],
-    neuronActivations[K + 3],
-    neuronActivations[K + 4]
-  ];
-
-  // Return the activations as a flat array for fine-grained direct visualization
-  return { outputs, allLayerActivations: [neuronActivations] };
-}
 
 /**
  * Returns locus classification (promoter, active, or junk) for visual rendering.
@@ -1722,9 +1643,100 @@ function animate(timestamp: number) {
 
     } else {
       // ========================================================================
-      // B. MULTI-AGENT EVOLUTION Mode (Autonomous survival ocean)
+      // B. MULTI-AGENT EVOLUTION Mode (Autonomous survival ocean - Telemetry Renderer)
       // ========================================================================
       
+      if (ctx) {
+        // Calculate unobstructed viewport for Legacy (Left Sidebar only: 320px + gaps)
+        const visibleWidth = window.innerWidth - 360;
+        const visibleHeight = window.innerHeight - 40;
+        const zoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
+
+        const offsetX = 340 + (visibleWidth - 19200 * zoom) / 2;
+        const offsetY = 20 + (visibleHeight - 10800 * zoom) / 2;
+
+        ctx.save();
+        ctx.translate(offsetX * dpr, offsetY * dpr);
+        ctx.scale(dpr * zoom, dpr * zoom);
+
+        // 1. Draw algae/food spores
+        ctx.save();
+        for (const pellet of foodPellets) {
+          ctx.beginPath();
+          ctx.arc(pellet.x, pellet.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(16, 185, 129, 0.85)"; // glowing spores
+          ctx.shadowColor = "#10b981";
+          ctx.shadowBlur = 8;
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // 2. Render all creatures received from Server Telemetry!
+        creatures.forEach(agent => {
+          renderer.render(agent.phenotype, timestamp, agent.px, agent.py, agent.headingAngle, agent.omegaRot);
+
+          // Update selected inspect HUD in real-time
+          if (agent.id === selectedAgentId) {
+            updateInspectTraitsDashboard(agent);
+
+            // Draw dashed selection indicator ring on the canvas
+            ctx.save();
+            const isPred = agent.phenotype.carnivory >= 0.55;
+            ctx.strokeStyle = isPred ? "rgba(239, 68, 68, 0.75)" : "rgba(0, 242, 254, 0.75)";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.arc(agent.px, agent.py, agent.phenotype.spinalHarmonics.meanRadius * 2.6 * 0.5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
+        });
+
+        // 3. Render glowing bite impact flashes on collision points
+        ctx.save();
+        biteImpacts.forEach((impact) => {
+          const progress = impact.age / 24; // lasts 24 frames
+          const radius = 5 + progress * 28;
+          const opacity = 1.0 - progress;
+
+          ctx.strokeStyle = `rgba(255, 0, 127, ${opacity})`;
+          ctx.lineWidth = 2.0;
+          ctx.beginPath();
+          ctx.arc(impact.x, impact.y, radius, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+        ctx.restore();
+
+        // 4. Draw high-tech glowing glass tank boundary frame!
+        ctx.strokeStyle = "rgba(0, 242, 254, 0.4)";
+        ctx.lineWidth = 15;
+        ctx.strokeRect(0, 0, 19200, 10800);
+
+        ctx.restore(); // Restore high-level visible-space transform
+      }
+
+      // Clear finished impacts
+      biteImpacts = biteImpacts.map(i => ({ ...i, age: i.age + 1 })).filter(i => i.age < 24);
+
+      // Safeguard selection: if selected agent died, select oldest living agent
+      if (selectedAgentId !== null && !creatures.some(a => a.id === selectedAgentId) && creatures.length > 0) {
+        selectedAgentId = creatures[0].id;
+        updateGenomeGrid(creatures[0].phenotype);
+        renderSynapseWeb(creatures[0].phenotype);
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "SELECT_AGENT", id: selectedAgentId }));
+        }
+      }
+
+      // Update Evo Stats Dashboard Bar occasionally
+      if (timestamp - lastUiUpdate > 150) {
+        if (evoPopCountEl) evoPopCountEl.innerText = `${creatures.length} Organismen`;
+        if (evoGenMaxEl) evoGenMaxEl.innerText = `${highestGeneration}. Gen`;
+        if (evoFoodCountEl) evoFoodCountEl.innerText = `${foodPellets.length} Sporen`;
+        lastUiUpdate = timestamp;
+      }
+
+      /* CLIENT_SIDE_EVO_LOOP_WIPE_START
       // 1. Draw and drift food spores
       if (ctx) {
         ctx.save();
@@ -2297,8 +2309,118 @@ function animate(timestamp: number) {
       }
     }
   }
+  /* CLIENT_SIDE_EVO_LOOP_WIPE_END */
+    }
+  }
 
   requestAnimationFrame(animate);
+}
+
+let socket: WebSocket | null = null;
+
+function initWebSocket() {
+  if (socket) return;
+
+  // Connect to our headless server port 3002 fallback!
+  socket = new WebSocket("ws://localhost:3002");
+
+  socket.onopen = () => {
+    logToConsole("[Schnittstelle] Verbindung zum Evolutions-Server hergestellt.", "repair");
+  };
+
+  socket.onmessage = (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "INIT_STATE") {
+        highestGeneration = data.highestGeneration;
+        
+        // Setup initial spores and creatures!
+        foodPellets = data.foodPellets;
+        creatures = data.creatures.map((c: any) => ({
+          ...c,
+          phenotype: parseGenome(c.genome, c.antisense)
+        }));
+
+        // Default select first creature
+        if (creatures.length > 0 && selectedAgentId === null) {
+          selectedAgentId = creatures[0].id;
+          
+          // Re-open and show the Inspect HUD immediately so it does not disappear after resets!
+          inspectOverlay.style.display = "flex";
+          
+          updateGenomeGrid(creatures[0].phenotype);
+          renderSynapseWeb(creatures[0].phenotype);
+          
+          // Inform the server about selection to start streaming brain states!
+          if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "SELECT_AGENT", id: selectedAgentId }));
+          }
+        }
+      }
+      else if (data.type === "TELEMETRY_TICK") {
+        highestGeneration = data.highestGeneration;
+        foodPellets = data.foodPellets;
+        
+        // Sync position telemetry
+        data.creatures.forEach((tele: any) => {
+          const local = creatures.find(c => Number(c.id) === Number(tele.id));
+          if (local) {
+            local.px = tele.px;
+            local.py = tele.py;
+            local.vx = tele.vx;
+            local.vy = tele.vy;
+            local.headingAngle = tele.headingAngle;
+            local.omegaRot = tele.omegaRot;
+            local.energy = tele.energy;
+            local.adrenaline = tele.adrenaline;
+            local.age = tele.age;
+            local.generation = tele.generation;
+            local.hasEaten = tele.hasEaten;
+          }
+        });
+
+        // Filter dead agents locally
+        const serverIds = new Set(data.creatures.map((c: any) => c.id));
+        creatures = creatures.filter(c => serverIds.has(c.id));
+
+        // Sync live neural activations only if our inspected creature's brain tick was streamed!
+        // Employs robust Number casting to guarantee match and prevent string-vs-number coercion bugs!
+        if (data.selectedBrain && Number(selectedAgentId) === Number(data.selectedBrain.id)) {
+          const agent = creatures.find(c => Number(c.id) === Number(selectedAgentId));
+          if (agent) {
+            agent.neuronActivations = data.selectedBrain.activations;
+            updateLiveNeuralActivity([agent.neuronActivations], agent.phenotype.brain);
+          }
+        }
+      }
+      else if (data.type === "CREATURE_SPAWNED") {
+        const tele = data.creature;
+        // Inject newly spawned creature with fully compiled phenotype
+        creatures.push({
+          ...tele,
+          phenotype: parseGenome(tele.genome, tele.antisense),
+          neuronStates: [],
+          neuronActivations: []
+        });
+      }
+      else if (data.type === "BITE_EVENT") {
+        // Spawn bite crimson ring locally
+        biteImpacts.push({ x: data.x, y: data.y, age: 0 });
+      }
+      else if (data.type === "LOG_EVENT") {
+        logToConsole(data.message, data.logType);
+      }
+    } catch (err) {
+      console.error("[Client] Failed to parse server message:", err);
+    }
+  };
+
+  socket.onclose = () => {
+    socket = null;
+    logToConsole("⚠️ Verbindung zum Evolutions-Server abgebrochen. Reaktivierung läuft...", "mutation");
+    setTimeout(initWebSocket, 2000); // auto-reconnect
+  };
 }
 
 // ============================================================================
@@ -2306,10 +2428,7 @@ function animate(timestamp: number) {
 // ============================================================================
 function switchToMode(mode: SimMode): void {
   currentMode = mode;
-
-  const dpr = window.devicePixelRatio || 1;
-  const logicalWidth = canvas.width / dpr;
-  const logicalHeight = canvas.height / dpr;
+  localStorage.setItem("pixel-life-mode", mode); // Persist mode across browser refreshes!
 
   if (mode === "sandbox") {
     modeSandboxBtn.classList.add("active");
@@ -2332,150 +2451,8 @@ function switchToMode(mode: SimMode): void {
     traitsHeaderTitle.innerText = "Ausgewählte Spezies";
     inspectOverlay.style.display = "flex"; // Open the Inspect HUD in Evo Mode!
 
-    // Query the local server for a saved simulation resumption state
-    getSavedSimulationState().then(state => {
-      if (state && !state.empty && state.creatures && state.creatures.length > 0) {
-        // 1. RESUME SAVED EXPERIMENT STATE DOWN TO THE PIXEL!
-        creatures = state.creatures.map((c: any) => ({
-          id: c.id,
-          speciesId: c.speciesId,
-          genome: c.genome,
-          antisense: c.antisense,
-          phenotype: parseGenome(c.genome, c.antisense, c.methylations), // Reconstruct brain and spine in-memory!
-          px: c.px,
-          py: c.py,
-          vx: c.vx,
-          vy: c.vy,
-          headingAngle: c.headingAngle,
-          omegaRot: c.omegaRot,
-          energy: c.energy,
-          age: c.age,
-          generation: c.generation,
-          adrenaline: c.adrenaline !== undefined ? c.adrenaline : 1.0,
-          hasEaten: c.hasEaten !== undefined ? c.hasEaten : true,
-          neuronStates: c.neuronStates !== undefined ? c.neuronStates : [],
-          neuronActivations: c.neuronActivations !== undefined ? c.neuronActivations : []
-        }));
-
-        foodPellets = state.foodPellets || [];
-        nextAgentId = state.nextAgentId || 1;
-        highestGeneration = state.highestGeneration || 1;
-
-        // Fetch alive species lsit to keep our synchronous memory cache in sync!
-        getAliveSpecies().then(aliveList => {
-          cachedAliveSpecies = aliveList;
-          activeSpeciesOnCanvas.clear();
-          creatures.forEach(agent => {
-            activeSpeciesOnCanvas.add(agent.speciesId);
-            highestGeneration = Math.max(highestGeneration, agent.generation);
-          });
-
-          // Select first creature to draw its brain
-          if (creatures.length > 0) {
-            selectedAgentId = creatures[0].id;
-            updateGenomeGrid(creatures[0].phenotype);
-            renderSynapseWeb(creatures[0].phenotype);
-          }
-          logToConsole(`[Datenbank] Vorheriges Experiment fortgesetzt! ${creatures.length} Organismen exakt am Todesort reaktiviert.`, "repair");
-        });
-
-      } else {
-        // 2. FALLBACK: INITIALIZE FRESH FOUNDERS POPULATION
-        getAliveSpecies().then(aliveList => {
-          cachedAliveSpecies = aliveList;
-          creatures = [];
-          nextAgentId = 1;
-          highestGeneration = 1;
-          activeSpeciesOnCanvas.clear();
-
-          const numToSpawn = 15;
-
-          for (let k = 0; k < numToSpawn; k++) {
-            let g = generateRandomGenome(256);
-            let parentId: string | null = null;
-            let gen = 1;
-
-            if (aliveList.length > 0) {
-              // Re-load and spawn currently alive species from previous sessions!
-              const idx = Math.floor(Math.random() * aliveList.length);
-              const record = aliveList[idx];
-              g = record.genome;
-              parentId = record.parentSpeciesId;
-              gen = record.generation;
-            }
-
-            const anti = getComplementaryString(g);
-            const pheno = parseGenome(g, anti);
-
-            // Save new founder to DB if not already present
-            getSpeciesById(g).then(exists => {
-              if (!exists) {
-                const rec: SpeciesRecord = {
-                  id: g,
-                  name: pheno.latinName,
-                  genome: g,
-                  antisense: anti,
-                  parentSpeciesId: parentId,
-                  status: "alive",
-                  peakPopulation: 1,
-                  birthTime: Date.now(),
-                  generation: gen,
-                  carnivory: pheno.carnivory
-                };
-                saveSpecies(rec);
-                cachedAliveSpecies.push(rec); // sync synchronously!
-              }
-            });
-
-            creatures.push({
-              id: nextAgentId++,
-              speciesId: g,
-              genome: g,
-              antisense: anti,
-              phenotype: pheno,
-              px: Math.random() * logicalWidth,
-              py: Math.random() * logicalHeight,
-              vx: (Math.random() * 0.8 - 0.4),
-              vy: (Math.random() * 0.8 - 0.4),
-              headingAngle: Math.random() * Math.PI * 2,
-              omegaRot: 0,
-              energy: 120 + Math.random() * 40, 
-              age: Math.floor(Math.random() * 600), 
-              generation: gen,
-              adrenaline: 1.0,
-              hasEaten: true, // founders can seed the tank on their first cycle
-              neuronStates: [],
-              neuronActivations: []
-            });
-            
-            activeSpeciesOnCanvas.add(g);
-            highestGeneration = Math.max(highestGeneration, gen);
-          }
-
-          // Initialize M=30 drifting green food pellets
-          foodPellets = [];
-          for (let m = 0; m < 30; m++) {
-            foodPellets.push({
-              x: Math.random() * logicalWidth,
-              y: Math.random() * logicalHeight,
-              vx: (Math.random() * 0.3 - 0.15),
-              vy: (Math.random() * 0.3 - 0.15)
-            });
-          }
-
-          // Select the first agent for Left Sidebar inspect
-          if (creatures.length > 0) {
-            selectedAgentId = creatures[0].id;
-            updateGenomeGrid(creatures[0].phenotype);
-            renderSynapseWeb(creatures[0].phenotype);
-          }
-
-          logToConsole(`Kombüse umgeschaltet auf Evolutions-Ozean. N=15 Organismen freigesetzt (${aliveList.length} Spezies aus DB rekonstruiert).`);
-        });
-      }
-    }).catch(err => {
-      console.error("Failed to load simulation state:", err);
-    });
+    // Connect and start WebSocket telemetry loop!
+    initWebSocket();
   }
 }
 
@@ -2550,12 +2527,18 @@ canvas.addEventListener("click", (e) => {
   if (currentMode !== "evo") return;
 
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  
   const dpr = window.devicePixelRatio || 1;
-  const mx = ((e.clientX - rect.left) * scaleX) / dpr;
-  const my = ((e.clientY - rect.top) * scaleY) / dpr;
+
+  // Calculate unobstructed viewport for Legacy (Left Sidebar only: 320px + gaps)
+  const visibleWidth = window.innerWidth - 360;
+  const visibleHeight = window.innerHeight - 40;
+  const zoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
+
+  const offsetX = 340 + (visibleWidth - 19200 * zoom) / 2;
+  const offsetY = 20 + (visibleHeight - 10800 * zoom) / 2;
+
+  const mx = (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - offsetX) / zoom;
+  const my = (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - offsetY) / zoom;
 
   let closestAgent: CreatureAgent | null = null;
   let minDist = 120; // selection distance threshold
@@ -2579,7 +2562,18 @@ canvas.addEventListener("click", (e) => {
 
     updateGenomeGrid(agent.phenotype);
     renderSynapseWeb(agent.phenotype);
+
+    // Inform the server about selection to start streaming brain states!
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "SELECT_AGENT", id: selectedAgentId }));
+    }
+
     logToConsole(`[Untersuchung] Spezies #${agent.id} ausgewählt (Generation: ${agent.generation}, Energie: ${Math.round(agent.energy)}nJ, Alter: ${Math.round(agent.age/60)}s).`);
+  } else {
+    // Click on empty water spawns food on the server!
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "SPAWN_FOOD", x: mx, y: my }));
+    }
   }
 });
 
@@ -2706,97 +2700,21 @@ mutateBtn.addEventListener("click", () => {
   }, 950);
 });
 
-// Evo Mode action button event handlers
-injectUrzelleBtn.addEventListener("click", async () => {
+// Evo Mode action button event handlers (Transmitted directly to WebSocket Server!)
+injectUrzelleBtn.addEventListener("click", () => {
   if (currentMode !== "evo") return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const logicalWidth = canvas.width / dpr;
-  const logicalHeight = canvas.height / dpr;
-
-  const g = generateRandomGenome(256);
-  const anti = getComplementaryString(g);
-  const pheno = parseGenome(g, anti);
-
-  // Save new species record to our physical file database
-  const rec: SpeciesRecord = {
-    id: g,
-    name: pheno.latinName,
-    genome: g,
-    antisense: anti,
-    parentSpeciesId: null, // founder
-    status: "alive",
-    peakPopulation: 1,
-    birthTime: Date.now(),
-    generation: 1,
-    carnivory: pheno.carnivory
-  };
-
-  try {
-    await saveSpecies(rec);
-    cachedAliveSpecies.push(rec); // Sync with local memory cache synchronously!
-    logToConsole(`⚡ [Datenbank] '${pheno.latinName}' erfolgreich im lokalen Speicher registriert!`, "repair");
-  } catch (err) {
-    console.error("Failed to persist injected Urzelle:", err);
-    logToConsole(`❌ [Datenbank-Fehler] Konnte Urzelle nicht im Speicher sichern!`, "mutation");
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "INJECT_URZELLE" }));
   }
-
-  const agent: CreatureAgent = {
-    id: nextAgentId++,
-    speciesId: g,
-    genome: g,
-    antisense: anti,
-    phenotype: pheno,
-    px: Math.random() * logicalWidth,
-    py: Math.random() * logicalHeight,
-    vx: (Math.random() * 0.8 - 0.4),
-    vy: (Math.random() * 0.8 - 0.4),
-    headingAngle: Math.random() * Math.PI * 2,
-    omegaRot: 0,
-    energy: 150,
-    age: 0,
-    generation: 1,
-    adrenaline: 1.0,
-    hasEaten: true, // manually injected cells can seed on their first cycle
-    neuronStates: [],
-    neuronActivations: []
-  };
-
-  creatures.push(agent);
-  activeSpeciesOnCanvas.add(g);
-
-  // Instantly select our newly injected god-mode Urzelle to inspect its brain live!
-  selectedAgentId = agent.id;
-  inspectOverlay.style.display = "flex";
-  updateGenomeGrid(agent.phenotype);
-  renderSynapseWeb(agent.phenotype);
-
-  logToConsole(`⚡ [Injektion] Eine neue Gen-1 Urzelle '${pheno.latinName}' wurde manuell in den Ozean injiziert!`, "system");
 });
 
 resetEvolutionBtn.addEventListener("click", () => {
   if (currentMode !== "evo") return;
-
-  // Clear all local in-memory states instantly to prevent any carried-over rewrites!
-  creatures = [];
-  cachedAliveSpecies = [];
-  activeSpeciesOnCanvas.clear();
-  nextAgentId = 1;
-  highestGeneration = 1;
-
-  // Clear physical database file and simulation state files synchronously!
-  clearDb().then(() => {
-    clearSimulationState().then(() => {
-      logToConsole("🧹 [Reset] Die gesamte Evolutionsgeschichte wurde gelöscht. Ein neues biologisches Zeitalter bricht an!", "system");
-      
-      // Close inspect overlay HUD
-      inspectOverlay.style.display = "none";
-      selectedAgentId = null;
-
-      // Reset ocean with 15 fresh Urzellen
-      switchToMode("evo");
-    });
-  });
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: "RESET_EVOLUTION" }));
+    inspectOverlay.style.display = "none";
+    selectedAgentId = null;
+  }
 });
 
 // Initialization
@@ -2804,14 +2722,13 @@ window.addEventListener("load", () => {
   resizeCanvas(); // Make canvas fill full screen viewport in native high-DPI crispness!
   renderer = new CreatureRenderer(canvas);
   
-  // Initialize client-side file-based Database REST API check!
-  initDb().then(() => {
-    logToConsole("[Datenbank] Physischer Lokaler Gen-Speicher erfolgreich initialisiert.");
-  });
-
   // Parse initial Sandbox specimen
   sandboxPhenotype = parseGenome(sandboxGenome, sandboxAntisense);
   updateSimulation();
+  
+  // Restore persistent mode or default to sandbox!
+  const savedMode = (localStorage.getItem("pixel-life-mode") as SimMode) || "sandbox";
+  switchToMode(savedMode);
   
   requestAnimationFrame(animate);
   logToConsole("Simulation gestartet. Biologisches Substrat geladen. Steuerung: WASD + QE.");

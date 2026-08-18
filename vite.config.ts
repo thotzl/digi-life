@@ -195,5 +195,13 @@ export default defineConfig({
   },
   plugins: [
     speciesDatabasePlugin()
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        beta: path.resolve(__dirname, 'beta/index.html')
+      }
+    }
+  }
 });
