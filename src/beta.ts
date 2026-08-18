@@ -14,7 +14,20 @@ let foodPellets: FoodSpore[] = [];
 let highestGeneration = 1;
 
 // ============================================================================
-// 🧬 STATE 2: Fine-Grained Preact Signals for HUD Overlays
+// 📷 STATE 2: Interactive Camera State (Zoom, Pan, Scroll)
+// ============================================================================
+let camX = 19200 / 2; // Camera focus look-at X (starts at middle of the giant map)
+let camY = 10800 / 2; // Camera focus look-at Y
+let camZoom = 0.05;   // Scale magnifier (will be set responsively on boot)
+
+// Mouse drag-panning state trackers
+let isDragging = false;
+let hasDragged = false;
+let startX = 0;
+let startY = 0;
+
+// ============================================================================
+// 🧬 STATE 3: Fine-Grained Preact Signals for HUD Overlays
 // ============================================================================
 const selectedId = signal<number | null>(null);
 const selectedName = signal("Namenloses Wesen");
@@ -337,7 +350,7 @@ function initBetaWebSocket() {
         }
 
         // 4. Update global stats DOM
-        statPopulation.innerText = `${creatures.length} / 15`;
+        statPopulation.innerText = `${creatures.length} / 25`;
         statGeneration.innerText = `${highestGeneration}. Gen`;
         statSpores.innerText = `${foodPellets.length} Sporen`;
       }
@@ -426,6 +439,19 @@ const canvas = document.getElementById("creature-canvas") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 let renderer: CreatureRenderer;
 
+// Reset camera focal point to optimal fit on load or manual hot-key
+function resetCameraView() {
+  const visibleWidth = window.innerWidth - 680;
+  const visibleHeight = window.innerHeight - 260;
+  
+  // Calculate dynamic fit zoom
+  camZoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
+  camX = 19200 / 2;
+  camY = 10800 / 2;
+  
+  logToTerminal("Kamera-Ansicht auf Vollbild-Glaskasten zentriert und zurückgesetzt.", "system");
+}
+
 function resizeBetaCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
@@ -441,23 +467,19 @@ function drawBetaSimulationFrame(timestamp: number) {
 
   ctx.clearRect(0, 0, cw, ch);
 
-  // Calculate the visible, unobstructed viewport (excluding left and right panels)
-  // Left: 290px + 15px gap = 305px. Right: 340px + 15px gap = 355px. Total margins = 660px
-  // Top: 60px + 15px gap + 15px pad = 90px. Bottom: 140px + 15px gap = 155px. Total margins = 245px
-  const visibleWidth = window.innerWidth - 680; 
-  const visibleHeight = window.innerHeight - 260; 
+  // Unobstructed center viewport bounds
+  const visibleWidth = window.innerWidth - 680;
+  const visibleHeight = window.innerHeight - 260;
+  const viewCenterX = 305 + visibleWidth / 2;
+  const viewCenterY = 90 + visibleHeight / 2;
 
-  const zoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
-
-  // Calculate centering offsets to position the tank perfectly in the visible gap
-  const offsetX = 305 + (visibleWidth - 19200 * zoom) / 2;
-  const offsetY = 90 + (visibleHeight - 10800 * zoom) / 2;
-
+  // 1. Apply 2D View Projection Matrix (Centered on look-at point)
   ctx.save();
-  ctx.translate(offsetX * dpr, offsetY * dpr);
-  ctx.scale(dpr * zoom, dpr * zoom);
+  ctx.translate(viewCenterX * dpr, viewCenterY * dpr);
+  ctx.scale(dpr * camZoom, dpr * camZoom);
+  ctx.translate(-camX, -camY);
 
-  // 1. Draw glowing space deep gradient over the entire logical boundary
+  // 2. Draw glowing space deep gradient over the entire logical boundary
   ctx.save();
   const grad = ctx.createLinearGradient(19200 / 2, 0, 19200 / 2, 10800);
   grad.addColorStop(0, "#080c18");
@@ -467,7 +489,7 @@ function drawBetaSimulationFrame(timestamp: number) {
   ctx.fillRect(0, 0, 19200, 10800);
   ctx.restore();
 
-  // 2. Draw algae/food spores
+  // 3. Draw algae/food spores
   ctx.save();
   for (const pellet of foodPellets) {
     ctx.beginPath();
@@ -479,7 +501,7 @@ function drawBetaSimulationFrame(timestamp: number) {
   }
   ctx.restore();
 
-  // 3. Draw swimming creatures
+  // 4. Draw swimming creatures
   creatures.forEach(agent => {
     renderer.render(agent.phenotype, timestamp, agent.px, agent.py, agent.headingAngle, agent.omegaRot);
 
@@ -497,7 +519,7 @@ function drawBetaSimulationFrame(timestamp: number) {
     }
   });
 
-  // 4. Render shockwave crimson rings (BITE impact)
+  // 5. Render shockwave crimson rings (BITE impact)
   ctx.save();
   biteImpacts.forEach(impact => {
     impact.age++;
@@ -514,33 +536,143 @@ function drawBetaSimulationFrame(timestamp: number) {
   biteImpacts = biteImpacts.filter(i => i.age < 24);
   ctx.restore();
 
-  // 5. Draw high-tech glowing glass tank boundary frame!
+  // 6. Draw high-tech glowing glass tank boundary frame!
   ctx.strokeStyle = "rgba(0, 242, 254, 0.4)";
   ctx.lineWidth = 15;
   ctx.strokeRect(0, 0, 19200, 10800);
 
-  ctx.restore(); // Restore high-level visible-space transform
+  ctx.restore(); // Restore camera look-at viewport transforms
 
   requestAnimationFrame(drawBetaSimulationFrame);
 }
 
-// Click selection on canvas
+// ============================================================================
+// 🖱️ MOUSE INTERACTION & DRAG-PAN CONTROLS
+// ============================================================================
+canvas.addEventListener("mousedown", (e) => {
+  isDragging = true;
+  hasDragged = false;
+  startX = e.clientX;
+  startY = e.clientY;
+  canvas.style.cursor = "grabbing"; // Instantly show grabbing on click hold!
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (isDragging) {
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    // Set drag flag only if mouse actually moves past buffer threshold
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      hasDragged = true;
+    }
+
+    // Pan camera focused look-at position (scale velocity inversely with zoom scale!)
+    camX -= dx / camZoom;
+    camY -= dy / camZoom;
+
+    // Hard clamp camera to keep viewport neatly bounded inside the giant tank
+    camX = Math.max(0, Math.min(19200, camX));
+    camY = Math.max(0, Math.min(10800, camY));
+
+    startX = e.clientX;
+    startY = e.clientY;
+    canvas.style.cursor = "grabbing";
+  } else {
+    // If not dragging, check for hovers to toggle between "grab" and "pointer"!
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    
+    const visibleWidth = window.innerWidth - 680;
+    const visibleHeight = window.innerHeight - 260;
+    const viewCenterX = 305 + visibleWidth / 2;
+    const viewCenterY = 90 + visibleHeight / 2;
+
+    const mx = camX + (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - viewCenterX) / camZoom;
+    const my = camY + (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - viewCenterY) / camZoom;
+
+    let hovered = false;
+    creatures.forEach(agent => {
+      const dx = agent.px - mx;
+      const dy = agent.py - my;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      // If hovering near the creature body radius, trigger pointer hover!
+      const bodyRadius = agent.phenotype.spinalHarmonics.meanRadius * 2.6 * 0.5 + 10;
+      if (dist < bodyRadius) {
+        hovered = true;
+      }
+    });
+
+    canvas.style.cursor = hovered ? "pointer" : "grab";
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  isDragging = false;
+  canvas.style.cursor = "grab";
+});
+
+canvas.addEventListener("mouseleave", () => {
+  isDragging = false;
+  canvas.style.cursor = "default";
+});
+
+// Interactive Mouse Wheel Zoom centered on cursor
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+
+  const rect = canvas.getBoundingClientRect();
+  const visibleWidth = window.innerWidth - 680;
+  const visibleHeight = window.innerHeight - 260;
+  const viewCenterX = 305 + visibleWidth / 2;
+  const viewCenterY = 90 + visibleHeight / 2;
+
+  // Get current mouse coordinate relative to screen center
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
+
+  // Back-project screen mouse position to logical space coordinates before scaling
+  const logMouseX = camX + (mouseX - viewCenterX) / camZoom;
+  const logMouseY = camY + (mouseY - viewCenterY) / camZoom;
+
+  // Define zoom intensity scaling multiplier
+  const intensity = 0.12;
+  const direction = e.deltaY < 0 ? 1 : -1;
+  const factor = Math.exp(direction * intensity);
+
+  // Clamp camera zoom values
+  const minZoom = Math.min(visibleWidth / 19200, visibleHeight / 10800) * 0.8;
+  const maxZoom = 2.0;
+
+  camZoom = Math.max(minZoom, Math.min(maxZoom, camZoom * factor));
+
+  // Translate camera focal points to keep mouse coordinates identical after scaling!
+  camX = logMouseX - (mouseX - viewCenterX) / camZoom;
+  camY = logMouseY - (mouseY - viewCenterY) / camZoom;
+
+  // Hard boundary clamps
+  camX = Math.max(0, Math.min(19200, camX));
+  camY = Math.max(0, Math.min(10800, camY));
+}, { passive: false });
+
+// Click selection on canvas (Only triggers if user didn't drag/pan!)
 canvas.addEventListener("click", (e) => {
+  if (hasDragged) return; // Prevent selection triggers when mouse-up ends a camera slide!
+
   const rect = canvas.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
 
   const visibleWidth = window.innerWidth - 680;
   const visibleHeight = window.innerHeight - 260;
-  const zoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
+  const viewCenterX = 305 + visibleWidth / 2;
+  const viewCenterY = 90 + visibleHeight / 2;
 
-  const offsetX = 305 + (visibleWidth - 19200 * zoom) / 2;
-  const offsetY = 90 + (visibleHeight - 10800 * zoom) / 2;
-  
-  const mx = (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - offsetX) / zoom;
-  const my = (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - offsetY) / zoom;
+  // Translate click screen coordinates to logical world space!
+  const mx = camX + (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - viewCenterX) / camZoom;
+  const my = camY + (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - viewCenterY) / camZoom;
 
   let closestAgent: any = null;
-  let minDist = 80;
+  let minDist = 120; // click proximity buffer
 
   creatures.forEach(agent => {
     const dx = agent.px - mx;
@@ -555,10 +687,17 @@ canvas.addEventListener("click", (e) => {
   if (closestAgent) {
     selectSpecimen(closestAgent);
   } else {
-    // Click on empty water spawns food
+    // Click on empty water spawns food on logical server coordinates
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "SPAWN_FOOD", x: mx, y: my }));
     }
+  }
+});
+
+// Reset Camera View Hot-Key (Press R)
+window.addEventListener("keydown", (e) => {
+  if (e.key.toLowerCase() === "r") {
+    resetCameraView();
   }
 });
 
@@ -572,6 +711,11 @@ speciesRoster.addEventListener("click", (e) => {
     const agent = creatures.find(c => c.speciesId === recId);
     if (agent) {
       selectSpecimen(agent);
+      
+      // Auto focus camera lock-on target on selection click!
+      camX = agent.px;
+      camY = agent.py;
+      logToTerminal(`Kamera auf Specimen #${agent.id} fokussiert.`, "system");
     } else {
       // Fetch fossil stats
       const record = speciesRosterSignal.value.find(r => r.id === recId);
@@ -618,6 +762,9 @@ window.addEventListener("load", () => {
   
   window.addEventListener("resize", resizeBetaCanvas);
   
+  // Initialize camera responsive fits on boot
+  resetCameraView();
+
   // Establish web socket stream
   initBetaWebSocket();
 

@@ -3,207 +3,147 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pixel DNA Life Simulator - Immersive Fullscreen Edition</title>
-    <link rel="stylesheet" href="/src/style.css" />
+    <title>Pixel DNA - Interactive Cybernetic Monitor</title>
+    <link rel="stylesheet" href="/src/beta.css" />
   </head>
   <body>
     <!-- Immersive Background Canvas -->
     <canvas id="creature-canvas"></canvas>
 
-    <!-- Floating Glassmorphic Left Sidebar -->
-    <div class="sidebar-overlay">
-      <!-- Immersive Mode Switcher -->
-      <div class="mode-switcher-container">
-        <button id="mode-sandbox-btn" class="mode-btn active">Sandbox-Labor</button>
-        <button id="mode-evo-btn" class="mode-btn">Evolutions-Ozean</button>
+    <!-- Top Navigation Deck -->
+    <header class="top-nav-deck">
+      <div class="nav-title">
+        <span class="pulse-indicator"></span>
+        <h1>PIXEL-LIFE <span class="badge-beta">ACTIVE</span></h1>
+        <p>Highly Reactive Cybernetic Substrate</p>
       </div>
+      <div class="top-nav-help" style="font-size: 0.62rem; color: var(--text-muted); font-family: var(--font-mono); text-align: right;">
+        <span>🔍 Scrollen: Zoom | 🖱️ Ziehen: Kamera bewegen | ⌨️ R: Ansicht zurücksetzen</span>
+      </div>
+    </header>
 
-      <header class="sidebar-header">
-        <h1>Pixel DNA Life</h1>
-        <p>Prebiotic Morphogenesis</p>
-        <a href="/beta" style="display: inline-block; margin-top: 8px; font-size: 0.62rem; color: #00f2fe; text-decoration: none; border: 1px solid rgba(0,242,254,0.25); padding: 3px 8px; border-radius: 4px; background: rgba(0,242,254,0.06); font-weight: bold; font-family: monospace;">🔥 Teste das neue BETA UI</a>
-      </header>
-
-      <!-- Evolution Stats Card (Only shown in Evo Mode) -->
-      <div class="evo-stats-card" id="evo-stats-card" style="display: none;">
-        <h3 style="border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 6px; margin-bottom: 8px;">📊 Ozean-Statistik</h3>
-        <div class="trait-list">
-          <div class="trait-item">
-            <span class="trait-label">Lebende Kreaturen:</span>
-            <span class="trait-val" id="evo-pop-count" style="color: #10b981;">0 / 15</span>
-          </div>
-          <div class="trait-item">
-            <span class="trait-label">Max. Generation:</span>
-            <span class="trait-val" id="evo-gen-max" style="color: #38bdf8;">1</span>
-          </div>
-          <div class="trait-item">
-            <span class="trait-label">Nahrungsdichte:</span>
-            <span class="trait-val" id="evo-food-count" style="color: #fbbf24;">30 Sporen</span>
-          </div>
-        </div>
-        <div style="font-size:0.6rem; color:var(--text-muted); text-align:center; font-style:italic; margin-top:8px;">
-          Klicke auf eine Kreatur im Ozean, um sie zu untersuchen!
+    <!-- Dashboard Main Grid -->
+    <main class="dashboard-grid">
+      <!-- Left Panel: Control Deck & Species Archive -->
+      <section class="glass-panel panel-left">
+        <div class="panel-header">
+          <h2>📊 Kontrolldeck</h2>
+          <span class="panel-subtitle">Global Biosphere Telemetry</span>
         </div>
 
-        <!-- Primary Action Buttons for Evo Mode (Only shown in Evo Mode) -->
-        <div class="button-group" id="evo-button-group" style="margin-top: 12px; gap: 8px; flex-direction: column;">
-          <button id="inject-urzelle-btn" class="primary-btn" style="width: 100%;">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="margin-right: 4px;"><path d="M12 4v16m8-8H4"></path></svg>
-            Urzelle injizieren
+        <div class="stats-card">
+          <div class="stats-item">
+            <span class="label">Organismen:</span>
+            <span class="value val-green" id="stat-population">0 / 25</span>
+          </div>
+          <div class="stats-item">
+            <span class="label">Höchste Gen:</span>
+            <span class="value val-blue" id="stat-generation">1</span>
+          </div>
+          <div class="stats-item">
+            <span class="label">Nährsporen:</span>
+            <span class="value val-gold" id="stat-spores">0 Sporen</span>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button id="btn-inject" class="btn btn-primary">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+            Urzelle freisetzen
           </button>
-          <button id="reset-evolution-btn" style="width: 100%; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); color: #f43f5e;">
-            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="margin-right: 4px;"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-            Reset Evolution
+          <button id="btn-reset" class="btn btn-danger">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            Evolution zurücksetzen
           </button>
         </div>
-      </div>
 
-      <!-- Dynamic AI Brain Controller Card (Sandbox Mode only) -->
-      <div class="brain-control-card" id="brain-control-card">
-        <h3 style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 8px; margin-bottom: 8px; font-size: 0.85rem;">
-          <span>🧠 Neurales Gehirn (AI-Modus)</span>
-          <label class="ai-toggle-label">
-            <input type="checkbox" id="ai-toggle">
-            <span class="ai-toggle-text">Inaktiv (WASD)</span>
-          </label>
-        </h3>
-        <!-- Holds the live mutating 4x4 Synaptic Grid -->
-        <div id="brain-visualizer-container"></div>
-      </div>
-
-      <!-- Phenotype Traits Dossier (Sandbox Mode only) -->
-      <div class="trait-info" id="sandbox-trait-info">
-        <h3 id="traits-header-title">Phänotyp Merkmale</h3>
-        <div class="trait-list" id="core-traits-list">
-          <!-- Dynamically populated core attributes (Symmetry, Colors, Masses) -->
-        </div>
-        
-        <h3 style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
-          <span>Exprimierte Organe</span>
-          <span class="organelle-counter" id="organelle-count">0</span>
-        </h3>
-        <div class="organelles-scroll-box" id="emergent-organelles-container">
-          <!-- Dynamically populated card badges for each active organelle -->
-        </div>
-      </div>
-
-      <!-- Primary Action Buttons (Hidden in Evo Mode) -->
-      <div class="button-group" id="sandbox-button-group">
-        <button id="shuffle-btn" class="primary-btn">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H18"></path></svg>
-          Shuffle DNA
-        </button>
-        <button id="mutate-btn">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-          Mutieren
-        </button>
-      </div>
-    </div>
-
-    <!-- Floating Glassmorphic Top-Right Inspect Overlay (Only shown in Evo Mode when a creature is selected) -->
-    <div class="inspect-overlay" id="inspect-overlay" style="display: none;">
-      <button class="close-inspect-btn" id="close-inspect-btn">&times;</button>
-      
-      <header class="inspect-header">
-        <h2 id="inspect-latin-name">Monoplasma bilateralis</h2>
-        <p id="inspect-diet-class" style="display: flex; justify-content: space-between; align-items: center;">
-          <span>Apex-Predator (Karnivor)</span>
-          <span id="inspect-generation-tag" style="font-size: 0.62rem; padding: 1.5px 5px; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-radius: 3px; font-weight: bold;">1. Gen</span>
-        </p>
-      </header>
-
-      <div class="inspect-section">
-        <h3>🧠 Evolierviertes Gehirn (Live-Aktivität)</h3>
-        <div id="inspect-brain-visualizer-container"></div>
-      </div>
-
-      <div class="inspect-section">
-        <h3>📊 Vitalwerte & Ahnenschema</h3>
-        <div class="trait-list" id="inspect-traits-list">
-          <!-- Dynamically populated vital statistics (Energy bars, Adrenaline gauges, Lineages) -->
-        </div>
-      </div>
-
-      <button id="open-diagnostics-btn" class="primary-btn" style="width: 100%; margin-top: 12px; background: rgba(0, 242, 254, 0.04); border: 1px solid rgba(0, 242, 254, 0.22); color: #00f2fe; font-size: 0.7rem; letter-spacing: 0.8px; font-weight: bold; text-transform: uppercase; border-radius: 6px; box-shadow: 0 0 10px rgba(0, 242, 254, 0.05);">
-        🔎 Labor-Cockpit öffnen
-      </button>
-    </div>
-
-    <!-- 🖥️ HISTORICAL EVOLUTIONARY STAMMBAUM & SPECIES ARCHIVE MODAL -->
-    <div class="diagnostics-modal" id="diagnostics-modal" style="display: none;">
-      <button class="close-modal-btn" id="close-modal-btn">&times; Archiv schließen</button>
-      
-      <div class="modal-grid" style="position: relative; width: 100%; height: 100%;">
-        <!-- Column 1 (Left): Global Species Directory (Alive & Extinct Fossils) -->
-        <div class="modal-sidebar" style="width: 100%; max-width: 100%;">
-          <h3 style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); padding-bottom: 4px; margin-bottom: 12px;">
-            📖 Arten-Archiv & Fossiliengalerie
-          </h3>
-          <div class="roster-scroll-box" id="modal-species-list" style="height: calc(100% - 30px); overflow-y: auto;">
-            <!-- Dynamically populated list of all species (alive + extinct) in species_db.json -->
+        <div class="panel-section species-section">
+          <h3>🧬 Registrierte Spezies</h3>
+          <div class="species-list-container" id="species-roster">
+            <!-- Populated dynamically via signals -->
+            <div class="loading-state">Lade Gen-Datenbank...</div>
           </div>
         </div>
+      </section>
 
-        <!-- Column 2 (Right): Visual Hierarchical Stammbaum Lineage Tree -->
-        <div class="modal-right-panel" style="grid-column: span 2; padding-left: 20px; border-left: 1px solid rgba(255, 255, 255, 0.04);">
-          <h3 style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; border-bottom: 1px solid rgba(255, 255, 255, 0.04); padding-bottom: 4px; margin-bottom: 12px;">
-            🌿 Evolutions-Stammbaum (Ahnenlinien)
-          </h3>
-          <div id="modal-stammbaum-tree-container" style="height: calc(100% - 30px); overflow-y: auto; padding-right: 8px;">
-            <!-- Dynamically populated nested ancestry tree -->
-          </div>
+      <!-- Right Panel: Specimen Diagnostics Modal (Active SSOT) -->
+      <section class="glass-panel panel-right" id="inspect-panel">
+        <div class="panel-header">
+          <h2>🧠 Biologische Diagnostik</h2>
+          <span class="panel-subtitle">Watson-Crick Helix & Brain Telemetry</span>
         </div>
 
-        <!-- 🧬 FLOATING GENETIC DETAIL DRAWER INSIDE THE MODAL -->
-        <div class="modal-details-drawer" id="modal-species-details" style="display: none;">
-          <button class="close-drawer-btn" id="close-drawer-btn" style="position: absolute; right: 16px; top: 14px; background: none; border: none; color: #8b9bb4; cursor: pointer; font-size: 1.15rem; font-weight: bold; transition: color 0.15s ease;">&times;</button>
-          <header style="border-bottom: 1px solid rgba(255, 255, 255, 0.05); padding-bottom: 8px; margin-bottom: 12px;">
-            <h2 id="drawer-latin-name" style="font-size: 1.05rem; font-weight: bold; color: #fff; letter-spacing: -0.3px;">Monoplasma</h2>
-            <p id="drawer-species-id" style="font-size: 0.58rem; color: var(--text-muted); font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px;">ID: ...</p>
-          </header>
-          <div style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 4px;">
-            <div>
-              <h4 style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.8px; margin-bottom: 6px;">🧠 CTRNN-Gehirn (Topologie)</h4>
-              <div id="drawer-brain-visualizer" style="height: 125px; background: rgba(0, 0, 0, 0.22); border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.02); display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 10px;"></div>
+        <!-- No-Selection Fallback -->
+        <div id="inspect-fallback" class="fallback-state">
+          <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" style="opacity: 0.45; margin-bottom: 8px;"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+          <p>Klicke eine Kreatur im Ozean an, um ihre Genetik live zu entkoppeln.</p>
+        </div>
+
+        <!-- Active Specimen Information (Controlled via reactive signals) -->
+        <div id="inspect-active-content" class="specimen-content" style="display: none;">
+          <!-- Species Profile Header -->
+          <div class="specimen-profile">
+            <div class="profile-meta">
+              <h3 id="specimen-name">Namenloses Wesen</h3>
+              <p id="specimen-taxa">Strain code / Clonal Lineage</p>
             </div>
-            <div>
-              <h4 style="font-size: 0.65rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.8px; margin-bottom: 6px;">🧬 Rekonstruiertes Genom (Loci)</h4>
-              <div id="drawer-genome-grid" class="genome-grid" style="grid-template-columns: repeat(16, 1fr); gap: 1px;"></div>
+            <span class="badge-status" id="specimen-status">Lebend</span>
+          </div>
+
+          <!-- Real-Time Vital Charts -->
+          <div class="diagnostics-vitals">
+            <div class="vital-row">
+              <span class="vital-label">Magen-Energie</span>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-green" id="inspect-energy-bar" style="width: 0%;"></div>
+              </div>
+              <span class="vital-text" id="inspect-energy-text">0nJ</span>
+            </div>
+            <div class="vital-row">
+              <span class="vital-label">Adrenalin-Sprint</span>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-cyan" id="inspect-adrenaline-bar" style="width: 0%;"></div>
+              </div>
+              <span class="vital-text" id="inspect-adrenaline-text">1.0x</span>
+            </div>
+            <div class="vital-row">
+              <span class="vital-label">Organismus-Alter</span>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill fill-purple" id="inspect-age-bar" style="width: 0%;"></div>
+              </div>
+              <span class="vital-text" id="inspect-age-text">0s</span>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Floating Glassmorphic Bottom Dashboard Bar -->
-    <div class="bottom-overlay">
-      <!-- Left: Live Mutation Log Console -->
-      <div class="console-panel" id="console-logs">
-        <div class="console-entry">[System] Immersiver Simulator geladen. Die Kreatur ist nun im Weiten Ozean gefangen!</div>
-      </div>
-
-      <!-- Right: Interactive 256-Loci Genome Grid -->
-      <div class="genome-section">
-        <h3>
-          <span>Genom-Karte (256 Loci A-Z)</span>
-          <span class="genome-legend" style="font-size: 0.65rem; color: var(--text-muted);">
-            <span style="display:inline-block; width:8px; height:8px; background:#ff4a85; border-radius:1px; margin-right:3px;"></span>Start/Stop
-            <span style="display:inline-block; width:8px; height:8px; background:#00f2fe; border-radius:1px; margin-right:3px; margin-left:6px;"></span>Aktiv
-            <span style="display:inline-block; width:8px; height:8px; background:rgba(255,255,255,0.1); border-radius:1px; margin-right:3px; margin-left:6px;"></span>Stumm
-          </span>
-        </h3>
-        
-        <div class="genome-bar-wrapper">
-          <div class="genome-string" id="genome-string">
-            --------------------------------------------------------------------------------------------------------------------------------
+          <!-- Watson-Crick DNA Helix Split Grid -->
+          <div class="genome-section">
+            <h4>🧬 Expressierte Chromatin-DNA</h4>
+            <div class="genome-double-helix-wrapper">
+              <div id="inspect-genome-grid" class="genome-loci-grid"></div>
+            </div>
           </div>
-          <div class="genome-grid" id="genome-grid">
-            <!-- 256 Loci slots will be injected dynamically via JS -->
+
+          <!-- Neural Directed Graph Visualizer -->
+          <div class="brain-section">
+            <h4>🧠 CTRNN Gehirnströme (Live-Schaltplan)</h4>
+            <div id="inspect-brain-container" class="brain-visualizer-container"></div>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <script type="module" src="/src/main.ts"></script>
+      <!-- Bottom Panel: Real-Time Event Ledger Logs -->
+      <section class="glass-panel panel-bottom">
+        <div class="panel-header-row">
+          <h2>📋 Logbuch-Terminal</h2>
+          <button id="btn-clear-console" class="btn-text">Terminal löschen</button>
+        </div>
+        <div class="log-stream-container" id="terminal-logs">
+          <!-- Live events append here synchronously -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Bundle Script -->
+    <script type="module" src="/src/beta.ts"></script>
   </body>
 </html>
