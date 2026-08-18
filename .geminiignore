@@ -1,0 +1,18 @@
+# Dependency directories
+node_modules/
+
+# Production builds
+dist/
+
+# Large local databases and save states (to protect context efficiency)
+species_db.json
+simulation_state.json
+
+# Heavy third-party clones or artifacts
+.agents/artifacts/
+
+# System and editor configurations
+.git/
+.idea/
+.DS_Store
+*.log

@@ -196,35 +196,35 @@ export function classifySensoryPatch(patch: SensoryPatch): { name: string; color
 
   if (style >= 0.72) {
     if (aff >= 0.5) {
-      return { name: "Lokomotiver Schwimmfuß", color: "#38bdf8", desc: "Fleischige, muskulöse Schwimm-Finne" };
+      return { name: "Locomotor Swimming Foot", color: "#38bdf8", desc: "Fleshy, muscular swimming fin" };
     } else {
-      return { name: "Kriechtentakel / Pseudopodie", color: "#a5f3fc", desc: "Artikulierter, flexibler Muskelarm" };
+      return { name: "Crawling Tentacle / Pseudopod", color: "#a5f3fc", desc: "Articulated, flexible muscular arm" };
     }
   }
 
   if (aff >= 0.8) {
     if (style < 0.3) {
-      return { name: "Pigmentfleck-Auge", color: "#a21caf", desc: "Flacher Photorezeptor-Zellfleck" };
+      return { name: "Pigment Spot Eye", color: "#a21caf", desc: "Flat photoreceptor cell spot" };
     } else {
-      return { name: "Fotorezeptives Fädchen", color: "#c084fc", desc: "Feines lichtempfindliches Flimmerhaar" };
+      return { name: "Photoreceptive Filament", color: "#c084fc", desc: "Fine light-sensitive cilium" };
     }
   } else if (aff < 0.25) {
     if (style < 0.3) {
-      return { name: "Drucksensitive Membran", color: "#b45309", desc: "Flaches, taktiles Vibrations-Areal" };
+      return { name: "Pressure-sensitive Membrane", color: "#b45309", desc: "Flat, tactile vibration area" };
     } else {
-      return { name: "Akustisches Hörhärchen", color: "#f59e0b", desc: "Mechanorezeptives Schwingungshaar" };
+      return { name: "Acoustic Auditory Hair", color: "#f59e0b", desc: "Mechanoreceptive vibrating hair" };
     }
   } else if (aff >= 0.25 && aff <= 0.65) {
     if (style < 0.3) {
-      return { name: "Geschmacksknospe", color: "#15803d", desc: "Integrierte molekulare Rezeptor-Knospe" };
+      return { name: "Taste Bud", color: "#15803d", desc: "Integrated molecular receptor bud" };
     } else {
-      return { name: "Olfaktorische Riechcilia", color: "#22c55e", desc: "Molekül-absorbierende Cilien-Geißel" };
+      return { name: "Olfactory Cilium", color: "#22c55e", desc: "Molecule-absorbing ciliated flagellum" };
     }
   } else {
     if (style < 0.3) {
-      return { name: "Infrarot-Wärmegrube", color: "#e11d48", desc: "Flache, thermorezeptive Infrarotgrube" };
+      return { name: "Infrared Heat Pit", color: "#e11d48", desc: "Flat, thermoreceptive infrared pit" };
     } else {
-      return { name: "Thermorezeptives Filament", color: "#fda4af", desc: "Feinfühliges Wärmeleit-Härchen" };
+      return { name: "Thermoreceptive Filament", color: "#fda4af", desc: "Sensitive heat-conducting hair" };
     }
   }
 }
@@ -281,7 +281,7 @@ function deriveEcologicalMetrics(
 
   // Determine scientific taxonomy and diet based on continuous carnivory scale (D)
   const isPredator = carnivory >= 0.55;
-  let diet = "Ur-Filtrierer (Detritus)";
+  let diet = "Ancestral Filter Feeder (Detritus)";
 
   const scores = [
     { type: "light", val: visusScore },
@@ -292,32 +292,32 @@ function deriveEcologicalMetrics(
   scores.sort((a, b) => b.val - a.val);
 
   if (carnivory >= 0.65) {
-    diet = "Säbelzahn-Jäger (Karnivor)";
+    diet = "Sabertooth Hunter (Carnivore)";
   } else if (carnivory >= 0.40) {
-    diet = "Allesfresser (Omnivor)";
+    diet = "Omnivore (Omnivorous)";
   } else {
     if (scores[0].val > 15) {
       if (scores[0].type === "light") {
-        diet = "Kieselalgen-Graser (Herbivor)";
+        diet = "Diatom Grazer (Herbivore)";
       } else if (scores[0].type === "chemical") {
-        diet = "Chemotaktischer Filtrierer";
+        diet = "Chemotactic Filter Feeder";
       } else if (scores[0].type === "kinetic") {
-        diet = "Vibrations-Planktonfresser";
+        diet = "Vibrational Plankton Feeder";
       } else if (scores[0].type === "thermal") {
-        diet = "Tiefsee-Thermotroph";
+        diet = "Deep Sea Thermotroph";
       }
     } else {
-      diet = "Urzellen-Filtrierer (Detritus)";
+      diet = "Protozoan Filter Feeder (Detritus)";
     }
   }
 
-  let habitat = "Epipelagial (Lichtflut-Zone)";
+  let habitat = "Epipelagic (Sunlit Zone)";
   if (biolumScore > 40) {
-    habitat = "Bathypelagial (Tiefsee-Abgrund)";
+    habitat = "Bathypelagic (Abyssal Zone)";
   } else if (tactilityScore > 45 || emergentSegmentsCount >= 4) {
-    habitat = "Hadopelagial (Benthischer Meeresgraben)";
+    habitat = "Hadopelagic (Benthic Trench)";
   } else if (primaryColor.l < 45) {
-    habitat = "Mesopelagial (Dämmerlicht-Sümpfe)";
+    habitat = "Mesopelagic (Twilight Swamps)";
   }
 
   // Procedural scientific Latin name
@@ -394,16 +394,16 @@ function deriveEcologicalMetrics(
   let survivalAnalysis = "";
   if (survivalScore >= 80) {
     survivalAnalysis = isPredator 
-      ? "Exzellentes Jagdpotenzial. Hoch-elastische Schubkraft gepaart mit starrer, zerstörerischer Stoßkraft."
-      : "Hervorragende Überlebenschance. Äußerst flink, reaktionsschnell und energetisch hocheffizient.";
+      ? "Excellent hunting potential. Highly elastic thrust paired with rigid, destructive impact force."
+      : "Outstanding chance of survival. Extremely agile, highly responsive, and energetically highly efficient.";
   } else if (survivalScore >= 60) {
-    survivalAnalysis = "Gut. Stabile Lebensform mit ausgeprägter ökologischer Reife bei moderater Effizienz.";
+    survivalAnalysis = "Good. Stable life form with pronounced ecological maturity at moderate efficiency.";
   } else if (survivalScore >= 40) {
-    survivalAnalysis = "Mittelmäßig. Undefinierte Spektral-Rezeptoren oder ungünstiges Kraft-Masse-Verhältnis.";
+    survivalAnalysis = "Mediocre. Undefined spectral receptors or unfavorable power-to-mass ratio.";
   } else if (survivalScore >= 20) {
-    survivalAnalysis = "Gefährdet. Schlecht gekoppelte Geißel-Wellen, hoher metabolischer Ballast.";
+    survivalAnalysis = "Endangered. Poorly coupled flagellar waves, high metabolic burden.";
   } else {
-    survivalAnalysis = "Kritisch. Sensorisch isolierter, unbeweglicher Organismus; leichte Beute für Raubtiere.";
+    survivalAnalysis = "Critical. Sensorially isolated, immobile organism; easy prey for predators.";
   }
 
   return {
@@ -468,7 +468,7 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     : Array(currentLength).fill(0);
 
   if (parentMethylations) {
-    epigeneticLogs.push("Transgenerationale epigenetische Vererbung: Erlerntes Gehirn-Methylierungsschema der Elternzelle erfolgreich assimilert.");
+    epigeneticLogs.push("Transgenerational epigenetic inheritance: Learned brain methylation pattern of the parent cell successfully assimilated.");
   }
 
   const getMethylatedVal = (idx: number): number => {
@@ -551,7 +551,7 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
       }
     }
     if (waveLociModified > 0 || waveMethylations > 0) {
-      epigeneticLogs.push(`Welle ${wave}: Hox-Netzwerke active. ${waveLociModified} Chromatinschleifen geformt, ${waveMethylations} Methylierungen vollzogen.`);
+      epigeneticLogs.push(`Wave ${wave}: Hox networks active. ${waveLociModified} chromatin loops formed, ${waveMethylations} methylations completed.`);
     }
   }
 
@@ -769,10 +769,10 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   for (let i = 0; i < K; i++) {
     const patch = organelles[i];
     const deg = Math.round(patch.angle);
-    let label = `Rezeptor (${deg}°)`;
-    if (patch.spectralAffinity >= 0.8) label = `👁️ Visus (${deg}°)`;
-    else if (patch.spectralAffinity >= 0.25 && patch.spectralAffinity <= 0.65) label = `👃 Geruch (${deg}°)`;
-    else if (patch.spectralAffinity < 0.25) label = `🔊 Taktil (${deg}°)`;
+    let label = `Receptor (${deg}°)`;
+    if (patch.spectralAffinity >= 0.8) label = `👁️ Vision (${deg}°)`;
+    else if (patch.spectralAffinity >= 0.25 && patch.spectralAffinity <= 0.65) label = `👃 Smell (${deg}°)`;
+    else if (patch.spectralAffinity < 0.25) label = `🔊 Tactile (${deg}°)`;
 
     neurons.push({
       id: i,
@@ -786,7 +786,7 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   neurons.push({
     id: K,
     type: "input",
-    label: "⌛ Hunger-Uhr",
+    label: "⌛ Hunger Clock",
     tau: 1.0,
     bias: 0.0
   });
@@ -878,7 +878,7 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   // ongoing vestigial organ tax on BMR
   let vestigialOrganTax = 0.0;
   organelles.forEach(patch => {
-    // Large, sharp receptors consume more continuous maintenance energy (Säule 3: Vestigial tax!)
+    // Large, sharp receptors consume more continuous maintenance energy (Pillar 3: Vestigial tax!)
     const tax = patch.scale * patch.scale * (1.1 - patch.bandwidth) * 1.0;
     vestigialOrganTax += tax;
   });

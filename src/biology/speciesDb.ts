@@ -3,7 +3,7 @@ export interface SpeciesRecord {
   name: string;           // Procedural scientific name (Latin)
   genome: string;         // The Sense DNA
   antisense: string;      // The complementary strand
-  parentSpeciesId: string | null; // Parent Species DNA ID (Lineage / Stammbaum!)
+  parentSpeciesId: string | null; // Parent Species DNA ID (Lineage / Family Tree!)
   status: "alive" | "extinct";    // Evolved state
   peakPopulation: number; // Highest concurrent specimen count reached
   birthTime: number;      // Creation epoch

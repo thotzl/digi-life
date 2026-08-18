@@ -29,6 +29,7 @@ export interface CreatureAgent {
   energy: number;     // Current food reserves
   age: number;        // Age in frames
   generation: number; // Gen lineage
+  parentSpeciesId?: string; // Parent Species DNA ID (Lineage!)
   adrenaline: number; // Endocrine hormonal adrenaline multiplier [1.0 to 1.8]
   hasEaten: boolean;  // Physiological feeding guarantee (must consume at least 1 spore/prey to reproduce!)
 

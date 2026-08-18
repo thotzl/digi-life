@@ -30,9 +30,9 @@ let startY = 0;
 // 🧬 STATE 3: Fine-Grained Preact Signals for HUD Overlays
 // ============================================================================
 const selectedId = signal<number | null>(null);
-const selectedName = signal("Namenloses Wesen");
+const selectedName = signal("Unnamed Creature");
 const selectedTaxa = signal("Clonal strain - Gen. 1");
-const selectedStatus = signal("Lebend");
+const selectedStatus = signal("Alive");
 const selectedEnergy = signal(0);
 const selectedMaxEnergy = signal(100);
 const selectedAdrenaline = signal(1.0);
@@ -42,6 +42,10 @@ const selectedGenome = signal("");
 const selectedMethylations = signal<number[]>([]);
 
 const speciesRosterSignal = signal<SpeciesRecord[]>([]);
+
+// Accordion Toggles (Fine-grained UI folding states)
+const isAliveExpanded = signal(true);       // Expanded by default
+const isExtinctExpanded = signal(false);   // Collapsed by default to keep workspace clean
 
 // ============================================================================
 // 🎨 UI 1: High-Speed Direct DOM Signal Binders
@@ -70,35 +74,83 @@ const genomeGrid = document.getElementById("inspect-genome-grid") as HTMLDivElem
 const speciesRoster = document.getElementById("species-roster") as HTMLDivElement;
 const terminalLogs = document.getElementById("terminal-logs") as HTMLDivElement;
 
-// Re-render Left Roster of recorded species only when speciesRosterSignal changes
+function renderRosterCardHTML(rec: SpeciesRecord, isSelected: boolean): string {
+  const statusClass = rec.status === "alive" ? "alive" : "fossil";
+  const statusText = rec.status === "alive" ? "Alive" : "Fossil";
+
+  return `
+    <div class="roster-card ${isSelected ? 'roster-card-active' : ''}" data-id="${rec.id}">
+      <div class="roster-title-row">
+        <span class="roster-name" style="color: ${rec.status === 'alive' ? 'var(--secondary-green)' : 'var(--text-muted)'}">${rec.name}</span>
+        <span class="badge-fossil ${statusClass}">${statusText}</span>
+      </div>
+      <div class="roster-meta-row">
+        <span>Gen: ${rec.generation} | Peak: ${rec.peakPopulation}</span>
+        <span>${new Date(rec.birthTime).toLocaleTimeString()}</span>
+      </div>
+    </div>
+  `;
+}
+
+// Re-render Left Roster of recorded species only when speciesRosterSignal or toggle signals change!
 effect(() => {
   const list = speciesRosterSignal.value;
   if (list.length === 0) {
-    speciesRoster.innerHTML = `<div class="loading-state">Keine Spezies registriert.</div>`;
+    speciesRoster.innerHTML = `<div class="loading-state">No species registered.</div>`;
     return;
   }
 
+  const aliveList = list.filter(r => r.status === "alive");
+  const extinctList = list.filter(r => r.status === "extinct");
+
   let html = "";
-  list.forEach(rec => {
-    const isSelected = selectedId.value !== null && 
-      creatures.find(c => Number(c.id) === Number(selectedId.value))?.speciesId === rec.id;
 
-    const statusClass = rec.status === "alive" ? "alive" : "fossil";
-    const statusText = rec.status === "alive" ? "Lebend" : "Fossil";
+  // 1. Group 1: Living Species
+  const aliveOpen = isAliveExpanded.value;
+  html += `
+    <div class="accordion-header ${aliveOpen ? 'expanded' : ''}" id="acc-alive-trigger" style="border-left: 3px solid var(--secondary-green);">
+      <span>🟢 Living Species (${aliveList.length})</span>
+      <span class="chevron">▼</span>
+    </div>
+  `;
 
-    html += `
-      <div class="roster-card ${isSelected ? 'roster-card-active' : ''}" data-id="${rec.id}">
-        <div class="roster-title-row">
-          <span class="roster-name" style="color: ${rec.status === 'alive' ? 'var(--secondary-green)' : 'var(--text-muted)'}">${rec.name}</span>
-          <span class="badge-fossil ${statusClass}">${statusText}</span>
-        </div>
-        <div class="roster-meta-row">
-          <span>Gen: ${rec.generation} | Peak: ${rec.peakPopulation}</span>
-          <span>${new Date(rec.birthTime).toLocaleTimeString()}</span>
-        </div>
-      </div>
-    `;
-  });
+  if (aliveOpen) {
+    html += `<div class="accordion-content">`;
+    if (aliveList.length === 0) {
+      html += `<div class="loading-state" style="padding:15px; font-size:0.65rem;">No active species in the ocean.</div>`;
+    } else {
+      aliveList.forEach(rec => {
+        const isSelected = selectedId.value !== null && 
+          creatures.find(c => Number(c.id) === Number(selectedId.value))?.speciesId === rec.id;
+        html += renderRosterCardHTML(rec, isSelected);
+      });
+    }
+    html += `</div>`;
+  }
+
+  // 2. Group 2: Extinct Species (Fossils)
+  const extinctOpen = isExtinctExpanded.value;
+  html += `
+    <div class="accordion-header ${extinctOpen ? 'expanded' : ''}" id="acc-extinct-trigger" style="border-left: 3px solid var(--text-muted);">
+      <span>💀 Fossil Relics (${extinctList.length})</span>
+      <span class="chevron">▼</span>
+    </div>
+  `;
+
+  if (extinctOpen) {
+    html += `<div class="accordion-content">`;
+    if (extinctList.length === 0) {
+      html += `<div class="loading-state" style="padding:15px; font-size:0.65rem;">No fossil records registered.</div>`;
+    } else {
+      extinctList.forEach(rec => {
+        const isSelected = selectedId.value !== null && 
+          creatures.find(c => Number(c.id) === Number(selectedId.value))?.speciesId === rec.id;
+        html += renderRosterCardHTML(rec, isSelected);
+      });
+    }
+    html += `</div>`;
+  }
+
   speciesRoster.innerHTML = html;
 });
 
@@ -119,8 +171,8 @@ effect(() => { specimenName.innerText = selectedName.value; });
 effect(() => { specimenTaxa.innerText = selectedTaxa.value; });
 effect(() => { 
   specimenStatus.innerText = selectedStatus.value; 
-  specimenStatus.style.background = selectedStatus.value === "Lebend" ? "rgba(16, 185, 129, 0.12)" : "rgba(77, 89, 116, 0.12)";
-  specimenStatus.style.color = selectedStatus.value === "Lebend" ? "var(--secondary-green)" : "var(--text-muted)";
+  specimenStatus.style.background = selectedStatus.value === "Alive" ? "rgba(16, 185, 129, 0.12)" : "rgba(77, 89, 116, 0.12)";
+  specimenStatus.style.color = selectedStatus.value === "Alive" ? "var(--secondary-green)" : "var(--text-muted)";
 });
 
 // Bind Energy Progress Bar
@@ -177,7 +229,7 @@ effect(() => {
     html += `
       <div class="loci-node ${isPromoter ? 'promoter' : 'active'} ${isMethylated ? 'methylated' : ''}" 
            style="background: ${bg}; border: ${border};" 
-           title="Locus ${i}: ${char}${isMethylated ? ' (Methyliert +' + m[i] + ')' : ''}">
+           title="Locus ${i}: ${char}${isMethylated ? ' (Methylated +' + m[i] + ')' : ''}">
         ${char}
       </div>
     `;
@@ -230,9 +282,16 @@ function compileBetaBrainSVG(brain: any): void {
   svgContent += `</svg>`;
   brainContainer.innerHTML = svgContent;
 
-  // Cache element references for sub-millisecond glows
+  // Cache neuron circle element references for sub-millisecond glows
   brain.neurons.forEach((n: any) => {
     const id = `beta-node-${n.id}`;
+    const el = document.getElementById(id) as any;
+    if (el) brainSvgCache.set(id, el);
+  });
+
+  // Cache synapse line element references for sub-millisecond glows
+  brain.synapses.forEach((syn: any) => {
+    const id = `beta-syn-${syn.fromNode}-${syn.toNode}`;
     const el = document.getElementById(id) as any;
     if (el) brainSvgCache.set(id, el);
   });
@@ -241,6 +300,7 @@ function compileBetaBrainSVG(brain: any): void {
 function updateBetaBrainLiveGlows(activations: number[], brain: any): void {
   if (!brain || !activations) return;
 
+  // 1. Update Neurons
   brain.neurons.forEach((n: any) => {
     const id = `beta-node-${n.id}`;
     const el = brainSvgCache.get(id);
@@ -257,6 +317,24 @@ function updateBetaBrainLiveGlows(activations: number[], brain: any): void {
 
       el.setAttribute("fill", fill);
       el.setAttribute("r", radius.toString());
+    }
+  });
+
+  // 2. Update Synapses (Highlighting active signals in-flight!)
+  brain.synapses.forEach((syn: any) => {
+    const id = `beta-syn-${syn.fromNode}-${syn.toNode}`;
+    const el = brainSvgCache.get(id);
+    if (el) {
+      const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
+      const act = Math.pow(preVal, 4.0); // clean contrast
+
+      const isExcitatory = syn.weight > 0;
+      const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
+      const opacity = act > 0.35 ? 0.95 : 0.28;
+      const strokeWidth = Math.max(0.5, Math.abs(syn.weight) * 1.5) * (act > 0.45 ? 2.2 : 1.0);
+
+      el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
+      el.setAttribute("stroke-width", strokeWidth.toString());
     }
   });
 }
@@ -281,7 +359,7 @@ function initBetaWebSocket() {
   socket = new WebSocket("ws://localhost:3002");
 
   socket.onopen = () => {
-    logToTerminal("Verbindung zum Evolutions-Substrat hergestellt.", "system");
+    logToTerminal("Connection to evolution substrate established.", "system");
     fetchRosterRecords();
   };
 
@@ -334,7 +412,7 @@ function initBetaWebSocket() {
         if (id !== null) {
           const active = creatures.find(c => Number(c.id) === Number(id));
           if (active) {
-            selectedStatus.value = "Lebend";
+            selectedStatus.value = "Alive";
             selectedEnergy.value = active.energy;
             selectedAdrenaline.value = active.adrenaline || 1.0;
             selectedAge.value = active.age;
@@ -343,7 +421,7 @@ function initBetaWebSocket() {
               updateBetaBrainLiveGlows(data.selectedBrain.activations, active.phenotype.brain);
             }
           } else {
-            selectedStatus.value = "Ausgestorben (Fossil)";
+            selectedStatus.value = "Extinct (Fossil)";
             selectedEnergy.value = 0;
             selectedAge.value = 2700;
           }
@@ -351,8 +429,8 @@ function initBetaWebSocket() {
 
         // 4. Update global stats DOM
         statPopulation.innerText = `${creatures.length} / 25`;
-        statGeneration.innerText = `${highestGeneration}. Gen`;
-        statSpores.innerText = `${foodPellets.length} Sporen`;
+        statGeneration.innerText = `Gen. ${highestGeneration}`;
+        statSpores.innerText = `${foodPellets.length} Spores`;
       }
       else if (data.type === "CREATURE_SPAWNED") {
         const tele = data.creature;
@@ -384,7 +462,7 @@ function initBetaWebSocket() {
 
   socket.onclose = () => {
     socket = null;
-    logToTerminal("Schnittstelle abgebrochen. Reaktivierung läuft...", "mutation");
+    logToTerminal("Interface severed. Reactivation in progress...", "mutation");
     setTimeout(initBetaWebSocket, 2000);
   };
 }
@@ -397,7 +475,7 @@ function selectSpecimen(agent: any) {
   selectedMethylations.value = agent.phenotype.methylations;
   selectedMaxEnergy.value = agent.phenotype.stomachCapacity;
 
-  compileBetaBrainSVG(agent.phenotype);
+  compileBetaBrainSVG(agent.phenotype.brain);
 
   // Inform the server to start streaming brain activations
   if (socket && socket.readyState === WebSocket.OPEN) {
@@ -418,7 +496,7 @@ function logToTerminal(message: string, logType: string = "system") {
 
   const tag = document.createElement("span");
   tag.className = `log-tag ${logType}`;
-  tag.innerText = logType === "repair" ? "heilt" : (logType === "mutation" ? "biologie" : "system");
+  tag.innerText = logType === "repair" ? "healing" : (logType === "mutation" ? "biology" : "system");
 
   const msg = document.createElement("span");
   msg.className = "log-msg";
@@ -449,7 +527,7 @@ function resetCameraView() {
   camX = 19200 / 2;
   camY = 10800 / 2;
   
-  logToTerminal("Kamera-Ansicht auf Vollbild-Glaskasten zentriert und zurückgesetzt.", "system");
+  logToTerminal("Camera view centered on full-screen glass tank and reset.", "system");
 }
 
 function resizeBetaCanvas() {
@@ -701,9 +779,25 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// Click list delegation for roster card select
+// Click list delegation for roster card select and accordion headers
 speciesRoster.addEventListener("click", (e) => {
-  const item = (e.target as HTMLElement).closest(".roster-card") as HTMLDivElement | null;
+  const target = e.target as HTMLElement;
+
+  // 1. Accordion Toggles
+  const aliveHeader = target.closest("#acc-alive-trigger");
+  if (aliveHeader) {
+    isAliveExpanded.value = !isAliveExpanded.value;
+    return;
+  }
+
+  const extinctHeader = target.closest("#acc-extinct-trigger");
+  if (extinctHeader) {
+    isExtinctExpanded.value = !isExtinctExpanded.value;
+    return;
+  }
+
+  // 2. Card Selection
+  const item = target.closest(".roster-card") as HTMLDivElement | null;
   if (!item) return;
 
   const recId = item.getAttribute("data-id");
@@ -715,21 +809,21 @@ speciesRoster.addEventListener("click", (e) => {
       // Auto focus camera lock-on target on selection click!
       camX = agent.px;
       camY = agent.py;
-      logToTerminal(`Kamera auf Specimen #${agent.id} fokussiert.`, "system");
+      logToTerminal(`Camera focused on specimen #${agent.id}.`, "system");
     } else {
       // Fetch fossil stats
       const record = speciesRosterSignal.value.find(r => r.id === recId);
       if (record) {
         selectedId.value = 99999; // temporary virtual ID for fossils
         selectedName.value = record.name;
-        selectedTaxa.value = `${record.name} [FOSSIL - AUSGESTORBEN]`;
+        selectedTaxa.value = `${record.name} [FOSSIL - EXTINCT]`;
         selectedGenome.value = record.genome;
         selectedMethylations.value = Array(256).fill(0); // empty methylations for fossil view
         selectedMaxEnergy.value = 100;
-        selectedStatus.value = "Ausgestorben (Fossil)";
+        selectedStatus.value = "Extinct (Fossil)";
         selectedEnergy.value = 0;
         selectedAge.value = 2700;
-        brainContainer.innerHTML = `<div class="fallback-state">Spezies ist fossilisiert. Neuronale Aktivität erloschen.</div>`;
+        brainContainer.innerHTML = `<div class="fallback-state">Species is fossilized. Neural activity extinguished.</div>`;
       }
     }
   }

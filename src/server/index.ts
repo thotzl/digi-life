@@ -90,13 +90,13 @@ function initSimulation() {
     highestGeneration = state.highestGeneration || 1;
     console.log(`[SERVER] Simulation restored. creaturesCount=${creatures.length}, foodCount=${foodPellets.length}`);
   } else {
-    // Fallback: spawn 15 fresh Urzellen (Founders)
+    // Fallback: spawn 15 fresh founder cells (Founders)
     creatures = [];
     foodPellets = [];
     nextAgentId = 1;
     highestGeneration = 1;
 
-    // Sporen layout (proportionally upscaled to support 10x larger field!)
+    // Spores layout (proportionally upscaled to support 10x larger field!)
     for (let i = 0; i < 300; i++) {
       foodPellets.push({
         x: Math.random() * logicalWidth,
@@ -276,7 +276,7 @@ function simulationTick() {
 
       broadcast({
         type: "LOG_EVENT",
-        message: `Kadaver-Zersetzung! Spezies #${agent.id} ist ${agent.energy <= 0 ? "verhungert" : "an Altersschwäche gestorben"}. ${numPellets} Nährstoff-Sporen freigesetzt.`,
+        message: `Corpse Decomposition! Species #${agent.id} ${agent.energy <= 0 ? "starved" : "died of old age"}. ${numPellets} nutrient spores released.`,
         logType: "mutation"
       });
       return;
@@ -416,7 +416,7 @@ function simulationTick() {
           agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + energyGain);
           agent.hasEaten = true;
 
-          // Broadcast Eat event for client-side algen explosion sparks!
+          // Broadcast Eat event for client-side algae explosion sparks!
           broadcast({
             type: "EAT_EVENT",
             agentId: agent.id,
@@ -463,7 +463,7 @@ function simulationTick() {
 
           broadcast({
             type: "LOG_EVENT",
-            message: `⚡ [BISS-ATTACKE] ${agent.phenotype.latinName.substring(0, 16)} #${agent.id} beißt #${victim.id}! (+${Math.round(energyGain)}nJ / -50nJ Schaden)`,
+            message: `⚡ [BITE ATTACK] ${agent.phenotype.latinName.substring(0, 16)} #${agent.id} bites #${victim.id}! (+${Math.round(energyGain)}nJ / -50nJ damage)`,
             logType: "mutation"
           });
         }
@@ -598,14 +598,14 @@ function simulationTick() {
 
       broadcast({
         type: "LOG_EVENT",
-        message: `Mitose-Geburt! Spezies ${childPhenotype.latinName.substring(0, 16)} #${child.id} entstanden (Nachkomme von #${agent.id}, Gen: ${child.generation}${isMutated ? ", MUTIERT!" : ", Klon"}).`,
+        message: `Mitosis Spawn! Species ${childPhenotype.latinName.substring(0, 16)} #${child.id} spawned (descendant of #${agent.id}, Gen: ${child.generation}${isMutated ? ", MUTATED!" : ", clone"}).`,
         logType: isMutated ? "mutation" : "system"
       });
 
       if (isLamarckian) {
         broadcast({
           type: "LOG_EVENT",
-          message: `⚡ [Lamarckismus] Spezies #${agent.id} hat erlernte Erfahrungen erfolgreich in das Erbgut des Nachkommen #${child.id} assimiliert!`,
+          message: `⚡ [Lamarckism] Species #${agent.id} successfully assimilated learned experiences into the genome of descendant #${child.id}!`,
           logType: "repair"
         });
       }
@@ -616,7 +616,7 @@ function simulationTick() {
   creatures = creatures.filter(agent => !deadAgentIds.includes(agent.id));
   creatures.push(...newbornAgents);
 
-  // Maintain population (restocking urzellen)
+  // Maintain population (restocking founder cells)
   const targetPopulation = 25;
   while (creatures.length < targetPopulation) {
     let g = generateRandomGenome(256);
@@ -696,7 +696,7 @@ function simulationTick() {
       dbChanged = true;
       broadcast({
         type: "LOG_EVENT",
-        message: `✝️ Extinktions-Katastrophe! Spezies '${rec.name}' ist vollständig ausgestorben. Einzige Relikte verbleiben im stummen Fossilien-Archiv.`,
+        message: `✝️ Extinction Event! Species '${rec.name}' has gone completely extinct. The only relics remain in the silent fossil archive.`,
         logType: "mutation"
       });
     } else if (activeIdsThisFrame.has(rec.id)) {
@@ -1035,7 +1035,7 @@ wss.on("connection", (ws) => {
 
         broadcast({
           type: "LOG_EVENT",
-          message: `Injektions-Kommando ausgeführt! Völlig neue, fremde Gründerzelle ${pheno.latinName.substring(0, 16)} #${newAgent.id} freigesetzt!`,
+          message: `Injection Command executed! Completely new, foreign founder cell ${pheno.latinName.substring(0, 16)} #${newAgent.id} released!`,
           logType: "system"
         });
       }
@@ -1087,7 +1087,7 @@ wss.on("connection", (ws) => {
 
         broadcast({
           type: "LOG_EVENT",
-          message: `RESET-Kommando! Biosphäre restlos verdampft. Neue Gründer-Epoche wurde gestartet.`,
+          message: `RESET Command! Biosphere completely evaporated. A new founder epoch has been started.`,
           logType: "system"
         });
       }

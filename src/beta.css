@@ -256,7 +256,7 @@ body {
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);
 }
 
-/* 📋 Species List (Arten-Archiv) Roster list */
+/* 📋 Species List (Species Archive) Roster list */
 .species-section {
   flex: 1;
   display: flex;
@@ -307,7 +307,7 @@ body {
   padding: 20px;
 }
 
-/* List Item (Archiv Card) */
+/* List Item (Archive Card) */
 .roster-card {
   padding: 8px 10px;
   border-radius: 4px;
@@ -588,4 +588,54 @@ body {
 
 .log-msg {
   color: var(--text-primary);
+}
+
+/* 🪗 GLOWING SCI-FI ACCORDION ROSTER SYSTEM */
+.accordion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: bold;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.accordion-header:hover {
+  background: rgba(0, 242, 254, 0.05);
+  border-color: rgba(0, 242, 254, 0.25);
+  box-shadow: 0 0 8px rgba(0, 242, 254, 0.12);
+}
+
+.accordion-header .chevron {
+  font-size: 0.58rem;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-muted);
+}
+
+.accordion-header.expanded .chevron {
+  transform: rotate(180deg);
+  color: var(--primary-cyan);
+}
+
+.accordion-content {
+  padding-left: 2px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  animation: slide-fade-in 0.2s ease-out;
+}
+
+@keyframes slide-fade-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
 }
