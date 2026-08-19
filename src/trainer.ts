@@ -75,6 +75,8 @@ interface Sandbox {
   currentFitness: number;
   accumulatedFitness?: number;
   distanceTraveled: number; // cumulative physical path length
+  wallCollisions: number;    // count of distinct wall boundary hits
+  wallCollisionCooldown?: number; // frame cooldown to prevent multiple counts on rub
   world: ProceduralWorld;
   epochTicks: number;
 }
@@ -293,6 +295,8 @@ function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string
     startDistance,
     currentFitness: 0,
     distanceTraveled: 0.0,
+    wallCollisions: 0,
+    wallCollisionCooldown: 0,
     world,
     epochTicks: 0
   };
@@ -625,10 +629,22 @@ function stepPhysics(sb: Sandbox) {
   // Boundary box collisions
   const r = meanRadius;
   const wallRestitution = 0.5;
-  if (sb.agent.px < r) { sb.agent.px = r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; }
-  else if (sb.agent.px > canvasWidth - r) { sb.agent.px = canvasWidth - r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; }
-  if (sb.agent.py < r) { sb.agent.py = r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; }
-  else if (sb.agent.py > canvasHeight - r) { sb.agent.py = canvasHeight - r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; }
+  let hitWall = false;
+  if (sb.agent.px < r) { sb.agent.px = r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; hitWall = true; }
+  else if (sb.agent.px > canvasWidth - r) { sb.agent.px = canvasWidth - r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; hitWall = true; }
+  if (sb.agent.py < r) { sb.agent.py = r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; hitWall = true; }
+  else if (sb.agent.py > canvasHeight - r) { sb.agent.py = canvasHeight - r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; hitWall = true; }
+
+  // Tick wall collision cooldown
+  const cooldown = sb.wallCollisionCooldown || 0;
+  if (cooldown > 0) {
+    sb.wallCollisionCooldown = cooldown - 1;
+  }
+
+  if (hitWall && (sb.wallCollisionCooldown || 0) === 0) {
+    sb.wallCollisions = (sb.wallCollisions || 0) + 1;
+    sb.wallCollisionCooldown = 20; // 20 frames cooldown (~0.33s) to prevent rubbing count
+  }
 
   // Obstacle collisions
   const col = checkObstacleCollision(sb.world, sb.agent.px, sb.agent.py, meanRadius);
@@ -678,15 +694,16 @@ async function evaluateGeneration(wasRunningBefore = false) {
         const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
         
         let trialFit = 0.0;
+        const wallPenalty = Math.max(0.2, 1.0 - sb.wallCollisions * 0.15);
         if (sb.finished && sb.finishTick) {
           // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
           // Weighs extremely heavily (up to 2000.0 points), while speed is minor tie-breaker (0.2x)
           const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-          trialFit = 2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2;
+          trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
         } else {
           // Unsuccessful: proximity reward only, distanceTraveled does NOT penalize here
           if (curDist < sb.startDistance) {
-            trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
+            trialFit = (100.0 * (1.0 - curDist / sb.startDistance)) * wallPenalty;
           }
         }
         sb.accumulatedFitness = (sb.accumulatedFitness || 0.0) + trialFit;
@@ -695,6 +712,8 @@ async function evaluateGeneration(wasRunningBefore = false) {
         sb.finished = false;
         sb.finishTick = undefined;
         sb.distanceTraveled = 0.0; // reset path tracker
+        sb.wallCollisions = 0; // reset collisions
+        sb.wallCollisionCooldown = 0;
         sb.agent.px = canvasWidth / 2;
         sb.agent.py = canvasHeight / 2;
         sb.agent.vx = 0;
@@ -728,12 +747,13 @@ async function evaluateGeneration(wasRunningBefore = false) {
       const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
       
       let trialFit = 0.0;
+      const wallPenalty = Math.max(0.2, 1.0 - sb.wallCollisions * 0.15);
       if (sb.finished && sb.finishTick) {
         const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-        trialFit = 2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2;
+        trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
       } else {
         if (curDist < sb.startDistance) {
-          trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
+          trialFit = (100.0 * (1.0 - curDist / sb.startDistance)) * wallPenalty;
         } else {
           trialFit = 0.0;
         }
@@ -746,6 +766,8 @@ async function evaluateGeneration(wasRunningBefore = false) {
         sb.currentFitness = trialFit;
       }
       sb.distanceTraveled = 0.0; // reset path tracker for the next generation
+      sb.wallCollisions = 0; // reset collisions
+      sb.wallCollisionCooldown = 0;
     });
 
     currentTrial = 1; // reset trial counter
