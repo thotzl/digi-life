@@ -33,3 +33,21 @@ Beseitigung von Redundanzen (DRY) und Etablierung einer Single Source of Truth (
 ### 4. Regel- und Parameter-Kapselung (Rules Config)
 - **Problem:** Parameter-Bereiche und standardmäßige Diet-Kompensationen sind teilweise verstreut.
 - **Lösung:** Erstellung eines statischen Config-Resolvers in `src/shared/configHelper.ts`.
+
+## Derzeit aktive Divergenzen im Code (Dringlichkeits-Belege)
+
+### 1. Sichtfeld-Divergenz (`halfCone`)
+- **Im Ozean-Server (`index.ts` L1089) & Trainer (`trainer.ts` L408):** `halfCone` Multiplikator ist `1.5`.
+- **Im balanceSim-Simulator (`balanceSim.ts` L209):** `halfCone` Multiplikator ist `2.5`.
+- **Divergenz:** Kreaturen sehen im CLI-Simulator deutlich breiter als in der echten Ozean-Welt oder im Trainer.
+
+### 2. Elastizitäts-Divergenz (Fels-Bounces)
+- **Im Ozean-Server (`index.ts` L732) & Trainer (`trainer.ts` L534):** Kollisions-Dämpfung ist `0.45` (45% Kinetik-Verlust).
+- **Im balanceSim-Simulator (`balanceSim.ts` L234):** Kollisions-Dämpfung ist `0.50` (50% Kinetik-Verlust).
+- **Divergenz:** Abpraller an Felsen behalten im Simulator mehr Schwung als im echten Ozean.
+
+### 3. Sensor-Empfindlichkeits-Divergenz (`match`)
+- **Im Ozean-Server & Trainer:** Bandbreiten-Teiler ist `(bandwidth * 1.8 + 0.12)`.
+- **Im balanceSim-Simulator:** Bandbreiten-Teiler ist `(bandwidth * 2.0 + 0.1)`.
+- **Divergenz:** Augen-Sensoren fokussieren Farb- und Wärmequellen im Simulator unpräziser als im Ozean oder Trainer.
+
