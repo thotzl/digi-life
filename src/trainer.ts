@@ -674,6 +674,39 @@ function stepPhysics(sb: Sandbox) {
   }
 }
 
+/**
+ * Computes the success-gated, path-efficient, wall-penalized fitness score for a sandbox trial.
+ */
+export function calculateSandboxFitness(
+  finished: boolean,
+  finishTick: number | undefined,
+  epochDurationTicks: number,
+  startDistance: number,
+  distanceTraveled: number,
+  wallCollisions: number,
+  curDist: number
+): number {
+  const wallPenalty = Math.max(0.2, 1.0 - wallCollisions * 0.15);
+  
+  if (finished && finishTick !== undefined) {
+    // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
+    const pathEfficiency = startDistance / Math.max(0.1, Math.max(startDistance, distanceTraveled));
+    const speedBonus = (epochDurationTicks - finishTick) * 0.2;
+    return (2000.0 * pathEfficiency + speedBonus) * wallPenalty;
+  } else {
+    // Unsuccessful: proximity reward with standstill & aimless traveling penalties!
+    if (distanceTraveled < 15.0) {
+      // Stillstand penalty: absolute 0 points
+      return 0.0;
+    } else {
+      const baseFit = curDist < startDistance ? 100.0 * (1.0 - curDist / startDistance) : 0.0;
+      // Aimless traveling penalty: subtract metabolic kinetic waste
+      const kineticWaste = distanceTraveled * 0.12;
+      return Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
+    }
+  }
+}
+
 // --------------------------------------------------------------------------
 // Evolutionary Selection & Epoch Resets
 // --------------------------------------------------------------------------
@@ -693,25 +726,15 @@ async function evaluateGeneration(wasRunningBefore = false) {
         const targetFood = sb.foods.find(f => f.type === targetType)!;
         const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
         
-        let trialFit = 0.0;
-        const wallPenalty = Math.max(0.2, 1.0 - sb.wallCollisions * 0.15);
-        if (sb.finished && sb.finishTick) {
-          // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
-          // Weighs extremely heavily (up to 2000.0 points), while speed is minor tie-breaker (0.2x)
-          const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-          trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
-        } else {
-          // Unsuccessful: proximity reward with standstill & aimless traveling penalties!
-          if (sb.distanceTraveled < 15.0) {
-            // Stillstand penalty: absolute 0 points
-            trialFit = 0.0;
-          } else {
-            const baseFit = curDist < sb.startDistance ? 100.0 * (1.0 - curDist / sb.startDistance) : 0.0;
-            // Aimless traveling penalty: subtract metabolic kinetic waste
-            const kineticWaste = sb.distanceTraveled * 0.12;
-            trialFit = Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
-          }
-        }
+        const trialFit = calculateSandboxFitness(
+          sb.finished,
+          sb.finishTick,
+          epochDurationTicks,
+          sb.startDistance,
+          sb.distanceTraveled,
+          sb.wallCollisions,
+          curDist
+        );
         sb.accumulatedFitness = (sb.accumulatedFitness || 0.0) + trialFit;
         
         // Reset state for next trial (keep genome unchanged)
@@ -752,22 +775,15 @@ async function evaluateGeneration(wasRunningBefore = false) {
       const targetFood = sb.foods.find(f => f.type === targetType)!;
       const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
       
-      let trialFit = 0.0;
-      const wallPenalty = Math.max(0.2, 1.0 - sb.wallCollisions * 0.15);
-      if (sb.finished && sb.finishTick) {
-        const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-        trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
-      } else {
-        if (sb.distanceTraveled < 15.0) {
-          // Stillstand penalty: absolute 0 points
-          trialFit = 0.0;
-        } else {
-          const baseFit = curDist < sb.startDistance ? 100.0 * (1.0 - curDist / sb.startDistance) : 0.0;
-          // Aimless traveling penalty: subtract metabolic kinetic waste
-          const kineticWaste = sb.distanceTraveled * 0.12;
-          trialFit = Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
-        }
-      }
+      const trialFit = calculateSandboxFitness(
+        sb.finished,
+        sb.finishTick,
+        epochDurationTicks,
+        sb.startDistance,
+        sb.distanceTraveled,
+        sb.wallCollisions,
+        curDist
+      );
       
       if (isMultiTrial) {
         sb.currentFitness = ((sb.accumulatedFitness || 0.0) + trialFit) / totalTrials;
