@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pixel DNA - Neuroevolution RL Trainer</title>
+    <link rel="stylesheet" href="/src/beta.css" />
+    <style>
+      /* Dedicated high-tech styles for the trainer grid */
+      .trainer-grid {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        grid-gap: 20px;
+        padding: 20px;
+        margin-top: 80px;
+        height: calc(100vh - 100px);
+        box-sizing: border-box;
+      }
+      .sandbox-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        grid-gap: 12px;
+        overflow-y: auto;
+        padding: 10px;
+        background: rgba(15, 23, 42, 0.4);
+        border: 1px solid rgba(14, 165, 233, 0.15);
+        border-radius: 8px;
+        box-sizing: border-box;
+      }
+      .sandbox-card {
+        background: rgba(30, 41, 59, 0.4);
+        border: 1px solid rgba(148, 163, 184, 0.1);
+        border-radius: 6px;
+        padding: 6px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        position: relative;
+        transition: border-color 0.2s;
+      }
+      .sandbox-card.elite {
+        border-color: rgba(16, 185, 129, 0.4);
+      }
+      .sandbox-card.selected {
+        border-color: var(--primary-cyan);
+        box-shadow: 0 0 8px rgba(0, 242, 254, 0.15);
+      }
+      .sandbox-card canvas {
+        background: #020617;
+        border-radius: 4px;
+        width: 100%;
+        aspect-ratio: 1;
+        cursor: pointer;
+      }
+      .sandbox-meta {
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+        font-family: var(--font-mono);
+        font-size: 0.62rem;
+        color: var(--text-muted);
+        margin-top: 4px;
+      }
+      .badge-elite {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+        padding: 1px 4px;
+        border-radius: 2px;
+        font-size: 0.55rem;
+      }
+      .slider-control {
+        margin-bottom: 12px;
+      }
+      .slider-control label {
+        display: flex;
+        justify-content: space-between;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+      .slider-control input[type="range"] {
+        width: 100%;
+        background: rgba(148, 163, 184, 0.1);
+        height: 6px;
+        border-radius: 3px;
+        outline: none;
+      }
+      .dna-box {
+        font-family: var(--font-mono);
+        font-size: 0.58rem;
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        color: #10b981;
+        width: 100%;
+        height: 60px;
+        padding: 6px;
+        box-sizing: border-box;
+        resize: none;
+        word-break: break-all;
+        outline: none;
+        border-radius: 4px;
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Top Navigation Deck -->
+    <header class="top-nav-deck">
+      <div class="nav-title">
+        <span class="pulse-indicator" style="background: var(--primary-cyan);"></span>
+        <h1>PIXEL-LIFE <span class="badge-beta">RL TRAINER</span></h1>
+        <p>Evolutionary Reinforcement Learning Playground</p>
+      </div>
+      <div class="top-nav-help" style="font-size: 0.62rem; color: var(--text-muted); font-family: var(--font-mono); text-align: right;">
+        <span>🎯 Click a sandbox to inspect brain live | ⌨️ WASD controls active on selected</span>
+      </div>
+    </header>
+
+    <!-- Main Grid -->
+    <main class="trainer-grid">
+      <!-- Left Panel: Control Deck -->
+      <section class="glass-panel" style="overflow-y: auto; padding-bottom: 20px;">
+        <div class="panel-header">
+          <h2>🏋️ Training Control</h2>
+          <span class="panel-subtitle">Generational Hyperparameters</span>
+        </div>
+
+        <!-- Session Selector (Trained Runs) -->
+        <div class="panel-section" style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+          <label style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Active Session (Run ID)</label>
+          <select id="select-run" class="dna-box" style="height: 30px; margin-bottom: 8px; background: rgba(15, 23, 42, 0.85); color: var(--primary-cyan); padding: 2px 6px; font-weight: bold; border-color: rgba(0, 242, 254, 0.3);"></select>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="txt-new-run" placeholder="New Run Name..." class="dna-box" style="height: 30px; margin-bottom: 0; padding: 2px 6px;" />
+            <button id="btn-create-run" class="btn btn-primary" style="font-size: 0.65rem; padding: 5px 8px; height: 30px;">Create Run</button>
+          </div>
+        </div>
+
+        <!-- Real-Time Metrics -->
+        <div class="stats-card">
+          <div class="stats-item">
+            <span class="label">Generation:</span>
+            <span class="value val-blue" id="stat-gen">1</span>
+          </div>
+          <div class="stats-item">
+            <span class="label">Best Fitness:</span>
+            <span class="value val-green" id="stat-best-fit">0.0</span>
+          </div>
+          <div class="stats-item">
+            <span class="label">Avg Fitness:</span>
+            <span class="value val-gold" id="stat-avg-fit">0.0</span>
+          </div>
+          <div class="stats-item">
+            <span class="label">Time Remaining:</span>
+            <span class="value val-red" id="stat-timer">5.0s</span>
+          </div>
+        </div>
+
+        <div class="button-group" style="margin-bottom: 15px;">
+          <button id="btn-start" class="btn btn-primary" style="flex: 1;">Start Training</button>
+          <button id="btn-reset-train" class="btn btn-danger">Reset</button>
+        </div>
+
+        <div class="panel-section">
+          <!-- Tuning Sliders -->
+          <div class="slider-control">
+            <label><span>Grid Size (N Sandboxen)</span><span id="lbl-grid-size">16</span></label>
+            <input type="range" id="slider-grid-size" min="4" max="25" value="16" step="1" />
+          </div>
+
+          <div class="slider-control">
+            <label><span>Warp-Speed Speedup</span><span id="lbl-speedup">1x</span></label>
+            <input type="range" id="slider-speedup" min="1" max="10" value="1" step="1" />
+          </div>
+
+          <div class="slider-control">
+            <label><span>Elite Ratio (M %)</span><span id="lbl-elite-ratio">25%</span></label>
+            <input type="range" id="slider-elite-ratio" min="10" max="50" value="25" step="5" />
+          </div>
+
+          <div class="slider-control">
+            <label><span>Genome Mutation Rate</span><span id="lbl-mutation-rate">15%</span></label>
+            <input type="range" id="slider-mutation-rate" min="5" max="50" value="15" step="1" />
+          </div>
+
+          <div class="slider-control">
+            <label><span>Random Inflow (N %)</span><span id="lbl-inflow-rate">10%</span></label>
+            <input type="range" id="slider-inflow-rate" min="0" max="50" value="10" step="5" />
+          </div>
+
+          <div class="slider-control">
+            <label><span>Hall of Fame (%)</span><span id="lbl-hof-rate">10%</span></label>
+            <input type="range" id="slider-hof-rate" min="0" max="30" value="10" step="5" />
+          </div>
+
+          <div style="margin-top: 15px; display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="chk-multi-trial" style="cursor: pointer;" />
+            <label for="chk-multi-trial" style="font-size: 0.7rem; cursor: pointer; user-select: none; font-family: var(--font-mono);">
+              Enable Multi-Trial (3 Runs per Gen)
+            </label>
+          </div>
+        </div>
+
+        <div class="panel-section" style="margin-top: 15px;">
+          <h3>🏆 Champion Exporter (Local Cache)</h3>
+          <p style="font-size: 0.6rem; color: var(--text-muted); margin-bottom: 8px;">
+            Copy-paste this DNA into <code>config.json</code>'s <code>rules.progenitorGenome</code> to boost live ocean spawn rates.
+          </p>
+          <textarea id="txt-dna" class="dna-box" readonly placeholder="No champion evolved yet. Start training..."></textarea>
+          <button id="btn-copy-dna" class="btn btn-primary" style="width: 100%;">
+            Copy Champion DNA
+          </button>
+        </div>
+      </section>
+
+      <!-- Right Area: Sandboxes and Live Brain View -->
+      <section style="display: grid; grid-template-rows: 1fr 220px; grid-gap: 15px; height: 100%;">
+        <!-- Sandboxes Grid -->
+        <div class="sandbox-container" id="sandbox-grid">
+          <!-- Populated dynamically via trainer.ts -->
+        </div>
+
+        <!-- Live Diagnostics of Selected Sandbox -->
+        <div class="glass-panel" style="display: grid; grid-template-columns: 240px 1fr; grid-gap: 20px; height: 220px; box-sizing: border-box; overflow: hidden; padding: 12px 20px;">
+          <div>
+            <h3 style="margin-bottom: 4px;">🧠 Diagnostics Focus</h3>
+            <p id="focus-meta" style="font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); line-height: 1.3;">
+              Sandbox: #1<br/>
+              Status: Active<br/>
+              Fitness: 0.0<br/>
+              Diet: Herbivore
+            </p>
+            <button id="btn-wasd-control" class="btn btn-primary" style="margin-top: 10px; width: 100%; font-size: 0.65rem; padding: 5px;">
+              Toggle WASD Override
+            </button>
+          </div>
+          <!-- Brain Directed Graph Visualizer SVG Container -->
+          <div id="inspect-brain-container" style="background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 6px; overflow: hidden; height: 100%; position: relative;">
+            <div class="fallback-state">Select a sandbox above to inspect its recurrent CTRNN brain live.</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Connect our ts entrypoint -->
+    <script type="module" src="/src/trainer.ts"></script>
+  </body>
+</html>

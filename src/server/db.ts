@@ -33,6 +33,27 @@ db.exec(`
   );
 `);
 
+// Safe migration: check if run_id column exists, if not, drop table and upgrade
+const tableInfo = db.pragma("table_info(trainer_genomes)") as any[];
+const hasRunId = tableInfo.some(col => col.name === "run_id");
+if (tableInfo.length > 0 && !hasRunId) {
+  console.log("[SQLite] Upgrading trainer_genomes table to include run_id...");
+  db.exec("DROP TABLE IF EXISTS trainer_genomes;");
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS trainer_genomes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    generation INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    genome TEXT NOT NULL,
+    fitness REAL NOT NULL,
+    active INTEGER DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+`);
+
 /**
  * Reads all species records from SQLite.
  */
@@ -122,5 +143,89 @@ export function clearState() {
     db.prepare('DELETE FROM simulation_state WHERE key = ?').run('current_state');
   } catch (err) {
     console.error('[SQLite] Error clearing simulation state:', err);
+  }
+}
+
+/**
+ * Saves a generation's elite genomes to the separate trainer_genomes SQLite table under a specific run_id.
+ * Sets all older active entries of this run to active=0 (soft-delete / fossils).
+ */
+export function saveTrainerGeneration(runId: string, generation: number, population: { name: string; genome: string; fitness: number }[]) {
+  const deactivateStmt = db.prepare('UPDATE trainer_genomes SET active = 0 WHERE run_id = ? AND active = 1');
+  const insertStmt = db.prepare(`
+    INSERT INTO trainer_genomes (run_id, generation, name, genome, fitness, active, created_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?)
+  `);
+
+  const transaction = db.transaction((list: { name: string; genome: string; fitness: number }[]) => {
+    // 1. Soft-delete previous active population for this run
+    deactivateStmt.run(runId);
+
+    // 2. Insert new elite list
+    const now = Date.now();
+    for (const item of list) {
+      insertStmt.run(runId, generation, item.name, item.genome, item.fitness, now);
+    }
+  });
+
+  try {
+    transaction(population);
+  } catch (err) {
+    console.error('[SQLite] Failed to save trainer generation:', err);
+  }
+}
+
+/**
+ * Reads the current active trainer genomes for a specific run_id from SQLite, sorted by fitness descending.
+ */
+export function getTrainerPopulation(runId: string, limit = 25): { id: number; generation: number; name: string; genome: string; fitness: number }[] {
+  try {
+    const rows = db.prepare('SELECT id, generation, name, genome, fitness FROM trainer_genomes WHERE run_id = ? AND active = 1 ORDER BY fitness DESC LIMIT ?').all(runId, limit);
+    return rows as any[];
+  } catch (err) {
+    console.error('[SQLite] Error reading trainer population:', err);
+    return [];
+  }
+}
+
+/**
+ * Reads the all-time historically best trainer genomes (Hall of Fame) for a specific run_id from SQLite.
+ */
+export function getTrainerHallOfFame(runId: string, limit = 10): { id: number; generation: number; name: string; genome: string; fitness: number }[] {
+  try {
+    const rows = db.prepare('SELECT id, generation, name, genome, fitness FROM trainer_genomes WHERE run_id = ? ORDER BY fitness DESC LIMIT ?').all(runId, limit);
+    return rows as any[];
+  } catch (err) {
+    console.error('[SQLite] Error reading trainer Hall of Fame:', err);
+    return [];
+  }
+}
+
+/**
+ * Lists all unique training session run_ids, along with their maximum generation and maximum fitness achieved.
+ */
+export function getTrainerRuns(): { run_id: string; max_gen: number; max_fit: number; last_updated: number }[] {
+  try {
+    const rows = db.prepare(`
+      SELECT run_id, MAX(generation) as max_gen, MAX(fitness) as max_fit, MAX(created_at) as last_updated
+      FROM trainer_genomes
+      GROUP BY run_id
+      ORDER BY last_updated DESC
+    `).all();
+    return rows as any[];
+  } catch (err) {
+    console.error('[SQLite] Error reading unique trainer runs:', err);
+    return [];
+  }
+}
+
+/**
+ * Deletes all records of a specific run_id from the trainer_genomes table.
+ */
+export function clearTrainerHistory(runId: string) {
+  try {
+    db.prepare('DELETE FROM trainer_genomes WHERE run_id = ?').run(runId);
+  } catch (err) {
+    console.error('[SQLite] Error clearing trainer history:', err);
   }
 }

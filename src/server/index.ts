@@ -5,7 +5,7 @@ import path from "path";
 import { parseGenome, generateRandomGenome, getComplementaryString, executeBrain, mutateGenome } from "../biology/dna";
 import { CreatureAgent, FoodSpore, SpeciesRecord } from "../shared/types";
 
-import { readDb, writeDb, readState, writeState, clearState } from "./db";
+import { readDb, writeDb, readState, writeState, clearState, saveTrainerGeneration, getTrainerPopulation, getTrainerHallOfFame, clearTrainerHistory, getTrainerRuns } from "./db";
 import { generateWorld, getVectoredCurrentAt, getBiomeAt, checkObstacleCollision } from "../shared/mapGenerator";
 import { SpatialGrid } from "./spatialGrid";
 
@@ -258,8 +258,10 @@ function sendToClient(ws: WebSocket, event: any) {
 // Headless 60hz Simulation Tick
 // --------------------------------------------------------------------------
 let tickCount = 0;
+let isSimulationRunning = true;
 
 function simulationTick() {
+  if (!isSimulationRunning) return;
   tickCount++;
 
   // A. Move and drift food spores (Hard boundaries & Vector current fields)
@@ -1152,27 +1154,163 @@ function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number, gr
 // --------------------------------------------------------------------------
 // Express/HTTP WebSocket Server Setup
 // --------------------------------------------------------------------------
-const server = http.createServer((req, res) => {
+// Helper to read POST body
+const readBody = (req: http.IncomingMessage): Promise<string> => {
+  return new Promise((resolve) => {
+    let body = "";
+    req.on("data", (chunk) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      resolve(body);
+    });
+  });
+};
+
+const server = http.createServer(async (req, res) => {
   // REST backend fallbacks
   const url = new URL(req.url || "", `http://${req.headers.host}`);
   const method = req.method;
+
+  // CORS headers
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Content-Type": "application/json"
+  };
+
+  if (method === "OPTIONS") {
+    res.writeHead(204, headers);
+    res.end();
+    return;
+  }
 
   if (method === "GET" && url.pathname === "/api/species") {
     const id = url.searchParams.get("id");
     const db = readDb();
     if (!id) {
-      res.writeHead(200, { "Content-Type": "application/json" });
+      res.writeHead(200, headers);
       res.end(JSON.stringify(db));
       return;
     }
     const record = db.find(rec => rec.id === id);
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, headers);
     res.end(JSON.stringify(record || null));
     return;
   }
 
-  res.writeHead(404);
-  res.end();
+  // 1. GET simulation active running status
+  if (method === "GET" && url.pathname === "/api/simulation/status") {
+    res.writeHead(200, headers);
+    res.end(JSON.stringify({ running: isSimulationRunning }));
+    return;
+  }
+
+  // 2. POST toggle simulation active running state
+  if (method === "POST" && url.pathname === "/api/simulation/toggle") {
+    try {
+      const bodyStr = await readBody(req);
+      const data = JSON.parse(bodyStr);
+      if (data.running !== undefined) {
+        isSimulationRunning = data.running;
+        console.log(`[SERVER] Main simulation state updated: ${isSimulationRunning ? "RUNNING" : "PAUSED"}`);
+        // Broadcast simulation status to all WebSocket clients
+        connectedClients.forEach(ws => {
+          sendToClient(ws, { type: "SIM_STATE", running: isSimulationRunning });
+        });
+      }
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ success: true, running: isSimulationRunning }));
+    } catch (err) {
+      res.writeHead(500, headers);
+      res.end(JSON.stringify({ error: "Failed to toggle simulation state" }));
+    }
+    return;
+  }
+
+  // 3. GET current active trainer population for a specific runId
+  if (method === "GET" && url.pathname === "/api/trainer/population") {
+    const runId = url.searchParams.get("runId") || "default_run";
+    const limit = parseInt(url.searchParams.get("limit") || "25");
+    const pop = getTrainerPopulation(runId, limit);
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(pop));
+    return;
+  }
+
+  // 3b. GET historically best trainer genomes (Hall of Fame) for a specific runId
+  if (method === "GET" && url.pathname === "/api/trainer/hof") {
+    const runId = url.searchParams.get("runId") || "default_run";
+    const limit = parseInt(url.searchParams.get("limit") || "10");
+    const hof = getTrainerHallOfFame(runId, limit);
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(hof));
+    return;
+  }
+
+  // 4. GET list of all unique trainer runs / sessions
+  if (method === "GET" && url.pathname === "/api/trainer/runs") {
+    const runs = getTrainerRuns();
+    res.writeHead(200, headers);
+    res.end(JSON.stringify(runs));
+    return;
+  }
+
+  // 5. POST save current generation elite to trainer_genomes SQLite
+  if (method === "POST" && url.pathname === "/api/trainer/generation") {
+    try {
+      const bodyStr = await readBody(req);
+      const data = JSON.parse(bodyStr);
+      const runId = data.runId || "default_run";
+      saveTrainerGeneration(runId, data.generation, data.population);
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ success: true }));
+    } catch (err) {
+      res.writeHead(500, headers);
+      res.end(JSON.stringify({ error: "Failed to save generation" }));
+    }
+    return;
+  }
+
+  // 6. POST reset trainer genomes for a specific runId
+  if (method === "POST" && url.pathname === "/api/trainer/reset") {
+    try {
+      const bodyStr = await readBody(req);
+      const data = JSON.parse(bodyStr);
+      const runId = data.runId || "default_run";
+      clearTrainerHistory(runId);
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ success: true }));
+    } catch (err) {
+      res.writeHead(500, headers);
+      res.end(JSON.stringify({ error: "Failed to reset run" }));
+    }
+    return;
+  }
+
+  // 7. POST apply champion to config rules
+  if (method === "POST" && url.pathname === "/api/trainer/apply") {
+    try {
+      const bodyStr = await readBody(req);
+      const data = JSON.parse(bodyStr);
+      if (data.genome) {
+        config.rules = config.rules || {};
+        config.rules.progenitorGenome = data.genome;
+        fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+        console.log(`[SERVER] Champion progenitor genome successfully applied to substrate config!`);
+      }
+      res.writeHead(200, headers);
+      res.end(JSON.stringify({ success: true }));
+    } catch (err) {
+      res.writeHead(500, headers);
+      res.end(JSON.stringify({ error: "Failed to apply champion" }));
+    }
+    return;
+  }
+
+  res.writeHead(404, headers);
+  res.end(JSON.stringify({ error: "Not Found" }));
 });
 
 const wss = new WebSocketServer({ server });
@@ -1186,6 +1324,7 @@ wss.on("connection", (ws) => {
     type: "INIT_STATE",
     seed: config.seed || "ALIFE_BASIN_77A",
     rules: config.rules,
+    running: isSimulationRunning,
     creatures: creatures.map(c => ({
       id: c.id,
       speciesId: c.speciesId,

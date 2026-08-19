@@ -44,4 +44,5 @@ export interface FoodSpore {
   y: number;
   vx: number;
   vy: number;
+  type?: 'plant' | 'meat';
 }

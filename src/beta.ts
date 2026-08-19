@@ -393,6 +393,20 @@ function initBetaWebSocket() {
         highestGeneration = data.highestGeneration;
         foodPellets = data.foodPellets;
 
+        isSimRunning = data.running !== undefined ? data.running : true;
+        if (lblToggleSim) {
+          lblToggleSim.innerText = isSimRunning ? "Pause Substrate" : "Resume Substrate";
+        }
+        if (btnToggleSim) {
+          if (isSimRunning) {
+            btnToggleSim.classList.add("btn-primary");
+            btnToggleSim.classList.remove("btn-danger");
+          } else {
+            btnToggleSim.classList.add("btn-danger");
+            btnToggleSim.classList.remove("btn-primary");
+          }
+        }
+
         if (data.seed) {
           world = generateWorld(data.seed, 19200, 10800, data.rules);
           createBiomeCache(world);
@@ -406,6 +420,21 @@ function initBetaWebSocket() {
         // Set default selection if none active
         if (creatures.length > 0 && selectedId.value === null) {
           selectSpecimen(creatures[0]);
+        }
+      }
+      else if (data.type === "SIM_STATE") {
+        isSimRunning = data.running;
+        if (lblToggleSim) {
+          lblToggleSim.innerText = isSimRunning ? "Pause Substrate" : "Resume Substrate";
+        }
+        if (btnToggleSim) {
+          if (isSimRunning) {
+            btnToggleSim.classList.add("btn-primary");
+            btnToggleSim.classList.remove("btn-danger");
+          } else {
+            btnToggleSim.classList.add("btn-danger");
+            btnToggleSim.classList.remove("btn-primary");
+          }
         }
       }
       else if (data.type === "TELEMETRY_TICK") {
@@ -912,6 +941,20 @@ speciesRoster.addEventListener("click", (e) => {
 });
 
 // Action Buttons Event Handlers
+const btnToggleSim = document.getElementById("btn-toggle-sim") as HTMLButtonElement;
+const lblToggleSim = document.getElementById("lbl-toggle-sim") as HTMLSpanElement;
+let isSimRunning = true;
+
+btnToggleSim?.addEventListener("click", () => {
+  const nextState = !isSimRunning;
+  const BACKEND_BASE = `http://${window.location.hostname || 'localhost'}:3002`;
+  fetch(`${BACKEND_BASE}/api/simulation/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ running: nextState })
+  });
+});
+
 document.getElementById("btn-inject")?.addEventListener("click", () => {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({ type: "INJECT_URZELLE" }));
