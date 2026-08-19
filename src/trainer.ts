@@ -43,6 +43,7 @@ const lblInflow = document.getElementById("lbl-inflow-rate") as HTMLSpanElement;
 const lblHof = document.getElementById("lbl-hof-rate") as HTMLSpanElement;
 
 const focusMeta = document.getElementById("focus-meta") as HTMLParagraphElement;
+const neuronMeta = document.getElementById("neuron-meta") as HTMLParagraphElement;
 const brainContainer = document.getElementById("inspect-brain-container") as HTMLDivElement;
 
 // State Variables
@@ -1037,68 +1038,72 @@ function updateBrainLiveGlows(): void {
     Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
   `;
 
-  // 3. Dynamically update hovered neuron tooltip with live potentials and tanh activation formulas
+  // 3. Dynamically update hovered neuron sidebar text block with live potentials and math formulas
   if (hoveredNeuronId !== null) {
-    const el = document.getElementById(`trainer-node-${hoveredNeuronId}`);
-    if (el) {
-      const titleEl = el.querySelector("title");
-      if (titleEl) {
-        const K = sb.agent.phenotype.organelles.length;
-        const isInput = hoveredNeuronId <= K;
-        const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
-        
-        let baseDesc = `Neuron #${hoveredNeuronId}`;
-        let mathFormula = "";
-        let liveValues = "";
+    const K = sb.agent.phenotype.organelles.length;
+    const isInput = hoveredNeuronId <= K;
+    const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
+    
+    let baseDesc = `Neuron #${hoveredNeuronId}`;
+    let mathFormula = "";
+    let liveValues = "";
 
-        if (isInput) {
-          mathFormula = "Activation Function: Bounded Identity [0, 1]";
-          const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
-          liveValues = `Live Activation (a): ${act.toFixed(3)}`;
-          
-          if (hoveredNeuronId === K) {
-            baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
-          } else {
-            const patch = sb.agent.phenotype.organelles[hoveredNeuronId];
-            if (patch) {
-              const aff = patch.spectralAffinity;
-              let sensorName = "Visual Eye";
-              if (aff >= 0.8) sensorName = "Thermal (Heat)";
-              else if (aff >= 0.65) sensorName = "Vibration";
-              else if (aff >= 0.25) sensorName = "Olfactory (Smell)";
-              baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1} (${sensorName})`;
-            }
-          }
-        } else {
-          const neuron = sb.agent.phenotype.brain.neurons[hoveredNeuronId];
-          const state = sb.agent.neuronStates[hoveredNeuronId] || 0.0;
-          const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
-          
-          mathFormula = "Activation Function: a = tanh(Potential)";
-          liveValues = `Potential State (s): ${state.toFixed(3)}\nLive Activation (a): ${act.toFixed(3)}`;
-          
-          if (isOutput) {
-            const outputIndex = hoveredNeuronId - (K + 1);
-            if (outputIndex === 0) {
-              baseDesc = `Output #${hoveredNeuronId}: Forward/Backward Thrust`;
-            } else if (outputIndex === 1) {
-              baseDesc = `Output #${hoveredNeuronId}: Body Flexion Steering`;
-            } else if (outputIndex === 2) {
-              baseDesc = `Output #${hoveredNeuronId}: Bioluminescence Flash`;
-            } else {
-              baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
-            }
-          } else {
-            baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
-          }
-          
-          if (neuron) {
-            liveValues += `\nDecay (tau): ${neuron.tau.toFixed(1)} frames\nBias (threshold): ${neuron.bias.toFixed(2)}`;
-          }
+    if (isInput) {
+      mathFormula = "f(x) = Identity (Bounded [0, 1])";
+      const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
+      liveValues = `<b>Activation (a):</b> ${act.toFixed(3)}`;
+      
+      if (hoveredNeuronId === K) {
+        baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
+      } else {
+        const patch = sb.agent.phenotype.organelles[hoveredNeuronId];
+        if (patch) {
+          const aff = patch.spectralAffinity;
+          let sensorName = "Visual Eye";
+          if (aff >= 0.8) sensorName = "Thermal (Heat)";
+          else if (aff >= 0.65) sensorName = "Vibration";
+          else if (aff >= 0.25) sensorName = "Olfactory (Smell)";
+          baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1} (${sensorName})`;
         }
-
-        titleEl.textContent = `${baseDesc}\n----------------------------------\n${mathFormula}\n${liveValues}`;
       }
+    } else {
+      const neuron = sb.agent.phenotype.brain.neurons[hoveredNeuronId];
+      const state = sb.agent.neuronStates[hoveredNeuronId] || 0.0;
+      const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
+      
+      mathFormula = "f(s) = tanh(s) [-1.0 to 1.0]";
+      liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
+      
+      if (isOutput) {
+        const outputIndex = hoveredNeuronId - (K + 1);
+        if (outputIndex === 0) {
+          baseDesc = `Output #${hoveredNeuronId}: Thrust`;
+        } else if (outputIndex === 1) {
+          baseDesc = `Output #${hoveredNeuronId}: Flexion Steering`;
+        } else if (outputIndex === 2) {
+          baseDesc = `Output #${hoveredNeuronId}: Biolum Flash`;
+        } else {
+          baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
+        }
+      } else {
+        baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
+      }
+      
+      if (neuron) {
+        liveValues += `<br/><b>Decay (tau):</b> ${neuron.tau.toFixed(1)}f | <b>Bias:</b> ${neuron.bias.toFixed(2)}`;
+      }
+    }
+
+    if (neuronMeta) {
+      neuronMeta.innerHTML = `
+        <span style="color: #fff; font-weight: bold;">${baseDesc}</span><br/>
+        <span style="color: var(--text-muted); font-size: 0.55rem;">Formula: ${mathFormula}</span><br/>
+        ${liveValues}
+      `;
+    }
+  } else {
+    if (neuronMeta) {
+      neuronMeta.innerHTML = `Hover a neuron node to see live telemetry...`;
     }
   }
 }

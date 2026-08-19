@@ -285,15 +285,20 @@
         
         <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
           <!-- Top Row: Metadata and Mini visual high-zoom live preview! -->
-          <div style="display: flex; gap: 12px; align-items: center;">
+          <div style="display: flex; gap: 12px; align-items: flex-start;">
             <canvas id="diagnostics-preview-canvas" width="80" height="80" style="background: #020617; border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 4px; width: 80px; height: 80px; flex-shrink: 0;"></canvas>
-            <div style="flex: 1; min-width: 0;">
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
               <p id="focus-meta" style="font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); line-height: 1.4; margin: 0; word-break: break-all;">
                 Sandbox: #1<br/>
                 Status: Active<br/>
                 Fitness: 0.0<br/>
                 Diet: Herbivore<br/>
                 Seed: SANDBOX_SEED_1_GEN_1
+              </p>
+              
+              <!-- Live Hovered Neuron Telemetry -->
+              <p id="neuron-meta" style="font-size: 0.60rem; color: var(--primary-cyan); font-family: var(--font-mono); line-height: 1.35; margin: 0; border-top: 1px dashed rgba(148, 163, 184, 0.15); padding-top: 4px; min-height: 48px;">
+                Hover a neuron node to see live telemetry...
               </p>
             </div>
           </div>
