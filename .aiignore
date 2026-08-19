@@ -7,6 +7,9 @@ dist/
 # Large local databases and save states (to protect context efficiency)
 species_db.json
 simulation_state.json
+digilife.db
+digilife.db-wal
+digilife.db-shm
 
 # Heavy third-party clones or artifacts
 .agents/artifacts/

@@ -7,6 +7,9 @@ dist/
 # Local database files and save states (keep them untracked so they don't bloat the diff)
 species_db.json
 simulation_state.json
+digilife.db
+digilife.db-wal
+digilife.db-shm
 
 # System / IDE specifics
 .idea/
