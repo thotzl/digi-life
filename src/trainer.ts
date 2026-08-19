@@ -685,9 +685,11 @@ async function evaluateGeneration(wasRunningBefore = false) {
         let trialFit = 0.0;
         if (sb.finished && sb.finishTick) {
           // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
+          // Weighs extremely heavily (up to 2000.0 points), while speed is minor tie-breaker (0.2x)
           const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-          trialFit = 1000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.5;
+          trialFit = 2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2;
         } else {
+          // Unsuccessful: proximity reward only, distanceTraveled does NOT penalize here
           if (curDist < sb.startDistance) {
             trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
           }
@@ -733,7 +735,7 @@ async function evaluateGeneration(wasRunningBefore = false) {
       let trialFit = 0.0;
       if (sb.finished && sb.finishTick) {
         const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
-        trialFit = 1000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.5;
+        trialFit = 2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2;
       } else {
         if (curDist < sb.startDistance) {
           trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
