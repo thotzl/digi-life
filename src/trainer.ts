@@ -79,6 +79,7 @@ interface Sandbox {
   distanceTraveled: number; // cumulative physical path length
   wallCollisions: number;    // count of distinct wall boundary hits
   wallCollisionCooldown?: number; // frame cooldown to prevent multiple counts on rub
+  consumedSporeType?: 'plant' | 'meat'; // records which spore was eaten on success
   world: ProceduralWorld;
   epochTicks: number;
 }
@@ -299,6 +300,7 @@ function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string
     distanceTraveled: 0.0,
     wallCollisions: 0,
     wallCollisionCooldown: 0,
+    consumedSporeType: undefined,
     world,
     epochTicks: 0
   };
@@ -697,19 +699,35 @@ function stepPhysics(sb: Sandbox) {
   }
 
   // Spore collision & consumption check (diet-compatible)
-  const targetType = sb.agent.phenotype.carnivory >= 0.35 ? 'meat' : 'plant';
-  const targetFood = sb.foods.find(f => f.type === targetType)!;
-  
-  const foodDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
-  
+  // Herbivores (carnivory < 0.40) eat only plants.
+  // Carnivores (carnivory >= 0.65) eat only meat.
+  // Omnivores (0.40 <= carnivory < 0.65) can eat both!
+  const compatibleFoods = sb.foods.filter(f => {
+    if (f.type === 'plant') return sb.agent.phenotype.carnivory < 0.65;
+    if (f.type === 'meat') return sb.agent.phenotype.carnivory >= 0.40;
+    return false;
+  });
+
+  // Target the closest compatible food spore
+  let targetFood = compatibleFoods[0] || sb.foods[0];
+  let minFoodDist = Infinity;
+  compatibleFoods.forEach(f => {
+    const dist = Math.sqrt((f.x - sb.agent.px) ** 2 + (f.y - sb.agent.py) ** 2);
+    if (dist < minFoodDist) {
+      minFoodDist = dist;
+      targetFood = f;
+    }
+  });
+
   // Herbivore algae grazing range vs Carnivore bite range
-  const eatDist = targetType === 'meat'
+  const eatDist = targetFood.type === 'meat'
     ? meanRadius * 1.6 * 0.5 + 5.0 // Biting radius
     : meanRadius * 1.5 * 0.5 + 8.0; // Algae grazing range
-  
-  if (foodDist <= eatDist) {
+
+  if (minFoodDist <= eatDist) {
     sb.finished = true;
     sb.finishTick = sb.epochTicks;
+    sb.consumedSporeType = targetFood.type;
     sb.agent.hasEaten = true;
   }
 }
@@ -762,9 +780,19 @@ async function evaluateGeneration(wasRunningBefore = false) {
     if (isMultiTrial && currentTrial < totalTrials) {
       // 1. Process intermediate trial reset
       sandboxes.forEach(sb => {
-        const targetType = sb.agent.phenotype.carnivory >= 0.35 ? 'meat' : 'plant';
-        const targetFood = sb.foods.find(f => f.type === targetType)!;
-        const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
+        const compatibleFoods = sb.foods.filter(f => {
+          if (f.type === 'plant') return sb.agent.phenotype.carnivory < 0.65;
+          if (f.type === 'meat') return sb.agent.phenotype.carnivory >= 0.40;
+          return false;
+        });
+        let minFoodDist = Infinity;
+        compatibleFoods.forEach(f => {
+          const dist = Math.sqrt((f.x - sb.agent.px) ** 2 + (f.y - sb.agent.py) ** 2);
+          if (dist < minFoodDist) {
+            minFoodDist = dist;
+          }
+        });
+        const curDist = minFoodDist;
         
         const trialFit = calculateSandboxFitness(
           sb.finished,
@@ -780,6 +808,7 @@ async function evaluateGeneration(wasRunningBefore = false) {
         // Reset state for next trial (keep genome unchanged)
         sb.finished = false;
         sb.finishTick = undefined;
+        sb.consumedSporeType = undefined;
         sb.distanceTraveled = 0.0; // reset path tracker
         sb.wallCollisions = 0; // reset collisions
         sb.wallCollisionCooldown = 0;
@@ -801,8 +830,19 @@ async function evaluateGeneration(wasRunningBefore = false) {
           }
         });
         
-        const finalTargetFood = sb.foods.find(f => f.type === targetType)!;
-        sb.startDistance = Math.sqrt((finalTargetFood.x - sb.agent.px) ** 2 + (finalTargetFood.y - sb.agent.py) ** 2);
+        const finalCompatibleFoods = sb.foods.filter(f => {
+          if (f.type === 'plant') return sb.agent.phenotype.carnivory < 0.65;
+          if (f.type === 'meat') return sb.agent.phenotype.carnivory >= 0.40;
+          return false;
+        });
+        let finalMinFoodDist = Infinity;
+        finalCompatibleFoods.forEach(f => {
+          const dist = Math.sqrt((f.x - sb.agent.px) ** 2 + (f.y - sb.agent.py) ** 2);
+          if (dist < finalMinFoodDist) {
+            finalMinFoodDist = dist;
+          }
+        });
+        sb.startDistance = finalMinFoodDist;
       });
       
       currentTrial++;
@@ -811,9 +851,19 @@ async function evaluateGeneration(wasRunningBefore = false) {
 
     // 2. Finalize Generation (if Multi-Trial finished or disabled)
     sandboxes.forEach(sb => {
-      const targetType = sb.agent.phenotype.carnivory >= 0.35 ? 'meat' : 'plant';
-      const targetFood = sb.foods.find(f => f.type === targetType)!;
-      const curDist = Math.sqrt((targetFood.x - sb.agent.px) ** 2 + (targetFood.y - sb.agent.py) ** 2);
+      const compatibleFoods = sb.foods.filter(f => {
+        if (f.type === 'plant') return sb.agent.phenotype.carnivory < 0.65;
+        if (f.type === 'meat') return sb.agent.phenotype.carnivory >= 0.40;
+        return false;
+      });
+      let minFoodDist = Infinity;
+      compatibleFoods.forEach(f => {
+        const dist = Math.sqrt((f.x - sb.agent.px) ** 2 + (f.y - sb.agent.py) ** 2);
+        if (dist < minFoodDist) {
+          minFoodDist = dist;
+        }
+      });
+      const curDist = minFoodDist;
       
       const trialFit = calculateSandboxFitness(
         sb.finished,
@@ -834,6 +884,7 @@ async function evaluateGeneration(wasRunningBefore = false) {
       sb.distanceTraveled = 0.0; // reset path tracker for the next generation
       sb.wallCollisions = 0; // reset collisions
       sb.wallCollisionCooldown = 0;
+      sb.consumedSporeType = undefined;
     });
 
     currentTrial = 1; // reset trial counter
@@ -918,7 +969,7 @@ function drawSandbox(sb: Sandbox) {
 
   // Draw Spores (green for plants, red/crimson for meat)
   sb.foods.forEach(spore => {
-    const isEaten = sb.finished && (sb.agent.phenotype.carnivory >= 0.35 ? spore.type === 'meat' : spore.type === 'plant');
+    const isEaten = sb.finished && sb.consumedSporeType === spore.type;
     if (!isEaten) {
       ctx.beginPath();
       ctx.arc(spore.x, spore.y, 4, 0, Math.PI * 2);
