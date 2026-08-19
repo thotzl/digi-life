@@ -305,9 +305,6 @@ function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string
 }
 
 async function rebuildSandboxGrid() {
-  gridContainer.innerHTML = "";
-  sandboxes = [];
-  
   // 1. Fetch both active population and all-time Hall of Fame
   const savedPool = await fetchServerPopulation();
   const savedHof = await fetchServerHof();
@@ -331,65 +328,106 @@ async function rebuildSandboxGrid() {
   const hofCount = Math.floor(N * randomHofRate);
   const inflowCount = Math.floor(N * randomInflowRate);
 
-  for (let i = 0; i < N; i++) {
-    const card = document.createElement("div");
-    card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
-    card.setAttribute("data-idx", i.toString());
+  const existingCards = gridContainer.querySelectorAll(".sandbox-card");
+  const isRecycling = existingCards.length === N && sandboxes.length === N;
 
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
+  if (isRecycling) {
+    // SUPERWARP RECYCLING: Keep the existing DOM nodes and canvas event listeners completely untouched!
+    // Simply swap the genomes and reset agent and food states in memory.
+    for (let i = 0; i < N; i++) {
+      const card = existingCards[i] as HTMLDivElement;
+      card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
 
-    const meta = document.createElement("div");
-    meta.className = "sandbox-meta";
-    meta.innerHTML = `<span>#${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
+      const fitTextEl = document.getElementById(`card-fit-${i}`);
+      if (fitTextEl) {
+        fitTextEl.innerText = "F: 0.0";
+      }
 
-    card.appendChild(canvas);
-    card.appendChild(meta);
-    gridContainer.appendChild(card);
+      const canvas = card.querySelector("canvas") as HTMLCanvasElement;
+      
+      let parent = "";
+      let shouldMutate = false;
 
-    // Setup click selection for diagnostics focusing
-    canvas.addEventListener("click", () => {
-      document.querySelectorAll(".sandbox-card").forEach(c => c.classList.remove("selected"));
-      card.classList.add("selected");
-      selectedSandboxIdx = i;
-      compileBrainSVG();
-    });
-
-    // Populate Sandbox
-    let parent = "";
-    let shouldMutate = false;
-
-    if (savedPool.length > 0) {
-      // A. We have a saved pool of champions!
-      if (i < eliteCount) {
-        // 1. Elite Survivors: load exact saved champions unmutated
-        parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
-        shouldMutate = false;
-      } else if (i < eliteCount + hofCount && savedHof.length > 0) {
-        // 2. Hall of Fame re-injection: clone from historically best ever, and mutate slightly
-        const hofIdx = (i - eliteCount) % savedHof.length;
-        parent = savedHof[hofIdx].genome;
-        shouldMutate = true;
-      } else if (i < eliteCount + hofCount + inflowCount) {
-        // 3. Random Immigrants: spawn a brand new independent naive progenitor
+      if (savedPool.length > 0) {
+        if (i < eliteCount) {
+          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
+          shouldMutate = false;
+        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
+          const hofIdx = (i - eliteCount) % savedHof.length;
+          parent = savedHof[hofIdx].genome;
+          shouldMutate = true;
+        } else if (i < eliteCount + hofCount + inflowCount) {
+          parent = generatePEN_Progenitor();
+          shouldMutate = false;
+        } else {
+          const parentIdx = Math.floor(Math.random() * savedPool.length);
+          parent = savedPool[parentIdx].genome;
+          shouldMutate = true;
+        }
+      } else {
         parent = generatePEN_Progenitor();
         shouldMutate = false;
-      } else {
-        // 4. Cloned Descendants: clone from all champions evenly (random selection from savedPool)
-        const parentIdx = Math.floor(Math.random() * savedPool.length);
-        parent = savedPool[parentIdx].genome;
-        shouldMutate = true;
       }
-    } else {
-      // B. GREENFIELD START (Generation 1):
-      // Generate N completely different, independent random PE-NN progenitors!
-      parent = generatePEN_Progenitor();
-      shouldMutate = false; // start pure and unmutated on generation 1
-    }
 
-    const sb = initSandbox(i + 1, canvas, parent, shouldMutate);
-    sandboxes.push(sb);
+      sandboxes[i] = initSandbox(i + 1, canvas, parent, shouldMutate);
+    }
+  } else {
+    // FULL REBUILD (First boot or grid size changed)
+    gridContainer.innerHTML = "";
+    sandboxes = [];
+
+    for (let i = 0; i < N; i++) {
+      const card = document.createElement("div");
+      card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
+      card.setAttribute("data-idx", i.toString());
+
+      const canvas = document.createElement("canvas");
+      canvas.width = canvasWidth;
+      canvas.height = canvasHeight;
+
+      const meta = document.createElement("div");
+      meta.className = "sandbox-meta";
+      meta.innerHTML = `<span>#${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
+
+      card.appendChild(canvas);
+      card.appendChild(meta);
+      gridContainer.appendChild(card);
+
+      // Setup click selection for diagnostics focusing
+      canvas.addEventListener("click", () => {
+        document.querySelectorAll(".sandbox-card").forEach(c => c.classList.remove("selected"));
+        card.classList.add("selected");
+        selectedSandboxIdx = i;
+        compileBrainSVG();
+      });
+
+      let parent = "";
+      let shouldMutate = false;
+
+      if (savedPool.length > 0) {
+        if (i < eliteCount) {
+          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
+          shouldMutate = false;
+        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
+          const hofIdx = (i - eliteCount) % savedHof.length;
+          parent = savedHof[hofIdx].genome;
+          shouldMutate = true;
+        } else if (i < eliteCount + hofCount + inflowCount) {
+          parent = generatePEN_Progenitor();
+          shouldMutate = false;
+        } else {
+          const parentIdx = Math.floor(Math.random() * savedPool.length);
+          parent = savedPool[parentIdx].genome;
+          shouldMutate = true;
+        }
+      } else {
+        parent = generatePEN_Progenitor();
+        shouldMutate = false;
+      }
+
+      const sb = initSandbox(i + 1, canvas, parent, shouldMutate);
+      sandboxes.push(sb);
+    }
   }
 
   compileBrainSVG();
