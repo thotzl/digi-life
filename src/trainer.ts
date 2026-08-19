@@ -69,6 +69,7 @@ interface Sandbox {
   startDistance: number;
   currentFitness: number;
   accumulatedFitness?: number;
+  distanceTraveled: number; // cumulative physical path length
   world: ProceduralWorld;
   epochTicks: number;
 }
@@ -286,6 +287,7 @@ function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string
     finished: false,
     startDistance,
     currentFitness: 0,
+    distanceTraveled: 0.0,
     world,
     epochTicks: 0
   };
@@ -621,6 +623,10 @@ function stepPhysics(sb: Sandbox) {
   sb.agent.px += sb.agent.vx;
   sb.agent.py += sb.agent.vy;
 
+  // Track cumulative distance traveled
+  const movement = Math.sqrt(sb.agent.vx ** 2 + sb.agent.vy ** 2);
+  sb.distanceTraveled += movement;
+
   // Boundary box collisions
   const r = meanRadius;
   const wallRestitution = 0.5;
@@ -678,7 +684,9 @@ async function evaluateGeneration(wasRunningBefore = false) {
         
         let trialFit = 0.0;
         if (sb.finished && sb.finishTick) {
-          trialFit = 1000.0 + (epochDurationTicks - sb.finishTick) * 2.0;
+          // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
+          const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
+          trialFit = 1000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.5;
         } else {
           if (curDist < sb.startDistance) {
             trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
@@ -689,6 +697,7 @@ async function evaluateGeneration(wasRunningBefore = false) {
         // Reset state for next trial (keep genome unchanged)
         sb.finished = false;
         sb.finishTick = undefined;
+        sb.distanceTraveled = 0.0; // reset path tracker
         sb.agent.px = canvasWidth / 2;
         sb.agent.py = canvasHeight / 2;
         sb.agent.vx = 0;
@@ -723,7 +732,8 @@ async function evaluateGeneration(wasRunningBefore = false) {
       
       let trialFit = 0.0;
       if (sb.finished && sb.finishTick) {
-        trialFit = 1000.0 + (epochDurationTicks - sb.finishTick) * 2.0;
+        const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
+        trialFit = 1000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.5;
       } else {
         if (curDist < sb.startDistance) {
           trialFit = 100.0 * (1.0 - curDist / sb.startDistance);
@@ -738,6 +748,7 @@ async function evaluateGeneration(wasRunningBefore = false) {
       } else {
         sb.currentFitness = trialFit;
       }
+      sb.distanceTraveled = 0.0; // reset path tracker for the next generation
     });
 
     currentTrial = 1; // reset trial counter
@@ -1033,35 +1044,49 @@ btnReset.addEventListener("click", async () => {
   }
 });
 
-const selectRun = document.getElementById("select-run") as HTMLSelectElement;
-const txtNewRun = document.getElementById("txt-new-run") as HTMLInputElement;
-const btnCreateRun = document.getElementById("btn-create-run") as HTMLButtonElement;
+const selectTraining = document.getElementById("select-training") as HTMLSelectElement;
+const txtNewTraining = document.getElementById("txt-new-training") as HTMLInputElement;
+const btnCreateTraining = document.getElementById("btn-create-training") as HTMLButtonElement;
 
 async function populateRunSelector() {
   const runs = await fetchServerRuns();
-  selectRun.innerHTML = "";
+  selectTraining.innerHTML = "";
   
   let defaultExists = false;
+  let activeExistsInDb = false;
+
   runs.forEach(run => {
     if (run.run_id === "default_run") defaultExists = true;
+    if (run.run_id === runId) activeExistsInDb = true;
+
     const opt = document.createElement("option");
     opt.value = run.run_id;
     opt.innerText = `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(0)})`;
     if (run.run_id === runId) opt.selected = true;
-    selectRun.appendChild(opt);
+    selectTraining.appendChild(opt);
   });
+
+  // If the active training session is brand new (doesn't have database records yet),
+  // manually append it as an option so the selection isn't wiped out!
+  if (!activeExistsInDb && runId !== "default_run") {
+    const opt = document.createElement("option");
+    opt.value = runId;
+    opt.innerText = `${runId} (New)`;
+    opt.selected = true;
+    selectTraining.appendChild(opt);
+  }
 
   if (!defaultExists) {
     const opt = document.createElement("option");
     opt.value = "default_run";
     opt.innerText = "default_run (New)";
     if (runId === "default_run") opt.selected = true;
-    selectRun.insertBefore(opt, selectRun.firstChild);
+    selectTraining.insertBefore(opt, selectTraining.firstChild);
   }
 }
 
-selectRun.addEventListener("change", () => {
-  runId = selectRun.value;
+selectTraining.addEventListener("change", () => {
+  runId = selectTraining.value;
   isRunning = false;
   btnStart.innerText = "Start Training";
   btnStart.classList.add("btn-primary");
@@ -1071,15 +1096,15 @@ selectRun.addEventListener("change", () => {
   rebuildSandboxGrid();
 });
 
-btnCreateRun.addEventListener("click", () => {
-  const name = txtNewRun.value.trim().replace(/[^a-zA-Z0-9_]/g, "");
+btnCreateTraining.addEventListener("click", () => {
+  const name = txtNewTraining.value.trim().replace(/[^a-zA-Z0-9_]/g, "");
   if (!name) {
-    alert("Please enter a valid alphanumeric run name!");
+    alert("Please enter a valid alphanumeric training name!");
     return;
   }
   
   runId = name;
-  txtNewRun.value = "";
+  txtNewTraining.value = "";
   
   isRunning = false;
   btnStart.innerText = "Start Training";

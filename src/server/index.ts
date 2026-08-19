@@ -5,7 +5,7 @@ import path from "path";
 import { parseGenome, generateRandomGenome, getComplementaryString, executeBrain, mutateGenome } from "../biology/dna";
 import { CreatureAgent, FoodSpore, SpeciesRecord } from "../shared/types";
 
-import { readDb, writeDb, readState, writeState, clearState, saveTrainerGeneration, getTrainerPopulation, getTrainerHallOfFame, clearTrainerHistory, getTrainerRuns } from "./db";
+import { readDb, writeDb, readState, writeState, clearState, saveTrainerGeneration, getTrainerPopulation, getTrainerHallOfFame, getAllTrainingsChampions, clearTrainerHistory, getTrainerRuns } from "./db";
 import { generateWorld, getVectoredCurrentAt, getBiomeAt, checkObstacleCollision } from "../shared/mapGenerator";
 import { SpatialGrid } from "./spatialGrid";
 
@@ -777,15 +777,31 @@ function simulationTick() {
 
   // Maintain population (restocking founder cells)
   const targetPopulation = config.targetPopulation !== undefined ? config.targetPopulation : 25;
+  
+  // Fetch top-1 all-time champions across all training sessions
+  const trainingChamps = getAllTrainingsChampions();
+
   while (creatures.length < targetPopulation) {
-    let g = generateRandomGenome(256);
+    let g = "";
     let gen = 1;
 
-    if (cachedAliveSpecies.length > 0 && Math.random() < (rules.restockFounderGeneInheritChance !== undefined ? rules.restockFounderGeneInheritChance : 0.60)) {
+    const roll = Math.random();
+    if (trainingChamps.length > 0 && roll < 0.40) {
+      // 40% Chance: Spawn one of our trained champions from the database!
+      const champIdx = Math.floor(Math.random() * trainingChamps.length);
+      const champ = trainingChamps[champIdx];
+      g = champ.genome;
+      gen = champ.generation;
+    } else if (cachedAliveSpecies.length > 0 && roll < 0.80) {
+      // 40% Chance: Clone an already successful species living in the ocean
       const idx = Math.floor(Math.random() * cachedAliveSpecies.length);
       const record = cachedAliveSpecies[idx];
       g = record.genome;
       gen = record.generation;
+    } else {
+      // 20% Chance: Wild random founder mutation
+      g = generateRandomGenome(256);
+      gen = 1;
     }
 
     const anti = getComplementaryString(g);

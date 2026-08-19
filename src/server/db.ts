@@ -202,6 +202,27 @@ export function getTrainerHallOfFame(runId: string, limit = 10): { id: number; g
 }
 
 /**
+ * Reads the top-1 all-time champion genomes across all training runs in SQLite.
+ */
+export function getAllTrainingsChampions(): { genome: string; generation: number }[] {
+  try {
+    const rows = db.prepare(`
+      SELECT t1.genome, t1.generation
+      FROM trainer_genomes t1
+      INNER JOIN (
+        SELECT run_id, MAX(fitness) as max_fit
+        FROM trainer_genomes
+        GROUP BY run_id
+      ) t2 ON t1.run_id = t2.run_id AND t1.fitness = t2.max_fit
+    `).all();
+    return rows as any[];
+  } catch (err) {
+    console.error('[SQLite] Error reading all training champions:', err);
+    return [];
+  }
+}
+
+/**
  * Lists all unique training session run_ids, along with their maximum generation and maximum fitness achieved.
  */
 export function getTrainerRuns(): { run_id: string; max_gen: number; max_fit: number; last_updated: number }[] {
