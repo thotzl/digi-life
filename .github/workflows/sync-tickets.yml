@@ -1,0 +1,29 @@
+name: Digi-Life Ticket Synchronization (GitOps)
+
+on:
+  push:
+    branches:
+      - master
+      - main # Synchronisiert NUR bei direktem Push oder Merge auf master/main
+  workflow_dispatch: # Erlaubt das manuelle Ausführen im GitHub UI
+
+jobs:
+  sync_tickets:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write      # Zwingend erforderlich für das automatische Erstellen/Schließen von Issues
+      contents: read     # Erforderlich für den Checkout des Repositories
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Ticket Synchronization Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node .github/scripts/sync_github.js
