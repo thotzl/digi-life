@@ -15,7 +15,6 @@ const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnReset = document.getElementById("btn-reset-train") as HTMLButtonElement;
 const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
 const btnCopyDna = document.getElementById("btn-copy-dna") as HTMLButtonElement;
-const btnWasd = document.getElementById("btn-wasd-control") as HTMLButtonElement;
 
 // Diagnostics Sidebar Elements
 const diagCanvas = document.getElementById("diagnostics-preview-canvas") as HTMLCanvasElement;
@@ -60,7 +59,6 @@ const totalTrials = 3; // 3 runs per generation
 let currentGeneration = 1;
 let highestFitness = 0.0;
 let epochTicks = 0;
-let wasdOverride = false;
 let runId = "default_run";
 
 interface Sandbox {
@@ -82,7 +80,6 @@ interface Sandbox {
 
 let sandboxes: Sandbox[] = [];
 let selectedSandboxIdx = 0;
-const keys: { [key: string]: boolean } = {};
 
 // Expose state closures to window for live DevTools debugging
 (window as any).getIsRunning = () => isRunning;
@@ -561,18 +558,8 @@ function stepPhysics(sb: Sandbox) {
   const brainRes = executeBrain(sb.agent.phenotype.brain, inputs, sb.agent.neuronStates, sb.agent.neuronActivations);
   const outputs = brainRes.outputs;
 
-  let outThrust = outputs[0];
-  let outLeft = outputs[1]; // maps to Bending Left/Right
-
-  // 3. User Keyboard steering override
-  if (wasdOverride && sb.id === (selectedSandboxIdx + 1)) {
-    outThrust = 0;
-    outLeft = 0;
-    if (keys['KeyW'] || keys['ArrowUp']) outThrust += 1.0;
-    if (keys['KeyS'] || keys['ArrowDown']) outThrust -= 1.0;
-    if (keys['KeyA'] || keys['ArrowLeft']) outLeft += 1.0;
-    if (keys['KeyD'] || keys['ArrowRight']) outLeft -= 1.0;
-  }
+  const outThrust = outputs[0];
+  const outLeft = outputs[1]; // maps to Bending Left/Right
 
   // 4. Locomotion Kinematics
   const stiffness = sb.agent.phenotype.stiffness;
@@ -1158,19 +1145,6 @@ btnCopyDna.addEventListener("click", () => {
   if (!txtDna.value) return;
   navigator.clipboard.writeText(txtDna.value);
   applyServerChampion(txtDna.value);
-});
-
-btnWasd.addEventListener("click", () => {
-  wasdOverride = !wasdOverride;
-  btnWasd.innerText = wasdOverride ? "Disable WASD Override" : "Enable WASD Override";
-});
-
-// Steer key hooks
-window.addEventListener("keydown", (e) => {
-  keys[e.code] = true;
-});
-window.addEventListener("keyup", (e) => {
-  keys[e.code] = false;
 });
 
 // Real-time slider update hooks
