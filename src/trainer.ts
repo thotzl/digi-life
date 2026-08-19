@@ -1067,58 +1067,129 @@ btnReset.addEventListener("click", async () => {
   }
 });
 
-const selectTraining = document.getElementById("select-training") as HTMLSelectElement;
+const trainingListContainer = document.getElementById("training-list-container") as HTMLDivElement;
 const txtNewTraining = document.getElementById("txt-new-training") as HTMLInputElement;
 const btnCreateTraining = document.getElementById("btn-create-training") as HTMLButtonElement;
-const btnDeleteTraining = document.getElementById("btn-delete-training") as HTMLButtonElement;
 
 async function populateRunSelector() {
   const runs = await fetchServerRuns();
-  selectTraining.innerHTML = "";
+  if (trainingListContainer) {
+    trainingListContainer.innerHTML = "";
+  }
   
   let defaultExists = false;
   let activeExistsInDb = false;
+
+  const listItems: { id: string; label: string; isNew?: boolean }[] = [];
 
   runs.forEach(run => {
     if (run.run_id === "default_run") defaultExists = true;
     if (run.run_id === runId) activeExistsInDb = true;
 
-    const opt = document.createElement("option");
-    opt.value = run.run_id;
-    opt.innerText = `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(0)})`;
-    if (run.run_id === runId) opt.selected = true;
-    selectTraining.appendChild(opt);
+    listItems.push({
+      id: run.run_id,
+      label: `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(0)})`
+    });
   });
 
-  // If the active training session is brand new (doesn't have database records yet),
-  // manually append it as an option so the selection isn't wiped out!
   if (!activeExistsInDb && runId !== "default_run") {
-    const opt = document.createElement("option");
-    opt.value = runId;
-    opt.innerText = `${runId} (New)`;
-    opt.selected = true;
-    selectTraining.appendChild(opt);
+    listItems.push({
+      id: runId,
+      label: `${runId} (New)`,
+      isNew: true
+    });
   }
 
   if (!defaultExists) {
-    const opt = document.createElement("option");
-    opt.value = "default_run";
-    opt.innerText = "default_run (New)";
-    if (runId === "default_run") opt.selected = true;
-    selectTraining.insertBefore(opt, selectTraining.firstChild);
+    listItems.unshift({
+      id: "default_run",
+      label: "default_run (New)"
+    });
   }
-}
 
-selectTraining.addEventListener("change", () => {
-  runId = selectTraining.value;
-  isRunning = false;
-  btnStart.innerText = "Start Training";
-  btnStart.classList.add("btn-primary");
-  btnStart.classList.remove("btn-danger");
-  epochTicks = 0;
-  statTimer.innerText = "5.0s";
-  rebuildSandboxGrid();
-});
+  // Render each item as a clickable div with a delete button
+  listItems.forEach(item => {
+    const row = document.createElement("div");
+    row.className = `training-item ${item.id === runId ? "active" : ""}`;
+    
+    // Label span (selects session on click)
+    const labelSpan = document.createElement("span");
+    labelSpan.innerText = item.label;
+    labelSpan.style.flex = "1";
+    labelSpan.style.overflow = "hidden";
+    labelSpan.style.textOverflow = "ellipsis";
+    labelSpan.style.whiteSpace = "nowrap";
+    labelSpan.addEventListener("click", () => {
+      if (item.id === runId) return;
+      runId = item.id;
+      isRunning = false;
+      btnStart.innerText = "Start Training";
+      btnStart.classList.add("btn-primary");
+      btnStart.classList.remove("btn-danger");
+      epochTicks = 0;
+      currentTrial = 1;
+      statTimer.innerText = "5.0s";
+      rebuildSandboxGrid().then(() => {
+        populateRunSelector();
+      });
+    });
+    row.appendChild(labelSpan);
+
+    // Delete "✕" button (only show for sessions other than default_run)
+    if (item.id !== "default_run") {
+      const deleteSpan = document.createElement("span");
+      deleteSpan.className = "training-delete-btn";
+      deleteSpan.innerText = "✕";
+      deleteSpan.title = "Delete this training session permanently";
+      deleteSpan.addEventListener("click", async (e) => {
+        e.stopPropagation(); // prevent selecting the row!
+        const confirmDelete = confirm(`Are you sure you want to permanently DELETE the training session '${item.id}'? This will completely wipe all its generation records and cannot be undone!`);
+        if (confirmDelete) {
+          const wasActive = item.id === runId;
+          
+          if (wasActive) {
+            isRunning = false;
+            btnStart.innerText = "Start Training";
+            btnStart.classList.add("btn-primary");
+            btnStart.classList.remove("btn-danger");
+            currentGeneration = 1;
+            highestFitness = 0.0;
+            epochTicks = 0;
+            currentTrial = 1;
+            statGen.innerText = "1";
+            statBestFit.innerText = "0.0";
+            statAvgFit.innerText = "0.0";
+            statTimer.innerText = "5.0s";
+            txtDna.value = "";
+          }
+
+          // SQLite delete call via our reset API
+          try {
+            await fetch(`${BACKEND_BASE}/api/trainer/reset`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ runId: item.id })
+            });
+          } catch (err) {
+            console.error("[Trainer API] Error deleting training:", err);
+          }
+
+          if (wasActive) {
+            runId = "default_run";
+          }
+
+          await rebuildSandboxGrid();
+          await populateRunSelector();
+        }
+      });
+      row.appendChild(deleteSpan);
+    }
+
+    if (trainingListContainer) {
+      trainingListContainer.appendChild(row);
+    }
+  });
+}
 
 btnCreateTraining.addEventListener("click", () => {
   const name = txtNewTraining.value.trim().replace(/[^a-zA-Z0-9_]/g, "");
@@ -1140,40 +1211,6 @@ btnCreateTraining.addEventListener("click", () => {
   rebuildSandboxGrid().then(() => {
     populateRunSelector();
   });
-});
-
-btnDeleteTraining.addEventListener("click", async () => {
-  if (runId === "default_run") {
-    alert("You cannot delete the default training session 'default_run'!");
-    return;
-  }
-  
-  const confirmDelete = confirm(`Are you sure you want to permanently DELETE the training session '${runId}'? This will completely wipe all its generation records and cannot be undone!`);
-  if (confirmDelete) {
-    isRunning = false;
-    btnStart.innerText = "Start Training";
-    btnStart.classList.add("btn-primary");
-    btnStart.classList.remove("btn-danger");
-    
-    currentGeneration = 1;
-    highestFitness = 0.0;
-    epochTicks = 0;
-    currentTrial = 1;
-    statGen.innerText = "1";
-    statBestFit.innerText = "0.0";
-    statAvgFit.innerText = "0.0";
-    statTimer.innerText = "5.0s";
-    txtDna.value = "";
-    
-    // Clear SQLite records
-    await resetServerTrainer();
-    
-    // Revert to default_run session
-    runId = "default_run";
-    
-    await rebuildSandboxGrid();
-    await populateRunSelector();
-  }
 });
 
 btnCopyDna.addEventListener("click", () => {

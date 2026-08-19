@@ -27,6 +27,52 @@
         border-radius: 8px;
         box-sizing: border-box;
       }
+      .training-list {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(0, 242, 254, 0.15);
+        border-radius: 4px;
+        max-height: 130px;
+        overflow-y: auto;
+        padding: 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        box-sizing: border-box;
+      }
+      .training-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 4px 8px;
+        border-radius: 3px;
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+        border: 1px solid transparent;
+        color: var(--text-muted);
+      }
+      .training-item:hover {
+        background: rgba(255, 255, 255, 0.03);
+        color: #fff;
+      }
+      .training-item.active {
+        background: rgba(0, 242, 254, 0.08);
+        border-color: rgba(0, 242, 254, 0.3);
+        color: var(--primary-cyan);
+        font-weight: bold;
+      }
+      .training-delete-btn {
+        color: rgba(239, 68, 68, 0.6);
+        font-weight: bold;
+        cursor: pointer;
+        padding: 0 4px;
+        transition: color 0.15s;
+        font-size: 0.72rem;
+      }
+      .training-delete-btn:hover {
+        color: rgb(239, 68, 68);
+      }
       .sandbox-card {
         background: rgba(30, 41, 59, 0.4);
         border: 1px solid rgba(148, 163, 184, 0.1);
@@ -129,15 +175,14 @@
 
         <!-- Session Selector (Trained Sessions) -->
         <div class="panel-section" style="margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
-          <label style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Active Training Session</label>
-          <select id="select-training" class="dna-box" style="height: 30px; margin-bottom: 8px; background: rgba(15, 23, 42, 0.85); color: var(--primary-cyan); padding: 2px 6px; font-weight: bold; border-color: rgba(0, 242, 254, 0.3);"></select>
-          <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-            <input type="text" id="txt-new-training" placeholder="New Training Name..." class="dna-box" style="height: 30px; margin-bottom: 0; padding: 2px 6px;" />
-            <button id="btn-create-training" class="btn btn-primary" style="font-size: 0.65rem; padding: 5px 8px; height: 30px;">Create Training</button>
+          <label style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 4px;">Active Training Sessions</label>
+          <div class="training-list" id="training-list-container" style="margin-bottom: 8px;">
+            <!-- Populated dynamically via trainer.ts -->
           </div>
-          <button id="btn-delete-training" class="btn btn-danger" style="width: 100%; font-size: 0.65rem; padding: 5px;">
-            Delete Current Training
-          </button>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" id="txt-new-training" placeholder="New Training Name..." class="dna-box" style="height: 30px; margin-bottom: 0; padding: 2px 6px;" />
+            <button id="btn-create-training" class="btn btn-primary" style="font-size: 0.65rem; padding: 5px 8px; height: 30px;">Create</button>
+          </div>
         </div>
 
         <!-- Real-Time Metrics -->
