@@ -6,6 +6,13 @@ import { parseGenome, generateRandomGenome, getComplementaryString, executeBrain
 import { CreatureAgent, FoodSpore, SpeciesRecord } from "../shared/types";
 
 import { readDb, writeDb, readState, writeState, clearState } from "./db";
+import { generateWorld, getVectoredCurrentAt, getBiomeAt, checkObstacleCollision } from "../shared/mapGenerator";
+
+// Read central configuration
+const CONFIG_PATH = path.resolve("./config.json");
+const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+const bmrMultiplier = config.basalMetabolicRateMultiplier || 1.0;
+const world = generateWorld(config.seed || "ALIFE_BASIN_77A");
 
 // --------------------------------------------------------------------------
 // Headless Simulation State
@@ -94,7 +101,8 @@ function initSimulation() {
     highestGeneration = 1;
 
     // Spores layout (proportionally upscaled to support 10x larger field!)
-    for (let i = 0; i < 300; i++) {
+    const sporeCount = config.foodSporeCount || 300;
+    for (let i = 0; i < sporeCount; i++) {
       foodPellets.push({
         x: Math.random() * logicalWidth,
         y: Math.random() * logicalHeight,
@@ -204,18 +212,33 @@ let tickCount = 0;
 function simulationTick() {
   tickCount++;
 
-  // A. Move and drift food spores
+  // A. Move and drift food spores (Toroidal boundary wrap & Vector current fields)
   foodPellets.forEach(pellet => {
-    pellet.x += pellet.vx;
-    pellet.y += pellet.vy;
+    const current = getVectoredCurrentAt(world, pellet.x, pellet.y);
+    pellet.vx += current.vx * frameScale;
+    pellet.vy += current.vy * frameScale;
 
-    // Soft elastic boundary bouncing
-    const pMargin = 6;
-    if (pellet.x < pMargin) { pellet.x = pMargin; pellet.vx = -pellet.vx; }
-    else if (pellet.x > logicalWidth - pMargin) { pellet.x = logicalWidth - pMargin; pellet.vx = -pellet.vx; }
+    // Fluid friction drag on spores
+    pellet.vx *= 0.95;
+    pellet.vy *= 0.95;
 
-    if (pellet.y < pMargin) { pellet.y = pMargin; pellet.vy = -pellet.vy; }
-    else if (pellet.y > logicalHeight - pMargin) { pellet.y = logicalHeight - pMargin; pellet.vy = -pellet.vy; }
+    pellet.x += pellet.vx * frameScale;
+    pellet.y += pellet.vy * frameScale;
+
+    // Toroidal wraparound coordinates
+    pellet.x = (pellet.x + logicalWidth) % logicalWidth;
+    pellet.y = (pellet.y + logicalHeight) % logicalHeight;
+
+    // Collide with solid circular obstacles deterministically
+    const collision = checkObstacleCollision(world, pellet.x, pellet.y, 8);
+    if (collision.collided) {
+      pellet.x += collision.normalX * collision.overlap;
+      pellet.y += collision.normalY * collision.overlap;
+      
+      const dot = pellet.vx * collision.normalX + pellet.vy * collision.normalY;
+      pellet.vx = (pellet.vx - 2.0 * dot * collision.normalX) * 0.5;
+      pellet.vy = (pellet.vy - 2.0 * dot * collision.normalY) * 0.5;
+    }
   });
 
   // Decay bite impacts
@@ -252,7 +275,7 @@ function simulationTick() {
 
     // 3. Adrenaline sprint tax
     const metabolicSurcharge = 1.0 + (agent.adrenaline - 1.0) * 1.5;
-    agent.energy -= agent.phenotype.basalMetabolicRate * 0.005 * metabolicSurcharge;
+    agent.energy -= agent.phenotype.basalMetabolicRate * 0.005 * metabolicSurcharge * bmrMultiplier;
 
     // Starvation / Senescence death
     if (agent.energy <= 0 || agent.age >= 2700) {
@@ -394,16 +417,35 @@ function simulationTick() {
     agent.vy *= 0.94;
     agent.omegaRot *= 0.88;
 
+    // Apply thermal vent vector currents to velocity
+    const current = getVectoredCurrentAt(world, agent.px, agent.py);
+    agent.vx += current.vx * frameScale;
+    agent.vy += current.vy * frameScale;
+
     agent.px += agent.vx * frameScale;
     agent.py += agent.vy * frameScale;
 
-    // Elastic margin boundaries rebounding
-    const margin = (meanRadius * 1.5) * 0.5 + 10;
-    if (agent.px < margin) { agent.px = margin; agent.vx = -agent.vx * 0.45; agent.omegaRot = -agent.omegaRot * 0.5; }
-    else if (agent.px > logicalWidth - margin) { agent.px = logicalWidth - margin; agent.vx = -agent.vx * 0.45; agent.omegaRot = -agent.omegaRot * 0.5; }
+    // Toroidal boundary wraparound
+    agent.px = (agent.px + logicalWidth) % logicalWidth;
+    agent.py = (agent.py + logicalHeight) % logicalHeight;
 
-    if (agent.py < margin) { agent.py = margin; agent.vy = -agent.vy * 0.45; agent.omegaRot = -agent.omegaRot * 0.5; }
-    else if (agent.py > logicalHeight - margin) { agent.py = logicalHeight - margin; agent.vy = -agent.vy * 0.45; agent.omegaRot = -agent.omegaRot * 0.5; }
+    // Collide with solid circular obstacles deterministically
+    const collision = checkObstacleCollision(world, agent.px, agent.py, meanRadius);
+    if (collision.collided) {
+      agent.px += collision.normalX * collision.overlap;
+      agent.py += collision.normalY * collision.overlap;
+
+      const dot = agent.vx * collision.normalX + agent.vy * collision.normalY;
+      agent.vx = (agent.vx - 2.0 * dot * collision.normalX) * 0.45;
+      agent.vy = (agent.vy - 2.0 * dot * collision.normalY) * 0.45;
+      agent.omegaRot = -agent.omegaRot * 0.5;
+    }
+
+    // Apply Biome-based Hazard damage and metabolic tax
+    const currentBiome = getBiomeAt(world, agent.px, agent.py);
+    if (currentBiome && currentBiome.hazardDamage > 0) {
+      agent.energy = Math.max(0.0, agent.energy - currentBiome.hazardDamage * bmrMultiplier * frameScale);
+    }
 
     // 5. Unified Spore Grazing and Combat Biting collisions!
     // A. Graze Spores
@@ -927,6 +969,7 @@ wss.on("connection", (ws) => {
   // Send initial setup
   sendToClient(ws, {
     type: "INIT_STATE",
+    seed: config.seed || "ALIFE_BASIN_77A",
     creatures: creatures.map(c => ({
       id: c.id,
       speciesId: c.speciesId,
@@ -1056,6 +1099,7 @@ wss.on("connection", (ws) => {
         // Broadcast fresh, wiped INIT_STATE to all clients to clear and overwrite browser views!
         broadcast({
           type: "INIT_STATE",
+          seed: config.seed || "ALIFE_BASIN_77A",
           creatures: creatures.map(c => ({
             id: c.id,
             speciesId: c.speciesId,

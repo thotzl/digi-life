@@ -1,0 +1,7 @@
+{
+  "seed": "ALIFE_BASIN_77A",
+  "targetPopulation": 25,
+  "basalMetabolicRateMultiplier": 1.0,
+  "maxCreatures": 45,
+  "foodSporeCount": 300
+}
