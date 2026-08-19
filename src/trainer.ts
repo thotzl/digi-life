@@ -1070,6 +1070,7 @@ btnReset.addEventListener("click", async () => {
 const selectTraining = document.getElementById("select-training") as HTMLSelectElement;
 const txtNewTraining = document.getElementById("txt-new-training") as HTMLInputElement;
 const btnCreateTraining = document.getElementById("btn-create-training") as HTMLButtonElement;
+const btnDeleteTraining = document.getElementById("btn-delete-training") as HTMLButtonElement;
 
 async function populateRunSelector() {
   const runs = await fetchServerRuns();
@@ -1139,6 +1140,40 @@ btnCreateTraining.addEventListener("click", () => {
   rebuildSandboxGrid().then(() => {
     populateRunSelector();
   });
+});
+
+btnDeleteTraining.addEventListener("click", async () => {
+  if (runId === "default_run") {
+    alert("You cannot delete the default training session 'default_run'!");
+    return;
+  }
+  
+  const confirmDelete = confirm(`Are you sure you want to permanently DELETE the training session '${runId}'? This will completely wipe all its generation records and cannot be undone!`);
+  if (confirmDelete) {
+    isRunning = false;
+    btnStart.innerText = "Start Training";
+    btnStart.classList.add("btn-primary");
+    btnStart.classList.remove("btn-danger");
+    
+    currentGeneration = 1;
+    highestFitness = 0.0;
+    epochTicks = 0;
+    currentTrial = 1;
+    statGen.innerText = "1";
+    statBestFit.innerText = "0.0";
+    statAvgFit.innerText = "0.0";
+    statTimer.innerText = "5.0s";
+    txtDna.value = "";
+    
+    // Clear SQLite records
+    await resetServerTrainer();
+    
+    // Revert to default_run session
+    runId = "default_run";
+    
+    await rebuildSandboxGrid();
+    await populateRunSelector();
+  }
 });
 
 btnCopyDna.addEventListener("click", () => {
