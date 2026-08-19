@@ -184,6 +184,7 @@ function draw() {
 
   // 3. Draw Thermal Vents (Circular dotted centers)
   for (const vent of world.vents) {
+    if (vent.strength === 0) continue;
     ctx.beginPath();
     ctx.arc(vent.x, vent.y, vent.radius, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(14, 165, 233, 0.2)';

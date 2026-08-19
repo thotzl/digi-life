@@ -7,12 +7,14 @@ import { CreatureAgent, FoodSpore, SpeciesRecord } from "../shared/types";
 
 import { readDb, writeDb, readState, writeState, clearState } from "./db";
 import { generateWorld, getVectoredCurrentAt, getBiomeAt, checkObstacleCollision } from "../shared/mapGenerator";
+import { SpatialGrid } from "./spatialGrid";
 
 // Read central configuration
 const CONFIG_PATH = path.resolve("./config.json");
 const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+const rules = config.rules || {};
 const bmrMultiplier = config.basalMetabolicRateMultiplier || 1.0;
-const world = generateWorld(config.seed || "ALIFE_BASIN_77A");
+const world = generateWorld(config.seed || "ALIFE_BASIN_77A", 19200, 10800, config.rules);
 
 // --------------------------------------------------------------------------
 // Headless Simulation State
@@ -260,7 +262,7 @@ let tickCount = 0;
 function simulationTick() {
   tickCount++;
 
-  // A. Move and drift food spores (Toroidal boundary wrap & Vector current fields)
+  // A. Move and drift food spores (Hard boundaries & Vector current fields)
   foodPellets.forEach(pellet => {
     const current = getVectoredCurrentAt(world, pellet.x, pellet.y);
     pellet.vx += current.vx * frameScale;
@@ -273,9 +275,23 @@ function simulationTick() {
     pellet.x += pellet.vx * frameScale;
     pellet.y += pellet.vy * frameScale;
 
-    // Toroidal wraparound coordinates
-    pellet.x = (pellet.x + logicalWidth) % logicalWidth;
-    pellet.y = (pellet.y + logicalHeight) % logicalHeight;
+    // Collide with hard boundaries (elastic bounce)
+    const pelletRadius = 8;
+    const pelletRestitution = 0.5;
+    if (pellet.x < pelletRadius) {
+      pellet.x = pelletRadius;
+      pellet.vx = -Math.abs(pellet.vx) * pelletRestitution;
+    } else if (pellet.x > logicalWidth - pelletRadius) {
+      pellet.x = logicalWidth - pelletRadius;
+      pellet.vx = -Math.abs(pellet.vx) * pelletRestitution;
+    }
+    if (pellet.y < pelletRadius) {
+      pellet.y = pelletRadius;
+      pellet.vy = -Math.abs(pellet.vy) * pelletRestitution;
+    } else if (pellet.y > logicalHeight - pelletRadius) {
+      pellet.y = logicalHeight - pelletRadius;
+      pellet.vy = -Math.abs(pellet.vy) * pelletRestitution;
+    }
 
     // Collide with solid circular obstacles deterministically
     const collision = checkObstacleCollision(world, pellet.x, pellet.y, 8);
@@ -298,9 +314,11 @@ function simulationTick() {
       const biome = getBiomeAt(world, parentSpore.x, parentSpore.y);
       if (biome && biome.sporeSpawnRate >= 1.0) {
         if (Math.random() < 0.04) {
+          const spawnX = parentSpore.x + (Math.random() * 120 - 60);
+          const spawnY = parentSpore.y + (Math.random() * 120 - 60);
           foodPellets.push({
-            x: (parentSpore.x + (Math.random() * 120 - 60) + logicalWidth) % logicalWidth,
-            y: (parentSpore.y + (Math.random() * 120 - 60) + logicalHeight) % logicalHeight,
+            x: Math.max(8, Math.min(logicalWidth - 8, spawnX)),
+            y: Math.max(8, Math.min(logicalHeight - 8, spawnY)),
             vx: (Math.random() * 0.2 - 0.1),
             vy: (Math.random() * 0.2 - 0.1)
           });
@@ -308,6 +326,11 @@ function simulationTick() {
       }
     }
   }
+
+  // Populate SpatialGrid at the start of the frame (before creature loop)
+  const grid = new SpatialGrid();
+  foodPellets.forEach(pellet => grid.insertFood(pellet));
+  creatures.forEach(agent => grid.insertCreature(agent));
 
   // Decay bite impacts
   biteImpacts = biteImpacts.map(impact => ({ ...impact, age: impact.age + 1 })).filter(impact => impact.age < 12);
@@ -325,10 +348,10 @@ function simulationTick() {
 
     // 1. Photosynthesis for green creatures in light zone
     const hue = agent.phenotype.primaryColor.h;
-    const isGreenPrey = (agent.phenotype.carnivory < 0.35) && (hue >= 75 && hue <= 175);
+    const isGreenPrey = (agent.phenotype.carnivory < (rules.bitingCarnivoryThreshold || 0.35)) && (hue >= 75 && hue <= 175);
     const inLightZone = agent.py < logicalHeight * 0.35;
     if (isGreenPrey && inLightZone) {
-      agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + 0.15);
+      agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + (rules.photosynthesisEnergyGain || 0.15));
     }
 
     // 2. Spatial Temperature Stratification and Thermal Limits stress penalty
@@ -338,21 +361,24 @@ function simulationTick() {
     const thermalStress = localTemp < tempMin ? (tempMin - localTemp) : (localTemp > tempMax ? (localTemp - tempMax) : 0.0);
     
     if (thermalStress > 0.1) {
-      agent.energy -= thermalStress * 0.0012 * frameScale;
+      agent.energy -= thermalStress * (rules.thermalStressPenaltyScale || 0.0012) * frameScale;
     }
 
     // 3. Adrenaline sprint tax
-    const metabolicSurcharge = 1.0 + (agent.adrenaline - 1.0) * 1.5;
-    agent.energy -= agent.phenotype.basalMetabolicRate * 0.005 * metabolicSurcharge * bmrMultiplier;
+    const metabolicSurcharge = 1.0 + (agent.adrenaline - 1.0) * (rules.adrenalineMetabolicSurchargeScale || 1.5);
+    agent.energy -= agent.phenotype.basalMetabolicRate * (rules.bmrBaseScale || 0.005) * metabolicSurcharge * bmrMultiplier;
 
     // Starvation / Senescence death
-    if (agent.energy <= 0 || agent.age >= 2700) {
+    if (agent.energy <= 0 || agent.age >= (rules.creatureMaxAgeTicks || 2700)) {
       deadAgentIds.push(agent.id);
 
       // Decompose corpse into food pellets
       const L_dead = agent.phenotype.spinalHarmonics.baseLength;
       const r_dead = agent.phenotype.spinalHarmonics.meanRadius;
-      const numPellets = Math.max(1, Math.min(5, Math.floor((L_dead * r_dead) / 1200)));
+      const numPellets = Math.max(
+        rules.decompositionSporeMin || 1,
+        Math.min(rules.decompositionSporeMax || 5, Math.floor((L_dead * r_dead) / (rules.decompositionSizeRatio || 1200)))
+      );
 
       for (let p = 0; p < numPellets; p++) {
         const pIdx = Math.floor(Math.random() * foodPellets.length);
@@ -378,7 +404,7 @@ function simulationTick() {
     const stiffness = agent.phenotype.stiffness;
     const pulse = agent.phenotype.pulseSpeed;
 
-    let thrustMag = stiffness * (pulse * 1000 * pulse * 1000) * 6.0;
+    let thrustMag = stiffness * (pulse * 1000 * pulse * 1000) * (rules.thrustBaseMultiplier || 6.0);
     const wavePhase = agent.phenotype.wavePhase;
     const etaSwim = Math.max(0.1, Math.min(3.2, (baseLength / (meanRadius * 3.5)) * Math.max(0.01, Math.sin(wavePhase)) * stiffness));
     thrustMag *= etaSwim;
@@ -389,7 +415,7 @@ function simulationTick() {
 
     // Collect Senses
     const clockVal = 0.5 + 0.5 * Math.sin(Date.now() * 0.0012 + agent.id);
-    const inputs = computeHeadlessSensoryInputs(agent, clockVal);
+    const inputs = computeHeadlessSensoryInputs(agent, clockVal, grid);
 
     const brainRes = executeBrain(agent.phenotype.brain, inputs, agent.neuronStates, agent.neuronActivations);
     const outputs = brainRes.outputs;
@@ -400,7 +426,7 @@ function simulationTick() {
     const outFlash = outputs[3];
 
     if (outFlash > 0.5) {
-      agent.energy -= 0.05 * outFlash;
+      agent.energy -= (rules.bioluminescenceFlashCost || 0.05) * outFlash;
       broadcast({
         type: "FLASH_EVENT",
         agentId: agent.id,
@@ -420,9 +446,9 @@ function simulationTick() {
     });
 
     if (threatPerception > 0.1) {
-      agent.adrenaline = Math.min(1.8, agent.adrenaline + 0.06 * threatPerception);
+      agent.adrenaline = Math.min(rules.adrenalineMaxMultiplier || 1.8, agent.adrenaline + (rules.adrenalineIncreaseRate || 0.06) * threatPerception);
     } else {
-      agent.adrenaline = Math.max(1.0, agent.adrenaline - 0.015);
+      agent.adrenaline = Math.max(1.0, agent.adrenaline - (rules.adrenalineDecayRate || 0.015));
     }
 
     let fx = 0;
@@ -430,15 +456,15 @@ function simulationTick() {
     let torque = 0;
 
     if (outThrust > 0.0) {
-      const predatorSavageMultiplier = agent.phenotype.carnivory >= 0.55 ? 1.45 : 1.0;
+      const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
       fx += outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline * Math.cos(agent.headingAngle);
       fy += outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline * Math.sin(agent.headingAngle);
     }
-    torque = (outRight - outLeft) * stiffness * 5.8 * agent.adrenaline;
+    torque = (outRight - outLeft) * stiffness * (rules.steerTorqueBaseMultiplier || 5.8) * agent.adrenaline;
 
     // Hebbian Recurrent Synaptic Learning
-    const learningRate = 0.00015 * (1.0 - stiffness * 0.85);
-    const forgettingDecay = 0.0000032; // exactly 1 hour half-life
+    const learningRate = (rules.hebbianLearningRateBase || 0.00015) * (1.0 - stiffness * (rules.hebbianLearningStiffnessDecay || 0.85));
+    const forgettingDecay = rules.hebbianForgettingDecay || 0.0000032; // exactly 1 hour half-life
     const b = agent.phenotype.brain;
 
     b.synapses.forEach((syn: any) => {
@@ -465,9 +491,9 @@ function simulationTick() {
     const vForward = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
     const vLateral = -agent.vx * Math.sin(agent.headingAngle) + agent.vy * Math.cos(agent.headingAngle);
 
-    const receptorBallast = agent.phenotype.organelles.length * 0.18;
-    const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
-    const dragLateral = baseLength * 0.045 + receptorBallast;
+    const receptorBallast = agent.phenotype.organelles.length * (rules.receptorBallastScale || 0.18);
+    const dragForward = (meanRadius * (rules.dragForwardCoefficient || 0.015) + receptorBallast) * (1.0 - stiffness * (rules.dragForwardStiffnessDecay || 0.3));
+    const dragLateral = baseLength * (rules.dragLateralCoefficient || 0.045) + receptorBallast;
 
     const dragForceForward = -dragForward * vForward;
     const dragForceLateral = -dragLateral * vLateral;
@@ -493,9 +519,23 @@ function simulationTick() {
     agent.px += agent.vx * frameScale;
     agent.py += agent.vy * frameScale;
 
-    // Toroidal boundary wraparound
-    agent.px = (agent.px + logicalWidth) % logicalWidth;
-    agent.py = (agent.py + logicalHeight) % logicalHeight;
+    // Hard boundary wall collisions for creatures
+    const r = meanRadius;
+    const restitution = rules.elasticWallRestitution !== undefined ? rules.elasticWallRestitution : 0.5;
+    if (agent.px < r) {
+      agent.px = r;
+      agent.vx = -Math.abs(agent.vx) * restitution;
+    } else if (agent.px > logicalWidth - r) {
+      agent.px = logicalWidth - r;
+      agent.vx = -Math.abs(agent.vx) * restitution;
+    }
+    if (agent.py < r) {
+      agent.py = r;
+      agent.vy = -Math.abs(agent.vy) * restitution;
+    } else if (agent.py > logicalHeight - r) {
+      agent.py = logicalHeight - r;
+      agent.vy = -Math.abs(agent.vy) * restitution;
+    }
 
     // Collide with solid circular obstacles deterministically
     const collision = checkObstacleCollision(world, agent.px, agent.py, meanRadius);
@@ -512,19 +552,16 @@ function simulationTick() {
     // Apply Biome-based Hazard damage and metabolic tax
     const currentBiome = getBiomeAt(world, agent.px, agent.py);
     if (currentBiome && currentBiome.hazardDamage > 0) {
-      agent.energy = Math.max(0.0, agent.energy - currentBiome.hazardDamage * bmrMultiplier * frameScale);
+      agent.energy = Math.max(0.0, agent.energy - currentBiome.hazardDamage * bmrMultiplier * (rules.biomeHazardDamageScale || 1.0) * frameScale);
     }
 
     // 5. Unified Spore Grazing and Combat Biting collisions!
-    // A. Graze Spores
-    const eatRadius = meanRadius * 1.5 * 0.5 + 4;
-    foodPellets.forEach(pellet => {
-      let dx = pellet.x - agent.px;
-      let dy = pellet.y - agent.py;
-      if (dx > logicalWidth / 2) dx -= logicalWidth;
-      if (dx < -logicalWidth / 2) dx += logicalWidth;
-      if (dy > logicalHeight / 2) dy -= logicalHeight;
-      if (dy < -logicalHeight / 2) dy += logicalHeight;
+    // A. Graze Spores (optimized via SpatialGrid)
+    const eatRadius = meanRadius * (rules.grazingRadiusMultiplier || 1.5) * 0.5 + (rules.grazingRadiusOffset || 4.0);
+    const nearbyFood = grid.getNearbyFood(agent.px, agent.py, eatRadius);
+    nearbyFood.forEach(pellet => {
+      const dx = pellet.x - agent.px;
+      const dy = pellet.y - agent.py;
 
       const d = Math.sqrt(dx*dx + dy*dy);
       if (d <= eatRadius) {
@@ -535,7 +572,7 @@ function simulationTick() {
 
         const herbivoreEfficiency = 1.0 - agent.phenotype.carnivory;
         if (herbivoreEfficiency > 0.05) {
-          const energyGain = baseEnergy * herbivoreEfficiency * 1.25;
+          const energyGain = baseEnergy * herbivoreEfficiency * (rules.grazingEfficiencyHerbivoreScale || 1.25);
           agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + energyGain);
           agent.hasEaten = true;
 
@@ -550,26 +587,23 @@ function simulationTick() {
       }
     });
 
-    // B. Fight Biting
-    if (agent.phenotype.carnivory >= 0.35) {
-      const biteRange = meanRadius * 1.6 * 0.5 + 5.0;
-      creatures.forEach(victim => {
+    // B. Fight Biting (optimized via SpatialGrid)
+    if (agent.phenotype.carnivory >= (rules.bitingCarnivoryThreshold || 0.35)) {
+      const biteRange = meanRadius * (rules.bitingRadiusMultiplier || 1.6) * 0.5 + (rules.bitingRadiusOffset || 5.0);
+      const nearbyPeers = grid.getNearbyCreatures(agent.px, agent.py, biteRange);
+      nearbyPeers.forEach(victim => {
         if (victim.id === agent.id) return;
         if (victim.speciesId === agent.speciesId) return;
 
-        let dx = victim.px - agent.px;
-        let dy = victim.py - agent.py;
-        if (dx > logicalWidth / 2) dx -= logicalWidth;
-        if (dx < -logicalWidth / 2) dx += logicalWidth;
-        if (dy > logicalHeight / 2) dy -= logicalHeight;
-        if (dy < -logicalHeight / 2) dy += logicalHeight;
+        const dx = victim.px - agent.px;
+        const dy = victim.py - agent.py;
 
         const dist = Math.sqrt(dx*dx + dy*dy);
         if (dist <= biteRange) {
-          victim.energy = Math.max(0.0, victim.energy - 50.0);
+          victim.energy = Math.max(0.0, victim.energy - (rules.bitingEnergyDamage || 50.0));
 
           const carnivoreEfficiency = agent.phenotype.carnivory;
-          const energyGain = 45.0 * carnivoreEfficiency * 1.25;
+          const energyGain = (rules.bitingBaseEnergyGain || 45.0) * carnivoreEfficiency * (rules.bitingEfficiencyCarnivoreScale || 1.25);
           agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + energyGain);
           agent.hasEaten = true;
 
@@ -594,19 +628,19 @@ function simulationTick() {
     }
 
     // 6. Mitosis divisions asexual cloning
-    const canReproduce = agent.age >= Math.max(600, agent.phenotype.matureAge) && agent.hasEaten;
-    const reachedReproThreshold = agent.energy >= agent.phenotype.stomachCapacity * Math.max(0.65, agent.phenotype.reproThreshold);
+    const canReproduce = agent.age >= Math.max(rules.creatureMatureAgeFloor || 600, agent.phenotype.matureAge) && agent.hasEaten;
+    const reachedReproThreshold = agent.energy >= agent.phenotype.stomachCapacity * Math.max(rules.reproductionStomachThresholdFloor || 0.65, agent.phenotype.reproThreshold);
 
-    if (canReproduce && reachedReproThreshold && creatures.length < 45) {
+    if (canReproduce && reachedReproThreshold && creatures.length < (config.maxCreatures || 45)) {
       const splitLoss = agent.phenotype.splitLoss;
       const energyPool = agent.energy;
 
-      const parentEnergyAfter = energyPool * 0.4 * (1.0 - splitLoss);
-      const childEnergyAfter = energyPool * 0.4 * (1.0 - splitLoss);
+      const parentEnergyAfter = energyPool * (rules.reproductionSplitLossRatio !== undefined ? rules.reproductionSplitLossRatio : 0.4) * (1.0 - splitLoss);
+      const childEnergyAfter = energyPool * (rules.reproductionSplitLossRatio !== undefined ? rules.reproductionSplitLossRatio : 0.4) * (1.0 - splitLoss);
       agent.energy = parentEnergyAfter;
       agent.hasEaten = false;
 
-      const recoilVelocity = splitLoss * 15.0;
+      const recoilVelocity = splitLoss * (rules.reproductionRecoilVelocityScale || 15.0);
       agent.vx += recoilVelocity * Math.cos(agent.headingAngle + Math.PI);
       agent.vy += recoilVelocity * Math.sin(agent.headingAngle + Math.PI);
 
@@ -615,12 +649,12 @@ function simulationTick() {
       let isLamarckian = false;
 
       // Lamarckian Assimilation
-      if (agent.age > 1200) {
+      if (agent.age > (rules.lamarckianAssimilationAgeFloor || 1200)) {
         let mCopy = [...agent.phenotype.methylations];
         let tempGenome = childGenome;
         const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
         for (let i = 16; i <= 31; i++) {
-          if (mCopy[i] !== 0 && Math.random() < 0.25) {
+          if (mCopy[i] !== 0 && Math.random() < (rules.lamarckianAssimilationChance || 0.25)) {
             const baseVal = ALPHABET.indexOf(tempGenome[i]);
             const shift = mCopy[i];
             const assimilatedChar = ALPHABET[(baseVal + shift + 26) % 26];
@@ -646,14 +680,16 @@ function simulationTick() {
       const childAntisense = getComplementaryString(childGenome);
       const childPhenotype = parseGenome(childGenome, childAntisense, [...agent.phenotype.methylations]);
 
+      const childPx = agent.px + Math.random() * 32 - 16;
+      const childPy = agent.py + Math.random() * 32 - 16;
       const child: CreatureAgent = {
         id: nextAgentId++,
         speciesId: childGenome,
         genome: childGenome,
         antisense: childAntisense,
         phenotype: childPhenotype,
-        px: (agent.px + Math.random() * 32 - 16 + logicalWidth) % logicalWidth,
-        py: (agent.py + Math.random() * 32 - 16 + logicalHeight) % logicalHeight,
+        px: Math.max(childPhenotype.spinalHarmonics.meanRadius, Math.min(logicalWidth - childPhenotype.spinalHarmonics.meanRadius, childPx)),
+        py: Math.max(childPhenotype.spinalHarmonics.meanRadius, Math.min(logicalHeight - childPhenotype.spinalHarmonics.meanRadius, childPy)),
         vx: -agent.vx * 0.4 + recoilVelocity * Math.cos(agent.headingAngle),
         vy: -agent.vy * 0.4 + recoilVelocity * Math.sin(agent.headingAngle),
         headingAngle: agent.headingAngle + Math.PI,
@@ -724,12 +760,12 @@ function simulationTick() {
   creatures.push(...newbornAgents);
 
   // Maintain population (restocking founder cells)
-  const targetPopulation = 25;
+  const targetPopulation = config.targetPopulation !== undefined ? config.targetPopulation : 25;
   while (creatures.length < targetPopulation) {
     let g = generateRandomGenome(256);
     let gen = 1;
 
-    if (cachedAliveSpecies.length > 0 && Math.random() < 0.60) {
+    if (cachedAliveSpecies.length > 0 && Math.random() < (rules.restockFounderGeneInheritChance !== undefined ? rules.restockFounderGeneInheritChance : 0.60)) {
       const idx = Math.floor(Math.random() * cachedAliveSpecies.length);
       const record = cachedAliveSpecies[idx];
       g = record.genome;
@@ -753,7 +789,7 @@ function simulationTick() {
       vy: (Math.random() * 0.8 - 0.4),
       headingAngle: Math.random() * Math.PI * 2,
       omegaRot: 0,
-      energy: pheno.stomachCapacity * 0.6,
+      energy: pheno.stomachCapacity * (rules.restockInitialStomachRatio !== undefined ? rules.restockInitialStomachRatio : 0.60),
       age: 0,
       generation: gen,
       adrenaline: 1.0,
@@ -792,6 +828,107 @@ function simulationTick() {
       }
     });
   }
+
+  // C. Physical Collisions Phase (After updating all positions and restocks)
+  // 1. Re-populate the spatial grid with final creature and pellet positions
+  grid.clear();
+  foodPellets.forEach(pellet => grid.insertFood(pellet));
+  creatures.forEach(agent => grid.insertCreature(agent));
+
+  // 2. Resolve Creature-to-Creature physical collisions (mass-based push-out & elastic momentum transfer)
+  for (let i = 0; i < creatures.length; i++) {
+    const agent1 = creatures[i];
+    const r1 = agent1.phenotype.spinalHarmonics.meanRadius;
+    const mass1 = Math.pow(r1, 1.5) * (agent1.phenotype.spinalHarmonics.baseLength / 25);
+
+    const nearbyPeers = grid.getNearbyCreatures(agent1.px, agent1.py, r1 * 2 + 100);
+    for (let j = 0; j < nearbyPeers.length; j++) {
+      const agent2 = nearbyPeers[j];
+      if (agent1.id === agent2.id) continue;
+
+      const r2 = agent2.phenotype.spinalHarmonics.meanRadius;
+      const mass2 = Math.pow(r2, 1.5) * (agent2.phenotype.spinalHarmonics.baseLength / 25);
+
+      const dx = agent2.px - agent1.px;
+      const dy = agent2.py - agent1.py;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const minDist = r1 + r2;
+
+      if (d < minDist && d > 0.1) {
+        const overlap = minDist - d;
+        const nx = dx / d;
+        const ny = dy / d;
+
+        // Overlap resolution proportional to inverse mass
+        const totalMass = mass1 + mass2;
+        const push1 = overlap * (mass2 / totalMass);
+        const push2 = overlap * (mass1 / totalMass);
+
+        agent1.px -= nx * push1;
+        agent1.py -= ny * push1;
+        agent2.px += nx * push2;
+        agent2.py += ny * push2;
+
+        // Clip back inside boundaries
+        if (agent1.px < r1) agent1.px = r1;
+        else if (agent1.px > logicalWidth - r1) agent1.px = logicalWidth - r1;
+        if (agent1.py < r1) agent1.py = r1;
+        else if (agent1.py > logicalHeight - r1) agent1.py = logicalHeight - r1;
+
+        if (agent2.px < r2) agent2.px = r2;
+        else if (agent2.px > logicalWidth - r2) agent2.px = logicalWidth - r2;
+        if (agent2.py < r2) agent2.py = r2;
+        else if (agent2.py > logicalHeight - r2) agent2.py = logicalHeight - r2;
+
+        // Elastic momentum transfer (impact bounce)
+        const rvx = agent2.vx - agent1.vx;
+        const rvy = agent2.vy - agent1.vy;
+        const vnorm = rvx * nx + rvy * ny;
+
+        if (vnorm < 0) {
+          const e = 0.5; // coefficient of restitution
+          const J = -(1 + e) * vnorm / ((1 / mass1) + (1 / mass2));
+
+          agent1.vx -= (J * nx) / mass1;
+          agent1.vy -= (J * ny) / mass1;
+          agent2.vx += (J * nx) / mass2;
+          agent2.vy += (J * ny) / mass2;
+        }
+      }
+    }
+  }
+
+  // 3. Resolve Creature-to-Food physical collisions (pushing spores with bugwave impulse)
+  creatures.forEach(agent => {
+    const r = agent.phenotype.spinalHarmonics.meanRadius;
+    const nearbyFood = grid.getNearbyFood(agent.px, agent.py, r + 20);
+    nearbyFood.forEach(pellet => {
+      const dx = pellet.x - agent.px;
+      const dy = pellet.y - agent.py;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const minDist = r + 8; // Spore radius = 8
+
+      if (d < minDist && d > 0.1) {
+        const overlap = minDist - d;
+        const nx = dx / d;
+        const ny = dy / d;
+
+        // Push spore away
+        pellet.x += nx * overlap;
+        pellet.y += ny * overlap;
+
+        // Clip spore to boundary
+        if (pellet.x < 8) pellet.x = 8;
+        else if (pellet.x > logicalWidth - 8) pellet.x = logicalWidth - 8;
+        if (pellet.y < 8) pellet.y = 8;
+        else if (pellet.y > logicalHeight - 8) pellet.y = logicalHeight - 8;
+
+        // Impart velocity push
+        pellet.vx = agent.vx + nx * 2.0;
+        pellet.vy = agent.vy + ny * 2.0;
+      }
+    });
+  });
 
   // Update active species tracker and mark extinctions on database
   const activeIdsThisFrame = new Set(creatures.map(c => c.speciesId));
@@ -875,7 +1012,7 @@ function simulationTick() {
 // --------------------------------------------------------------------------
 // Headless Sensory Inputs Scanners
 // --------------------------------------------------------------------------
-function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number): number[] {
+function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number, grid: SpatialGrid): number[] {
   const K = agent.phenotype.organelles.length;
   const inputs: number[] = Array(K + 1).fill(0.0);
   inputs[K] = clockVal;
@@ -889,14 +1026,11 @@ function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number): n
 
     let maxStimulus = 0.0;
 
-    // Spores scan
-    foodPellets.forEach(pellet => {
-      let dx = pellet.x - agent.px;
-      let dy = pellet.y - agent.py;
-      if (dx > logicalWidth / 2) dx -= logicalWidth;
-      if (dx < -logicalWidth / 2) dx += logicalWidth;
-      if (dy > logicalHeight / 2) dy -= logicalHeight;
-      if (dy < -logicalHeight / 2) dy += logicalHeight;
+    // Spores scan (optimized via SpatialGrid)
+    const nearbyFood = grid.getNearbyFood(agent.px, agent.py, range);
+    nearbyFood.forEach(pellet => {
+      const dx = pellet.x - agent.px;
+      const dy = pellet.y - agent.py;
 
       const dist = Math.sqrt(dx*dx + dy*dy);
       if (dist <= range) {
@@ -926,16 +1060,13 @@ function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number): n
       }
     });
 
-    // Peers scan
-    creatures.forEach(other => {
+    // Peers scan (optimized via SpatialGrid)
+    const nearbyPeers = grid.getNearbyCreatures(agent.px, agent.py, range);
+    nearbyPeers.forEach(other => {
       if (other.id === agent.id) return;
 
-      let dx = other.px - agent.px;
-      let dy = other.py - agent.py;
-      if (dx > logicalWidth / 2) dx -= logicalWidth;
-      if (dx < -logicalWidth / 2) dx += logicalWidth;
-      if (dy > logicalHeight / 2) dy -= logicalHeight;
-      if (dy < -logicalHeight / 2) dy += logicalHeight;
+      const dx = other.px - agent.px;
+      const dy = other.py - agent.py;
 
       const dist = Math.sqrt(dx*dx + dy*dy);
       if (dist <= range) {
@@ -1040,6 +1171,7 @@ wss.on("connection", (ws) => {
   sendToClient(ws, {
     type: "INIT_STATE",
     seed: config.seed || "ALIFE_BASIN_77A",
+    rules: config.rules,
     creatures: creatures.map(c => ({
       id: c.id,
       speciesId: c.speciesId,

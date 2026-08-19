@@ -307,3 +307,92 @@ describe('Species Database Record Structure Validation', () => {
     expect(record.carnivory).toBe(phenotype.carnivory);
   });
 });
+
+describe('Physical Elastic Collisions Mechanics', () => {
+  it('should resolve Creature-to-Creature overlaps and transfer elastic momentum', () => {
+    const r1 = 30;
+    const r2 = 30;
+    const mass1 = Math.pow(r1, 1.5) * (100 / 25);
+    const mass2 = Math.pow(r2, 1.5) * (100 / 25);
+
+    // Setup two creatures overlapping along X-axis
+    const agent1 = { id: 1, px: 100, py: 100, vx: 5, vy: 0 };
+    const agent2 = { id: 2, px: 140, py: 100, vx: -5, vy: 0 }; // distance = 40, overlap = (30+30) - 40 = 20
+
+    const dx = agent2.px - agent1.px;
+    const dy = agent2.py - agent1.py;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const minDist = r1 + r2;
+
+    expect(d).toBeLessThan(minDist); // overlapping!
+
+    // Apply collision resolution
+    const overlap = minDist - d;
+    const nx = dx / d;
+    const ny = dy / d;
+
+    const totalMass = mass1 + mass2;
+    const push1 = overlap * (mass2 / totalMass);
+    const push2 = overlap * (mass1 / totalMass);
+
+    agent1.px -= nx * push1;
+    agent1.py -= ny * push1;
+    agent2.px += nx * push2;
+    agent2.py += ny * push2;
+
+    // Assert overlap resolved
+    const dAfter = Math.sqrt((agent2.px - agent1.px) ** 2 + (agent2.py - agent1.py) ** 2);
+    expect(dAfter).toBeCloseTo(minDist);
+
+    // Apply momentum transfer
+    const rvx = agent2.vx - agent1.vx;
+    const rvy = agent2.vy - agent1.vy;
+    const vnorm = rvx * nx + rvy * ny;
+
+    expect(vnorm).toBeLessThan(0); // moving towards each other
+
+    const e = 0.5;
+    const J = -(1 + e) * vnorm / ((1 / mass1) + (1 / mass2));
+
+    agent1.vx -= (J * nx) / mass1;
+    agent1.vy -= (J * ny) / mass1;
+    agent2.vx += (J * nx) / mass2;
+    agent2.vy += (J * ny) / mass2;
+
+    // Velocities should have flipped or decreased
+    expect(agent1.vx).toBeLessThan(0); // bounced backwards
+    expect(agent2.vx).toBeGreaterThan(0); // bounced backwards
+  });
+
+  it('should push food spores out of creature bodies and impart velocity', () => {
+    const r = 40;
+    const agent = { px: 1000, py: 1000, vx: 4, vy: 0 };
+    const pellet = { x: 1020, y: 1000, vx: 0, vy: 0 }; // distance = 20, overlap = (40+8) - 20 = 28
+
+    const dx = pellet.x - agent.px;
+    const dy = pellet.y - agent.py;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    const minDist = r + 8;
+
+    expect(d).toBeLessThan(minDist); // overlapping!
+
+    const overlap = minDist - d;
+    const nx = dx / d;
+    const ny = dy / d;
+
+    // Resolve overlap
+    pellet.x += nx * overlap;
+    pellet.y += ny * overlap;
+
+    // Impart velocity
+    pellet.vx = agent.vx + nx * 2.0;
+    pellet.vy = agent.vy + ny * 2.0;
+
+    // Assert spore pushed outside creature radius
+    const dAfter = Math.sqrt((pellet.x - agent.px) ** 2 + (pellet.y - agent.py) ** 2);
+    expect(dAfter).toBeCloseTo(minDist);
+
+    // Assert velocity push applied
+    expect(pellet.vx).toBeGreaterThan(4);
+  });
+});

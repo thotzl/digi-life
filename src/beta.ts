@@ -394,7 +394,7 @@ function initBetaWebSocket() {
         foodPellets = data.foodPellets;
 
         if (data.seed) {
-          world = generateWorld(data.seed);
+          world = generateWorld(data.seed, 19200, 10800, data.rules);
           createBiomeCache(world);
         }
 
@@ -577,6 +577,7 @@ function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
 
   // 2. Draw Thermal Vents (dotted current zones)
   for (const vent of world.vents) {
+    if (vent.strength === 0) continue;
     ctx.beginPath();
     ctx.arc(vent.x, vent.y, vent.radius, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(14, 165, 233, 0.05)";

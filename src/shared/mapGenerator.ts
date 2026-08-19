@@ -155,7 +155,7 @@ export function sampleToroidalNoise(
 // --------------------------------------------------------------------------
 // Core Generator
 // --------------------------------------------------------------------------
-export function generateWorld(seed: string, width = 19200, height = 10800): ProceduralWorld {
+export function generateWorld(seed: string, width = 19200, height = 10800, rules?: any): ProceduralWorld {
   const rand = createPRNG(seed);
 
   // A. Generate Organic Biome Grid (Cell-Size 80 units - highly precise organic micro-climates!)
@@ -242,7 +242,9 @@ export function generateWorld(seed: string, width = 19200, height = 10800): Proc
 
   // C. Generate Thermal Current Vents
   const vents: CurrentVent[] = [];
-  const numVents = 6 + Math.floor(rand() * 4);
+  const baseCount = (rules && rules.ventsBaseCount !== undefined) ? rules.ventsBaseCount : 6;
+  const randCount = (rules && rules.ventsRandomCountRange !== undefined) ? rules.ventsRandomCountRange : 4;
+  const numVents = baseCount + Math.floor(rand() * randCount);
   
   for (let i = 0; i < numVents; i++) {
     const radius = 600 + rand() * 800;
@@ -251,13 +253,17 @@ export function generateWorld(seed: string, width = 19200, height = 10800): Proc
 
     const forceRoll = rand();
     let forceType: 'push' | 'pull' | 'vortex' = 'push';
-    let strength = 0.08 + rand() * 0.16;
+    
+    const forceDisabled = rules && rules.disableVentsForce === true;
+    let strength = forceDisabled ? 0.0 : (0.08 + rand() * 0.16);
 
     if (forceRoll > 0.35 && forceRoll <= 0.70) {
       forceType = 'pull';
     } else if (forceRoll > 0.70) {
       forceType = 'vortex';
-      strength *= 1.4;
+      if (!forceDisabled) {
+        strength *= 1.4;
+      }
     }
 
     vents.push({ id: i + 1, x, y, radius, forceType, strength });
