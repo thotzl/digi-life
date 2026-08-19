@@ -7,6 +7,23 @@ vi.hoisted(() => {
   };
   (global as any).document = {
     addEventListener: () => {},
+    createElement: () => ({
+      setAttribute: () => {},
+      appendChild: () => {},
+      addEventListener: () => {},
+      style: {},
+      classList: {
+        add: () => {},
+        remove: () => {}
+      },
+      getContext: () => ({
+        fillRect: () => {},
+        translate: () => {},
+        scale: () => {},
+        save: () => {},
+        restore: () => {}
+      })
+    }),
     getElementById: () => ({
       addEventListener: () => {},
       appendChild: () => {},

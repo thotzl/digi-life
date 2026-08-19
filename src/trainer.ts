@@ -1144,6 +1144,23 @@ function updateBrainLiveGlows(): void {
 function tick() {
   if (!isRunning) return;
 
+  if (isHeadless) {
+    // SUPERWARP HEADLESS MODE: Run the entire 300-tick epoch in a single, blazing-fast, synchronous JS loop!
+    // Bypasses requestAnimationFrame, rendering, and diagnostic updates completely to run at maximum CPU capacity!
+    while (isRunning && epochTicks < epochDurationTicks) {
+      epochTicks++;
+      sandboxes.forEach(sb => stepPhysics(sb));
+    }
+
+    if (epochTicks >= epochDurationTicks) {
+      const wasRunning = isRunning;
+      isRunning = false;
+      evaluateGeneration(wasRunning);
+    }
+    return;
+  }
+
+  // Visual mode: Clocked to requestAnimationFrame (60Hz / 120Hz)
   for (let step = 0; step < warpSpeed; step++) {
     epochTicks++;
     
@@ -1163,10 +1180,8 @@ function tick() {
     }
   }
 
-  // Render frames at 60Hz (only if NOT in headless mode!)
-  if (!isHeadless) {
-    sandboxes.forEach(sb => drawSandbox(sb));
-  }
+  // Render frames at 60Hz
+  sandboxes.forEach(sb => drawSandbox(sb));
   const timeStr = ((epochDurationTicks - epochTicks) / 60).toFixed(1) + "s";
   statTimer.innerText = isMultiTrial ? `T${currentTrial}: ${timeStr}` : timeStr;
 
