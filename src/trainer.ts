@@ -1068,6 +1068,8 @@ btnReset.addEventListener("click", async () => {
 });
 
 const trainingListContainer = document.getElementById("training-list-container") as HTMLDivElement;
+const dropdownTrigger = document.getElementById("training-dropdown-trigger") as HTMLButtonElement;
+const dropdownCurrentLabel = document.getElementById("training-dropdown-current") as HTMLSpanElement;
 const txtNewTraining = document.getElementById("txt-new-training") as HTMLInputElement;
 const btnCreateTraining = document.getElementById("btn-create-training") as HTMLButtonElement;
 
@@ -1107,6 +1109,12 @@ async function populateRunSelector() {
     });
   }
 
+  // Update trigger button label to reflect active selection
+  const activeItem = listItems.find(item => item.id === runId);
+  if (dropdownCurrentLabel && activeItem) {
+    dropdownCurrentLabel.innerText = activeItem.label;
+  }
+
   // Render each item as a clickable div with a delete button
   listItems.forEach(item => {
     const row = document.createElement("div");
@@ -1120,6 +1128,11 @@ async function populateRunSelector() {
     labelSpan.style.textOverflow = "ellipsis";
     labelSpan.style.whiteSpace = "nowrap";
     labelSpan.addEventListener("click", () => {
+      // Close dropdown
+      if (trainingListContainer) {
+        trainingListContainer.style.display = "none";
+      }
+
       if (item.id === runId) return;
       runId = item.id;
       isRunning = false;
@@ -1190,6 +1203,24 @@ async function populateRunSelector() {
     }
   });
 }
+
+// Toggle dropdown visibility on trigger click
+if (dropdownTrigger) {
+  dropdownTrigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (trainingListContainer) {
+      const isOpen = trainingListContainer.style.display === "block";
+      trainingListContainer.style.display = isOpen ? "none" : "block";
+    }
+  });
+}
+
+// Close dropdown on clicking outside
+document.addEventListener("click", () => {
+  if (trainingListContainer) {
+    trainingListContainer.style.display = "none";
+  }
+});
 
 btnCreateTraining.addEventListener("click", () => {
   const name = txtNewTraining.value.trim().replace(/[^a-zA-Z0-9_]/g, "");
