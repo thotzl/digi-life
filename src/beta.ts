@@ -576,9 +576,13 @@ function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
     ctx.fillStyle = obs.type === "rock" ? "rgba(51, 65, 85, 0.05)" : "rgba(244, 63, 94, 0.05)";
     ctx.fill();
 
-    // Solid core
+    // Solid core (Organic Jagged Polygon)
     ctx.beginPath();
-    ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+    ctx.moveTo(obs.vertices[0].x, obs.vertices[0].y);
+    for (let j = 1; j < obs.vertices.length; j++) {
+      ctx.lineTo(obs.vertices[j].x, obs.vertices[j].y);
+    }
+    ctx.closePath();
     ctx.fillStyle = obs.color;
     ctx.fill();
 

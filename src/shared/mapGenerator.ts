@@ -2,9 +2,10 @@ export interface ProceduralObstacle {
   id: number;
   x: number;
   y: number;
-  radius: number;
+  radius: number; // max bounding radius
   type: 'rock' | 'coral' | 'hazard_vent';
   color: string;
+  vertices: { x: number; y: number; r: number; angle: number }[];
 }
 
 export interface CurrentVent {
@@ -221,7 +222,22 @@ export function generateWorld(seed: string, width = 19200, height = 10800): Proc
       color = 'rgba(244, 63, 94, 0.75)';
     }
 
-    obstacles.push({ id: i + 1, x, y, radius, type, color });
+    // Generate jagged, non-circular polygon vertices
+    const vertices: { x: number; y: number; r: number; angle: number }[] = [];
+    const numVertices = 5 + Math.floor(rand() * 4); // 5 to 8 vertices
+    for (let j = 0; j < numVertices; j++) {
+      const angle = (j / numVertices) * Math.PI * 2;
+      const deform = 0.65 + rand() * 0.5; // [65% to 115% of base radius]
+      const r = radius * deform;
+      vertices.push({
+        x: x + r * Math.cos(angle),
+        y: y + r * Math.sin(angle),
+        r,
+        angle
+      });
+    }
+
+    obstacles.push({ id: i + 1, x, y, radius, type, color, vertices });
   }
 
   // C. Generate Thermal Current Vents
@@ -330,7 +346,39 @@ export function checkObstacleCollision(
     if (dy < -world.height / 2) dy += world.height;
 
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const minDist = obs.radius + radius;
+    
+    // Quick outer bounding sphere filter (massively optimizes performance)
+    if (dist > obs.radius + radius + 150) {
+      continue;
+    }
+
+    // Precise polar angle boundary interpolation
+    let approachAngle = Math.atan2(dy, dx);
+    if (approachAngle < 0) approachAngle += Math.PI * 2;
+
+    let rAtAngle = obs.radius; // fallback bounding
+    const numV = obs.vertices.length;
+
+    for (let j = 0; j < numV; j++) {
+      const v1 = obs.vertices[j];
+      const v2 = obs.vertices[(j + 1) % numV];
+      
+      const a1 = v1.angle;
+      let a2 = v2.angle;
+      if (a2 < a1) a2 += Math.PI * 2; // wrap 2pi
+
+      let targetAngle = approachAngle;
+      if (targetAngle < a1 && j === numV - 1) targetAngle += Math.PI * 2;
+
+      if (targetAngle >= a1 && targetAngle <= a2) {
+        // Linearly interpolate the radius of the jagged polygon at this specific angle
+        const t = (targetAngle - a1) / (a2 - a1);
+        rAtAngle = v1.r + t * (v2.r - v1.r);
+        break;
+      }
+    }
+
+    const minDist = rAtAngle + radius;
 
     if (dist < minDist && dist > 0.1) {
       return {

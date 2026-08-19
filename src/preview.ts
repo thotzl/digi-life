@@ -190,13 +190,17 @@ function draw() {
     ctx.fillStyle = obs.type === 'rock' ? 'rgba(51, 65, 85, 0.15)' : 'rgba(244, 63, 94, 0.15)';
     ctx.fill();
 
-    // Solid core
+    // Solid core (Organic Jagged Polygon)
     ctx.beginPath();
-    ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+    ctx.moveTo(obs.vertices[0].x, obs.vertices[0].y);
+    for (let j = 1; j < obs.vertices.length; j++) {
+      ctx.lineTo(obs.vertices[j].x, obs.vertices[j].y);
+    }
+    ctx.closePath();
     ctx.fillStyle = obs.color;
     ctx.fill();
 
-    // High tech stroke ring
+    // High tech stroke ring outlining the jagged vertices
     ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 15;
     ctx.stroke();
