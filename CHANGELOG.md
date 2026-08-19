@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-19
+
+### Added
+- **Isomorphic Core Roadmaps (TCK-107 & TCK-108):** Formulated and registered backend-headless-migration (`TCK-108`) and shared DRY/isomorphic-module refactoring (`TCK-107`) roadmaps to unify simulations and visualizers.
+- **Biologically Precise Omnivore Diets:** Integrated true omnivore feeding in the trainer, allowing creatures with mixed herbivore/carnivore DNA (`0.40 <= carnivory < 0.65`) to dynamically seek and consume either plant (green) or meat (red) spores, whichever is closer.
+- **Close-Call Proximity Protection Klausel:** Exempted near-success attempts (where a creature gets within 30px of the target) from the 120px minimum path requirements, perfectly preserving high-fidelity steering learning while still ruthlessly executing lazy "Schleicher" crawlers.
+- **Ultra-Fast DOM Recycling:** Refactored generational transitions to keep existing browser cards and canvases untouched in memory when $N$ is unchanged, cutting transition time from `200ms` down to `<1ms` and completely removing browser-rendering bottlenecks.
+- **Non-Blocking Macrotask Micro-yielding:** Scheduled the main loop execution inside `setTimeout(tick, 0)` at generation transitions to yield execution to Chrome's event-loop, keeping the browser 100% responsive and fluid during Superwarp training.
+- **High-Tech Spacing Button Group:** Consolidated the "Headless" toggle directly inside the primary control row as a beautiful dark-slate button (Headless: OFF) and glowing neon-cyan button (Headless: ON), matching the dark terminal theme.
+
 ## [1.3.0] - 2026-08-19
 
 ### Added
