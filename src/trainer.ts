@@ -847,7 +847,7 @@ function drawSandbox(sb: Sandbox) {
     sb.agent.omegaRot
   );
 
-  // Draw 2.2x scale centered real-time animated preview in the diagnostics sidebar
+  // Draw 1.2x scale centered real-time animated preview in the diagnostics sidebar
   if (sb.id === (selectedSandboxIdx + 1) && diagCtx && diagRenderer) {
     diagCtx.fillStyle = '#020617';
     diagCtx.fillRect(0, 0, 80, 80);
@@ -855,8 +855,8 @@ function drawSandbox(sb: Sandbox) {
     diagCtx.save();
     // Translate to center of 80x80 canvas
     diagCtx.translate(40, 40);
-    // Scale by 2.2x to make it beautifully large
-    diagCtx.scale(2.2, 2.2);
+    // Scale by 1.2x to fit beautifully inside the 80x80 box with comfortable margin
+    diagCtx.scale(1.2, 1.2);
     // Render the creature at center (0,0) in translated coordinates
     diagRenderer.render(
       sb.agent.phenotype,
