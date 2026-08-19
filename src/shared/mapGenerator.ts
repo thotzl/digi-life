@@ -158,9 +158,9 @@ export function sampleToroidalNoise(
 export function generateWorld(seed: string, width = 19200, height = 10800): ProceduralWorld {
   const rand = createPRNG(seed);
 
-  // A. Generate Organic Biome Grid (Cell-Size 400 units)
+  // A. Generate Organic Biome Grid (Cell-Size 80 units - highly precise organic micro-climates!)
   const biomes: BiomeArea[] = [];
-  const cellSize = 400;
+  const cellSize = 80;
   const cols = width / cellSize;
   const rows = height / cellSize;
 
@@ -313,7 +313,7 @@ export function getBiomeAt(world: ProceduralWorld, px: number, py: number): Biom
   const x = (px + world.width) % world.width;
   const y = (py + world.height) % world.height;
 
-  const cellSize = 400;
+  const cellSize = 80;
   const c = Math.floor(x / cellSize);
   const r = Math.floor(y / cellSize);
   

@@ -12,13 +12,13 @@ let offscreenCanvas: HTMLCanvasElement | null = null;
 
 function createBiomeCache(world: ProceduralWorld) {
   offscreenCanvas = document.createElement('canvas');
-  offscreenCanvas.width = 48;
-  offscreenCanvas.height = 27;
+  offscreenCanvas.width = 240;
+  offscreenCanvas.height = 135;
   const oCtx = offscreenCanvas.getContext('2d')!;
 
-  for (let c = 0; c < 48; c++) {
-    for (let r = 0; r < 27; r++) {
-      const idx = c * 27 + r;
+  for (let c = 0; c < 240; c++) {
+    for (let r = 0; r < 135; r++) {
+      const idx = c * 135 + r;
       const biome = world.biomes[idx];
       if (biome) {
         oCtx.fillStyle = biome.color;
@@ -152,11 +152,10 @@ function draw() {
   ctx.translate(panX, panY);
   ctx.scale(zoom, zoom);
 
-  // 1. Draw Biome Areas (renders seamless organic smoothed coastlines)
+  // 1. Draw Biome Areas (renders seamless organic sharp pixelated coastlines)
   if (offscreenCanvas) {
     ctx.save();
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(offscreenCanvas, 0, 0, 19200, 10800);
     ctx.restore();
   }

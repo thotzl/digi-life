@@ -62,6 +62,57 @@ function registerSpeciesIfNew(genome: string, parentSpeciesId: string | null, ge
   }
 }
 
+function spawnSporeBiologically(pellet: FoodSpore) {
+  // A. Determine spawning mode:
+  // 15% chance to erupt from a thermal vent core as a geothermal spore
+  // 85% chance to spawn in an ecologically suitable biome via rejection sampling
+  const modeRoll = Math.random();
+
+  if (modeRoll < 0.15 && world.vents.length > 0) {
+    const ventIdx = Math.floor(Math.random() * world.vents.length);
+    const vent = world.vents[ventIdx];
+    
+    // Spawn at vent center with a slight random offset
+    pellet.x = vent.x + (Math.random() * 40 - 20);
+    pellet.y = vent.y + (Math.random() * 40 - 20);
+    
+    // Spew outwards with high kinetic speed
+    const spewAngle = Math.random() * Math.PI * 2;
+    const spewSpeed = 1.5 + Math.random() * 2.5;
+    pellet.vx = Math.cos(spewAngle) * spewSpeed;
+    pellet.vy = Math.sin(spewAngle) * spewSpeed;
+  } 
+  else {
+    let accepted = false;
+    let attempts = 0;
+    while (!accepted && attempts < 25) {
+      attempts++;
+      const tx = Math.random() * logicalWidth;
+      const ty = Math.random() * logicalHeight;
+
+      const biome = getBiomeAt(world, tx, ty);
+      if (biome) {
+        // High spawnRate increases likelihood of acceptance
+        const acceptChance = biome.sporeSpawnRate / 1.4; // Normalized by max rate
+        if (Math.random() < acceptChance) {
+          pellet.x = tx;
+          pellet.y = ty;
+          pellet.vx = (Math.random() * 0.3 - 0.15);
+          pellet.vy = (Math.random() * 0.3 - 0.15);
+          accepted = true;
+        }
+      }
+    }
+    // Fallback if sampling takes too long (safeguard)
+    if (!accepted) {
+      pellet.x = Math.random() * logicalWidth;
+      pellet.y = Math.random() * logicalHeight;
+      pellet.vx = (Math.random() * 0.3 - 0.15);
+      pellet.vy = (Math.random() * 0.3 - 0.15);
+    }
+  }
+}
+
 function initSimulation() {
   const state = readState();
   const db = readDb();
@@ -103,12 +154,9 @@ function initSimulation() {
     // Spores layout (proportionally upscaled to support 10x larger field!)
     const sporeCount = config.foodSporeCount || 300;
     for (let i = 0; i < sporeCount; i++) {
-      foodPellets.push({
-        x: Math.random() * logicalWidth,
-        y: Math.random() * logicalHeight,
-        vx: (Math.random() * 0.3 - 0.15),
-        vy: (Math.random() * 0.3 - 0.15)
-      });
+      const pellet: FoodSpore = { x: 0, y: 0, vx: 0, vy: 0 };
+      spawnSporeBiologically(pellet);
+      foodPellets.push(pellet);
     }
 
     // Spawn initial creatures from alive database, or random genomes!
@@ -240,6 +288,26 @@ function simulationTick() {
       pellet.vy = (pellet.vy - 2.0 * dot * collision.normalY) * 0.5;
     }
   });
+
+  // C. Vegetative Spore Mitosis multiplication (Meadows cloning)
+  const maxSporeCeiling = (config.foodSporeCount || 300) * 1.5;
+  if (foodPellets.length < maxSporeCeiling && Math.random() < 0.05) {
+    const idx = Math.floor(Math.random() * foodPellets.length);
+    const parentSpore = foodPellets[idx];
+    if (parentSpore) {
+      const biome = getBiomeAt(world, parentSpore.x, parentSpore.y);
+      if (biome && biome.sporeSpawnRate >= 1.0) {
+        if (Math.random() < 0.04) {
+          foodPellets.push({
+            x: (parentSpore.x + (Math.random() * 120 - 60) + logicalWidth) % logicalWidth,
+            y: (parentSpore.y + (Math.random() * 120 - 60) + logicalHeight) % logicalHeight,
+            vx: (Math.random() * 0.2 - 0.1),
+            vy: (Math.random() * 0.2 - 0.1)
+          });
+        }
+      }
+    }
+  }
 
   // Decay bite impacts
   biteImpacts = biteImpacts.map(impact => ({ ...impact, age: impact.age + 1 })).filter(impact => impact.age < 12);
@@ -460,12 +528,14 @@ function simulationTick() {
 
       const d = Math.sqrt(dx*dx + dy*dy);
       if (d <= eatRadius) {
-        pellet.x = Math.random() * logicalWidth;
-        pellet.y = Math.random() * logicalHeight;
+        const consumedBiome = getBiomeAt(world, pellet.x, pellet.y);
+        const baseEnergy = consumedBiome ? consumedBiome.sporeEnergyValue : 15.0;
+
+        spawnSporeBiologically(pellet);
 
         const herbivoreEfficiency = 1.0 - agent.phenotype.carnivory;
         if (herbivoreEfficiency > 0.05) {
-          const energyGain = 45.0 * herbivoreEfficiency * 1.25;
+          const energyGain = baseEnergy * herbivoreEfficiency * 1.25;
           agent.energy = Math.min(agent.phenotype.stomachCapacity, agent.energy + energyGain);
           agent.hasEaten = true;
 
