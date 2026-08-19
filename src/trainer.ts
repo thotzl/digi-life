@@ -80,6 +80,7 @@ interface Sandbox {
 
 let sandboxes: Sandbox[] = [];
 let selectedSandboxIdx = 0;
+let hoveredNeuronId: number | null = null;
 
 // Expose state closures to window for live DevTools debugging
 (window as any).getIsRunning = () => isRunning;
@@ -959,7 +960,17 @@ function compileBrainSVG(): void {
   brain.neurons.forEach((n: any) => {
     const id = `trainer-node-${n.id}`;
     const el = document.getElementById(id) as any;
-    if (el) brainSvgCache.set(id, el);
+    if (el) {
+      brainSvgCache.set(id, el);
+      
+      // Bind hover events to track selected neuron for live telemetry tooltips
+      el.addEventListener("mouseenter", () => {
+        hoveredNeuronId = n.id;
+      });
+      el.addEventListener("mouseleave", () => {
+        hoveredNeuronId = null;
+      });
+    }
   });
 
   brain.synapses.forEach((syn: any) => {
@@ -1025,6 +1036,71 @@ function updateBrainLiveGlows(): void {
     Diet: ${sb.agent.phenotype.dietClass} (${targetType})<br/>
     Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
   `;
+
+  // 3. Dynamically update hovered neuron tooltip with live potentials and tanh activation formulas
+  if (hoveredNeuronId !== null) {
+    const el = document.getElementById(`trainer-node-${hoveredNeuronId}`);
+    if (el) {
+      const titleEl = el.querySelector("title");
+      if (titleEl) {
+        const K = sb.agent.phenotype.organelles.length;
+        const isInput = hoveredNeuronId <= K;
+        const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
+        
+        let baseDesc = `Neuron #${hoveredNeuronId}`;
+        let mathFormula = "";
+        let liveValues = "";
+
+        if (isInput) {
+          mathFormula = "Activation Function: Bounded Identity [0, 1]";
+          const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
+          liveValues = `Live Activation (a): ${act.toFixed(3)}`;
+          
+          if (hoveredNeuronId === K) {
+            baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
+          } else {
+            const patch = sb.agent.phenotype.organelles[hoveredNeuronId];
+            if (patch) {
+              const aff = patch.spectralAffinity;
+              let sensorName = "Visual Eye";
+              if (aff >= 0.8) sensorName = "Thermal (Heat)";
+              else if (aff >= 0.65) sensorName = "Vibration";
+              else if (aff >= 0.25) sensorName = "Olfactory (Smell)";
+              baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1} (${sensorName})`;
+            }
+          }
+        } else {
+          const neuron = sb.agent.phenotype.brain.neurons[hoveredNeuronId];
+          const state = sb.agent.neuronStates[hoveredNeuronId] || 0.0;
+          const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
+          
+          mathFormula = "Activation Function: a = tanh(Potential)";
+          liveValues = `Potential State (s): ${state.toFixed(3)}\nLive Activation (a): ${act.toFixed(3)}`;
+          
+          if (isOutput) {
+            const outputIndex = hoveredNeuronId - (K + 1);
+            if (outputIndex === 0) {
+              baseDesc = `Output #${hoveredNeuronId}: Forward/Backward Thrust`;
+            } else if (outputIndex === 1) {
+              baseDesc = `Output #${hoveredNeuronId}: Body Flexion Steering`;
+            } else if (outputIndex === 2) {
+              baseDesc = `Output #${hoveredNeuronId}: Bioluminescence Flash`;
+            } else {
+              baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
+            }
+          } else {
+            baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
+          }
+          
+          if (neuron) {
+            liveValues += `\nDecay (tau): ${neuron.tau.toFixed(1)} frames\nBias (threshold): ${neuron.bias.toFixed(2)}`;
+          }
+        }
+
+        titleEl.textContent = `${baseDesc}\n----------------------------------\n${mathFormula}\n${liveValues}`;
+      }
+    }
+  }
 }
 
 // --------------------------------------------------------------------------
