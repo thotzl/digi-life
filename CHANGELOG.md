@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-19
+
+### Added
+- **Multi-Trial Sandbox Trainer (TCK-105):** Built a concurrent, multi-sandbox evolutionary reinforcement learning trainer UI (`trainer.html` and `src/trainer.ts`) to breed and select highly fit, direct-navigating progenitor cells.
+- **Success-Gated Path Efficiency (Wegstrecke):** Implemented a high-fidelity path efficiency metric that rewards direct straight-line trajectories and penalizes winding zigzag paths, heavily weighted with up to 2000 points upon food consumption.
+- **Prey-Peer Mocking (Meatballs) & Sensory Scanning (TCK-106):** Expanded the trainer to spawn both plant (green) and meat (red) spores. Mocked meat spores as a living "prey peer" inside the spatial grid's creature layer with physical color, smell, vibration, and thermal attributes, allowing carnivores to learn visual, olfactory, and thermal tracking.
+- **Adaptive CTRNN Activation Functions (TCK-106):** Enabled genetically evolving activation functions (tanh, ReLU, Sigmoid, Sine) for CTRNN hidden interneurons mapped from DNA Locus 21, allowing neurons to develop into period-oscillators (sin) or discrete gates (relu).
+- **Immersive 3-Column Terminal Layout (TCK-106):** Redesigned the trainer interface into a 3-column layout featuring scrollable sandboxes in the center up to N=100, while locking generational hyperparameters on the left and live brain telemetry/zoomed preview on the right.
+- **Live 60Hz Sidebar HTML Telemetry (TCK-106):** Integrated a real-time, flicker-free telemetry sidebar showing dynamic potential states, activations, decay time constants, and bias for hovered neurons.
+- **Active Substrate Restocking (TCK-106):** Configured the live simulation backend to query SQLite and restock the live ocean substrate with active champions of all completed training sessions at a 40% probability rate.
+- **Custom Deletable Dropdown Component (TCK-106):** Replaced standard dropdowns with a custom absolute-positioned session manager list featuring inline red `✕` delete buttons and auto-collapse on outside clicks.
+
 ## [1.2.0] - 2026-08-19
 
 ### Added
