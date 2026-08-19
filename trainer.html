@@ -296,10 +296,10 @@
                 Seed: SANDBOX_SEED_1_GEN_1
               </p>
               
-              <!-- Live Hovered Neuron Telemetry -->
-              <p id="neuron-meta" style="font-size: 0.60rem; color: var(--primary-cyan); font-family: var(--font-mono); line-height: 1.35; margin: 0; border-top: 1px dashed rgba(148, 163, 184, 0.15); padding-top: 4px; min-height: 48px;">
+              <!-- Live Hovered Neuron Telemetry (fixed height prevents any layout shifting below) -->
+              <div id="neuron-meta" style="font-size: 0.60rem; color: var(--primary-cyan); font-family: var(--font-mono); line-height: 1.35; margin: 0; border-top: 1px dashed rgba(148, 163, 184, 0.15); padding-top: 4px; height: 52px; box-sizing: border-box; overflow: hidden;">
                 Hover a neuron node to see live telemetry...
-              </p>
+              </div>
             </div>
           </div>
 

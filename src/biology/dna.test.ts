@@ -150,10 +150,16 @@ describe('CTRNN Brain Simulation Integration (executeBrain)', () => {
       expect(state).toBeLessThanOrEqual(4.0);
     });
 
-    // Activations for hidden and output nodes (i > K) must be sigmoidal bounded in [-1.0, 1.0]
-    allLayerActivations[0].slice(K + 1).forEach(act => {
+    // Activations for output nodes (K+1 to K+4) must be sigmoidal bounded in [-1.0, 1.0]
+    allLayerActivations[0].slice(K + 1, K + 5).forEach(act => {
       expect(act).toBeGreaterThanOrEqual(-1.0);
       expect(act).toBeLessThanOrEqual(1.0);
+    });
+
+    // Activations for hidden nodes (K+5 onwards) must be bounded in [-4.0, 4.0] due to potential clamping (supporting ReLU up to +4.0)
+    allLayerActivations[0].slice(K + 5).forEach(act => {
+      expect(act).toBeGreaterThanOrEqual(-4.0);
+      expect(act).toBeLessThanOrEqual(4.0);
     });
   });
 });

@@ -46,6 +46,7 @@ export interface CTRNNNeuron {
   label: string;
   tau: number;   // time constant [0.5 to 5.0] controlling memory decay speed
   bias: number;  // neural bias [-1.0 to 1.0]
+  activationType?: "tanh" | "relu" | "sigmoid" | "sin"; // adaptive normalisation function
   x?: number;
   y?: number;
 }
@@ -831,12 +832,21 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     const tauVal = getMethylatedVal((20 + i) % currentLength);
     const tau = 0.2 + (tauVal / 25) * 1.8;
 
+    // Decode activation function type (normalization style) from genetically mutable DNA Locus!
+    const actVal = getMethylatedVal((21 + i) % currentLength);
+    const actTypeNum = actVal % 4; // tanh, relu, sigmoid, sin
+    let activationType: "tanh" | "relu" | "sigmoid" | "sin" = "tanh";
+    if (actTypeNum === 1) activationType = "relu";
+    else if (actTypeNum === 2) activationType = "sigmoid";
+    else if (actTypeNum === 3) activationType = "sin";
+
     neurons.push({
       id: K + 5 + i,
       type: "hidden",
       label: `Hidden #${i + 1}`,
       tau,
       bias,
+      activationType,
       x: 0.5,
       y: 0.15 + (i / Math.max(1, H - 1)) * 0.7
     });
@@ -1009,8 +1019,17 @@ export function executeBrain(
     // Bounded potential clamping to prevent numeric drift explosions
     neuronStates[i] = Math.max(-4.0, Math.min(4.0, neuronStates[i]));
 
-    // Sigmoidal / Tanh activation function
-    neuronActivations[i] = Math.tanh(neuronStates[i]);
+    // Heterogeneous Activation Function (adaptive normalisation)
+    const actType = neuron.activationType || "tanh";
+    if (actType === "relu") {
+      neuronActivations[i] = Math.max(0.0, neuronStates[i]);
+    } else if (actType === "sigmoid") {
+      neuronActivations[i] = 1.0 / (1.0 + Math.exp(-neuronStates[i]));
+    } else if (actType === "sin") {
+      neuronActivations[i] = Math.sin(neuronStates[i]);
+    } else {
+      neuronActivations[i] = Math.tanh(neuronStates[i]);
+    }
   }
 
   // 3. Map output node activations directly to the 4 motor directions

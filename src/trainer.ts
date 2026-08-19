@@ -43,7 +43,7 @@ const lblInflow = document.getElementById("lbl-inflow-rate") as HTMLSpanElement;
 const lblHof = document.getElementById("lbl-hof-rate") as HTMLSpanElement;
 
 const focusMeta = document.getElementById("focus-meta") as HTMLParagraphElement;
-const neuronMeta = document.getElementById("neuron-meta") as HTMLParagraphElement;
+const neuronMeta = document.getElementById("neuron-meta") as HTMLDivElement;
 const brainContainer = document.getElementById("inspect-brain-container") as HTMLDivElement;
 
 // State Variables
@@ -907,50 +907,15 @@ function compileBrainSVG(): void {
   });
 
   // 2. Draw Neuron Nodes
-  const K = sb.agent.phenotype.organelles.length;
   brain.neurons.forEach((n: any) => {
     const nodeId = `trainer-node-${n.id}`;
     const isInput = n.type === "input";
     const isOutput = n.type === "output";
     const color = isInput ? "var(--primary-cyan)" : (isOutput ? "var(--accent-purple)" : "var(--text-muted)");
 
-    // Compile highly informative hover label description (KISS & responsive tooltip)
-    let tooltip = `Neuron #${n.id} (Recurrent Interneuron #${n.id - K - 4})`;
-    if (isInput) {
-      if (n.id === K) {
-        tooltip = `Input #${n.id}: Internal Oscillating Clock (Rhythmic Pace)`;
-      } else {
-        const patch = sb.agent.phenotype.organelles[n.id];
-        if (patch) {
-          const aff = patch.spectralAffinity;
-          let sensorName = "Visual Eye";
-          if (aff >= 0.8) sensorName = "Thermal (Heat)";
-          else if (aff >= 0.65) sensorName = "Vibration";
-          else if (aff >= 0.25) sensorName = "Olfactory (Smell)";
-          
-          tooltip = `Input #${n.id}: Organelle #${n.id + 1} (${sensorName} Sensor, Angle: ${patch.angle}°, Scale: ${patch.scale.toFixed(1)})`;
-        } else {
-          tooltip = `Input #${n.id}: Sensory Photoreceptor`;
-        }
-      }
-    } else if (isOutput) {
-      const outputIndex = n.id - (K + 1);
-      if (outputIndex === 0) {
-        tooltip = `Output #${n.id}: Forward/Backward Thrust`;
-      } else if (outputIndex === 1) {
-        tooltip = `Output #${n.id}: Body Flexion Steering (Bending)`;
-      } else if (outputIndex === 2) {
-        tooltip = `Output #${n.id}: Bioluminescence Flash`;
-      } else {
-        tooltip = `Output #${n.id}: Reserved Motor Output`;
-      }
-    }
-
     svgContent += `
       <circle id="${nodeId}" cx="${(n.x || 0.5) * 320}" cy="${(n.y || 0.5) * 210}" r="${isInput || isOutput ? 4.5 : 3.2}" 
-              fill="#111827" stroke="${color}" stroke-width="1.5">
-        <title>${tooltip}</title>
-      </circle>
+              fill="#111827" stroke="${color}" stroke-width="1.5" />
     `;
   });
 
@@ -970,6 +935,9 @@ function compileBrainSVG(): void {
       });
       el.addEventListener("mouseleave", () => {
         hoveredNeuronId = null;
+        if (neuronMeta) {
+          neuronMeta.innerHTML = `Hover a neuron node to see live telemetry...`;
+        }
       });
     }
   });
@@ -1038,7 +1006,7 @@ function updateBrainLiveGlows(): void {
     Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
   `;
 
-  // 3. Dynamically update hovered neuron sidebar text block with live potentials and math formulas
+  // 3. Dynamically update hovered neuron floating tooltip with live potentials and adaptive formulas
   if (hoveredNeuronId !== null) {
     const K = sb.agent.phenotype.organelles.length;
     const isInput = hoveredNeuronId <= K;
@@ -1071,7 +1039,18 @@ function updateBrainLiveGlows(): void {
       const state = sb.agent.neuronStates[hoveredNeuronId] || 0.0;
       const act = sb.agent.neuronActivations[hoveredNeuronId] || 0.0;
       
-      mathFormula = "f(s) = tanh(s) [-1.0 to 1.0]";
+      // Determine genetically encoded activation function
+      const actType = (neuron && neuron.activationType) || "tanh";
+      if (actType === "relu") {
+        mathFormula = "f(s) = max(0, s) [ReLU]";
+      } else if (actType === "sigmoid") {
+        mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
+      } else if (actType === "sin") {
+        mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
+      } else {
+        mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
+      }
+
       liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
       
       if (isOutput) {
@@ -1096,14 +1075,10 @@ function updateBrainLiveGlows(): void {
 
     if (neuronMeta) {
       neuronMeta.innerHTML = `
-        <span style="color: #fff; font-weight: bold;">${baseDesc}</span><br/>
-        <span style="color: var(--text-muted); font-size: 0.55rem;">Formula: ${mathFormula}</span><br/>
+        <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
+        <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
         ${liveValues}
       `;
-    }
-  } else {
-    if (neuronMeta) {
-      neuronMeta.innerHTML = `Hover a neuron node to see live telemetry...`;
     }
   }
 }

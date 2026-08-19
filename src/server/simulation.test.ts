@@ -88,6 +88,9 @@ describe('Petri Dish Physics & Biological Mechanics Integration', () => {
       vy: 0
     };
 
+    // Ensure stomachCapacity doesn't clamp the test expectation
+    agent.phenotype.stomachCapacity = 100;
+
     // Distance calculation
     const dx = spore.x - agent.px;
     const dy = spore.y - agent.py;
