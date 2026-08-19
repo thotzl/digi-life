@@ -547,14 +547,10 @@ function resizeBetaCanvas() {
 function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
   if (!world) return;
 
-  // 1. Draw Biome Areas
+  // 1. Draw Biome Areas (renders seamless organic coastlines)
   for (const biome of world.biomes) {
     ctx.fillStyle = biome.color;
     ctx.fillRect(biome.x, biome.y, biome.width, biome.height);
-
-    ctx.strokeStyle = "rgba(51, 65, 85, 0.1)";
-    ctx.lineWidth = 20;
-    ctx.strokeRect(biome.x, biome.y, biome.width, biome.height);
   }
 
   // 2. Draw Thermal Vents (dotted current zones)

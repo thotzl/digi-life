@@ -131,21 +131,10 @@ function draw() {
   ctx.translate(panX, panY);
   ctx.scale(zoom, zoom);
 
-  // 1. Draw Biome Areas
+  // 1. Draw Biome Areas (renders seamless organic coastlines)
   for (const biome of world.biomes) {
     ctx.fillStyle = biome.color;
     ctx.fillRect(biome.x, biome.y, biome.width, biome.height);
-
-    // Biome boundary line
-    ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
-    ctx.lineWidth = 40;
-    ctx.strokeRect(biome.x, biome.y, biome.width, biome.height);
-
-    // Draw Biome Labels (spaced vertically)
-    ctx.font = 'bold 360px monospace';
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.15)';
-    ctx.textAlign = 'center';
-    ctx.fillText(biome.name, biome.x + biome.width / 2, biome.y + 1200);
   }
 
   // 2. Update and Draw Flow Particles (fluid currents)
