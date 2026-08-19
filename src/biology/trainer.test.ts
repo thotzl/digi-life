@@ -89,18 +89,35 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
     expect(fit).toBe(1414.0);
   });
 
-  it('should absolute clamp standstill (no movement) unsuccessful runs to 0.0 points', () => {
-    // Stood still (traveled only 5px), didn't reach food
+  it('should absolute clamp standstill and passive crawling unsuccessful runs (< 120px) to 0.0 points', () => {
+    // Passive crawling (traveled only 50px), didn't reach food, and didn't get extremely close (50px distance)
     const fit = calculateSandboxFitness(
       false,      // finished
       undefined,  // finishTick
       300,        // epochDurationTicks
       100,        // startDistance
-      5,          // distanceTraveled (stands still)
+      50,         // distanceTraveled (passive crawling)
       0,          // wallCollisions
-      50          // curDist (got 50px closer by spawn luck)
+      50          // curDist
     );
     expect(fit).toBe(0.0);
+  });
+
+  it('should exempt passive crawling from 0.0 penalty if they got extremely close (< 30px) to the food', () => {
+    // Passive crawling (traveled only 50px) but got extremely close to food (15px remaining)
+    const fit = calculateSandboxFitness(
+      false,      // finished
+      undefined,  // finishTick
+      300,        // epochDurationTicks
+      100,        // startDistance
+      50,         // distanceTraveled (passive crawling but close!)
+      0,          // wallCollisions
+      15          // curDist (extremely close!)
+    );
+    // baseFit = 100 * (1 - 15/100) = 85.0
+    // kineticWaste = 50 * 0.12 = 6.0
+    // fit = (85 - 6) = 79.0
+    expect(fit).toBe(79.0);
   });
 
   it('should deduct a metabolic kinetic waste tax for unsuccessful aimless wandering', () => {

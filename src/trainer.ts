@@ -753,8 +753,8 @@ export function calculateSandboxFitness(
     return (2000.0 * pathEfficiency + speedBonus) * wallPenalty;
   } else {
     // Unsuccessful: proximity reward with standstill & aimless traveling penalties!
-    if (distanceTraveled < 15.0) {
-      // Stillstand penalty: absolute 0 points
+    // Schleicher/Stillstand penalty: if they didn't move enough AND didn't get extremely close (< 30px) to the food
+    if (distanceTraveled < 120.0 && curDist >= 30.0) {
       return 0.0;
     } else {
       const baseFit = curDist < startDistance ? 100.0 * (1.0 - curDist / startDistance) : 0.0;
