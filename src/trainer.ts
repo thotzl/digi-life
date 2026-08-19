@@ -839,7 +839,10 @@ async function evaluateGeneration(wasRunningBefore = false) {
     if (wasRunningBefore) {
       isRunning = true;
       epochTicks = 0; // reset local tick counter!
-      tick(); // continue loop automatically!
+      
+      // Use setTimeout(tick, 0) to yield the thread to the browser's Macrotask-Queue.
+      // This completely prevents thread blocking and keeps the UI 100% responsive even in high-speed Headless Mode!
+      setTimeout(tick, 0);
     } else {
       // If paused, at least draw a single static frame so the newly generated sandboxes are visible!
       if (!isHeadless) {
