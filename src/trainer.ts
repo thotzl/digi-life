@@ -905,15 +905,50 @@ function compileBrainSVG(): void {
   });
 
   // 2. Draw Neuron Nodes
+  const K = sb.agent.phenotype.organelles.length;
   brain.neurons.forEach((n: any) => {
     const nodeId = `trainer-node-${n.id}`;
     const isInput = n.type === "input";
     const isOutput = n.type === "output";
     const color = isInput ? "var(--primary-cyan)" : (isOutput ? "var(--accent-purple)" : "var(--text-muted)");
 
+    // Compile highly informative hover label description (KISS & responsive tooltip)
+    let tooltip = `Neuron #${n.id} (Recurrent Interneuron #${n.id - K - 4})`;
+    if (isInput) {
+      if (n.id === K) {
+        tooltip = `Input #${n.id}: Internal Oscillating Clock (Rhythmic Pace)`;
+      } else {
+        const patch = sb.agent.phenotype.organelles[n.id];
+        if (patch) {
+          const aff = patch.spectralAffinity;
+          let sensorName = "Visual Eye";
+          if (aff >= 0.8) sensorName = "Thermal (Heat)";
+          else if (aff >= 0.65) sensorName = "Vibration";
+          else if (aff >= 0.25) sensorName = "Olfactory (Smell)";
+          
+          tooltip = `Input #${n.id}: Organelle #${n.id + 1} (${sensorName} Sensor, Angle: ${patch.angle}°, Scale: ${patch.scale.toFixed(1)})`;
+        } else {
+          tooltip = `Input #${n.id}: Sensory Photoreceptor`;
+        }
+      }
+    } else if (isOutput) {
+      const outputIndex = n.id - (K + 1);
+      if (outputIndex === 0) {
+        tooltip = `Output #${n.id}: Forward/Backward Thrust`;
+      } else if (outputIndex === 1) {
+        tooltip = `Output #${n.id}: Body Flexion Steering (Bending)`;
+      } else if (outputIndex === 2) {
+        tooltip = `Output #${n.id}: Bioluminescence Flash`;
+      } else {
+        tooltip = `Output #${n.id}: Reserved Motor Output`;
+      }
+    }
+
     svgContent += `
       <circle id="${nodeId}" cx="${(n.x || 0.5) * 320}" cy="${(n.y || 0.5) * 210}" r="${isInput || isOutput ? 4.5 : 3.2}" 
-              fill="#111827" stroke="${color}" stroke-width="1.5" />
+              fill="#111827" stroke="${color}" stroke-width="1.5">
+        <title>${tooltip}</title>
+      </circle>
     `;
   });
 
