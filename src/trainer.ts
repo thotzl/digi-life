@@ -17,6 +17,12 @@ const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
 const btnCopyDna = document.getElementById("btn-copy-dna") as HTMLButtonElement;
 const btnWasd = document.getElementById("btn-wasd-control") as HTMLButtonElement;
 
+// Diagnostics Sidebar Elements
+const diagCanvas = document.getElementById("diagnostics-preview-canvas") as HTMLCanvasElement;
+const diagCtx = diagCanvas ? diagCanvas.getContext("2d")! : null;
+const diagRenderer = diagCanvas ? new CreatureRenderer(diagCanvas) : null;
+const focusGenome = document.getElementById("focus-genome") as HTMLTextAreaElement;
+
 const statGen = document.getElementById("stat-gen") as HTMLSpanElement;
 const statBestFit = document.getElementById("stat-best-fit") as HTMLSpanElement;
 const statAvgFit = document.getElementById("stat-avg-fit") as HTMLSpanElement;
@@ -852,6 +858,28 @@ function drawSandbox(sb: Sandbox) {
     sb.agent.omegaRot
   );
 
+  // Draw 2.2x scale centered real-time animated preview in the diagnostics sidebar
+  if (sb.id === (selectedSandboxIdx + 1) && diagCtx && diagRenderer) {
+    diagCtx.fillStyle = '#020617';
+    diagCtx.fillRect(0, 0, 80, 80);
+    
+    diagCtx.save();
+    // Translate to center of 80x80 canvas
+    diagCtx.translate(40, 40);
+    // Scale by 2.2x to make it beautifully large
+    diagCtx.scale(2.2, 2.2);
+    // Render the creature at center (0,0) in translated coordinates
+    diagRenderer.render(
+      sb.agent.phenotype,
+      Date.now() * 0.05,
+      0,
+      0,
+      sb.agent.headingAngle,
+      sb.agent.omegaRot
+    );
+    diagCtx.restore();
+  }
+
   // Meta stats update
   const fitEl = document.getElementById(`card-fit-${sb.id - 1}`);
   if (fitEl) {
@@ -962,12 +990,18 @@ function updateBrainLiveGlows(): void {
   });
 
   // Update text metadata
+  if (focusGenome) {
+    focusGenome.value = sb.agent.genome;
+  }
+
+  const targetType = sb.agent.phenotype.carnivory >= 0.35 ? 'meat' : 'plant';
+  const seedStr = `SANDBOX_SEED_${sb.id}_GEN_${currentGeneration}`;
   focusMeta.innerHTML = `
     Sandbox: #${sb.id}<br/>
-    Name: ${sb.agent.phenotype.latinName.substring(0, 20)}<br/>
     Status: ${sb.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
     Fitness: ${sb.currentFitness.toFixed(1)}<br/>
-    Diet: ${sb.agent.phenotype.dietClass}
+    Diet: ${sb.agent.phenotype.dietClass} (${targetType})<br/>
+    Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
   `;
 }
 

@@ -226,12 +226,26 @@
         </div>
         
         <div style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-height: 0;">
-          <p id="focus-meta" style="font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); line-height: 1.4; margin: 0;">
-            Sandbox: #1<br/>
-            Status: Active<br/>
-            Fitness: 0.0<br/>
-            Diet: Herbivore
-          </p>
+          <!-- Top Row: Metadata and Mini visual high-zoom live preview! -->
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <canvas id="diagnostics-preview-canvas" width="80" height="80" style="background: #020617; border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 4px; width: 80px; height: 80px; flex-shrink: 0;"></canvas>
+            <div style="flex: 1; min-width: 0;">
+              <p id="focus-meta" style="font-size: 0.65rem; color: var(--text-muted); font-family: var(--font-mono); line-height: 1.4; margin: 0; word-break: break-all;">
+                Sandbox: #1<br/>
+                Status: Active<br/>
+                Fitness: 0.0<br/>
+                Diet: Herbivore<br/>
+                Seed: SANDBOX_SEED_1_GEN_1
+              </p>
+            </div>
+          </div>
+
+          <!-- Middle Row: DNA Genome sequence (copyable) -->
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <label style="font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-muted);">DNA Genome:</label>
+            <textarea id="focus-genome" readonly class="dna-box" style="height: 48px; font-size: 0.52rem; line-height: 1.2; padding: 4px; background: rgba(15, 23, 42, 0.85); resize: none; overflow-y: auto;" onclick="this.select();" placeholder="DNA Genome..."></textarea>
+          </div>
+
           <button id="btn-wasd-control" class="btn btn-primary" style="width: 100%; font-size: 0.65rem; padding: 6px;">
             Toggle WASD Override
           </button>
