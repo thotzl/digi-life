@@ -6,7 +6,6 @@ import { CreatureAgent, FoodSpore } from '../shared/types';
 
 describe('Petri Dish Physics & Biological Mechanics Integration', () => {
   const logicalWidth = 19200;
-  const logicalHeight = 10800;
 
   it('should update positions, apply fluid drag, and bounce off Logical boundaries', () => {
     const genome = generateRandomGenome(128);

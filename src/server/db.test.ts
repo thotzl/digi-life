@@ -1,6 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { readDb, writeDb, readState, writeState, clearState } from './db';
 import { SpeciesRecord } from '../shared/types';
 import { generateRandomGenome, getComplementaryString } from '../biology/dna';
