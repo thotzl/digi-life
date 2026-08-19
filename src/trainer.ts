@@ -701,9 +701,15 @@ async function evaluateGeneration(wasRunningBefore = false) {
           const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
           trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
         } else {
-          // Unsuccessful: proximity reward only, distanceTraveled does NOT penalize here
-          if (curDist < sb.startDistance) {
-            trialFit = (100.0 * (1.0 - curDist / sb.startDistance)) * wallPenalty;
+          // Unsuccessful: proximity reward with standstill & aimless traveling penalties!
+          if (sb.distanceTraveled < 15.0) {
+            // Stillstand penalty: absolute 0 points
+            trialFit = 0.0;
+          } else {
+            const baseFit = curDist < sb.startDistance ? 100.0 * (1.0 - curDist / sb.startDistance) : 0.0;
+            // Aimless traveling penalty: subtract metabolic kinetic waste
+            const kineticWaste = sb.distanceTraveled * 0.12;
+            trialFit = Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
           }
         }
         sb.accumulatedFitness = (sb.accumulatedFitness || 0.0) + trialFit;
@@ -752,10 +758,14 @@ async function evaluateGeneration(wasRunningBefore = false) {
         const pathEfficiency = sb.startDistance / Math.max(sb.startDistance, sb.distanceTraveled);
         trialFit = (2000.0 * pathEfficiency + (epochDurationTicks - sb.finishTick) * 0.2) * wallPenalty;
       } else {
-        if (curDist < sb.startDistance) {
-          trialFit = (100.0 * (1.0 - curDist / sb.startDistance)) * wallPenalty;
-        } else {
+        if (sb.distanceTraveled < 15.0) {
+          // Stillstand penalty: absolute 0 points
           trialFit = 0.0;
+        } else {
+          const baseFit = curDist < sb.startDistance ? 100.0 * (1.0 - curDist / sb.startDistance) : 0.0;
+          // Aimless traveling penalty: subtract metabolic kinetic waste
+          const kineticWaste = sb.distanceTraveled * 0.12;
+          trialFit = Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
         }
       }
       
