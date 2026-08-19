@@ -8,6 +8,25 @@ import { CreatureAgent, FoodSpore } from "./shared/types";
 import { generateWorld, ProceduralWorld } from "./shared/mapGenerator";
 
 let world: ProceduralWorld | null = null;
+let offscreenCanvas: HTMLCanvasElement | null = null;
+
+function createBiomeCache(world: ProceduralWorld) {
+  offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = 48;
+  offscreenCanvas.height = 27;
+  const oCtx = offscreenCanvas.getContext('2d')!;
+
+  for (let c = 0; c < 48; c++) {
+    for (let r = 0; r < 27; r++) {
+      const idx = c * 27 + r;
+      const biome = world.biomes[idx];
+      if (biome) {
+        oCtx.fillStyle = biome.color;
+        oCtx.fillRect(c, r, 1, 1);
+      }
+    }
+  }
+}
 
 // ============================================================================
 // 📊 STATE 1: Pure Mutable Game-Engine Arrays (0% Memory Allocation, 60 FPS Locked)
@@ -376,6 +395,7 @@ function initBetaWebSocket() {
 
         if (data.seed) {
           world = generateWorld(data.seed);
+          createBiomeCache(world);
         }
 
         creatures = data.creatures.map((c: any) => ({
@@ -547,10 +567,13 @@ function resizeBetaCanvas() {
 function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
   if (!world) return;
 
-  // 1. Draw Biome Areas (renders seamless organic coastlines)
-  for (const biome of world.biomes) {
-    ctx.fillStyle = biome.color;
-    ctx.fillRect(biome.x, biome.y, biome.width, biome.height);
+  // 1. Draw Biome Areas (renders seamless organic smoothed coastlines)
+  if (offscreenCanvas) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(offscreenCanvas, 0, 0, 19200, 10800);
+    ctx.restore();
   }
 
   // 2. Draw Thermal Vents (dotted current zones)

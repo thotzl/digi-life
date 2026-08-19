@@ -8,6 +8,26 @@ const btnGenerate = document.getElementById('btn-generate') as HTMLButtonElement
 const btnRandom = document.getElementById('btn-random') as HTMLButtonElement;
 
 let world: ProceduralWorld;
+let offscreenCanvas: HTMLCanvasElement | null = null;
+
+function createBiomeCache(world: ProceduralWorld) {
+  offscreenCanvas = document.createElement('canvas');
+  offscreenCanvas.width = 48;
+  offscreenCanvas.height = 27;
+  const oCtx = offscreenCanvas.getContext('2d')!;
+
+  for (let c = 0; c < 48; c++) {
+    for (let r = 0; r < 27; r++) {
+      const idx = c * 27 + r;
+      const biome = world.biomes[idx];
+      if (biome) {
+        oCtx.fillStyle = biome.color;
+        oCtx.fillRect(c, r, 1, 1);
+      }
+    }
+  }
+}
+
 let zoom = 0.05; // Zoom out to see the large 19200x10800 map
 let panX = 0;
 let panY = 0;
@@ -39,6 +59,7 @@ function init() {
 
 function loadWorld(seed: string) {
   world = generateWorld(seed);
+  createBiomeCache(world);
 }
 
 function centerCamera() {
@@ -131,10 +152,13 @@ function draw() {
   ctx.translate(panX, panY);
   ctx.scale(zoom, zoom);
 
-  // 1. Draw Biome Areas (renders seamless organic coastlines)
-  for (const biome of world.biomes) {
-    ctx.fillStyle = biome.color;
-    ctx.fillRect(biome.x, biome.y, biome.width, biome.height);
+  // 1. Draw Biome Areas (renders seamless organic smoothed coastlines)
+  if (offscreenCanvas) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(offscreenCanvas, 0, 0, 19200, 10800);
+    ctx.restore();
   }
 
   // 2. Update and Draw Flow Particles (fluid currents)
