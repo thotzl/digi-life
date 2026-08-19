@@ -1,39 +1,59 @@
 import { defineConfig } from 'vite';
 import fs from 'fs';
 import path from 'path';
+import Database from 'better-sqlite3';
 
-// Define the path to our physical JSON Database file inside the workspace
-const DB_FILE_PATH = path.resolve(__dirname, 'species_db.json');
-const STATE_FILE_PATH = path.resolve(__dirname, 'simulation_state.json');
-
-/**
- * Helper to ensure the physical JSON database file exists on disk with an empty list.
- */
-function ensureDbFile() {
-  if (!fs.existsSync(DB_FILE_PATH)) {
-    fs.writeFileSync(DB_FILE_PATH, JSON.stringify([], null, 2), 'utf-8');
-  }
-}
+// Define the path to our SQLite database
+const DB_PATH = path.resolve(__dirname, 'digilife.db');
+const db = new Database(DB_PATH);
+db.pragma('journal_mode = WAL');
 
 /**
- * Reads all species records from the physical file.
+ * Reads all species records from the physical SQLite database.
  */
 function readDb(): any[] {
-  ensureDbFile();
   try {
-    const data = fs.readFileSync(DB_FILE_PATH, 'utf-8');
-    return JSON.parse(data);
+    return db.prepare('SELECT * FROM species').all();
   } catch (err) {
-    console.error("Error reading species_db.json, resetting database:", err);
+    console.error("[Vite SQLite] Error reading species records:", err);
     return [];
   }
 }
 
 /**
- * Writes all species records back to the physical file.
+ * Writes all species records back to the physical SQLite database inside a transaction.
  */
 function writeDb(records: any[]) {
-  fs.writeFileSync(DB_FILE_PATH, JSON.stringify(records, null, 2), 'utf-8');
+  const insertStmt = db.prepare(`
+    INSERT INTO species (
+      id, name, genome, antisense, parentSpeciesId, status, peakPopulation, birthTime, extinctionTime, generation, carnivory
+    ) VALUES (
+      @id, @name, @genome, @antisense, @parentSpeciesId, @status, @peakPopulation, @birthTime, @extinctionTime, @generation, @carnivory
+    ) ON CONFLICT(id) DO UPDATE SET
+      status = excluded.status,
+      peakPopulation = MAX(species.peakPopulation, excluded.peakPopulation),
+      extinctionTime = excluded.extinctionTime
+  `);
+
+  const transaction = db.transaction((list: any[]) => {
+    if (list.length === 0) {
+      db.prepare('DELETE FROM species').run();
+      return;
+    }
+    for (const record of list) {
+      insertStmt.run({
+        ...record,
+        parentSpeciesId: record.parentSpeciesId !== undefined ? record.parentSpeciesId : null,
+        extinctionTime: record.extinctionTime !== undefined ? record.extinctionTime : null
+      });
+    }
+  });
+
+  try {
+    transaction(records);
+  } catch (err) {
+    console.error('[Vite SQLite] Transaction rollback:', err);
+  }
 }
 
 /**
@@ -75,10 +95,14 @@ const speciesDatabasePlugin = () => ({
       // ======================================================================
       if (url.pathname === '/api/simulation/state') {
         if (method === 'GET') {
-          if (fs.existsSync(STATE_FILE_PATH)) {
-            const data = fs.readFileSync(STATE_FILE_PATH, 'utf-8');
-            res.end(data);
-          } else {
+          try {
+            const row = db.prepare('SELECT state_json FROM simulation_state WHERE key = ?').get('current_state') as any;
+            if (row && row.state_json) {
+              res.end(row.state_json);
+            } else {
+              res.end(JSON.stringify({ empty: true }));
+            }
+          } catch (err) {
             res.end(JSON.stringify({ empty: true }));
           }
           return;
@@ -89,8 +113,14 @@ const speciesDatabasePlugin = () => ({
         if (method === 'POST') {
           const body = await parseJsonBody(req);
           if (body) {
-            fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(body, null, 2), 'utf-8');
-            res.end(JSON.stringify({ success: true }));
+            try {
+              db.prepare('INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES (?, ?, ?)')
+                .run('current_state', JSON.stringify(body), Date.now());
+              res.end(JSON.stringify({ success: true }));
+            } catch (err) {
+              res.statusCode = 500;
+              res.end(JSON.stringify({ error: "Failed to write simulation state" }));
+            }
           } else {
             res.statusCode = 400;
             res.end(JSON.stringify({ error: "Invalid simulation state payload" }));
@@ -101,10 +131,13 @@ const speciesDatabasePlugin = () => ({
 
       if (url.pathname === '/api/simulation/clear') {
         if (method === 'POST') {
-          if (fs.existsSync(STATE_FILE_PATH)) {
-            fs.unlinkSync(STATE_FILE_PATH);
+          try {
+            db.prepare('DELETE FROM simulation_state WHERE key = ?').run('current_state');
+            res.end(JSON.stringify({ success: true }));
+          } catch (err) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: "Failed to clear state" }));
           }
-          res.end(JSON.stringify({ success: true }));
           return;
         }
       }

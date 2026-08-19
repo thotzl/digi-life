@@ -5,36 +5,7 @@ import path from "path";
 import { parseGenome, generateRandomGenome, getComplementaryString, executeBrain, mutateGenome } from "../biology/dna";
 import { CreatureAgent, FoodSpore, SpeciesRecord } from "../shared/types";
 
-// Database File Paths
-const DB_FILE_PATH = path.resolve("./species_db.json");
-const STATE_FILE_PATH = path.resolve("./simulation_state.json");
-
-// Local Synchronous DB IO Helpers
-function readDb(): SpeciesRecord[] {
-  if (!fs.existsSync(DB_FILE_PATH)) return [];
-  try {
-    return JSON.parse(fs.readFileSync(DB_FILE_PATH, "utf8"));
-  } catch (err) {
-    return [];
-  }
-}
-
-function writeDb(db: SpeciesRecord[]) {
-  fs.writeFileSync(DB_FILE_PATH, JSON.stringify(db, null, 2), "utf8");
-}
-
-function readState(): any {
-  if (!fs.existsSync(STATE_FILE_PATH)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(STATE_FILE_PATH, "utf8"));
-  } catch (err) {
-    return null;
-  }
-}
-
-function writeState(state: any) {
-  fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf8");
-}
+import { readDb, writeDb, readState, writeState, clearState } from "./db";
 
 // --------------------------------------------------------------------------
 // Headless Simulation State
@@ -58,6 +29,32 @@ const connectedClients = new Set<WebSocket>();
 // --------------------------------------------------------------------------
 // Core Simulation Initialization
 // --------------------------------------------------------------------------
+function registerSpeciesIfNew(genome: string, parentSpeciesId: string | null, generation: number) {
+  const db = readDb();
+  const recordExist = db.find(r => r.id === genome);
+  if (!recordExist) {
+    const anti = getComplementaryString(genome);
+    const phenotype = parseGenome(genome, anti);
+    db.push({
+      id: genome,
+      name: phenotype.latinName,
+      genome: genome,
+      antisense: anti,
+      parentSpeciesId: parentSpeciesId,
+      status: "alive",
+      peakPopulation: 1,
+      birthTime: Date.now(),
+      generation: generation,
+      carnivory: phenotype.carnivory
+    });
+    writeDb(db);
+    cachedAliveSpecies = db.filter(rec => rec.status === "alive");
+    
+    // Broadcast database change event so the clients reload roster
+    broadcast({ type: "DATABASE_CHANGED" });
+  }
+}
+
 function initSimulation() {
   const state = readState();
   const db = readDb();
@@ -121,6 +118,8 @@ function initSimulation() {
 
       const anti = getComplementaryString(g);
       const pheno = parseGenome(g, anti);
+
+      registerSpeciesIfNew(g, null, gen);
 
       creatures.push({
         id: nextAgentId++,
@@ -307,6 +306,18 @@ function simulationTick() {
     const outThrust = outputs[0];
     const outLeft = outputs[1];
     const outRight = outputs[2];
+    const outFlash = outputs[3];
+
+    if (outFlash > 0.5) {
+      agent.energy -= 0.05 * outFlash;
+      broadcast({
+        type: "FLASH_EVENT",
+        agentId: agent.id,
+        x: agent.px,
+        y: agent.py,
+        intensity: outFlash
+      });
+    }
 
     // threat perception triggers endocrine adrenaline
     let threatPerception = 0.0;
@@ -577,23 +588,7 @@ function simulationTick() {
 
       // Save mutated species into ledger db
       if (isMutated) {
-        const db = readDb();
-        const recordExist = db.find(r => r.id === child.speciesId);
-        if (!recordExist) {
-          db.push({
-            id: child.speciesId,
-            name: childPhenotype.latinName,
-            genome: childGenome,
-            antisense: childAntisense,
-            parentSpeciesId: agent.speciesId,
-            status: "alive",
-            peakPopulation: 1,
-            birthTime: Date.now(),
-            generation: child.generation,
-            carnivory: childPhenotype.carnivory
-          });
-          writeDb(db);
-        }
+        registerSpeciesIfNew(childGenome, agent.speciesId, child.generation);
       }
 
       broadcast({
@@ -631,6 +626,8 @@ function simulationTick() {
 
     const anti = getComplementaryString(g);
     const pheno = parseGenome(g, anti);
+
+    registerSpeciesIfNew(g, null, gen);
 
     const founder: CreatureAgent = {
       id: nextAgentId++,
@@ -982,6 +979,8 @@ wss.on("connection", (ws) => {
         const anti = getComplementaryString(g);
         const pheno = parseGenome(g, anti);
 
+        registerSpeciesIfNew(g, null, 1);
+
         const newAgent: CreatureAgent = {
           id: nextAgentId++,
           speciesId: g,
@@ -1047,7 +1046,7 @@ wss.on("connection", (ws) => {
         selectedAgentId = null;
 
         // Wipe files
-        if (fs.existsSync(STATE_FILE_PATH)) fs.unlinkSync(STATE_FILE_PATH);
+        clearState();
         writeDb([]);
         cachedAliveSpecies = [];
 

@@ -161,6 +161,9 @@ export function generateRandomGenome(length = 256): string {
 }
 
 export function mutateGenome(genome: string): { newGenome: string; mutatedIndex: number; oldChar: string; newChar: string } {
+  if (!genome) {
+    throw new Error("Genome cannot be empty");
+  }
   const randomBuf = new Uint32Array(2);
   
   if (typeof window !== "undefined" && window.crypto) {
@@ -840,10 +843,12 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     const rawFrom = getMethylatedVal(dnaPointer % currentLength);
     const rawTo = getMethylatedVal((dnaPointer + 1) % currentLength);
     const rawW = getMethylatedVal((dnaPointer + 2) % currentLength);
+    const rawUnused = getMethylatedVal((dnaPointer + 3) % currentLength);
     // 4th codon is unused or can code local synaptic plasticity decay
     dnaPointer += 4;
 
-    const fromNode = rawFrom % totalNodes;
+    const combinedFrom = totalNodes > 26 ? (rawFrom + rawUnused * 26) : rawFrom;
+    const fromNode = combinedFrom % totalNodes;
     // Synapse CANNOT target input nodes! Target node must be either Hidden or Output (from K+1 onwards)
     const toNode = (rawTo % (4 + H)) + (K + 1);
 
