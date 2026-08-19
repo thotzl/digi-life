@@ -46,6 +46,8 @@ export interface CTRNNNeuron {
   label: string;
   tau: number;   // time constant [0.5 to 5.0] controlling memory decay speed
   bias: number;  // neural bias [-1.0 to 1.0]
+  x?: number;
+  y?: number;
 }
 
 // Genetically Compiled CTRNN Directed Graph (NEAT-like Topology)
@@ -782,7 +784,9 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
       type: "input",
       label,
       tau: 1.0, // direct sensory follow
-      bias: 0.0
+      bias: 0.0,
+      x: 0.1,
+      y: 0.1 + (i / Math.max(1, K)) * 0.8
     });
   }
   // The Clock (last input)
@@ -791,11 +795,13 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     type: "input",
     label: "⌛ Hunger Clock",
     tau: 1.0,
-    bias: 0.0
+    bias: 0.0,
+    x: 0.1,
+    y: 0.9
   });
 
-  // B. Output Neurons (K+1 ... K+4) [Thrust, Left, Right, Flash]
-  const outLabels = ["Thrust", "Turn Left", "Turn Right", "Biolum Flash"];
+  // B. Output Neurons (K+1 ... K+4) [Thrust, Bending, Flash, Reserved]
+  const outLabels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
   for (let i = 0; i < 4; i++) {
     // Decode output bias from Loci 17+i
     const biasVal = getMethylatedVal((17 + i) % currentLength);
@@ -810,7 +816,9 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
       type: "output",
       label: outLabels[i],
       tau,
-      bias
+      bias,
+      x: 0.9,
+      y: 0.2 + (i / 3) * 0.6
     });
   }
 
@@ -828,7 +836,9 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
       type: "hidden",
       label: `Hidden #${i + 1}`,
       tau,
-      bias
+      bias,
+      x: 0.5,
+      y: 0.15 + (i / Math.max(1, H - 1)) * 0.7
     });
   }
 

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-08-19
+
+### Added
+- **O(1) Spatial Grid Partitioning:** Implemented a high-performance 2D spatial grid partitioned into 80x80 pixel bins across the 19200x10800 simulation area (ref TCK-103). Neighborhood queries for collision detection and sensory inputs are optimized from $O(N)$ or $O(N \cdot M)$ down to $O(1)$.
+- **Biomorphic Body Flexion (Bending):** Refactored locomotion physics on the headless server and balancing simulator from rectilinear angular torque to a realistic body flexion (bending) and thrust curve-turn kinematic model (ref TCK-104). Heading changes are strictly coupled to forward/backward velocity and flexion angle. Pure in-place turning and side-slippage are eliminated.
+- **Interactive WASD Steering Sandbox:** Rewrote the standalone seed preview page (`preview.html` and `src/preview.ts`) to spawn an interactive player-controlled test creature. Added keyboard WASD/Arrow listeners to steer the creature, featuring a smooth camera focus follow and dynamic visual body bending.
+- **Decoupled Ecosystem Balance Simulator:** Created a standalone command-line balancing utility (`src/server/balanceSim.ts`) that executes the synchronous physics and biology engine in-memory at warp speed (~300 Ticks/sec). Extracted all hardcoded biological, physical, and hazard parameters to a central config `"rules"` block in `config.json`.
+- **Neuron Layout Coordinates:** Assigned layered graphical layout coordinates (`x`, `y`) to all compiled neurons inside the CTRNN directed graph compiler in `src/biology/dna.ts`, successfully restoring and fixing the broken visual brain graph on the frontend.
+- **Hard Bound Wall Bouncing:** Disabled toroidal wrapping in favor of closed-basin elastic boundary wall collisions with 50% kinetic speed loss on both creatures and spores. Re-activated and calibrated the neuronal "Wall warn touch" sensor.
+- **Physical Multi-Agent Collisions:** Added mass-based elastic overlap resolution and momentum transfer (impact bounce) between creatures themselves, as well as kinetic "bugwave" verdrängung pushing food spores out of creature bodies.
+
+### Fixed
+- **Unused Variables:** Resolved multiple TypeScript compiler warnings and errors for unused declarations (`isMutated`, `oldAgeRatio`, `outRight`) on both server and simulator scripts.
+
+---
+
 ## [1.1.0] - 2026-08-19
 
 ### Added

@@ -422,7 +422,6 @@ function simulationTick() {
 
     const outThrust = outputs[0];
     const outLeft = outputs[1];
-    const outRight = outputs[2];
     const outFlash = outputs[3];
 
     if (outFlash > 0.5) {
@@ -453,14 +452,25 @@ function simulationTick() {
 
     let fx = 0;
     let fy = 0;
-    let torque = 0;
 
-    if (outThrust > 0.0) {
-      const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
-      fx += outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline * Math.cos(agent.headingAngle);
-      fy += outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline * Math.sin(agent.headingAngle);
-    }
-    torque = (outRight - outLeft) * stiffness * (rules.steerTorqueBaseMultiplier || 5.8) * agent.adrenaline;
+    // Initialize bendAngle
+    if (agent.bendAngle === undefined) agent.bendAngle = 0.0;
+
+    // outputs[0] is Thrust Fwd/Bwd (tanh, ranges [-1.0, 1.0])
+    // outputs[1] is Bending Left/Right (tanh, ranges [-1.0, 1.0])
+    const thrustValue = outThrust; // positive is forward, negative is backward
+    const outBending = outLeft;    // outputs[1] maps to outLeft in outputs array
+
+    const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
+    const netThrustForce = thrustValue * thrustMag * predatorSavageMultiplier * agent.adrenaline;
+    fx += netThrustForce * Math.cos(agent.headingAngle);
+    fy += netThrustForce * Math.sin(agent.headingAngle);
+
+    // Bending (flexion) target is scaled inversely by body stiffness
+    const maxFlexion = 1.2; // approx 68 degrees max bend
+    const targetBending = outBending * (maxFlexion / Math.max(0.2, stiffness));
+    agent.bendAngle += (targetBending - agent.bendAngle) * 0.15 * frameScale;
+    agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, agent.bendAngle));
 
     // Hebbian Recurrent Synaptic Learning
     const learningRate = (rules.hebbianLearningRateBase || 0.00015) * (1.0 - stiffness * (rules.hebbianLearningStiffnessDecay || 0.85));
@@ -479,27 +489,26 @@ function simulationTick() {
 
     // Integrated drag friction and accelerations
     const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
-    const momentOfInertia = mass * (1.0 + (baseLength * baseLength) * 0.00015);
-    const rotDragCoeff = 0.45 * mass;
-    const rotDragTorque = -rotDragCoeff * agent.omegaRot;
-    const alphaRot = (torque + rotDragTorque) / momentOfInertia;
 
-    agent.omegaRot += alphaRot * frameScale;
-    agent.headingAngle += agent.omegaRot * frameScale;
+    // Compute forward velocity along heading
+    const vForward = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
+
+    // Kinematic Curve Turn coupling: turning is strictly dependent on forward/backward movement and flexion
+    const curvatureFactor = 0.015; // tuning factor for curve steepness
+    const deltaHeading = vForward * agent.bendAngle * curvatureFactor * frameScale;
+    agent.headingAngle += deltaHeading;
     agent.headingAngle = Math.atan2(Math.sin(agent.headingAngle), Math.cos(agent.headingAngle));
 
-    const vForward = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
-    const vLateral = -agent.vx * Math.sin(agent.headingAngle) + agent.vy * Math.cos(agent.headingAngle);
+    // omegaRot acts as an alias for visual bending amount in the client renderer
+    agent.omegaRot = agent.bendAngle / 12.0;
 
     const receptorBallast = agent.phenotype.organelles.length * (rules.receptorBallastScale || 0.18);
     const dragForward = (meanRadius * (rules.dragForwardCoefficient || 0.015) + receptorBallast) * (1.0 - stiffness * (rules.dragForwardStiffnessDecay || 0.3));
-    const dragLateral = baseLength * (rules.dragLateralCoefficient || 0.045) + receptorBallast;
 
     const dragForceForward = -dragForward * vForward;
-    const dragForceLateral = -dragLateral * vLateral;
 
-    const fxDrag = dragForceForward * Math.cos(agent.headingAngle) - dragForceLateral * Math.sin(agent.headingAngle);
-    const fyDrag = dragForceForward * Math.sin(agent.headingAngle) + dragForceLateral * Math.cos(agent.headingAngle);
+    const fxDrag = dragForceForward * Math.cos(agent.headingAngle);
+    const fyDrag = dragForceForward * Math.sin(agent.headingAngle);
 
     const ax = (fx + fxDrag) / mass;
     const ay = (fy + fyDrag) / mass;
@@ -507,9 +516,14 @@ function simulationTick() {
     agent.vx += ax * frameScale;
     agent.vy += ay * frameScale;
 
+    // Apply speed drag
     agent.vx *= 0.94;
     agent.vy *= 0.94;
-    agent.omegaRot *= 0.88;
+
+    // Project velocity strictly to forward/backward heading axis (eliminate side slippage / lateral drift)
+    const netSpeed = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
+    agent.vx = netSpeed * Math.cos(agent.headingAngle);
+    agent.vy = netSpeed * Math.sin(agent.headingAngle);
 
     // Apply thermal vent vector currents to velocity
     const current = getVectoredCurrentAt(world, agent.px, agent.py);

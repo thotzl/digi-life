@@ -36,6 +36,7 @@ export interface CreatureAgent {
   // NATIVE RECURRENT CTRNN BRAIN STATES (Euler integration state holders):
   neuronStates: number[];
   neuronActivations: number[];
+  bendAngle?: number;
 }
 
 export interface FoodSpore {
