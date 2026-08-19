@@ -963,10 +963,13 @@ function updateBrainLiveGlows(): void {
     const el = brainSvgCache.get(id);
     if (el) {
       const rawAct = Math.max(0.0, Math.min(1.0, Math.abs(activations[n.id] || 0.0)));
-      const act = Math.pow(rawAct, 4.0);
-
       const isInput = n.type === "input";
       const isOutput = n.type === "output";
+
+      // Soften the exponent for input neurons so they glow nicely upon detecting stimulus!
+      const exponent = isInput ? 1.5 : 4.0;
+      const act = Math.pow(rawAct, exponent);
+
       const colorGlow = isInput ? "#00f2fe" : (isOutput ? "#c084fc" : "#e2e8f0");
 
       const fill = act > 0.35 ? colorGlow : "#111827";
