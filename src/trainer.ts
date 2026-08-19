@@ -1143,13 +1143,20 @@ function updateBrainLiveGlows(): void {
     focusGenome.value = sb.agent.genome;
   }
 
-  const targetType = sb.agent.phenotype.carnivory >= 0.35 ? 'meat' : 'plant';
+  let dietLabel = "plant";
+  const carnivory = sb.agent.phenotype.carnivory;
+  if (carnivory >= 0.65) {
+    dietLabel = "meat";
+  } else if (carnivory >= 0.40) {
+    dietLabel = "plant & meat";
+  }
+
   const seedStr = `SANDBOX_SEED_${sb.id}_GEN_${currentGeneration}`;
   focusMeta.innerHTML = `
     Sandbox: #${sb.id}<br/>
     Status: ${sb.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
     Fitness: ${sb.currentFitness.toFixed(1)}<br/>
-    Diet: ${sb.agent.phenotype.dietClass} (${targetType})<br/>
+    Diet: ${sb.agent.phenotype.dietClass} (${dietLabel})<br/>
     Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
   `;
 
