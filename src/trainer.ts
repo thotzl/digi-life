@@ -1437,8 +1437,19 @@ chkMultiTrial.addEventListener("change", () => {
 
 btnHeadless.addEventListener("click", () => {
   isHeadless = !isHeadless;
-  btnHeadless.innerText = isHeadless ? "Disable Headless Mode" : "Enable Headless Mode (Disable Rendering)";
-  btnHeadless.className = isHeadless ? "btn btn-primary" : "btn btn-secondary";
+  btnHeadless.innerText = isHeadless ? "Headless: ON" : "Headless: OFF";
+  
+  if (isHeadless) {
+    btnHeadless.style.background = "rgba(0, 242, 254, 0.08)";
+    btnHeadless.style.borderColor = "rgba(0, 242, 254, 0.4)";
+    btnHeadless.style.color = "var(--primary-cyan)";
+    btnHeadless.style.textShadow = "0 0 8px rgba(0, 242, 254, 0.3)";
+  } else {
+    btnHeadless.style.background = "rgba(30, 41, 59, 0.4)";
+    btnHeadless.style.borderColor = "rgba(148, 163, 184, 0.15)";
+    btnHeadless.style.color = "var(--text-muted)";
+    btnHeadless.style.textShadow = "none";
+  }
   
   // If we disabled headless, render once so everything is drawn immediately
   if (!isHeadless) {
