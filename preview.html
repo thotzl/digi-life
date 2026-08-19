@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bio-Basin Terrain Preview</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background-color: #020617;
+        font-family: monospace;
+        color: #f8fafc;
+        overflow: hidden;
+      }
+      .preview-container {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 10;
+        background: rgba(15, 23, 42, 0.88);
+        border: 1px solid #1e293b;
+        padding: 15px;
+        border-radius: 8px;
+        backdrop-filter: blur(8px);
+        width: 320px;
+      }
+      .form-group {
+        margin-bottom: 12px;
+      }
+      label {
+        display: block;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: #94a3b8;
+        margin-bottom: 4px;
+        letter-spacing: 0.05em;
+      }
+      input[type="text"] {
+        width: calc(100% - 18px);
+        padding: 8px;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 4px;
+        color: #f8fafc;
+        font-family: inherit;
+        font-size: 0.9rem;
+      }
+      .btn-row {
+        display: flex;
+        gap: 8px;
+      }
+      button {
+        flex: 1;
+        padding: 8px;
+        background: #0284c7;
+        border: none;
+        border-radius: 4px;
+        color: #ffffff;
+        font-family: inherit;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background 0.15s;
+      }
+      button:hover {
+        background: #0ea5e9;
+      }
+      button.btn-secondary {
+        background: #334155;
+      }
+      button.btn-secondary:hover {
+        background: #475569;
+      }
+      #preview-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+      }
+      .legend {
+        margin-top: 15px;
+        font-size: 0.7rem;
+        border-top: 1px solid #1e293b;
+        padding-top: 10px;
+        color: #94a3b8;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .color-box {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="preview-canvas"></canvas>
+
+    <div class="preview-container">
+      <h3 style="margin: 0 0 12px 0; font-size: 1rem; color: #0ea5e9; text-transform: uppercase; letter-spacing: 0.05em;">🗺️ Basin Terrain Preview</h3>
+      
+      <div class="form-group">
+        <label for="seed-input">World Seed</label>
+        <input type="text" id="seed-input" value="ALIFE_BASIN_77A" />
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-generate">Generate</button>
+        <button id="btn-random" class="btn-secondary">Random</button>
+      </div>
+
+      <div class="legend">
+        <div class="legend-item">
+          <div class="color-box" style="background: rgba(100, 116, 139, 0.8);"></div>
+          <span>Rock Barrier (Solid)</span>
+        </div>
+        <div class="legend-item">
+          <div class="color-box" style="background: rgba(244, 63, 94, 0.75);"></div>
+          <span>Coral Barrier (Solid)</span>
+        </div>
+        <div class="legend-item">
+          <div class="color-box" style="background: rgba(21, 128, 61, 0.15);"></div>
+          <span>Algae Shallows (Safe, fast food)</span>
+        </div>
+        <div class="legend-item">
+          <div class="color-box" style="background: rgba(30, 41, 59, 0.3);"></div>
+          <span>Abyssal Barrens (Sparse food)</span>
+        </div>
+        <div class="legend-item">
+          <div class="color-box" style="background: rgba(234, 179, 8, 0.15);"></div>
+          <span>Sulphuric Shallows (Hazard, damage drain)</span>
+        </div>
+        <div class="legend-item">
+          <div class="color-box" style="background: #0ea5e9; opacity: 0.4;"></div>
+          <span>Fluid Flow (Vents, push/pull/vortex)</span>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/preview.ts"></script>
+  </body>
+</html>

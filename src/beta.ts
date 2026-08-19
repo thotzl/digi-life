@@ -5,6 +5,9 @@ import {
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { getAllSpecies, SpeciesRecord } from "./biology/speciesDb";
 import { CreatureAgent, FoodSpore } from "./shared/types";
+import { generateWorld, ProceduralWorld } from "./shared/mapGenerator";
+
+let world: ProceduralWorld | null = null;
 
 // ============================================================================
 // 📊 STATE 1: Pure Mutable Game-Engine Arrays (0% Memory Allocation, 60 FPS Locked)
@@ -370,6 +373,11 @@ function initBetaWebSocket() {
       if (data.type === "INIT_STATE") {
         highestGeneration = data.highestGeneration;
         foodPellets = data.foodPellets;
+
+        if (data.seed) {
+          world = generateWorld(data.seed);
+        }
+
         creatures = data.creatures.map((c: any) => ({
           ...c,
           phenotype: parseGenome(c.genome, c.antisense)
@@ -536,6 +544,54 @@ function resizeBetaCanvas() {
   canvas.height = window.innerHeight * dpr;
 }
 
+function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
+  if (!world) return;
+
+  // 1. Draw Biome Areas
+  for (const biome of world.biomes) {
+    ctx.fillStyle = biome.color;
+    ctx.fillRect(biome.x, biome.y, biome.width, biome.height);
+
+    ctx.strokeStyle = "rgba(51, 65, 85, 0.1)";
+    ctx.lineWidth = 20;
+    ctx.strokeRect(biome.x, biome.y, biome.width, biome.height);
+  }
+
+  // 2. Draw Thermal Vents (dotted current zones)
+  for (const vent of world.vents) {
+    ctx.beginPath();
+    ctx.arc(vent.x, vent.y, vent.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(14, 165, 233, 0.05)";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    // Center vent core
+    ctx.beginPath();
+    ctx.arc(vent.x, vent.y, 40, 0, Math.PI * 2);
+    ctx.fillStyle = vent.forceType === "push" ? "rgba(56, 189, 248, 0.25)" : vent.forceType === "pull" ? "rgba(236, 72, 153, 0.25)" : "rgba(168, 85, 247, 0.25)";
+    ctx.fill();
+  }
+
+  // 3. Draw Solid Obstacles (circular solid coral reefs / rocks)
+  for (const obs of world.obstacles) {
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(obs.x, obs.y, obs.radius + 15, 0, Math.PI * 2);
+    ctx.fillStyle = obs.type === "rock" ? "rgba(51, 65, 85, 0.05)" : "rgba(244, 63, 94, 0.05)";
+    ctx.fill();
+
+    // Solid core
+    ctx.beginPath();
+    ctx.arc(obs.x, obs.y, obs.radius, 0, Math.PI * 2);
+    ctx.fillStyle = obs.color;
+    ctx.fill();
+
+    ctx.strokeStyle = "#f1f5f9";
+    ctx.lineWidth = 6;
+    ctx.stroke();
+  }
+}
+
 function drawBetaSimulationFrame(timestamp: number) {
   if (!ctx) return;
 
@@ -566,6 +622,9 @@ function drawBetaSimulationFrame(timestamp: number) {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 19200, 10800);
   ctx.restore();
+
+  // Draw procedural Bio-Basin terrain (biomes, solid reefs, thermal current vents)
+  drawWorldTerrain(ctx);
 
   // 3. Draw algae/food spores
   ctx.save();

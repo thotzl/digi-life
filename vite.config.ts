@@ -229,5 +229,12 @@ export default defineConfig({
   plugins: [
     speciesDatabasePlugin()
   ],
-  // Standard Single Page App build
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        preview: path.resolve(__dirname, 'preview.html')
+      }
+    }
+  }
 });
