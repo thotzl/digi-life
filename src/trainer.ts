@@ -5,8 +5,8 @@ import { CreatureAgent, FoodSpore } from './shared/types';
 import { SpatialGrid } from './server/spatialGrid';
 
 // Dimensions for the mini-canvases
-const canvasWidth = 250;
-const canvasHeight = 250;
+const canvasWidth = 500;
+const canvasHeight = 500;
 const epochDurationTicks = 300; // 5 seconds at 60Hz
 
 // DOM Elements
