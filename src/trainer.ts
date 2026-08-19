@@ -13,6 +13,7 @@ const epochDurationTicks = 300; // 5 seconds at 60Hz
 const gridContainer = document.getElementById("sandbox-grid") as HTMLDivElement;
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnReset = document.getElementById("btn-reset-train") as HTMLButtonElement;
+const btnHeadless = document.getElementById("btn-headless-toggle") as HTMLButtonElement;
 const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
 const btnCopyDna = document.getElementById("btn-copy-dna") as HTMLButtonElement;
 
@@ -55,6 +56,7 @@ let genomeMutationRate = 0.15; // 15% genome mutation rate
 let randomInflowRate = 0.10; // 10% random immigrants
 let randomHofRate = 0.10; // 10% Hall of Fame re-injection
 let isMultiTrial = false; // Multi-Trial evaluation
+let isHeadless = false; // Disable rendering for high warp-speed performance
 let currentTrial = 1; // Current active trial count (1 to 3)
 const totalTrials = 3; // 3 runs per generation
 let currentGeneration = 1;
@@ -840,7 +842,9 @@ async function evaluateGeneration(wasRunningBefore = false) {
       tick(); // continue loop automatically!
     } else {
       // If paused, at least draw a single static frame so the newly generated sandboxes are visible!
-      sandboxes.forEach(sb => drawSandbox(sb));
+      if (!isHeadless) {
+        sandboxes.forEach(sb => drawSandbox(sb));
+      }
     }
   }
 }
@@ -1159,8 +1163,10 @@ function tick() {
     }
   }
 
-  // Render frames at 60Hz
-  sandboxes.forEach(sb => drawSandbox(sb));
+  // Render frames at 60Hz (only if NOT in headless mode!)
+  if (!isHeadless) {
+    sandboxes.forEach(sb => drawSandbox(sb));
+  }
   const timeStr = ((epochDurationTicks - epochTicks) / 60).toFixed(1) + "s";
   statTimer.innerText = isMultiTrial ? `T${currentTrial}: ${timeStr}` : timeStr;
 
@@ -1427,6 +1433,17 @@ sliderHof.addEventListener("input", () => {
 chkMultiTrial.addEventListener("change", () => {
   isMultiTrial = chkMultiTrial.checked;
   currentTrial = 1;
+});
+
+btnHeadless.addEventListener("click", () => {
+  isHeadless = !isHeadless;
+  btnHeadless.innerText = isHeadless ? "Disable Headless Mode" : "Enable Headless Mode (Disable Rendering)";
+  btnHeadless.className = isHeadless ? "btn btn-primary" : "btn btn-secondary";
+  
+  // If we disabled headless, render once so everything is drawn immediately
+  if (!isHeadless) {
+    sandboxes.forEach(sb => drawSandbox(sb));
+  }
 });
 
 // Startup Boot: Pause background substrate simulation & load grid
