@@ -185,7 +185,8 @@ export function runSimulation(cfg: FullConfig, totalTicks = 10000): {
             if (aff >= 0.8) {
               match = Math.max(0, 1.0 - Math.abs(aff - 0.33) / (patch.bandwidth * 1.8 + 0.12));
             } else if (aff >= 0.25 && aff <= 0.65) {
-              match = Math.max(0, 1.0 - Math.abs(aff - 0.15) / (patch.bandwidth * 1.8 + 0.12));
+              // Olfactory/Smell Scan: chlorophyll plant scent is at 0.35, perfectly in the olfactory range [0.25, 0.65]!
+              match = Math.max(0, 1.0 - Math.abs(aff - 0.35) / (patch.bandwidth * 1.8 + 0.12));
             } else if (aff < 0.25) {
               match = Math.max(0, 1.0 - Math.abs(aff - 0.05) / (patch.bandwidth * 1.8 + 0.12));
             }
