@@ -316,6 +316,19 @@ function initSandbox(
   };
 }
 
+/**
+ * Calculates the genetic Hamming-like difference between two genomes (DNA strings)
+ */
+function calculateGeneticDifference(g1: string, g2: string): number {
+  let diff = 0;
+  const minLen = Math.min(g1.length, g2.length);
+  for (let i = 0; i < minLen; i++) {
+    if (g1[i] !== g2[i]) diff++;
+  }
+  diff += Math.abs(g1.length - g2.length);
+  return diff;
+}
+
 async function rebuildSandboxGrid() {
   // 1. Fetch both active population and all-time Hall of Fame
   const savedPool = await fetchServerPopulation();
@@ -339,6 +352,100 @@ async function rebuildSandboxGrid() {
   const eliteCount = Math.max(1, Math.ceil(N * eliteRatio));
   const hofCount = Math.floor(N * randomHofRate);
   const inflowCount = Math.floor(N * randomInflowRate);
+
+  // 1. Extract strictly unique active genomes from the saved pool
+  const uniqueActiveGenomes: string[] = [];
+  savedPool.forEach(p => {
+    if (!uniqueActiveGenomes.includes(p.genome)) {
+      uniqueActiveGenomes.push(p.genome);
+    }
+  });
+
+  const topActiveGenome = uniqueActiveGenomes[0] || "";
+
+  // 2. Select diverse, unique HOF candidates (minimum genetic difference of 25 characters)
+  // to keep lost genetic branches/lineages alive and prevent monocultural deadlocks!
+  const selectedHofGenomes: string[] = [];
+  if (savedHof.length > 0 && topActiveGenome) {
+    for (const hof of savedHof) {
+      if (uniqueActiveGenomes.includes(hof.genome) || selectedHofGenomes.includes(hof.genome)) {
+        continue; // skip duplicate genomes
+      }
+      
+      const genDiff = calculateGeneticDifference(hof.genome, topActiveGenome);
+      if (genDiff >= 25) {
+        selectedHofGenomes.push(hof.genome);
+        if (selectedHofGenomes.length >= hofCount) break;
+      }
+    }
+    
+    // Fallback: if we didn't find enough diverse HOF candidate, relax criteria to just unique ones
+    if (selectedHofGenomes.length < hofCount) {
+      for (const hof of savedHof) {
+        if (uniqueActiveGenomes.includes(hof.genome) || selectedHofGenomes.includes(hof.genome)) {
+          continue;
+        }
+        selectedHofGenomes.push(hof.genome);
+        if (selectedHofGenomes.length >= hofCount) break;
+      }
+    }
+  }
+
+  // 3. Pre-plan the next generation's genomes to ensure absolute uniqueness and clean tracking
+  const nextGenPlans: { genome: string; mutate: boolean; origin: 'elite' | 'hof' | 'mutant' | 'random' }[] = [];
+
+  for (let i = 0; i < N; i++) {
+    if (i < eliteCount) {
+      // A. Elite slots: take unique genomes from the active pool
+      if (i < uniqueActiveGenomes.length) {
+        nextGenPlans.push({
+          genome: uniqueActiveGenomes[i],
+          mutate: false,
+          origin: 'elite'
+        });
+      } else {
+        // Fallback if not enough unique elites: spawn mutated clones of the champion
+        nextGenPlans.push({
+          genome: topActiveGenome || generatePEN_Progenitor(),
+          mutate: true,
+          origin: 'mutant'
+        });
+      }
+    } else if (i < eliteCount + hofCount) {
+      // B. HOF slots: take the pre-selected diverse HOF genomes
+      const hofIdx = i - eliteCount;
+      if (hofIdx < selectedHofGenomes.length) {
+        nextGenPlans.push({
+          genome: selectedHofGenomes[hofIdx],
+          mutate: true, // mutate slightly to explore this branch!
+          origin: 'hof'
+        });
+      } else {
+        // Fallback: mutate the active champion
+        nextGenPlans.push({
+          genome: topActiveGenome || generatePEN_Progenitor(),
+          mutate: true,
+          origin: 'mutant'
+        });
+      }
+    } else if (i < eliteCount + hofCount + inflowCount) {
+      // C. Fresh Random immigrants (Inflow)
+      nextGenPlans.push({
+        genome: generatePEN_Progenitor(),
+        mutate: false,
+        origin: 'random'
+      });
+    } else {
+      // D. Cloned Mutants: clone from all unique active elites evenly and mutate
+      const sourceIdx = (i - eliteCount - hofCount - inflowCount) % Math.max(1, uniqueActiveGenomes.length);
+      const sourceGenome = uniqueActiveGenomes[sourceIdx] || topActiveGenome || generatePEN_Progenitor();
+      nextGenPlans.push({
+        genome: sourceGenome,
+        mutate: true,
+        origin: 'mutant'
+      });
+    }
+  }
 
   const existingCards = gridContainer.querySelectorAll(".sandbox-card");
   const isRecycling = existingCards.length === N && sandboxes.length === N;
@@ -366,44 +473,15 @@ async function rebuildSandboxGrid() {
       }
 
       const canvas = card.querySelector("canvas") as HTMLCanvasElement;
-      
-      let parent = "";
-      let shouldMutate = false;
-      let originType: 'elite' | 'hof' | 'mutant' | 'random' = 'random';
-
-      if (savedPool.length > 0) {
-        if (i < eliteCount) {
-          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
-          shouldMutate = false;
-          originType = 'elite';
-        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
-          const hofIdx = (i - eliteCount) % savedHof.length;
-          parent = savedHof[hofIdx].genome;
-          shouldMutate = true;
-          originType = 'hof';
-        } else if (i < eliteCount + hofCount + inflowCount) {
-          parent = generatePEN_Progenitor();
-          shouldMutate = false;
-          originType = 'random';
-        } else {
-          const parentIdx = Math.floor(Math.random() * savedPool.length);
-          parent = savedPool[parentIdx].genome;
-          shouldMutate = true;
-          originType = 'mutant';
-        }
-      } else {
-        parent = generatePEN_Progenitor();
-        shouldMutate = false;
-        originType = 'random';
-      }
+      const plan = nextGenPlans[i];
 
       // Update the card's header icon dynamically
       const cardIconEl = document.getElementById(`card-icon-${i}`);
       if (cardIconEl) {
-        cardIconEl.innerText = iconMap[originType];
+        cardIconEl.innerText = iconMap[plan.origin];
       }
 
-      sandboxes[i] = initSandbox(i + 1, canvas, parent, shouldMutate, originType);
+      sandboxes[i] = initSandbox(i + 1, canvas, plan.genome, plan.mutate, plan.origin);
     }
   } else {
     // FULL REBUILD (First boot or grid size changed)
@@ -411,35 +489,7 @@ async function rebuildSandboxGrid() {
     sandboxes = [];
 
     for (let i = 0; i < N; i++) {
-      let parent = "";
-      let shouldMutate = false;
-      let originType: 'elite' | 'hof' | 'mutant' | 'random' = 'random';
-
-      if (savedPool.length > 0) {
-        if (i < eliteCount) {
-          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
-          shouldMutate = false;
-          originType = 'elite';
-        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
-          const hofIdx = (i - eliteCount) % savedHof.length;
-          parent = savedHof[hofIdx].genome;
-          shouldMutate = true;
-          originType = 'hof';
-        } else if (i < eliteCount + hofCount + inflowCount) {
-          parent = generatePEN_Progenitor();
-          shouldMutate = false;
-          originType = 'random';
-        } else {
-          const parentIdx = Math.floor(Math.random() * savedPool.length);
-          parent = savedPool[parentIdx].genome;
-          shouldMutate = true;
-          originType = 'mutant';
-        }
-      } else {
-        parent = generatePEN_Progenitor();
-        shouldMutate = false;
-        originType = 'random';
-      }
+      const plan = nextGenPlans[i];
 
       const card = document.createElement("div");
       card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
@@ -451,7 +501,7 @@ async function rebuildSandboxGrid() {
 
       const meta = document.createElement("div");
       meta.className = "sandbox-meta";
-      meta.innerHTML = `<span style="display: flex; align-items: center; gap: 4px;"><span id="card-icon-${i}">${iconMap[originType]}</span> #${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
+      meta.innerHTML = `<span style="display: flex; align-items: center; gap: 4px;"><span id="card-icon-${i}">${iconMap[plan.origin]}</span> #${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
 
       card.appendChild(canvas);
       card.appendChild(meta);
@@ -465,7 +515,7 @@ async function rebuildSandboxGrid() {
         compileBrainSVG();
       });
 
-      const sb = initSandbox(i + 1, canvas, parent, shouldMutate, originType);
+      const sb = initSandbox(i + 1, canvas, plan.genome, plan.mutate, plan.origin);
       sandboxes.push(sb);
     }
   }
