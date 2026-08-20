@@ -29,6 +29,8 @@ export function executeBrain(
   // 2. Continuous Euler Integration: Update hidden and output neurons
   for (let i = K + 1; i < totalNodes; i++) {
     const neuron = brain.neurons[i];
+    const tau = neuron.tau || 1.0;
+    const bias = neuron.bias || 0.0;
 
     // Accumulate inputs from all incoming temporal synapses
     let sum = 0.0;
@@ -39,7 +41,7 @@ export function executeBrain(
     });
 
     // Euler integration step (dt = 1.0, tau_i is the genetically encoded decay time)
-    neuronStates[i] += (1.0 / neuron.tau) * (-neuronStates[i] + sum + neuron.bias);
+    neuronStates[i] += (1.0 / tau) * (-neuronStates[i] + sum + bias);
 
     // Bounded potential clamping to prevent numeric drift explosions
     neuronStates[i] = Math.max(-4.0, Math.min(4.0, neuronStates[i]));
