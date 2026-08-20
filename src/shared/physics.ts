@@ -61,8 +61,8 @@ export function applyCreaturePhysics(
   const maxFlexion = 1.2; // approx 68 degrees max bend
   const targetBending = outBending * (maxFlexion / Math.max(0.2, stiffness));
 
-  // Smooth muscle stiffness body bending interpolation (fixed 0.18 majestic model)
-  const muscleInterpolationRate = 0.18;
+  // Smooth muscle stiffness body bending interpolation (fixed 0.20 majestic model)
+  const muscleInterpolationRate = 0.20;
   agent.bendAngle = (agent.bendAngle || 0.0) * (1.0 - muscleInterpolationRate) + targetBending * muscleInterpolationRate;
   agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, agent.bendAngle));
 
