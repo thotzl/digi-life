@@ -805,7 +805,7 @@ export function calculateSandboxFitness(
     // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
     
     // 1. Stillstand & Schleicher penalty: absolute 0 points for passive crawlers
-    if (distanceTraveled < 120.0 && curDist >= 30.0) {
+    if (distanceTraveled < 180.0 && curDist >= 20.0) {
       return 0.0;
     }
 

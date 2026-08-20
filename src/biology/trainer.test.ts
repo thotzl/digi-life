@@ -96,14 +96,14 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
     expect(fit).toBe(1414.0);
   });
 
-  it('should absolute clamp standstill and passive crawling unsuccessful runs (< 120px) to 0.0 points', () => {
-    // Passive crawling (traveled only 50px), didn't reach food, and didn't get extremely close (50px distance)
+  it('should absolute clamp standstill and passive crawling unsuccessful runs (< 180px) to 0.0 points', () => {
+    // Passive crawling (traveled only 100px), didn't reach food, and didn't get extremely close (50px distance)
     const fit = calculateSandboxFitness(
       false,      // finished
       undefined,  // finishTick
       300,        // epochDurationTicks
       100,        // startDistance
-      50,         // distanceTraveled (passive crawling)
+      100,        // distanceTraveled (passive crawling)
       0,          // wallCollisions
       50,         // curDist
       510,        // endX
@@ -112,8 +112,8 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
     expect(fit).toBe(0.0);
   });
 
-  it('should exempt passive crawling from 0.0 penalty if they got extremely close (< 30px) to the food', () => {
-    // Passive crawling (traveled only 50px) but got extremely close to food (15px remaining)
+  it('should exempt passive crawling from 0.0 penalty if they got extremely close (< 20px) to the food', () => {
+    // Passive crawling (traveled only 50px) but got extremely close to food (15px remaining, within 20px limit)
     const fit = calculateSandboxFitness(
       false,      // finished
       undefined,  // finishTick
@@ -128,26 +128,26 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
     // baseFit = 100 * (1 - 15/100) = 85.0
     // kineticWaste = 50 * 0.28 = 14.0
     // fit = (85 - 14) = 71.0
-    expect(fit).toBe(71.0);
+    expect(fit).toBeCloseTo(71.0, 5);
   });
 
   it('should deduct a metabolic kinetic waste tax for unsuccessful aimless wandering', () => {
-    // Swam 150px, didn't reach food, got 50% close to food
+    // Swam 200px (active, >180px limit), didn't reach food, got 80% close to food (20px remaining)
     const fit = calculateSandboxFitness(
       false,      // finished
       undefined,  // finishTick
       300,        // epochDurationTicks
       100,        // startDistance
-      150,        // distanceTraveled (swam a bit)
+      200,        // distanceTraveled (active, >180px)
       0,          // wallCollisions
-      50,         // curDist (got 50px closer)
-      650,        // endX (150px displacement, straight line)
+      20,         // curDist (got 80px closer)
+      700,        // endX (200px displacement, straight line)
       500         // endY
     );
-    // baseFit = 100 * (1 - 50/100) = 50.0
-    // kineticWaste = 150 * 0.28 = 42.0
-    // finalFit = (50.0 - 42.0) = 8.0
-    expect(fit).toBeCloseTo(8.0, 5);
+    // baseFit = 100 * (1 - 20/100) = 80.0
+    // kineticWaste = 200 * 0.28 = 56.0
+    // finalFit = (80.0 - 56.0) = 24.0
+    expect(fit).toBeCloseTo(24.0, 5);
   });
 
   it('should absolute clamp unsuccessful runs to 0.0 if they swam in circles around the center', () => {
