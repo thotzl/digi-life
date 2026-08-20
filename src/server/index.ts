@@ -1118,13 +1118,17 @@ function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number, gr
 
           let match = 0.0;
           if (aff >= 0.8) {
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVisual) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.25 && aff <= 0.65) {
-            match = Math.max(0, 1.0 - Math.abs(aff - targetSmell) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff < 0.25) {
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVibration) / (patch.bandwidth * 1.8 + 0.12));
-          } else {
+            // Thermal Heat Scan
             match = Math.max(0, 1.0 - Math.abs(aff - targetHeat) / (patch.bandwidth * 1.8 + 0.12));
+          } else if (aff >= 0.65 && aff < 0.8) {
+            // Vibration Scan
+            match = Math.max(0, 1.0 - Math.abs(aff - targetVibration) / (patch.bandwidth * 1.8 + 0.12));
+          } else if (aff >= 0.25 && aff < 0.65) {
+            // Olfactory/Smell Scan
+            match = Math.max(0, 1.0 - Math.abs(aff - targetSmell) / (patch.bandwidth * 1.8 + 0.12));
+          } else {
+            // Visual Eye Scan
+            match = Math.max(0, 1.0 - Math.abs(aff - targetVisual) / (patch.bandwidth * 1.8 + 0.12));
           }
 
           if (match > 0.05) {
