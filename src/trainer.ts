@@ -394,56 +394,68 @@ async function rebuildSandboxGrid() {
   // 3. Pre-plan the next generation's genomes to ensure absolute uniqueness and clean tracking
   const nextGenPlans: { genome: string; mutate: boolean; origin: 'elite' | 'hof' | 'mutant' | 'random' }[] = [];
 
-  for (let i = 0; i < N; i++) {
-    if (i < eliteCount) {
-      // A. Elite slots: take unique genomes from the active pool
-      if (i < uniqueActiveGenomes.length) {
-        nextGenPlans.push({
-          genome: uniqueActiveGenomes[i],
-          mutate: false,
-          origin: 'elite'
-        });
-      } else {
-        // Fallback if not enough unique elites: spawn mutated clones of the champion
-        nextGenPlans.push({
-          genome: topActiveGenome || generatePEN_Progenitor(),
-          mutate: true,
-          origin: 'mutant'
-        });
-      }
-    } else if (i < eliteCount + hofCount) {
-      // B. HOF slots: take the pre-selected diverse HOF genomes
-      const hofIdx = i - eliteCount;
-      if (hofIdx < selectedHofGenomes.length) {
-        nextGenPlans.push({
-          genome: selectedHofGenomes[hofIdx],
-          mutate: true, // mutate slightly to explore this branch!
-          origin: 'hof'
-        });
-      } else {
-        // Fallback: mutate the active champion
-        nextGenPlans.push({
-          genome: topActiveGenome || generatePEN_Progenitor(),
-          mutate: true,
-          origin: 'mutant'
-        });
-      }
-    } else if (i < eliteCount + hofCount + inflowCount) {
-      // C. Fresh Random immigrants (Inflow)
+  if (savedPool.length === 0) {
+    // Greenfield Start / Reset (Generation 1):
+    // Populate the entire grid with pure, independent, non-mutated random progenitors (🌱)!
+    for (let i = 0; i < N; i++) {
       nextGenPlans.push({
         genome: generatePEN_Progenitor(),
         mutate: false,
         origin: 'random'
       });
-    } else {
-      // D. Cloned Mutants: clone from all unique active elites evenly and mutate
-      const sourceIdx = (i - eliteCount - hofCount - inflowCount) % Math.max(1, uniqueActiveGenomes.length);
-      const sourceGenome = uniqueActiveGenomes[sourceIdx] || topActiveGenome || generatePEN_Progenitor();
-      nextGenPlans.push({
-        genome: sourceGenome,
-        mutate: true,
-        origin: 'mutant'
-      });
+    }
+  } else {
+    for (let i = 0; i < N; i++) {
+      if (i < eliteCount) {
+        // A. Elite slots: take unique genomes from the active pool
+        if (i < uniqueActiveGenomes.length) {
+          nextGenPlans.push({
+            genome: uniqueActiveGenomes[i],
+            mutate: false,
+            origin: 'elite'
+          });
+        } else {
+          // Fallback if not enough unique elites: spawn mutated clones of the champion
+          nextGenPlans.push({
+            genome: topActiveGenome || generatePEN_Progenitor(),
+            mutate: true,
+            origin: 'mutant'
+          });
+        }
+      } else if (i < eliteCount + hofCount) {
+        // B. HOF slots: take the pre-selected diverse HOF genomes
+        const hofIdx = i - eliteCount;
+        if (hofIdx < selectedHofGenomes.length) {
+          nextGenPlans.push({
+            genome: selectedHofGenomes[hofIdx],
+            mutate: true, // mutate slightly to explore this branch!
+            origin: 'hof'
+          });
+        } else {
+          // Fallback: mutate the active champion
+          nextGenPlans.push({
+            genome: topActiveGenome || generatePEN_Progenitor(),
+            mutate: true,
+            origin: 'mutant'
+          });
+        }
+      } else if (i < eliteCount + hofCount + inflowCount) {
+        // C. Fresh Random immigrants (Inflow)
+        nextGenPlans.push({
+          genome: generatePEN_Progenitor(),
+          mutate: false,
+          origin: 'random'
+        });
+      } else {
+        // D. Cloned Mutants: clone from all unique active elites evenly and mutate
+        const sourceIdx = (i - eliteCount - hofCount - inflowCount) % Math.max(1, uniqueActiveGenomes.length);
+        const sourceGenome = uniqueActiveGenomes[sourceIdx] || topActiveGenome || generatePEN_Progenitor();
+        nextGenPlans.push({
+          genome: sourceGenome,
+          mutate: true,
+          origin: 'mutant'
+        });
+      }
     }
   }
 
