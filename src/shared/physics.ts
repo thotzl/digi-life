@@ -59,13 +59,22 @@ export function applyCreaturePhysics(
 
   // Smooth muscle stiffness body bending interpolation (stiffness-modulated leading model)
   agent.bendAngle = (agent.bendAngle || 0.0) * (1.0 - stiffness * 0.3) + targetBending * (stiffness * 0.3);
-  agent.headingAngle += agent.omegaRot;
-  agent.omegaRot = agent.bendAngle / 12.0;
+  agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, agent.bendAngle));
 
   // 2. Fluid drag & thrust forces
   const vForward = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
   const fx = netThrustForce * Math.cos(agent.headingAngle);
   const fy = netThrustForce * Math.sin(agent.headingAngle);
+
+  // Kinematic Curve Turn coupling: turning is strictly dependent on forward/backward movement and flexion!
+  // This is the zero-slippage biomorphic flexion model (e.g., eels cannot spin in place without thrust!).
+  const curvatureFactor = 0.015;
+  const deltaHeading = vForward * agent.bendAngle * curvatureFactor;
+  agent.headingAngle += deltaHeading;
+  agent.headingAngle = Math.atan2(Math.sin(agent.headingAngle), Math.cos(agent.headingAngle));
+
+  // omegaRot acts as an alias for visual bending amount in the client renderer
+  agent.omegaRot = agent.bendAngle / 12.0;
 
   const receptorBallast = pheno.organelles.length * 0.18;
   const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
