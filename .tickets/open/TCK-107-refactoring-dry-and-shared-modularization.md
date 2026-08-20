@@ -19,7 +19,7 @@ Beseitigung von Redundanzen (DRY) und Etablierung einer Single Source of Truth (
 ## Beobachtete Duplikate & Refactoring-Szenarien
 
 ### 1. Physik & Kinetik (Physics Unit)
-- **Problem:** Die Flexions-Kurvenbewegung (body bending), Schubkrafterzeugung, Reibung, Wandreflexion und Felskollisions-Schnittpunkte sind in `src/server/index.ts`, `src/server/balanceSim.ts`, `src/trainer.ts` und `src/preview.ts` vierfach dupliziert.
+- **Problem:** Die Flexions-Kurvenbewegung (body bending), Schubkrafterzeugung, Reibung, Wandreflexion und Felskollisions-Schnittpunkte sowie die **Kreatur-zu-Futter-Kollisionsauflösung (Wegschubsen und Driften von Sporen/Pellets)** sind in `src/server/index.ts`, `src/server/balanceSim.ts`, `src/trainer.ts` und `src/preview.ts` vierfach dupliziert.
 - **Lösung:** Auslagerung in eine zustandslose **`src/shared/physics.ts`** Einheit.
 
 ### 2. Sensorik-Abtastung (Sensory Unit)

@@ -528,7 +528,10 @@ export function runSimulation(cfg: FullConfig, totalTicks = 10000): {
       }
 
       // Grazing Spores
-      const eatRadius = meanRadius * (rules.grazingRadiusMultiplier || 1.5) * 0.5 + (rules.grazingRadiusOffset || 4.0);
+      // Ensure that eating range is always slightly larger than the body push boundary (meanRadius + 8)
+      // so that creatures can actually reach and eat food pellets instead of pushing them away forever!
+      const baseEatRadius = meanRadius * (rules.grazingRadiusMultiplier || 1.5) * 0.5 + (rules.grazingRadiusOffset || 4.0);
+      const eatRadius = Math.max(meanRadius + 10, baseEatRadius);
       const nearbyFood = grid.getNearbyFood(agent.px, agent.py, eatRadius);
       nearbyFood.forEach(pellet => {
         const dx = pellet.x - agent.px;

@@ -698,10 +698,9 @@ function stepPhysics(sb: Sandbox) {
     sb.agent.vy = (sb.agent.vy - 2.0 * dot * col.normalY) * 0.45;
   }
 
-  // Spore collision & consumption check (diet-compatible)
-  // Herbivores (carnivory < 0.40) eat only plants.
-  // Carnivores (carnivory >= 0.65) eat only meat.
-  // Omnivores (0.40 <= carnivory < 0.65) can eat both!
+  // 1. Spore collision & consumption check (diet-compatible)
+  // MUST be calculated BEFORE pushing collisions, otherwise the physical push
+  // would prevent the creature from ever reaching the eating range (minFoodDist <= eatDist)!
   const compatibleFoods = sb.foods.filter(f => {
     if (f.type === 'plant') return sb.agent.phenotype.carnivory < 0.65;
     if (f.type === 'meat') return sb.agent.phenotype.carnivory >= 0.40;
@@ -720,15 +719,61 @@ function stepPhysics(sb: Sandbox) {
   });
 
   // Herbivore algae grazing range vs Carnivore bite range
-  const eatDist = targetFood.type === 'meat'
+  // Ensure the eating range is ALWAYS slightly larger than the physical push boundary (meanRadius + 8)
+  // so that creatures can actually reach and swallow the food instead of pushing it away forever!
+  const baseEatDist = targetFood.type === 'meat'
     ? meanRadius * 1.6 * 0.5 + 5.0 // Biting radius
     : meanRadius * 1.5 * 0.5 + 8.0; // Algae grazing range
+  const eatDist = Math.max(meanRadius + 10, baseEatDist);
 
   if (minFoodDist <= eatDist) {
     sb.finished = true;
     sb.finishTick = sb.epochTicks;
     sb.consumedSporeType = targetFood.type;
     sb.agent.hasEaten = true;
+  }
+
+  // 2. Resolve Creature-to-Food physical collisions (pushing spores with impulse)
+  // Only calculated if the food was NOT eaten in this frame!
+  if (!sb.finished) {
+    sb.foods.forEach(pellet => {
+      const dx = pellet.x - sb.agent.px;
+      const dy = pellet.y - sb.agent.py;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const minDist = meanRadius + 8; // Spore radius = 8
+
+      if (d < minDist && d > 0.1) {
+        const overlap = minDist - d;
+        const nx = dx / d;
+        const ny = dy / d;
+
+        // Push spore away
+        pellet.x += nx * overlap;
+        pellet.y += ny * overlap;
+
+        // Clip spore to boundary
+        if (pellet.x < 8) pellet.x = 8;
+        else if (pellet.x > canvasWidth - 8) pellet.x = canvasWidth - 8;
+        if (pellet.y < 8) pellet.y = 8;
+        else if (pellet.y > canvasHeight - 8) pellet.y = canvasHeight - 8;
+
+        // Impart velocity push
+        pellet.vx = sb.agent.vx + nx * 2.0;
+        pellet.vy = sb.agent.vy + ny * 2.0;
+      }
+
+      // Apply drift friction to moving food spores in the sandbox
+      pellet.x += (pellet.vx || 0);
+      pellet.y += (pellet.vy || 0);
+      pellet.vx = (pellet.vx || 0) * 0.92;
+      pellet.vy = (pellet.vy || 0) * 0.92;
+
+      // Handle wall bounces for moving food spores inside the sandbox
+      if (pellet.x < 8) { pellet.x = 8; pellet.vx = -Math.abs(pellet.vx || 0); }
+      else if (pellet.x > canvasWidth - 8) { pellet.x = canvasWidth - 8; pellet.vx = Math.abs(pellet.vx || 0); }
+      if (pellet.y < 8) { pellet.y = 8; pellet.vy = -Math.abs(pellet.vy || 0); }
+      else if (pellet.y > canvasHeight - 8) { pellet.y = canvasHeight - 8; pellet.vy = Math.abs(pellet.vy || 0); }
+    });
   }
 }
 
