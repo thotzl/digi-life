@@ -31,7 +31,7 @@
     "reproductionStomachThresholdFloor": 0.60,
     "reproductionSplitLossRatio": 0.4,
     "reproductionRecoilVelocityScale": 15.0,
-    "thrustBaseMultiplier": 6.0,
+    "thrustBaseMultiplier": 6.8,
     "steerTorqueBaseMultiplier": 5.8,
     "predatorSavageThrustThreshold": 0.55,
     "predatorSavageThrustMultiplier": 1.45,

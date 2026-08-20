@@ -592,7 +592,7 @@ function stepPhysics(sb: Sandbox) {
 
   const netThrustForce = outThrust * thrustMag;
 
-  const mass = 1.0 + (meanRadius ** 2) * 0.01;
+  const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
   const receptorBallast = sb.agent.phenotype.organelles.length * 0.18;
   const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
 
