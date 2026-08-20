@@ -3,6 +3,8 @@ import { parseGenome, generateRandomGenome, getComplementaryString, executeBrain
 import { CreatureRenderer } from './render/creatureRenderer';
 import { CreatureAgent, FoodSpore } from './shared/types';
 import { SpatialGrid } from './server/spatialGrid';
+import { computeSensoryInputs } from './shared/sensory';
+import { applyCreaturePhysics } from './shared/physics';
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
@@ -600,114 +602,8 @@ function stepPhysics(sb: Sandbox) {
   // Sensory clocks
   const clockVal = 0.5 + 0.5 * Math.sin(sb.agent.age * 0.1);
   
-  // Custom sensory extraction
-  const K = sb.agent.phenotype.organelles.length;
-  const inputs: number[] = Array(K + 1).fill(0.0);
-  inputs[K] = clockVal;
-
-  sb.agent.phenotype.organelles.forEach((patch, idx) => {
-    const range = patch.scale * 550.0;
-    const alpha = (patch.angle - 90) * (Math.PI / 180);
-    const halfCone = Math.max(0.1, patch.bandwidth * 1.5);
-    const aff = patch.spectralAffinity;
-    const organPower = patch.scale * (1.1 - patch.bandwidth);
-
-    let maxStimulus = 0.0;
-
-    // A. Food / Algae Scan (Herbivore sensors)
-    const nearbyFood = grid.getNearbyFood(sb.agent.px, sb.agent.py, range);
-    nearbyFood.forEach(pellet => {
-      const dx = pellet.x - sb.agent.px;
-      const dy = pellet.y - sb.agent.py;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-
-      if (dist <= range) {
-        let angleRel = Math.atan2(dy, dx) - sb.agent.headingAngle;
-        while (angleRel > Math.PI) angleRel -= Math.PI * 2;
-        while (angleRel < -Math.PI) angleRel += Math.PI * 2;
-        let deltaBeta = angleRel - alpha;
-        while (deltaBeta > Math.PI) deltaBeta -= Math.PI * 2;
-        while (deltaBeta < -Math.PI) deltaBeta += Math.PI * 2;
-
-        if (Math.abs(deltaBeta) <= halfCone) {
-          let match = 0.0;
-          if (aff >= 0.8) {
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.33) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.25 && aff <= 0.65) {
-            // Olfactory/Smell Scan: chlorophyll plant scent is at 0.35, perfectly in the olfactory range [0.25, 0.65]!
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.35) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff < 0.25) {
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.05) / (patch.bandwidth * 1.8 + 0.12));
-          }
-          if (match > 0.05) {
-            const strength = match * organPower * (1.0 - dist / range) * Math.cos(deltaBeta);
-            maxStimulus = Math.max(maxStimulus, strength);
-          }
-        }
-      }
-    });
-
-    // B. Peer / Prey Scan (Carnivore sensors - detecting our mocked Meat Spore!)
-    const nearbyPeers = grid.getNearbyCreatures(sb.agent.px, sb.agent.py, range);
-    nearbyPeers.forEach(other => {
-      if (other.id === sb.agent.id) return;
-      const dx = other.px - sb.agent.px;
-      const dy = other.py - sb.agent.py;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-
-      if (dist <= range) {
-        let angleRel = Math.atan2(dy, dx) - sb.agent.headingAngle;
-        while (angleRel > Math.PI) angleRel -= Math.PI * 2;
-        while (angleRel < -Math.PI) angleRel += Math.PI * 2;
-        let deltaBeta = angleRel - alpha;
-        while (deltaBeta > Math.PI) deltaBeta -= Math.PI * 2;
-        while (deltaBeta < -Math.PI) deltaBeta += Math.PI * 2;
-
-        if (Math.abs(deltaBeta) <= halfCone) {
-          let match = 0.0;
-          
-          if (aff >= 0.8) {
-            // Thermal Heat Scan
-            const targetHeat = (other.phenotype.carnivory >= 0.55) ? 0.85 * other.adrenaline : 0.15;
-            match = Math.max(0, 1.0 - Math.abs(aff - targetHeat) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.65 && aff < 0.8) {
-            // Vibration Scan
-            const targetVibration = (other.phenotype.pulseSpeed * 1000) % 1.0;
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVibration) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.25 && aff < 0.65) {
-            // Olfactory/Smell Scan
-            const targetSmell = (other.phenotype.basalMetabolicRate % 100) / 100;
-            match = Math.max(0, 1.0 - Math.abs(aff - targetSmell) / (patch.bandwidth * 1.8 + 0.12));
-          } else {
-            // Visual Eye Scan
-            const targetVisual = other.phenotype.primaryColor.h / 360;
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVisual) / (patch.bandwidth * 1.8 + 0.12));
-          }
-
-          if (match > 0.05) {
-            const strength = match * organPower * (1.0 - dist / range) * Math.cos(deltaBeta);
-            maxStimulus = Math.max(maxStimulus, strength);
-          }
-        }
-      }
-    });
-
-    // C. Boundary wall pressure warning
-    if (aff < 0.25) {
-      const wallWarningZone = range * 0.5;
-      let boundaryPressure = 0.0;
-      if (sb.agent.px < wallWarningZone) boundaryPressure = 1.0 - sb.agent.px / wallWarningZone;
-      else if (sb.agent.px > canvasWidth - wallWarningZone) boundaryPressure = 1.0 - (canvasWidth - sb.agent.px) / wallWarningZone;
-      if (sb.agent.py < wallWarningZone) boundaryPressure = Math.max(boundaryPressure, 1.0 - sb.agent.py / wallWarningZone);
-      else if (sb.agent.py > canvasHeight - wallWarningZone) boundaryPressure = Math.max(boundaryPressure, 1.0 - (canvasHeight - sb.agent.py) / wallWarningZone);
-
-      if (boundaryPressure > 0.0) {
-        maxStimulus = Math.max(maxStimulus, boundaryPressure * organPower);
-      }
-    }
-
-    inputs[idx] = Math.max(0.0, Math.min(1.0, maxStimulus));
-  });
+  // Custom sensory extraction using our shared isomorphic sensory unit SSOT!
+  const inputs = computeSensoryInputs(sb.agent, clockVal, grid, canvasWidth, canvasHeight);
 
   // 2. Execute Brain
   const brainRes = executeBrain(sb.agent.phenotype.brain, inputs, sb.agent.neuronStates, sb.agent.neuronActivations);
@@ -728,81 +624,32 @@ function stepPhysics(sb: Sandbox) {
   thrustMag *= etaSwim;
 
   const netThrustForce = outThrust * thrustMag;
-  const fx = netThrustForce * Math.cos(sb.agent.headingAngle);
-  const fy = netThrustForce * Math.sin(sb.agent.headingAngle);
 
-  // Body Bending
-  const maxFlexion = 1.2;
-  const targetBending = outLeft * (maxFlexion / Math.max(0.2, stiffness));
-  sb.agent.bendAngle = sb.agent.bendAngle || 0.0;
-  sb.agent.bendAngle += (targetBending - sb.agent.bendAngle) * 0.15;
-  sb.agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, sb.agent.bendAngle));
-
-  const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
-  const vForward = sb.agent.vx * Math.cos(sb.agent.headingAngle) + sb.agent.vy * Math.sin(sb.agent.headingAngle);
-
-  // Curve turn coupling
-  const deltaHeading = vForward * sb.agent.bendAngle * 0.015;
-  sb.agent.headingAngle += deltaHeading;
-  sb.agent.headingAngle = Math.atan2(Math.sin(sb.agent.headingAngle), Math.cos(sb.agent.headingAngle));
-
-  sb.agent.omegaRot = sb.agent.bendAngle / 12.0;
-
-  const receptorBallast = sb.agent.phenotype.organelles.length * 0.18;
-  const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
-
-  const dragForceForward = -dragForward * vForward;
-  const ax = (fx + dragForceForward * Math.cos(sb.agent.headingAngle)) / mass;
-  const ay = (fy + dragForceForward * Math.sin(sb.agent.headingAngle)) / mass;
-
-  sb.agent.vx = (sb.agent.vx + ax) * 0.94;
-  sb.agent.vy = (sb.agent.vy + ay) * 0.94;
-
-  // Lock-on heading movement (No slip!)
-  const netSpeed = sb.agent.vx * Math.cos(sb.agent.headingAngle) + sb.agent.vy * Math.sin(sb.agent.headingAngle);
-  sb.agent.vx = netSpeed * Math.cos(sb.agent.headingAngle);
-  sb.agent.vy = netSpeed * Math.sin(sb.agent.headingAngle);
+  // Apply unified isomorphic physics kinematics & collisions SSOT!
+  const { hitWall } = applyCreaturePhysics(sb.agent, netThrustForce, outLeft, canvasWidth, canvasHeight, (px, py, r) => checkObstacleCollision(sb.world, px, py, r));
 
   // Spore Verdrängung currents
   const current = getVectoredCurrentAt(sb.world, sb.agent.px, sb.agent.py);
   sb.agent.vx += current.vx;
   sb.agent.vy += current.vy;
 
-  sb.agent.px += sb.agent.vx;
-  sb.agent.py += sb.agent.vy;
-
   // Track cumulative distance traveled
   const movement = Math.sqrt(sb.agent.vx ** 2 + sb.agent.vy ** 2);
   sb.distanceTraveled += movement;
 
-  // Boundary box collisions
-  const r = meanRadius;
-  const wallRestitution = 0.5;
-  let hitWall = false;
-  if (sb.agent.px < r) { sb.agent.px = r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; hitWall = true; }
-  else if (sb.agent.px > canvasWidth - r) { sb.agent.px = canvasWidth - r; sb.agent.vx = -Math.abs(sb.agent.vx) * wallRestitution; hitWall = true; }
-  if (sb.agent.py < r) { sb.agent.py = r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; hitWall = true; }
-  else if (sb.agent.py > canvasHeight - r) { sb.agent.py = canvasHeight - r; sb.agent.vy = -Math.abs(sb.agent.vy) * wallRestitution; hitWall = true; }
+  // Wall collisions are automatically calculated inside applyCreaturePhysics! We just map the output to wallCollisions
+  if (hitWall) {
+    const cd = sb.wallCollisionCooldown || 0;
+    if (cd === 0) {
+      sb.wallCollisions = (sb.wallCollisions || 0) + 1;
+      sb.wallCollisionCooldown = 20; // 20 frames cooldown (~0.33s) to prevent rubbing count
+    }
+  }
 
   // Tick wall collision cooldown
   const cooldown = sb.wallCollisionCooldown || 0;
   if (cooldown > 0) {
     sb.wallCollisionCooldown = cooldown - 1;
-  }
-
-  if (hitWall && (sb.wallCollisionCooldown || 0) === 0) {
-    sb.wallCollisions = (sb.wallCollisions || 0) + 1;
-    sb.wallCollisionCooldown = 20; // 20 frames cooldown (~0.33s) to prevent rubbing count
-  }
-
-  // Obstacle collisions
-  const col = checkObstacleCollision(sb.world, sb.agent.px, sb.agent.py, meanRadius);
-  if (col.collided) {
-    sb.agent.px += col.normalX * col.overlap;
-    sb.agent.py += col.normalY * col.overlap;
-    const dot = sb.agent.vx * col.normalX + sb.agent.vy * col.normalY;
-    sb.agent.vx = (sb.agent.vx - 2.0 * dot * col.normalX) * 0.45;
-    sb.agent.vy = (sb.agent.vy - 2.0 * dot * col.normalY) * 0.45;
   }
 
   // 1. Spore collision & consumption check (diet-compatible)

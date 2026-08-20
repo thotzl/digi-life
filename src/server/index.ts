@@ -452,28 +452,6 @@ function simulationTick() {
       agent.adrenaline = Math.max(1.0, agent.adrenaline - (rules.adrenalineDecayRate || 0.015));
     }
 
-    let fx = 0;
-    let fy = 0;
-
-    // Initialize bendAngle
-    if (agent.bendAngle === undefined) agent.bendAngle = 0.0;
-
-    // outputs[0] is Thrust Fwd/Bwd (tanh, ranges [-1.0, 1.0])
-    // outputs[1] is Bending Left/Right (tanh, ranges [-1.0, 1.0])
-    const thrustValue = outThrust; // positive is forward, negative is backward
-    const outBending = outLeft;    // outputs[1] maps to outLeft in outputs array
-
-    const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
-    const netThrustForce = thrustValue * thrustMag * predatorSavageMultiplier * agent.adrenaline;
-    fx += netThrustForce * Math.cos(agent.headingAngle);
-    fy += netThrustForce * Math.sin(agent.headingAngle);
-
-    // Bending (flexion) target is scaled inversely by body stiffness
-    const maxFlexion = 1.2; // approx 68 degrees max bend
-    const targetBending = outBending * (maxFlexion / Math.max(0.2, stiffness));
-    agent.bendAngle += (targetBending - agent.bendAngle) * 0.15 * frameScale;
-    agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, agent.bendAngle));
-
     // Hebbian Recurrent Synaptic Learning
     const learningRate = (rules.hebbianLearningRateBase || 0.00015) * (1.0 - stiffness * (rules.hebbianLearningStiffnessDecay || 0.85));
     const forgettingDecay = rules.hebbianForgettingDecay || 0.0000032; // exactly 1 hour half-life
@@ -489,81 +467,16 @@ function simulationTick() {
       syn.weight = weight;
     });
 
-    // Integrated drag friction and accelerations
-    const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
+    const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
+    const netThrustForce = outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline;
 
-    // Compute forward velocity along heading
-    const vForward = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
+    // Apply unified, isomorphic physics kinematics and wall/obstacle collisions SSOT!
+    applyCreaturePhysics(agent, netThrustForce, outLeft, logicalWidth, logicalHeight, (px, py, r) => checkObstacleCollision(world, px, py, r));
 
-    // Kinematic Curve Turn coupling: turning is strictly dependent on forward/backward movement and flexion
-    const curvatureFactor = 0.015; // tuning factor for curve steepness
-    const deltaHeading = vForward * agent.bendAngle * curvatureFactor * frameScale;
-    agent.headingAngle += deltaHeading;
-    agent.headingAngle = Math.atan2(Math.sin(agent.headingAngle), Math.cos(agent.headingAngle));
-
-    // omegaRot acts as an alias for visual bending amount in the client renderer
-    agent.omegaRot = agent.bendAngle / 12.0;
-
-    const receptorBallast = agent.phenotype.organelles.length * (rules.receptorBallastScale || 0.18);
-    const dragForward = (meanRadius * (rules.dragForwardCoefficient || 0.015) + receptorBallast) * (1.0 - stiffness * (rules.dragForwardStiffnessDecay || 0.3));
-
-    const dragForceForward = -dragForward * vForward;
-
-    const fxDrag = dragForceForward * Math.cos(agent.headingAngle);
-    const fyDrag = dragForceForward * Math.sin(agent.headingAngle);
-
-    const ax = (fx + fxDrag) / mass;
-    const ay = (fy + fyDrag) / mass;
-
-    agent.vx += ax * frameScale;
-    agent.vy += ay * frameScale;
-
-    // Apply speed drag
-    agent.vx *= 0.94;
-    agent.vy *= 0.94;
-
-    // Project velocity strictly to forward/backward heading axis (eliminate side slippage / lateral drift)
-    const netSpeed = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
-    agent.vx = netSpeed * Math.cos(agent.headingAngle);
-    agent.vy = netSpeed * Math.sin(agent.headingAngle);
-
-    // Apply thermal vent vector currents to velocity
+    // Apply external thermal vent vector currents to velocity
     const current = getVectoredCurrentAt(world, agent.px, agent.py);
-    agent.vx += current.vx * frameScale;
-    agent.vy += current.vy * frameScale;
-
-    agent.px += agent.vx * frameScale;
-    agent.py += agent.vy * frameScale;
-
-    // Hard boundary wall collisions for creatures
-    const r = meanRadius;
-    const restitution = rules.elasticWallRestitution !== undefined ? rules.elasticWallRestitution : 0.5;
-    if (agent.px < r) {
-      agent.px = r;
-      agent.vx = -Math.abs(agent.vx) * restitution;
-    } else if (agent.px > logicalWidth - r) {
-      agent.px = logicalWidth - r;
-      agent.vx = -Math.abs(agent.vx) * restitution;
-    }
-    if (agent.py < r) {
-      agent.py = r;
-      agent.vy = -Math.abs(agent.vy) * restitution;
-    } else if (agent.py > logicalHeight - r) {
-      agent.py = logicalHeight - r;
-      agent.vy = -Math.abs(agent.vy) * restitution;
-    }
-
-    // Collide with solid circular obstacles deterministically
-    const collision = checkObstacleCollision(world, agent.px, agent.py, meanRadius);
-    if (collision.collided) {
-      agent.px += collision.normalX * collision.overlap;
-      agent.py += collision.normalY * collision.overlap;
-
-      const dot = agent.vx * collision.normalX + agent.vy * collision.normalY;
-      agent.vx = (agent.vx - 2.0 * dot * collision.normalX) * 0.45;
-      agent.vy = (agent.vy - 2.0 * dot * collision.normalY) * 0.45;
-      agent.omegaRot = -agent.omegaRot * 0.5;
-    }
+    agent.vx += current.vx;
+    agent.vy += current.vy;
 
     // Apply Biome-based Hazard damage and metabolic tax
     const currentBiome = getBiomeAt(world, agent.px, agent.py);
@@ -1044,135 +957,14 @@ function simulationTick() {
   broadcast(telemetryPayload);
 }
 
+import { applyCreaturePhysics } from "../shared/physics";
+import { computeSensoryInputs } from "../shared/sensory";
+
 // --------------------------------------------------------------------------
 // Headless Sensory Inputs Scanners
 // --------------------------------------------------------------------------
 function computeHeadlessSensoryInputs(agent: CreatureAgent, clockVal: number, grid: SpatialGrid): number[] {
-  const K = agent.phenotype.organelles.length;
-  const inputs: number[] = Array(K + 1).fill(0.0);
-  inputs[K] = clockVal;
-
-  agent.phenotype.organelles.forEach((patch, idx) => {
-    const aff = patch.spectralAffinity;
-    const organPower = patch.scale * (1.1 - patch.bandwidth);
-    const range = patch.scale * 550.0;
-    const alpha = (patch.angle - 90) * (Math.PI / 180);
-    const halfCone = Math.max(0.1, patch.bandwidth * 1.5);
-
-    let maxStimulus = 0.0;
-
-    // Spores scan (optimized via SpatialGrid)
-    const nearbyFood = grid.getNearbyFood(agent.px, agent.py, range);
-    nearbyFood.forEach(pellet => {
-      const dx = pellet.x - agent.px;
-      const dy = pellet.y - agent.py;
-
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist <= range) {
-        let angleRel = Math.atan2(dy, dx) - agent.headingAngle;
-        while (angleRel > Math.PI) angleRel -= Math.PI * 2;
-        while (angleRel < -Math.PI) angleRel += Math.PI * 2;
-
-        let deltaBeta = angleRel - alpha;
-        while (deltaBeta > Math.PI) deltaBeta -= Math.PI * 2;
-        while (deltaBeta < -Math.PI) deltaBeta += Math.PI * 2;
-
-        if (Math.abs(deltaBeta) <= halfCone) {
-          let match = 0.0;
-          if (aff >= 0.8) {
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.33) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.25 && aff <= 0.65) {
-            // Olfactory/Smell Scan: chlorophyll plant scent is at 0.35, perfectly in the olfactory range [0.25, 0.65]!
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.35) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff < 0.25) {
-            match = Math.max(0, 1.0 - Math.abs(aff - 0.05) / (patch.bandwidth * 1.8 + 0.12));
-          }
-
-          if (match > 0.05) {
-            const strength = match * organPower * (1.0 - dist / range) * Math.cos(deltaBeta);
-            maxStimulus = Math.max(maxStimulus, strength);
-          }
-        }
-      }
-    });
-
-    // Peers scan (optimized via SpatialGrid)
-    const nearbyPeers = grid.getNearbyCreatures(agent.px, agent.py, range);
-    nearbyPeers.forEach(other => {
-      if (other.id === agent.id) return;
-
-      const dx = other.px - agent.px;
-      const dy = other.py - agent.py;
-
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist <= range) {
-        let angleRel = Math.atan2(dy, dx) - agent.headingAngle;
-        while (angleRel > Math.PI) angleRel -= Math.PI * 2;
-        while (angleRel < -Math.PI) angleRel += Math.PI * 2;
-
-        let deltaBeta = angleRel - alpha;
-        while (deltaBeta > Math.PI) deltaBeta -= Math.PI * 2;
-        while (deltaBeta < -Math.PI) deltaBeta += Math.PI * 2;
-
-        if (Math.abs(deltaBeta) <= halfCone) {
-          const targetVisual = other.phenotype.primaryColor.h / 360;
-          const targetSmell = (other.phenotype.basalMetabolicRate % 100) / 100;
-          const targetVibration = (other.phenotype.pulseSpeed * 1000) % 1.0;
-          const targetHeat = (other.phenotype.carnivory >= 0.55) ? 0.85 * other.adrenaline : 0.15;
-
-          let match = 0.0;
-          if (aff >= 0.8) {
-            // Thermal Heat Scan
-            match = Math.max(0, 1.0 - Math.abs(aff - targetHeat) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.65 && aff < 0.8) {
-            // Vibration Scan
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVibration) / (patch.bandwidth * 1.8 + 0.12));
-          } else if (aff >= 0.25 && aff < 0.65) {
-            // Olfactory/Smell Scan
-            match = Math.max(0, 1.0 - Math.abs(aff - targetSmell) / (patch.bandwidth * 1.8 + 0.12));
-          } else {
-            // Visual Eye Scan
-            match = Math.max(0, 1.0 - Math.abs(aff - targetVisual) / (patch.bandwidth * 1.8 + 0.12));
-          }
-
-          if (match > 0.05) {
-            const strength = match * organPower * (1.0 - dist / range) * Math.cos(deltaBeta);
-            maxStimulus = Math.max(maxStimulus, strength);
-          }
-        }
-      }
-    });
-
-    // Wall warn touch
-    if (aff < 0.25) {
-      const wallWarningZone = range * 0.5;
-      let boundaryPressure = 0.0;
-      
-      if (agent.px < wallWarningZone) boundaryPressure = 1.0 - agent.px / wallWarningZone;
-      else if (agent.px > logicalWidth - wallWarningZone) boundaryPressure = 1.0 - (logicalWidth - agent.px) / wallWarningZone;
-
-      if (agent.py < wallWarningZone) boundaryPressure = Math.max(boundaryPressure, 1.0 - agent.py / wallWarningZone);
-      else if (agent.py > logicalHeight - wallWarningZone) boundaryPressure = Math.max(boundaryPressure, 1.0 - (logicalHeight - agent.py) / wallWarningZone);
-
-      if (boundaryPressure > 0.0) {
-        maxStimulus = Math.max(maxStimulus, boundaryPressure * organPower);
-      }
-    }
-
-    // Centrifugal water rotation touch
-    if (aff < 0.25) {
-      const speed = Math.sqrt(agent.vx * agent.vx + agent.vy * agent.vy);
-      const rotSpeed = Math.abs(agent.omegaRot);
-      const proprioceptiveStimulus = Math.min(1.0, speed * 0.15 + rotSpeed * 0.35);
-      if (proprioceptiveStimulus > 0.0) {
-        maxStimulus = Math.max(maxStimulus, proprioceptiveStimulus * organPower);
-      }
-    }
-
-    inputs[idx] = Math.max(0.0, Math.min(1.0, maxStimulus));
-  });
-
-  return inputs;
+  return computeSensoryInputs(agent, clockVal, grid, logicalWidth, logicalHeight);
 }
 
 // --------------------------------------------------------------------------
