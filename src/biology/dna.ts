@@ -746,8 +746,9 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   // ==========================================================================
   // PREDATOR / PREY DNA CLASSIFICATION
   // ==========================================================================
-  // Stiff, less-visual, heavy-notochord specimens emerge as aggressive carnivores!
-  const carnivory = Math.max(0.0, Math.min(1.0, stiffness * 0.82 + (1.0 - visusScore / 100) * 0.18));
+  // Diet predisposition (carnivory scale) is decoded independently from Locus 11,
+  // completely breaking any artificial genetic coupling with muscle stiffness or eye sight!
+  const carnivory = Math.max(0.0, Math.min(1.0, getMethylatedVal(11) / 25));
   const isPredator = carnivory >= 0.55;
 
   // Gen-coded Reproduction Strategies (r- vs. K-selection):
