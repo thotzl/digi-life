@@ -790,7 +790,9 @@ export function calculateSandboxFitness(
   startDistance: number,
   distanceTraveled: number,
   wallCollisions: number,
-  curDist: number
+  curDist: number,
+  endX: number,
+  endY: number
 ): number {
   const wallPenalty = Math.max(0.2, 1.0 - wallCollisions * 0.15);
   
@@ -800,16 +802,25 @@ export function calculateSandboxFitness(
     const speedBonus = (epochDurationTicks - finishTick) * 0.2;
     return (2000.0 * pathEfficiency + speedBonus) * wallPenalty;
   } else {
-    // Unsuccessful: proximity reward with standstill & aimless traveling penalties!
-    // Schleicher/Stillstand penalty: if they didn't move enough AND didn't get extremely close (< 30px) to the food
+    // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
+    
+    // 1. Stillstand & Schleicher penalty: absolute 0 points for passive crawlers
     if (distanceTraveled < 120.0 && curDist >= 30.0) {
       return 0.0;
-    } else {
-      const baseFit = curDist < startDistance ? 100.0 * (1.0 - curDist / startDistance) : 0.0;
-      // Aimless traveling penalty: subtract metabolic kinetic waste
-      const kineticWaste = distanceTraveled * 0.12;
-      return Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
     }
+
+    // 2. Kreisel-Erkennung (Circular movement detection):
+    // If they traveled a lot but net displacement from center (500, 500) is very small,
+    // they just swam in circles around their starting point!
+    const displacement = Math.sqrt((endX - 500) ** 2 + (endY - 500) ** 2);
+    if (distanceTraveled > 150.0 && displacement < 75.0) {
+      return 0.0; // Circular searcher: absolute 0 points
+    }
+
+    const baseFit = curDist < startDistance ? 100.0 * (1.0 - curDist / startDistance) : 0.0;
+    // Aimless traveling penalty: increased kinetic waste tax to 0.28 per pixel
+    const kineticWaste = distanceTraveled * 0.28;
+    return Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
   }
 }
 
@@ -849,7 +860,9 @@ async function evaluateGeneration(wasRunningBefore = false) {
           sb.startDistance,
           sb.distanceTraveled,
           sb.wallCollisions,
-          curDist
+          curDist,
+          sb.agent.px,
+          sb.agent.py
         );
         sb.accumulatedFitness = (sb.accumulatedFitness || 0.0) + trialFit;
         
@@ -920,7 +933,9 @@ async function evaluateGeneration(wasRunningBefore = false) {
         sb.startDistance,
         sb.distanceTraveled,
         sb.wallCollisions,
-        curDist
+        curDist,
+        sb.agent.px,
+        sb.agent.py
       );
       
       if (isMultiTrial) {
