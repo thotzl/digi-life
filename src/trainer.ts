@@ -80,6 +80,7 @@ interface Sandbox {
   wallCollisions: number;    // count of distinct wall boundary hits
   wallCollisionCooldown?: number; // frame cooldown to prevent multiple counts on rub
   consumedSporeType?: 'plant' | 'meat'; // records which spore was eaten on success
+  originType?: 'elite' | 'hof' | 'mutant' | 'random'; // Track sandbox origin
   world: ProceduralWorld;
   epochTicks: number;
 }
@@ -224,7 +225,13 @@ async function applyServerChampion(genome: string) {
 // --------------------------------------------------------------------------
 // Sandbox Initializations
 // --------------------------------------------------------------------------
-function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string, mutate = false): Sandbox {
+function initSandbox(
+  id: number,
+  canvas: HTMLCanvasElement,
+  parentGenome: string,
+  mutate = false,
+  originType: 'elite' | 'hof' | 'mutant' | 'random' = 'random'
+): Sandbox {
   const ctx = canvas.getContext('2d')!;
   const renderer = new CreatureRenderer(canvas);
   
@@ -303,6 +310,7 @@ function initSandbox(id: number, canvas: HTMLCanvasElement, parentGenome: string
     wallCollisions: 0,
     wallCollisionCooldown: 0,
     consumedSporeType: undefined,
+    originType,
     world,
     epochTicks: 0
   };
@@ -335,12 +343,23 @@ async function rebuildSandboxGrid() {
   const existingCards = gridContainer.querySelectorAll(".sandbox-card");
   const isRecycling = existingCards.length === N && sandboxes.length === N;
 
+  const iconMap = {
+    elite: "👑",
+    hof: "🏆",
+    mutant: "🧬",
+    random: "🌱"
+  };
+
   if (isRecycling) {
     // SUPERWARP RECYCLING: Keep the existing DOM nodes and canvas event listeners completely untouched!
     // Simply swap the genomes and reset agent and food states in memory.
     for (let i = 0; i < N; i++) {
       const card = existingCards[i] as HTMLDivElement;
       card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
+
+      // Reset inline borders to clear winner styling
+      card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
+      card.style.boxShadow = "none";
 
       const fitTextEl = document.getElementById(`card-fit-${i}`);
       if (fitTextEl) {
@@ -351,29 +370,41 @@ async function rebuildSandboxGrid() {
       
       let parent = "";
       let shouldMutate = false;
+      let originType: 'elite' | 'hof' | 'mutant' | 'random' = 'random';
 
       if (savedPool.length > 0) {
         if (i < eliteCount) {
           parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
           shouldMutate = false;
+          originType = 'elite';
         } else if (i < eliteCount + hofCount && savedHof.length > 0) {
           const hofIdx = (i - eliteCount) % savedHof.length;
           parent = savedHof[hofIdx].genome;
           shouldMutate = true;
+          originType = 'hof';
         } else if (i < eliteCount + hofCount + inflowCount) {
           parent = generatePEN_Progenitor();
           shouldMutate = false;
+          originType = 'random';
         } else {
           const parentIdx = Math.floor(Math.random() * savedPool.length);
           parent = savedPool[parentIdx].genome;
           shouldMutate = true;
+          originType = 'mutant';
         }
       } else {
         parent = generatePEN_Progenitor();
         shouldMutate = false;
+        originType = 'random';
       }
 
-      sandboxes[i] = initSandbox(i + 1, canvas, parent, shouldMutate);
+      // Update the card's header icon dynamically
+      const cardIconEl = document.getElementById(`card-icon-${i}`);
+      if (cardIconEl) {
+        cardIconEl.innerText = iconMap[originType];
+      }
+
+      sandboxes[i] = initSandbox(i + 1, canvas, parent, shouldMutate, originType);
     }
   } else {
     // FULL REBUILD (First boot or grid size changed)
@@ -381,6 +412,36 @@ async function rebuildSandboxGrid() {
     sandboxes = [];
 
     for (let i = 0; i < N; i++) {
+      let parent = "";
+      let shouldMutate = false;
+      let originType: 'elite' | 'hof' | 'mutant' | 'random' = 'random';
+
+      if (savedPool.length > 0) {
+        if (i < eliteCount) {
+          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
+          shouldMutate = false;
+          originType = 'elite';
+        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
+          const hofIdx = (i - eliteCount) % savedHof.length;
+          parent = savedHof[hofIdx].genome;
+          shouldMutate = true;
+          originType = 'hof';
+        } else if (i < eliteCount + hofCount + inflowCount) {
+          parent = generatePEN_Progenitor();
+          shouldMutate = false;
+          originType = 'random';
+        } else {
+          const parentIdx = Math.floor(Math.random() * savedPool.length);
+          parent = savedPool[parentIdx].genome;
+          shouldMutate = true;
+          originType = 'mutant';
+        }
+      } else {
+        parent = generatePEN_Progenitor();
+        shouldMutate = false;
+        originType = 'random';
+      }
+
       const card = document.createElement("div");
       card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
       card.setAttribute("data-idx", i.toString());
@@ -391,7 +452,7 @@ async function rebuildSandboxGrid() {
 
       const meta = document.createElement("div");
       meta.className = "sandbox-meta";
-      meta.innerHTML = `<span>#${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
+      meta.innerHTML = `<span style="display: flex; align-items: center; gap: 4px;"><span id="card-icon-${i}">${iconMap[originType]}</span> #${i + 1}</span><span id="card-fit-${i}">F: 0.0</span>`;
 
       card.appendChild(canvas);
       card.appendChild(meta);
@@ -405,31 +466,7 @@ async function rebuildSandboxGrid() {
         compileBrainSVG();
       });
 
-      let parent = "";
-      let shouldMutate = false;
-
-      if (savedPool.length > 0) {
-        if (i < eliteCount) {
-          parent = (i < savedPool.length) ? savedPool[i].genome : savedPool[0].genome;
-          shouldMutate = false;
-        } else if (i < eliteCount + hofCount && savedHof.length > 0) {
-          const hofIdx = (i - eliteCount) % savedHof.length;
-          parent = savedHof[hofIdx].genome;
-          shouldMutate = true;
-        } else if (i < eliteCount + hofCount + inflowCount) {
-          parent = generatePEN_Progenitor();
-          shouldMutate = false;
-        } else {
-          const parentIdx = Math.floor(Math.random() * savedPool.length);
-          parent = savedPool[parentIdx].genome;
-          shouldMutate = true;
-        }
-      } else {
-        parent = generatePEN_Progenitor();
-        shouldMutate = false;
-      }
-
-      const sb = initSandbox(i + 1, canvas, parent, shouldMutate);
+      const sb = initSandbox(i + 1, canvas, parent, shouldMutate, originType);
       sandboxes.push(sb);
     }
   }
@@ -955,6 +992,20 @@ async function evaluateGeneration(wasRunningBefore = false) {
     // 2. Sort by Fitness
     sandboxes.sort((a, b) => b.currentFitness - a.currentFitness);
 
+    // Mark the top eliteCount winners of this completed round with a glowing green border!
+    sandboxes.forEach((sb, sortedIdx) => {
+      const card = document.querySelector(`[data-idx="${sb.id - 1}"]`) as HTMLDivElement;
+      if (card) {
+        if (sortedIdx < eliteCount) {
+          card.style.border = "1px solid #10b981";
+          card.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+        } else {
+          card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
+          card.style.boxShadow = "none";
+        }
+      }
+    });
+
     // 3. Collect statistics
     const bestFit = sandboxes[0].currentFitness;
     const avgFit = sandboxes.reduce((acc, sb) => acc + sb.currentFitness, 0) / N;
@@ -1305,6 +1356,15 @@ function updateBrainLiveGlows(): void {
 // --------------------------------------------------------------------------
 function tick() {
   if (!isRunning) return;
+
+  // Clear winning borders and glows at the very start of the epoch
+  if (epochTicks === 0) {
+    document.querySelectorAll(".sandbox-card").forEach(c => {
+      const card = c as HTMLDivElement;
+      card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
+      card.style.boxShadow = "none";
+    });
+  }
 
   if (isHeadless) {
     // SUPERWARP HEADLESS MODE: Run the entire 300-tick epoch in a single, blazing-fast, synchronous JS loop!
