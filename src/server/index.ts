@@ -470,8 +470,10 @@ function simulationTick() {
     const predatorSavageMultiplier = agent.phenotype.carnivory >= (rules.predatorSavageThrustThreshold || 0.55) ? (rules.predatorSavageThrustMultiplier || 1.45) : 1.0;
     const netThrustForce = outThrust * thrustMag * predatorSavageMultiplier * agent.adrenaline;
 
+    const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
+
     // Apply unified, isomorphic physics kinematics and wall/obstacle collisions SSOT!
-    applyCreaturePhysics(agent, netThrustForce, outLeft, logicalWidth, logicalHeight, (px, py, r) => checkObstacleCollision(world, px, py, r));
+    applyCreaturePhysics(agent, netThrustForce, outLeft, mass, logicalWidth, logicalHeight, (px: number, py: number, r: number) => checkObstacleCollision(world, px, py, r));
 
     // Apply external thermal vent vector currents to velocity
     const current = getVectoredCurrentAt(world, agent.px, agent.py);

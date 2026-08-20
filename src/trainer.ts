@@ -592,8 +592,10 @@ function stepPhysics(sb: Sandbox) {
 
   const netThrustForce = outThrust * thrustMag;
 
+  const mass = 1.0 + (meanRadius ** 2) * 0.01;
+
   // Apply unified isomorphic physics kinematics & collisions SSOT!
-  const { hitWall } = applyCreaturePhysics(sb.agent, netThrustForce, outLeft, canvasWidth, canvasHeight, (px, py, r) => checkObstacleCollision(sb.world, px, py, r));
+  const { hitWall } = applyCreaturePhysics(sb.agent, netThrustForce, outLeft, mass, canvasWidth, canvasHeight, (px, py, r) => checkObstacleCollision(sb.world, px, py, r));
 
   // Spore Verdrängung currents
   const current = getVectoredCurrentAt(sb.world, sb.agent.px, sb.agent.py);

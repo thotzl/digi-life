@@ -44,6 +44,7 @@ export function applyCreaturePhysics(
   agent: CreatureAgent,
   netThrustForce: number,
   outBending: number,
+  mass: number,
   worldWidth: number,
   worldHeight: number,
   checkObstacleCollisionFn?: (px: number, py: number, r: number) => { collided: boolean; normalX: number; normalY: number; overlap: number }
@@ -51,7 +52,6 @@ export function applyCreaturePhysics(
   const pheno = agent.phenotype;
   const meanRadius = pheno.spinalHarmonics.meanRadius;
   const stiffness = pheno.stiffness;
-  const mass = 1.0 + (meanRadius ** 2) * 0.01;
 
   // 1. Biomorphic flexion (body bending) steering kinematics:
   const maxFlexion = 1.2; // approx 68 degrees max bend
