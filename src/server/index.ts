@@ -472,13 +472,15 @@ function simulationTick() {
 
     const mass = Math.pow(meanRadius, 1.5) * (baseLength / 25);
 
-    // Apply unified, isomorphic physics kinematics and wall/obstacle collisions SSOT!
-    applyCreaturePhysics(agent, netThrustForce, outLeft, mass, logicalWidth, logicalHeight, (px: number, py: number, r: number) => checkObstacleCollision(world, px, py, r));
+    // Calculate custom biological drag friction based on rules config
+    const receptorBallast = agent.phenotype.organelles.length * (rules.receptorBallastScale || 0.18);
+    const dragForward = (meanRadius * (rules.dragForwardCoefficient || 0.015) + receptorBallast) * (1.0 - stiffness * (rules.dragForwardStiffnessDecay || 0.3));
 
-    // Apply external thermal vent vector currents to velocity
+    // Calculate external environmental current forces
     const current = getVectoredCurrentAt(world, agent.px, agent.py);
-    agent.vx += current.vx;
-    agent.vy += current.vy;
+
+    // Apply unified, isomorphic physics kinematics, lateral currents drift, and wall/obstacle collisions SSOT!
+    applyCreaturePhysics(agent, netThrustForce, outLeft, mass, dragForward, current.vx, current.vy, logicalWidth, logicalHeight, (px: number, py: number, r: number) => checkObstacleCollision(world, px, py, r));
 
     // Apply Biome-based Hazard damage and metabolic tax
     const currentBiome = getBiomeAt(world, agent.px, agent.py);

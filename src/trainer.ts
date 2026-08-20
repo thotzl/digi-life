@@ -593,14 +593,14 @@ function stepPhysics(sb: Sandbox) {
   const netThrustForce = outThrust * thrustMag;
 
   const mass = 1.0 + (meanRadius ** 2) * 0.01;
-
-  // Apply unified isomorphic physics kinematics & collisions SSOT!
-  const { hitWall } = applyCreaturePhysics(sb.agent, netThrustForce, outLeft, mass, canvasWidth, canvasHeight, (px, py, r) => checkObstacleCollision(sb.world, px, py, r));
+  const receptorBallast = sb.agent.phenotype.organelles.length * 0.18;
+  const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
 
   // Spore Verdrängung currents
   const current = getVectoredCurrentAt(sb.world, sb.agent.px, sb.agent.py);
-  sb.agent.vx += current.vx;
-  sb.agent.vy += current.vy;
+
+  // Apply unified isomorphic physics kinematics & collisions SSOT!
+  const { hitWall } = applyCreaturePhysics(sb.agent, netThrustForce, outLeft, mass, dragForward, current.vx, current.vy, canvasWidth, canvasHeight, (px, py, r) => checkObstacleCollision(sb.world, px, py, r));
 
   // Track cumulative distance traveled
   const movement = Math.sqrt(sb.agent.vx ** 2 + sb.agent.vy ** 2);

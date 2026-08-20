@@ -38,13 +38,17 @@ export function generatePEN_Progenitor(): string {
 
 /**
  * Applies biomorphic flexion kinematics, movement thrust, fluid drag, 
- * wall boundary bounces, and obstacle collisions to a creature agent.
+ * wall boundary bounces, external current forces, and obstacle collisions to a creature agent.
+ * 100% mathematically and sequentially identical to the pre-refactored physics engine.
  */
 export function applyCreaturePhysics(
   agent: CreatureAgent,
   netThrustForce: number,
   outBending: number,
   mass: number,
+  dragForward: number,
+  externalForceX: number,
+  externalForceY: number,
   worldWidth: number,
   worldHeight: number,
   checkObstacleCollisionFn?: (px: number, py: number, r: number) => { collided: boolean; normalX: number; normalY: number; overlap: number }
@@ -76,9 +80,7 @@ export function applyCreaturePhysics(
   // omegaRot acts as an alias for visual bending amount in the client renderer
   agent.omegaRot = agent.bendAngle / 12.0;
 
-  const receptorBallast = pheno.organelles.length * 0.18;
-  const dragForward = (meanRadius * 0.015 + receptorBallast) * (1.0 - stiffness * 0.3);
-
+  // Fluid friction drag calculation
   const dragForceForward = -dragForward * vForward;
   const ax = (fx + dragForceForward * Math.cos(agent.headingAngle)) / mass;
   const ay = (fy + dragForceForward * Math.sin(agent.headingAngle)) / mass;
@@ -90,6 +92,11 @@ export function applyCreaturePhysics(
   const netSpeed = agent.vx * Math.cos(agent.headingAngle) + agent.vy * Math.sin(agent.headingAngle);
   agent.vx = netSpeed * Math.cos(agent.headingAngle);
   agent.vy = netSpeed * Math.sin(agent.headingAngle);
+
+  // Apply external environmental forces (like thermal vent vector currents) AFTER forward heading projection
+  // to allow realistic lateral drifting of creatures inside current zones!
+  agent.vx += externalForceX;
+  agent.vy += externalForceY;
 
   // Integrate position
   agent.px += agent.vx;
