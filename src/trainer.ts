@@ -240,10 +240,16 @@ function initSandbox(
 
   // Generate / Mutate genome
   let genome = parentGenome;
-  if (mutate && Math.random() < genomeMutationRate) {
-    // apply slight random mutation to brain segment
-    const mut = mutateGenome(genome);
-    genome = mut.newGenome;
+  if (mutate && genomeMutationRate > 0) {
+    // The mutation rate slider now determines the exact INTENSITY of mutations
+    // (how many characters inside the 256-character genome are mutated).
+    // E.g., 5% mutation rate applies exactly 256 * 0.05 = 13 point mutations,
+    // ensuring that every mutated slot is a guaranteed, distinct explorer!
+    const mutationsCount = Math.round(genome.length * genomeMutationRate);
+    for (let m = 0; m < mutationsCount; m++) {
+      const mut = mutateGenome(genome);
+      genome = mut.newGenome;
+    }
   }
 
   const anti = getComplementaryString(genome);
