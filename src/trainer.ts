@@ -357,9 +357,8 @@ async function rebuildSandboxGrid() {
       const card = existingCards[i] as HTMLDivElement;
       card.className = `sandbox-card ${i === selectedSandboxIdx ? "selected" : ""}`;
 
-      // Reset inline borders to clear winner styling
-      card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
-      card.style.boxShadow = "none";
+      // Clear winner styling class
+      card.classList.remove("winner");
 
       const fitTextEl = document.getElementById(`card-fit-${i}`);
       if (fitTextEl) {
@@ -992,16 +991,16 @@ async function evaluateGeneration(wasRunningBefore = false) {
     // 2. Sort by Fitness
     sandboxes.sort((a, b) => b.currentFitness - a.currentFitness);
 
-    // Mark the top eliteCount winners of this completed round with a glowing green border!
+    const eliteCount = Math.max(1, Math.ceil(N * eliteRatio));
+
+    // Mark the top eliteCount winners of this completed round with the winner class!
     sandboxes.forEach((sb, sortedIdx) => {
       const card = document.querySelector(`[data-idx="${sb.id - 1}"]`) as HTMLDivElement;
       if (card) {
         if (sortedIdx < eliteCount) {
-          card.style.border = "1px solid #10b981";
-          card.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+          card.classList.add("winner");
         } else {
-          card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
-          card.style.boxShadow = "none";
+          card.classList.remove("winner");
         }
       }
     });
@@ -1018,7 +1017,6 @@ async function evaluateGeneration(wasRunningBefore = false) {
     statAvgFit.innerText = avgFit.toFixed(1);
 
     // 4. Save Elite Champions to SQLite
-    const eliteCount = Math.max(1, Math.ceil(N * eliteRatio));
     const elitePopulation = sandboxes.slice(0, eliteCount).map(sb => ({
       name: sb.agent.phenotype.latinName,
       genome: sb.agent.genome,
@@ -1360,9 +1358,7 @@ function tick() {
   // Clear winning borders and glows at the very start of the epoch
   if (epochTicks === 0) {
     document.querySelectorAll(".sandbox-card").forEach(c => {
-      const card = c as HTMLDivElement;
-      card.style.border = "1px solid rgba(148, 163, 184, 0.15)";
-      card.style.boxShadow = "none";
+      c.classList.remove("winner");
     });
   }
 
