@@ -109,9 +109,11 @@ function generatePEN_Progenitor(): string {
     if (r < 16 || r > 28) continue;
 
     // Must have exactly 1 or 2 forward-facing algae food chemoreceptors / photoreceptors
+    // Angle 0 is straight forward, 90 is right, 270/315 is left.
+    // Ensure both left and right forward quadrants are matched to prevent clockwise bias!
     const foodSensors = phenotype.organelles.filter(patch => {
-      const angle = patch.angle; // 0° to 180°
-      const isForward = angle <= 45; // Front quadrant
+      const angle = patch.angle; // 0° to 360°
+      const isForward = angle <= 45 || angle >= 315; // Symmetric front quadrant
       const isReceptor = patch.expressionStyle < 0.72; // Not a muscle fin
       const isAlgaeTuned = patch.spectralAffinity > 0.25 && patch.spectralAffinity < 0.8;
       return isForward && isReceptor && isAlgaeTuned;
