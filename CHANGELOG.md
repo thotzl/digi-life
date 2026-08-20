@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-08-19
+
+### Added
+- **Isomorphic DRY Physics/Sensory/Brain SSOT (TCK-107):** Factored out all duplicate physics kinematics, sensory chemoreceptors, and CTRNN brain integrations into clean, stateless, and fully shared modules under `src/shared/`. These shared units act as the absolute Single Source of Truth (SSOT), consumed directly by the Live Ocean Server, the Balance Sim, and the local browser-bound Evolutionary Trainer.
+- **Proportional Physical Mass Decoupling:** Decoupled the physical mass calculations inside `applyCreaturePhysics` to allow ecosystem-appropriate volume-based weight scaling in the live ocean while preserving precise tuned weights in the trainer.
+- **Biomorphic Flexion Turn Coupling:** Harmonized steering turning kinematics across all environments to be strictly coupled to forward speed (`vForward * bendAngle * 0.015`), preventing any un-biomorphic in-place rotation and ensuring smooth eel-like sliding.
+
 ## [1.3.2] - 2026-08-19
 
 ### Added

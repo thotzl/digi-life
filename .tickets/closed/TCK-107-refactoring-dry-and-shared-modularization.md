@@ -1,7 +1,7 @@
 ---
 id: TCK-107
 title: Refactoring, DRY, und modulare Komponenten-Sharing zwischen Sandbox, Trainer und Simulation
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-08-19
 ---
