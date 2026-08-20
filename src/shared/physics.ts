@@ -61,8 +61,9 @@ export function applyCreaturePhysics(
   const maxFlexion = 1.2; // approx 68 degrees max bend
   const targetBending = outBending * (maxFlexion / Math.max(0.2, stiffness));
 
-  // Smooth muscle stiffness body bending interpolation (stiffness-modulated leading model)
-  agent.bendAngle = (agent.bendAngle || 0.0) * (1.0 - stiffness * 0.3) + targetBending * (stiffness * 0.3);
+  // Smooth muscle stiffness body bending interpolation (stiffness-modulated global model)
+  const muscleInterpolationRate = stiffness * 0.3;
+  agent.bendAngle = (agent.bendAngle || 0.0) * (1.0 - muscleInterpolationRate) + targetBending * muscleInterpolationRate;
   agent.bendAngle = Math.max(-maxFlexion, Math.min(maxFlexion, agent.bendAngle));
 
   // 2. Fluid drag & thrust forces
