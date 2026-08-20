@@ -366,6 +366,7 @@ function updateBetaBrainLiveGlows(activations: number[], brain: any): void {
 // ============================================================================
 let socket: WebSocket | null = null;
 let biteImpacts: { x: number; y: number; age: number }[] = [];
+let latestTelemetryPayload: any = null;
 
 function fetchRosterRecords() {
   getAllSpecies().then(records => {
@@ -438,56 +439,7 @@ function initBetaWebSocket() {
         }
       }
       else if (data.type === "TELEMETRY_TICK") {
-        highestGeneration = data.highestGeneration;
-        foodPellets = data.foodPellets;
-        const incoming = data.creatures;
-
-        // 1. High-Performance, In-Place Mutable Update (0 Bytes allocated!)
-        incoming.forEach((tele: any) => {
-          const local = creatures.find(c => Number(c.id) === Number(tele.id));
-          if (local) {
-            local.px = tele.px;
-            local.py = tele.py;
-            local.vx = tele.vx;
-            local.vy = tele.vy;
-            local.headingAngle = tele.headingAngle;
-            local.omegaRot = tele.omegaRot;
-            local.energy = tele.energy;
-            local.adrenaline = tele.adrenaline;
-            local.age = tele.age;
-            local.generation = tele.generation;
-            local.hasEaten = tele.hasEaten;
-          }
-        });
-
-        // 2. Filter dead agents locally
-        const serverIds = new Set(incoming.map((c: any) => c.id));
-        creatures = creatures.filter(c => serverIds.has(c.id));
-
-        // 3. Highly-targeted selective signals update
-        const id = selectedId.value;
-        if (id !== null) {
-          const active = creatures.find(c => Number(c.id) === Number(id));
-          if (active) {
-            selectedStatus.value = "Alive";
-            selectedEnergy.value = active.energy;
-            selectedAdrenaline.value = active.adrenaline || 1.0;
-            selectedAge.value = active.age;
-
-            if (data.selectedBrain && Number(data.selectedBrain.id) === Number(id)) {
-              updateBetaBrainLiveGlows(data.selectedBrain.activations, active.phenotype.brain);
-            }
-          } else {
-            selectedStatus.value = "Extinct (Fossil)";
-            selectedEnergy.value = 0;
-            selectedAge.value = 2700;
-          }
-        }
-
-        // 4. Update global stats DOM
-        statPopulation.innerText = `${creatures.length} / 25`;
-        statGeneration.innerText = `Gen. ${highestGeneration}`;
-        statSpores.innerText = `${foodPellets.length} Spores`;
+        latestTelemetryPayload = data;
       }
       else if (data.type === "CREATURE_SPAWNED") {
         const tele = data.creature;
@@ -644,8 +596,66 @@ function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
   }
 }
 
+function processTelemetryPayload(data: any) {
+  highestGeneration = data.highestGeneration;
+  foodPellets = data.foodPellets;
+  const incoming = data.creatures;
+
+  // 1. High-Performance, In-Place Mutable Update (0 Bytes allocated!)
+  incoming.forEach((tele: any) => {
+    const local = creatures.find(c => Number(c.id) === Number(tele.id));
+    if (local) {
+      local.px = tele.px;
+      local.py = tele.py;
+      local.vx = tele.vx;
+      local.vy = tele.vy;
+      local.headingAngle = tele.headingAngle;
+      local.omegaRot = tele.omegaRot;
+      local.energy = tele.energy;
+      local.adrenaline = tele.adrenaline;
+      local.age = tele.age;
+      local.generation = tele.generation;
+      local.hasEaten = tele.hasEaten;
+    }
+  });
+
+  // 2. Filter dead agents locally
+  const serverIds = new Set(incoming.map((c: any) => c.id));
+  creatures = creatures.filter(c => serverIds.has(c.id));
+
+  // 3. Highly-targeted selective signals update
+  const id = selectedId.value;
+  if (id !== null) {
+    const active = creatures.find(c => Number(c.id) === Number(id));
+    if (active) {
+      selectedStatus.value = "Alive";
+      selectedEnergy.value = active.energy;
+      selectedAdrenaline.value = active.adrenaline || 1.0;
+      selectedAge.value = active.age;
+
+      if (data.selectedBrain && Number(data.selectedBrain.id) === Number(id)) {
+        updateBetaBrainLiveGlows(data.selectedBrain.activations, active.phenotype.brain);
+      }
+    } else {
+      selectedStatus.value = "Extinct (Fossil)";
+      selectedEnergy.value = 0;
+      selectedAge.value = 2700;
+    }
+  }
+
+  // 4. Update global stats DOM
+  statPopulation.innerText = `${creatures.length} / 25`;
+  statGeneration.innerText = `Gen. ${highestGeneration}`;
+  statSpores.innerText = `${foodPellets.length} Spores`;
+}
+
 function drawBetaSimulationFrame(timestamp: number) {
   if (!ctx) return;
+
+  if (latestTelemetryPayload) {
+    processTelemetryPayload(latestTelemetryPayload);
+    latestTelemetryPayload = null; // consume!
+  }
 
   const dpr = window.devicePixelRatio || 1;
   const cw = canvas.width / dpr;
