@@ -1,4 +1,40 @@
 import { CreatureAgent } from "./types";
+import { generateRandomGenome, parseGenome, getComplementaryString } from "../biology/dna";
+
+/**
+ * Physically Equipped, Neurally Naive (PE-NN) Progenitor Factory
+ */
+export function generatePEN_Progenitor(): string {
+  let attempts = 0;
+  while (attempts < 1500) {
+    attempts++;
+    const genome = generateRandomGenome(256);
+    const phenotype = parseGenome(genome, getComplementaryString(genome));
+    
+    // Body size must be balanced (Radius 16 to 28)
+    const r = phenotype.spinalHarmonics.meanRadius;
+    if (r < 16 || r > 28) continue;
+
+    // Must have exactly 1 or 2 forward-facing algae food chemoreceptors / photoreceptors
+    // Angle 0 is straight forward, 90 is right, 270/315 is left.
+    // Ensure both left and right forward quadrants are matched to prevent clockwise bias!
+    const foodSensors = phenotype.organelles.filter(patch => {
+      const angle = patch.angle; // 0° to 360°
+      const isForward = angle <= 45 || angle >= 315; // Symmetric front quadrant
+      const isReceptor = patch.expressionStyle < 0.72; // Not a muscle fin
+      const isAlgaeTuned = patch.spectralAffinity > 0.25 && patch.spectralAffinity < 0.8;
+      return isForward && isReceptor && isAlgaeTuned;
+    });
+
+    if (foodSensors.length >= 1 && foodSensors.length <= 2) {
+      console.log(`[TRAINER] PE-NN Progenitor successfully compiled in ${attempts} attempts! (Radius: ${r.toFixed(1)}, Sensors: ${foodSensors.length})`);
+      return genome;
+    }
+  }
+
+  // Pure fallback seed string if search exceeds limits
+  return "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+}
 
 /**
  * Applies biomorphic flexion kinematics, movement thrust, fluid drag, 
