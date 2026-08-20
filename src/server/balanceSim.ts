@@ -161,7 +161,7 @@ export function runSimulation(cfg: FullConfig, totalTicks = 10000): {
     agent.phenotype.organelles.forEach((patch, idx) => {
       const aff = patch.spectralAffinity;
       const organPower = patch.scale * (1.1 - patch.bandwidth);
-      const range = patch.scale * 350.0;
+      const range = patch.scale * 550.0;
       const alpha = (patch.angle - 90) * (Math.PI / 180);
       const halfCone = Math.max(0.1, patch.bandwidth * 1.5);
 
