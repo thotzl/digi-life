@@ -41,7 +41,7 @@ vi.hoisted(() => {
   };
 });
 
-import { calculateSandboxFitness } from '../trainer';
+import { calculateSandboxFitness } from '../shared/physics';
 
 describe('Trainer Fitness Evaluation & Penalization', () => {
   it('should reward successful direct navigation with maximal path-efficiency score', () => {

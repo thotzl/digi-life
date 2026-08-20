@@ -4,7 +4,7 @@ import { CreatureRenderer } from './render/creatureRenderer';
 import { CreatureAgent, FoodSpore } from './shared/types';
 import { SpatialGrid } from './server/spatialGrid';
 import { computeSensoryInputs } from './shared/sensory';
-import { applyCreaturePhysics, generatePEN_Progenitor } from './shared/physics';
+import { applyCreaturePhysics, generatePEN_Progenitor, calculateSandboxFitness } from './shared/physics';
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
@@ -700,56 +700,7 @@ function stepPhysics(sb: Sandbox) {
   }
 }
 
-/**
- * Computes the success-gated, path-efficient, wall-penalized fitness score for a sandbox trial.
- */
-export function calculateSandboxFitness(
-  finished: boolean,
-  finishTick: number | undefined,
-  epochDurationTicks: number,
-  startDistance: number,
-  distanceTraveled: number,
-  wallCollisions: number,
-  curDist: number,
-  endX: number,
-  endY: number
-): number {
-  const wallPenalty = Math.max(0.2, 1.0 - wallCollisions * 0.15);
-  let fit = 0.0;
-  
-  if (finished && finishTick !== undefined) {
-    // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
-    const pathEfficiency = startDistance / Math.max(0.1, Math.max(startDistance, distanceTraveled));
-    const speedBonus = (epochDurationTicks - finishTick) * 0.2;
-    // Add the 1000 base proximity points on top of the efficiency bonus to maintain a perfect gradient!
-    fit = (1000.0 + 2000.0 * pathEfficiency + speedBonus) * wallPenalty;
-  } else {
-    // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
-    
-    // 1. Stillstand & Schleicher penalty: absolute 0 points for passive crawlers
-    if (distanceTraveled < 180.0 && curDist >= 20.0) {
-      return 0.0;
-    }
 
-    // 2. Kreisel-Erkennung (Circular movement detection):
-    // If they traveled a lot but net displacement from center (500, 500) is very small,
-    // they just swam in circles around their starting point!
-    const displacement = Math.sqrt((endX - 500) ** 2 + (endY - 500) ** 2);
-    if (distanceTraveled > 150.0 && displacement < 75.0) {
-      return 0.0; // Circular searcher: absolute 0 points
-    }
-
-    const baseFit = curDist < startDistance ? 1000.0 * (1.0 - curDist / startDistance) : 0.0;
-    // Aimless traveling penalty: gentle kinetic waste tax to preserve the learning gradient!
-    const kineticWaste = distanceTraveled * 0.1;
-    fit = Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
-  }
-
-  if (isNaN(fit) || !isFinite(fit)) {
-    return 0.0;
-  }
-  return fit;
-}
 
 // --------------------------------------------------------------------------
 // Evolutionary Selection & Epoch Resets
