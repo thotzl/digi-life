@@ -567,6 +567,16 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   }
 
   // ==========================================================================
+  // EPIGENETIC GEN-MODULATOR NETWORK (EGMN)
+  // ==========================================================================
+  // Epigenetic promoters (Loci 1-6) establish global regulatory profiles:
+  const M1_sizeRegulator = 0.55 + (getMethylatedVal(2) / 25) * 0.9;   // size/radius modifier [0.55 to 1.45]
+  const M2_muscleStrength = 0.5 + (getMethylatedVal(1) / 25) * 1.0;  // muscular force/stiffness modifier [0.5 to 1.5]
+  const M3_sensoryAcuity = 0.3 + (getMethylatedVal(3) / 25) * 1.2;   // sensory range/matching modifier [0.3 to 1.5]
+  const M4_neuralTau = 0.4 + (getMethylatedVal(5) / 25) * 1.2;       // neural integration speed modifier [0.4 to 1.6]
+  const M5_asymmetryLevel = 0.15 + (getMethylatedVal(6) / 25) * 1.35; // physical/visual symmetry dampener [0.15 to 1.5]
+
+  // ==========================================================================
   // 2. CHASSIS PARAMETERS DE-COMPILATION
   // ==========================================================================
   const symmetry: "vertical" | "quad" = getMethylatedVal(0) < 13 ? "vertical" : "quad";
@@ -584,8 +594,10 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   };
 
   const bodySeed = getMethylatedVal(7) * 4293 + getMethylatedVal(8) * 117;
-  const meanRadius = 18 + (getMethylatedVal(7) / 25) * 18;  
-  const baseLength = 90 + (getMethylatedVal(8) / 25) * 110; 
+  
+  // Body size is dynamically scaled by size epigenome M1
+  const meanRadius = Math.max(16, Math.min(28, (18 + (getMethylatedVal(7) / 25) * 18) * M1_sizeRegulator));  
+  const baseLength = Math.max(90, Math.min(200, (90 + (getMethylatedVal(8) / 25) * 110) * M1_sizeRegulator)); 
 
   const amplitudes: number[] = [];
   for (let j = 0; j < 4; j++) {
@@ -597,13 +609,20 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     phases.push((getMethylatedVal((3 + j) % 16) / 25) * Math.PI * 2);
   }
 
-  const spinalCurve = (getMethylatedVal(15) / 25) * 44 - 22;
+  // Muscular stiffness (thrust force) is scaled directly by muscle strength epigenome M2
+  const rawStiffness = 0.15 + (getMethylatedVal(12) / 25) * 0.85;
+  const stiffness = Math.max(0.15, Math.min(1.0, rawStiffness * M2_muscleStrength));
+
+  // Visual curvature deformation is regulated by M5 (asymmetry) and physically dampened by stiffness
+  // to prevent extreme uncooperative 'U-shaped' folding during sharp muscle turn contractions!
+  const rawSpinalCurve = (getMethylatedVal(15) / 25) * 44 - 22;
+  const spinalCurve = Math.max(-25, Math.min(25, rawSpinalCurve * M5_asymmetryLevel * (1.0 - stiffness * 0.25)));
+
   const spinalCurveFreq = 1 + Math.floor(getMethylatedVal(14) / 12);
   const parapodiaAmp = (getMethylatedVal(13) / 25) * 0.45;
   const parapodiaFreq = 2 + Math.floor((getMethylatedVal(2) / 25) * 12);
   const flatteningHead = (getMethylatedVal(1) / 25) * 1.0 - 0.4;
 
-  const stiffness = 0.15 + (getMethylatedVal(12) / 25) * 0.85;
   const pulseSpeed = 0.0015 + (getMethylatedVal(13) / 25) * 0.0075;
   const wavePhase = (getMethylatedVal(14) / 25) * 1.6;
   const wiggleAmplitude = (getMethylatedVal(15) / 25) * 0.22;
@@ -702,7 +721,10 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
           const spectralAffinity = getMethylatedPayloadVal(0, 0) / 25;
           const bandwidth = getMethylatedPayloadVal(1, 12) / 25;
           const expressionStyle = getMethylatedPayloadVal(2, 10) / 25;
-          const scale = 0.35 + (getMethylatedPayloadVal(3, 12) / 25) * 1.5;
+          
+          // Scale of sensory organs is modulated directly by sensory acuity epigenome M3
+          const scale = Math.max(0.35, Math.min(1.8, (0.35 + (getMethylatedPayloadVal(3, 12) / 25) * 1.5) * M3_sensoryAcuity));
+          
           const spinalPos = 0.05 + (getMethylatedPayloadVal(4, 0) / 25) * 0.9;
           const angle = 10 + (getMethylatedPayloadVal(5, 12) / 25) * 160;
           const hueShift = Math.round((getMethylatedPayloadVal(6, 5) / 25) * 360 - 180);
@@ -748,7 +770,10 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
   // ==========================================================================
   // Diet predisposition (carnivory scale) is decoded independently from Locus 11,
   // completely breaking any artificial genetic coupling with muscle stiffness or eye sight!
-  const carnivory = Math.max(0.0, Math.min(1.0, getMethylatedVal(11) / 25));
+  // However, we apply epistatic competitive regulation: high muscle stiffness (stiffness)
+  // slightly dampens raw carnivory (metabolic trade-off) unless overridden by high sensory acuity M3!
+  const rawCarnivory = Math.max(0.0, Math.min(1.0, getMethylatedVal(11) / 25));
+  const carnivory = Math.max(0.0, Math.min(1.0, rawCarnivory * (1.0 - (stiffness * 0.25) * Math.max(0.0, 1.0 - M3_sensoryAcuity))));
   const isPredator = carnivory >= 0.55;
 
   // Gen-coded Reproduction Strategies (r- vs. K-selection):
@@ -809,9 +834,10 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     const biasVal = getMethylatedVal((17 + i) % currentLength);
     const bias = (biasVal / 25) * 2.0 - 1.0; // [-1.0, 1.0]
 
-    // Decode output time constant from Loci 18+i [0.2 to 2.0] Snappy & high speed!
+    // Decode output time constant from Loci 18+i, modulated directly by neural integration speed M4!
     const tauVal = getMethylatedVal((18 + i) % currentLength);
-    const tau = 0.2 + (tauVal / 25) * 1.8;
+    const rawTau = 0.2 + (tauVal / 25) * 1.8;
+    const tau = Math.max(0.1, Math.min(2.5, rawTau * M4_neuralTau));
 
     neurons.push({
       id: K + 1 + i,
@@ -831,7 +857,8 @@ export function parseGenome(genome: string, antisenseInput?: string, parentMethy
     const bias = (biasVal / 25) * 2.0 - 1.0;
 
     const tauVal = getMethylatedVal((20 + i) % currentLength);
-    const tau = 0.2 + (tauVal / 25) * 1.8;
+    const rawTau = 0.2 + (tauVal / 25) * 1.8;
+    const tau = Math.max(0.1, Math.min(2.5, rawTau * M4_neuralTau));
 
     // Decode activation function type (normalization style) from genetically mutable DNA Locus!
     const actVal = getMethylatedVal((21 + i) % currentLength);
