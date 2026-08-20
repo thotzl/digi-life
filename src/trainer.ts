@@ -5,8 +5,8 @@ import { CreatureAgent, FoodSpore } from './shared/types';
 import { SpatialGrid } from './server/spatialGrid';
 
 // Dimensions for the mini-canvases
-const canvasWidth = 500;
-const canvasHeight = 500;
+const canvasWidth = 1000;
+const canvasHeight = 1000;
 const epochDurationTicks = 300; // 5 seconds at 60Hz
 
 // DOM Elements
@@ -500,7 +500,7 @@ function stepPhysics(sb: Sandbox) {
   inputs[K] = clockVal;
 
   sb.agent.phenotype.organelles.forEach((patch, idx) => {
-    const range = patch.scale * 350.0;
+    const range = patch.scale * 550.0;
     const alpha = (patch.angle - 90) * (Math.PI / 180);
     const halfCone = Math.max(0.1, patch.bandwidth * 1.5);
     const aff = patch.spectralAffinity;

@@ -29,6 +29,7 @@ vi.hoisted(() => {
       appendChild: () => {},
       setAttribute: () => {},
       querySelector: () => null,
+      querySelectorAll: () => [],
       getContext: () => ({
         fillRect: () => {},
         translate: () => {},
