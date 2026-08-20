@@ -57,8 +57,8 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
       600,        // endX
       500         // endY
     );
-    // 2000 * (100 / 100) + (300 - 200) * 0.2 = 2000 * 1 + 20 = 2020.0
-    expect(fit).toBe(2020.0);
+    // 1000 + 2000 * (100 / 100) + (300 - 200) * 0.2 = 1000 + 2000 + 20 = 3020.0
+    expect(fit).toBe(3020.0);
   });
 
   it('should penalize winding zigzag successful paths via path efficiency ratio', () => {
@@ -75,8 +75,8 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
       500         // endY
     );
     // pathEfficiency = 100 / 200 = 0.5
-    // 2000 * 0.5 + 20 = 1020.0
-    expect(fit).toBe(1020.0);
+    // 1000 + 2000 * 0.5 + 20 = 2020.0
+    expect(fit).toBe(2020.0);
   });
 
   it('should penalize successful runs with a 15% wall-collision tax per hit', () => {
@@ -92,8 +92,8 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
       600,        // endX
       500         // endY
     );
-    // (2000 * 1 + 20) * 0.70 = 2020 * 0.70 = 1414.0
-    expect(fit).toBe(1414.0);
+    // (1000 + 2000 * 1 + 20) * 0.70 = 3020 * 0.70 = 2114.0
+    expect(fit).toBe(2114.0);
   });
 
   it('should absolute clamp standstill and passive crawling unsuccessful runs (< 180px) to 0.0 points', () => {
@@ -125,10 +125,10 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
       510,        // endX
       500         // endY
     );
-    // baseFit = 100 * (1 - 15/100) = 85.0
-    // kineticWaste = 50 * 0.28 = 14.0
-    // fit = (85 - 14) = 71.0
-    expect(fit).toBeCloseTo(71.0, 5);
+    // baseFit = 1000.0 * (1 - 15/100) = 850.0
+    // kineticWaste = 50 * 0.1 = 5.0
+    // fit = (850 - 5) = 845.0
+    expect(fit).toBeCloseTo(845.0, 5);
   });
 
   it('should deduct a metabolic kinetic waste tax for unsuccessful aimless wandering', () => {
@@ -144,10 +144,10 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
       700,        // endX (200px displacement, straight line)
       500         // endY
     );
-    // baseFit = 100 * (1 - 20/100) = 80.0
-    // kineticWaste = 200 * 0.28 = 56.0
-    // finalFit = (80.0 - 56.0) = 24.0
-    expect(fit).toBeCloseTo(24.0, 5);
+    // baseFit = 1000.0 * (1 - 20/100) = 800.0
+    // kineticWaste = 200 * 0.1 = 20.0
+    // finalFit = (800.0 - 20.0) = 780.0
+    expect(fit).toBeCloseTo(780.0, 5);
   });
 
   it('should absolute clamp unsuccessful runs to 0.0 if they swam in circles around the center', () => {
@@ -167,21 +167,21 @@ describe('Trainer Fitness Evaluation & Penalization', () => {
   });
 
   it('should reduce unsuccessful fitness to exactly 0.0 if metabolic waste exceeds closeness points', () => {
-    // Swam a massive 800px, didn't reach food, got 80px close (80 points)
+    // Swam a massive 9000px, didn't reach food, got 80px close (800 base proximity points)
     const fit = calculateSandboxFitness(
       false,      // finished
       undefined,  // finishTick
       300,        // epochDurationTicks
       100,        // startDistance
-      800,        // distanceTraveled (aimless wandering)
+      9000,       // distanceTraveled (aimless wandering)
       0,          // wallCollisions
       20,         // curDist
-      1000,       // endX
+      9500,       // endX
       500         // endY
     );
-    // baseFit = 80.0
-    // kineticWaste = 800 * 0.28 = 224.0
-    // finalFit = Math.max(0, 80 - 224) = 0.0
+    // baseFit = 1000 * (1 - 20/100) = 800.0
+    // kineticWaste = 9000 * 0.1 = 900.0
+    // finalFit = Math.max(0, 800 - 900) = 0.0
     expect(fit).toBe(0.0);
   });
 });

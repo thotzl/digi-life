@@ -836,7 +836,8 @@ export function calculateSandboxFitness(
     // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
     const pathEfficiency = startDistance / Math.max(0.1, Math.max(startDistance, distanceTraveled));
     const speedBonus = (epochDurationTicks - finishTick) * 0.2;
-    return (2000.0 * pathEfficiency + speedBonus) * wallPenalty;
+    // Add the 1000 base proximity points on top of the efficiency bonus to maintain a perfect gradient!
+    return (1000.0 + 2000.0 * pathEfficiency + speedBonus) * wallPenalty;
   } else {
     // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
     
@@ -853,9 +854,9 @@ export function calculateSandboxFitness(
       return 0.0; // Circular searcher: absolute 0 points
     }
 
-    const baseFit = curDist < startDistance ? 100.0 * (1.0 - curDist / startDistance) : 0.0;
-    // Aimless traveling penalty: increased kinetic waste tax to 0.28 per pixel
-    const kineticWaste = distanceTraveled * 0.28;
+    const baseFit = curDist < startDistance ? 1000.0 * (1.0 - curDist / startDistance) : 0.0;
+    // Aimless traveling penalty: gentle kinetic waste tax to preserve the learning gradient!
+    const kineticWaste = distanceTraveled * 0.1;
     return Math.max(0.0, (baseFit - kineticWaste) * wallPenalty);
   }
 }
