@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-08-19
+
+### Added
+- **Genetically Diverse HOF Re-injection:** Built a highly sophisticated genetic-distance (Hamming distance) matching algorithm that checks HOF candidates and only re-injects those with a minimum genetic difference of 25 characters from the current champion. This keeps lost active lineages alive and prevents monocultural deadlocks!
+- **Strictly Unique Active Elites:** Refactored the breeding selector to filter out identical, duplicated genomes inside the elite pool, ensuring that every survivor slot is occupied by a unique species.
+- **Granular 1% Step Sliders:** Updated all generational tuning sliders to 1% granular step-precision (0-50% for mutation rates, 5-100% for elite ratios, 0-100% for inflows and HOFs) to enable precise 1-3% micro-mutations and prevent catastrophic gene loss.
+- **Symmetric Scent/Olfactory Target Balancing:** Re-balanced the plant chlorophyll scent spectrum from `0.15` (which was outside the `[0.25, 0.65]` olfactory range) to `0.35` (perfectly centered), giving herbivores a 100% equal, high-intensity scent-detection capability.
+- **Bilateral Eye Symmetrical Greenfield Spawning:** Resolved the asymmetric eye-selection bug inside the progenitor compiler (`generatePEN_Progenitor()`) by including left-quadrant angles (`angle >= 315`), establishing perfect 50/50 starting symmetry in Gen 1.
+
 ## [1.3.1] - 2026-08-19
 
 ### Added
