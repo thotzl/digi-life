@@ -202,18 +202,25 @@ export function getTrainerHallOfFame(runId: string, limit = 10): { id: number; g
 }
 
 /**
- * Reads the top-1 all-time champion genomes across all training runs in SQLite.
+ * Reads the top-3 strictly unique, all-time champion genomes across all training runs in SQLite
+ * to prevent spawning lucky outlier outliers and foster robust genetic diversity.
  */
 export function getAllTrainingsChampions(): { genome: string; generation: number }[] {
   try {
     const rows = db.prepare(`
-      SELECT t1.genome, t1.generation
-      FROM trainer_genomes t1
-      INNER JOIN (
-        SELECT run_id, MAX(fitness) as max_fit
-        FROM trainer_genomes
-        GROUP BY run_id
-      ) t2 ON t1.run_id = t2.run_id AND t1.fitness = t2.max_fit
+      WITH ranked_genomes AS (
+        SELECT run_id, genome, generation, fitness,
+               ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY fitness DESC) as rank
+        FROM (
+          -- Group by genome to ensure we only get strictly unique genomes per training session
+          SELECT run_id, genome, MAX(generation) as generation, MAX(fitness) as fitness
+          FROM trainer_genomes
+          GROUP BY run_id, genome
+        )
+      )
+      SELECT genome, generation, fitness
+      FROM ranked_genomes
+      WHERE rank <= 3
     `).all();
     return rows as any[];
   } catch (err) {
