@@ -2,20 +2,20 @@ import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { effect } from "@preact/signals-core";
 
-import { CreatureRenderer } from "./render/creatureRenderer";
-import { SpeciesRecord } from "./biology/speciesDb";
-import { CreatureAgent, FoodSpore, GeneSpan } from "./shared/types";
-import { generateWorld, ProceduralWorld } from "./core/mapGenerator";
+import { CreatureRenderer } from "../render/creatureRenderer";
+import { SpeciesRecord } from "../biology/speciesDb";
+import { CreatureAgent, FoodSpore, GeneSpan } from "../shared/types";
+import { generateWorld, ProceduralWorld } from "../core/mapGenerator";
 
-import { safeInvoke } from "./tauri/api";
+import { safeInvoke } from "./api";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
   selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype, speciesRosterSignal,
   isAliveExpanded, isExtinctExpanded, getLocusDescription, computeActiveGeneSpans
-} from "./tauri/signals";
-import { InteractiveCamera } from "./core/camera";
-import { BrainRenderer } from "./render/brainRenderer";
+} from "./signals";
+import { InteractiveCamera } from "../core/camera";
+import { BrainRenderer } from "../render/brainRenderer";
 
 let world: ProceduralWorld | null = null;
 let offscreenCanvas: HTMLCanvasElement | null = null;

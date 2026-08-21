@@ -1,7 +1,7 @@
-import { generateWorld, ProceduralWorld } from './core/mapGenerator';
-import { CreatureRenderer } from './render/creatureRenderer';
-import { safeInvoke, getPhenotype, phenotypeCache } from './tauri/api';
-import { BrainRenderer } from './render/brainRenderer';
+import { generateWorld, ProceduralWorld } from '../core/mapGenerator';
+import { CreatureRenderer } from '../render/creatureRenderer';
+import { safeInvoke, getPhenotype, phenotypeCache } from './api';
+import { BrainRenderer } from '../render/brainRenderer';
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
