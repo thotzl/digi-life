@@ -760,10 +760,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 "logType": "system"
                             }));
                         } else {
+                            // Upscale motor thrust force using biological phenotype properties (pulse speed, segments, and limbs)
+                            let pulse = agent.phenotype.pulse_speed;
+                            let wave_phase = agent.phenotype.wave_phase;
+                            let mut thrust_mag = agent.phenotype.stiffness * (pulse * 1000.0 * pulse * 1000.0) * 6.0;
+                            let eta_swim = ((base_length / (mean_radius * 3.5)) * wave_phase.sin().max(0.01) * agent.phenotype.stiffness).clamp(0.1, 3.2);
+                            thrust_mag *= eta_swim;
+
+                            let limbs_count = agent.phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count() as f32;
+                            thrust_mag *= 1.0 + limbs_count * 0.12;
+                            thrust_mag *= 1.0 + agent.phenotype.spinal_harmonics.parapodia_amp * 1.0;
+
+                            let net_thrust = out_thrust * thrust_mag;
+
                             // Apply Native Rust Physics
                             apply_creature_physics(
                                 &mut agent,
-                                out_thrust,
+                                net_thrust,
                                 out_left,
                                 mean_radius.powf(1.5) * (base_length / 25.0), // Mass
                                 mean_radius * 0.015, // Drag forward
