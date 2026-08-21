@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-08-21
+
+### Added
+- **Interactive Genome Loci Highlight (Active vs. Inactive):** Integrated active gene spans highlights inside the DNA Helix visualizer. Transcribed Hox genes are shown in bright high-contrast colors, while silent junk/inactive regions are dimmed out to 15% opacity with dashed borders.
+- **DNA Hover Role Tooltips:** Linked every single genome character locus (0 to 255) to its exact biological role (Symmetry, Photosynthesis, Neural Tau, Synaptic pathways) inside the hover tooltip.
+
+### Fixed
+- **Kinematic & Friction Realignment:** Stripped out the remaining hardcoded locomotion, thrust, fluid drag, stiffness decay, and boundary bounce coefficients inside the trainer engine (`trainer_engine.rs`) and global physics module (`physics.rs`), realigning them directly with `config.json` rules.
+
 ## [1.5.3] - 2026-08-21
 
 ### Added

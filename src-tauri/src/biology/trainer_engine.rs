@@ -326,13 +326,14 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let out_thrust = outputs[0];
     let out_left = outputs[1];
 
-    // 3. Locomotion Physical Kinematics
+    // 3. Locomotion Physical Kinematics (decoupled from hardcodes, matching config rules!)
+    let app_config = crate::shared::types::AppConfig::load();
     let stiffness = sb.agent.phenotype.stiffness;
     let pulse = sb.agent.phenotype.pulse_speed;
     let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
     let base_length = sb.agent.phenotype.spinal_harmonics.base_length;
 
-    let mut thrust_mag = stiffness * (pulse * 1000.0 * pulse * 1000.0) * 6.0;
+    let mut thrust_mag = stiffness * (pulse * 1000.0 * pulse * 1000.0) * app_config.rules.thrust_base_multiplier;
     let wave_phase = sb.agent.phenotype.wave_phase;
     let eta_swim = ((base_length / (mean_radius * 3.5)) * wave_phase.sin().max(0.01) * stiffness).clamp(0.1, 3.2);
     thrust_mag *= eta_swim;
@@ -340,8 +341,8 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let net_thrust_force = out_thrust * thrust_mag;
 
     let mass = mean_radius.powf(1.5) * (base_length / 25.0);
-    let receptor_ballast = sb.agent.phenotype.organelles.len() as f32 * 0.18;
-    let drag_forward = (mean_radius * 0.015 + receptor_ballast) * (1.0 - stiffness * 0.3);
+    let receptor_ballast = sb.agent.phenotype.organelles.len() as f32 * app_config.rules.receptor_ballast_scale;
+    let drag_forward = (mean_radius * app_config.rules.drag_forward_coefficient + receptor_ballast) * (1.0 - stiffness * app_config.rules.drag_forward_stiffness_decay);
 
     // Apply native boundary reflections and physics kinematics
     let hit_wall = apply_creature_physics(&mut sb.agent, net_thrust_force, out_left, mass, drag_forward, 0.0, 0.0, canvas_width, canvas_height);

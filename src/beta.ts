@@ -1,6 +1,7 @@
 import { signal, effect } from "@preact/signals-core";
 import { 
-  parseGenome
+  parseGenome,
+  getComplementaryString
 } from "./biology/dna";
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { getAllSpecies, SpeciesRecord } from "./biology/speciesDb";
@@ -62,8 +63,29 @@ const selectedAge = signal(0);
 
 const selectedGenome = signal("");
 const selectedMethylations = signal<number[]>([]);
+const selectedPhenotype = signal<any>(null);
 
 const speciesRosterSignal = signal<SpeciesRecord[]>([]);
+
+function getLocusDescription(i: number): string {
+  if (i === 0) return "Symmetry Profile (Quad vs Vertical)";
+  if (i === 1) return "Muscle Strength / Primary Color Hue / Head Flattening";
+  if (i === 2) return "Size Regulator / Primary Color Saturation / Parapodia Freq";
+  if (i === 3) return "Sensory Acuity / Primary Color Lightness";
+  if (i === 4) return "Secondary Color Hue";
+  if (i === 5) return "Neural Tau (Integration Speed) / Secondary Color Saturation / Thermal Center";
+  if (i === 6) return "Asymmetry Level / Secondary Color Lightness / Thermal Width";
+  if (i === 7) return "Body Thickness (Mean Radius)";
+  if (i === 8) return "Body Length (Base Length)";
+  if (i >= 9 && i <= 11) return `Spinal Curve Amplitude Harmonic #${i - 8}`;
+  if (i === 12) return "Biomorphic Stiffness (Elasticity)";
+  if (i === 13) return "Pulse Speed / Stomach Capacity / Mitosis Threshold";
+  if (i === 14) return "Spinal Curve Phase Shift / Sexual Maturity Age";
+  if (i === 15) return "Wiggle Amplitude / Mitosis Energy Loss / Hydraulic Pressure";
+  if (i === 16) return "Hidden Neurons Count (Brain Topology)";
+  if (i >= 17 && i <= 20) return `Motor Output #${i - 16} Bias / Time Constant / Activation Style`;
+  return `Synaptic Pathway Codon #${i - 20}`;
+}
 
 // Accordion Toggles (Fine-grained UI folding states)
 const isAliveExpanded = signal(true);       // Expanded by default
@@ -226,6 +248,7 @@ effect(() => {
 effect(() => {
   const g = selectedGenome.value;
   const m = selectedMethylations.value;
+  const p = selectedPhenotype.value;
   if (!g) {
     genomeGrid.innerHTML = "";
     return;
@@ -237,21 +260,42 @@ effect(() => {
     const isPromoter = i < 16;
     const isMethylated = m && m[i] !== 0;
 
+    // Check if index falls inside any of the active gene spans (Hox transcribed genes)
+    let isActiveGene = false;
+    if (p && p.activeGeneSpans) {
+      isActiveGene = p.activeGeneSpans.some((span: any) => i >= span.start && i <= span.end);
+    }
+
     let bg = "rgba(255,255,255,0.02)";
     let border = "1px solid rgba(255,255,255,0.03)";
+    let lociClass = "inactive";
+    let colorStyle = "";
 
     if (isPromoter) {
       bg = "#ffffff";
+      lociClass = "promoter";
     } else {
       const charVal = char.charCodeAt(0) - 65;
-      bg = `hsla(${charVal * 13.8}, 75%, 45%, 0.15)`;
-      border = `1.2px solid hsla(${charVal * 13.8}, 75%, 45%, 0.4)`;
+      if (isActiveGene) {
+        lociClass = "active";
+        bg = `hsla(${charVal * 13.8}, 75%, 45%, 0.35)`;
+        border = `1.2px solid hsla(${charVal * 13.8}, 75%, 45%, 0.8)`;
+      } else {
+        // Inactive junk locus (dimmed out)
+        lociClass = "inactive";
+        bg = `hsla(${charVal * 13.8}, 35%, 15%, 0.03)`;
+        border = `1.0px dashed hsla(${charVal * 13.8}, 35%, 15%, 0.15)`;
+        colorStyle = "color: rgba(255,255,255,0.15);";
+      }
     }
 
+    const locusDesc = getLocusDescription(i);
+    const activityText = isPromoter ? " [Promoter]" : (isActiveGene ? " [Active Gene]" : " [Inactive Junk DNA]");
+
     html += `
-      <div class="loci-node ${isPromoter ? 'promoter' : 'active'} ${isMethylated ? 'methylated' : ''}" 
-           style="background: ${bg}; border: ${border};" 
-           title="Locus ${i}: ${char}${isMethylated ? ' (Methylated +' + m[i] + ')' : ''}">
+      <div class="loci-node ${lociClass} ${isMethylated ? 'methylated' : ''}" 
+           style="background: ${bg}; border: ${border}; ${colorStyle}" 
+           title="Locus ${i}: ${char} - ${locusDesc}${activityText}${isMethylated ? ' (Methylated +' + m[i] + ')' : ''}">
         ${char}
       </div>
     `;
@@ -530,6 +574,7 @@ function selectSpecimen(agent: any) {
   selectedTaxa.value = `${agent.phenotype.latinName.substring(0, 16)} (Strain: #${agent.id}, Gen: ${agent.generation})`;
   selectedGenome.value = agent.genome;
   selectedMethylations.value = agent.phenotype.methylations;
+  selectedPhenotype.value = agent.phenotype;
   selectedMaxEnergy.value = agent.phenotype.stomachCapacity;
 
   compileBetaBrainSVG(agent.phenotype.brain);
@@ -930,6 +975,7 @@ speciesRoster.addEventListener("click", (e) => {
         selectedTaxa.value = `${record.name} [FOSSIL - EXTINCT]`;
         selectedGenome.value = record.genome;
         selectedMethylations.value = Array(256).fill(0); // empty methylations for fossil view
+        selectedPhenotype.value = parseGenome(record.genome, getComplementaryString(record.genome));
         selectedMaxEnergy.value = 100;
         selectedStatus.value = "Extinct (Fossil)";
         selectedEnergy.value = 0;
