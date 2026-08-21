@@ -388,19 +388,24 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                 creatures.clear();
                                 food_pellets.clear();
+                                newly_spawned_creatures.clear(); // Clear newborns to prevent phantom shivering creatures!
                                 next_creature_id = 1;
                                 highest_generation = 1;
 
                                 let mut rng = rand::thread_rng();
                                 let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
 
-                                // Seed fresh 15 unique wildtypes
-                                for _ in 0..15 {
+                                // Seed fresh 25 unique and highly diverse wildtypes
+                                for i in 0..25 {
                                     let mut mutated_dna = base_dna.to_string();
-                                    if rng.gen_range(0.0..1.0) < 0.60 {
+                                    if i < 5 {
+                                        // 5 are slightly mutated clones of the progenitor worm
                                         if let Some((mutated, _, _, _)) = mutate_genome(&base_dna) {
                                             mutated_dna = mutated;
                                         }
+                                    } else {
+                                        // 20 are completely random wild founder cells (maximum visual & behavioral diversity!)
+                                        mutated_dna = generate_random_genome(256);
                                     }
 
                                     let random_pheno = parse_genome(&mutated_dna, None, None);
@@ -437,8 +442,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         .unwrap_or_default()
                                         .as_secs() as i64;
                                     let _ = conn.execute(
-                                        "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                        params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
+                                        "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
+                                        params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_millis, 1, random_pheno.carnivory],
                                     );
 
                                     next_creature_id += 1;
