@@ -663,10 +663,8 @@ async function setupTauriListeners() {
 }
 
 setupTauriListeners().then(() => {
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "trainer" }) }).then(() => {
-    rebuildSandboxGrid().then(() => {
-      populateRunSelector();
-    });
+  rebuildSandboxGrid().then(() => {
+    populateRunSelector();
   });
 });
 
