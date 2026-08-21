@@ -32,6 +32,20 @@ Refactor the biological DNA parsing engine inside the native Rust core to comple
     2.  **Regulatory Binding:** These factors act as promoters or repressors that bind to downstream operator regions on the same or complementary strands, dynamically scaling up/down motor thrust, steering sensitivity, or metabolic rates.
 *   *The DNA literally decides what the DNA determines!*
 
+### 5. Parameterized Universal Gene Parser Helper (Unified Configs)
+*   To prevent code duplication, establish exactly **one** unified helper class/method inside the Rust biology engine.
+*   **Custom Start & Stop Motifs:** The method must allow passing custom start (promoter) and stop (terminator) sequence markers to scan for custom genes on-the-fly:
+    ```rust
+    pub fn parse_sequence_gene(
+        genome: &str,
+        start_motif: &str, // e.g. "EYE", "COL", "STF"
+        stop_motif: &str,  // e.g. "SP", "EN"
+        config: GeneParseConfig
+    ) -> Option<GeneToken>;
+    ```
+*   **Custom Output & Normalization Configurations:** The helper accepts a `GeneParseConfig` defining output limits, target ranges, default fallback bounds, and output formats (such as float ranges `[min..max]`, integers modulo `M`, or binary boolean states).
+*   **Single-Source-of-Truth Execution:** Every single physical parameter, neural setting, and aesthetic pigment calculation must call this single, highly optimized helper, guaranteeing 100% test-covered and uniform genomic compile pathways!
+
 ---
 
 ## 🛠️ Planned Implementation Steps
