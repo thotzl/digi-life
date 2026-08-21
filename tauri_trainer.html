@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pixel DNA - Neuroevolution RL Trainer</title>
+    <title>Pixel DNA - Standalone RL Trainer (Tauri Desktop)</title>
     <link rel="stylesheet" href="/src/beta.css" />
     <style>
       /* Dedicated high-tech styles for the trainer grid */
@@ -167,7 +167,7 @@
       <!-- High-Tech Laboratory Tab Navigation -->
       <div style="display: flex; gap: 20px; font-family: var(--font-mono); font-size: 0.72rem; align-self: center; z-index: 100000;">
         <a href="/tauri_ocean.html" style="color: #94a3b8; text-decoration: none; padding-bottom: 4px; transition: color 0.15s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">🧬 Ozean-Labor</a>
-        <a href="/trainer.html" style="color: #00f2fe; text-decoration: none; border-bottom: 2px solid #00f2fe; padding-bottom: 4px; font-weight: bold; text-shadow: 0 0 8px rgba(0, 242, 254, 0.4);">🏋️ Trainings-Kammer</a>
+        <a href="/tauri_trainer.html" style="color: #00f2fe; text-decoration: none; border-bottom: 2px solid #00f2fe; padding-bottom: 4px; font-weight: bold; text-shadow: 0 0 8px rgba(0, 242, 254, 0.4);">🏋️ Trainings-Kammer</a>
       </div>
 
       <div class="top-nav-help" style="font-size: 0.62rem; color: var(--text-muted); font-family: var(--font-mono); text-align: right;">
@@ -226,9 +226,8 @@
         </div>
 
         <div class="button-group" style="margin-bottom: 15px; display: flex; gap: 6px;">
-         <button id="btn-start" class="btn btn-primary" style="flex: 1.5; font-size: 0.7rem; padding: 6px 4px;">Start Training</button>
-         <button id="btn-reset-train" class="btn btn-danger" style="flex: 0.8; font-size: 0.7rem; padding: 6px 4px;">Reset</button>
-         <button id="btn-headless-toggle" style="flex: 1.1; font-size: 0.7rem; padding: 6px 4px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(148, 163, 184, 0.15); border-radius: 4px; color: var(--text-muted); cursor: pointer; transition: all 0.2s;" title="Disables canvas rendering to boost warp-speed physics by 900%">Headless: OFF</button>
+         <button id="btn-start" class="btn btn-primary" style="flex: 1; font-size: 0.72rem; padding: 6px 4px;">Start Training</button>
+         <button id="btn-reset-train" class="btn btn-danger" style="flex: 1; font-size: 0.72rem; padding: 6px 4px;">Reset Evolution</button>
         </div>
 
         <!-- Population Origins Legend Key -->
@@ -251,7 +250,7 @@
 
           <div class="slider-control">
             <label><span>Warp-Speed Speedup</span><span id="lbl-speedup">1x</span></label>
-            <input type="range" id="slider-speedup" min="1" max="10" value="1" step="1" />
+            <input type="range" id="slider-speedup" min="1" max="12" value="1" step="1" />
           </div>
 
           <div class="slider-control">
@@ -296,7 +295,7 @@
 
       <!-- Middle Content: Sandboxes Grid -->
       <div class="sandbox-container" id="sandbox-grid" style="height: 100%; overflow-y: auto;">
-        <!-- Populated dynamically via trainer.ts -->
+        <!-- Populated dynamically via tauri_trainer.ts -->
       </div>
 
       <!-- Right Panel: Diagnostics Focus & Live Brain Telemetry -->
@@ -340,7 +339,7 @@
       </section>
     </main>
 
-    <!-- Connect our ts entrypoint -->
-    <script type="module" src="/src/trainer.ts"></script>
+    <!-- Connect our tauri ts entrypoint -->
+    <script type="module" src="/src/tauri_trainer.ts"></script>
   </body>
 </html>

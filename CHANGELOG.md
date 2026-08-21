@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-08-21
+
+### Added
+- **Native Rust Trainer Core (TCK-108):** Ported the entire physical and neural evolutionary reinforcement learning loops (N sandboxes, continuous 60Hz physics, Recurrent CTRNN Euler integration, chemoreceptive sensory patches, boundary bounces, and circular/standstill penalties) to the native Rust backend under `src-tauri`.
+- **Buttery-Smooth Slider Performance:** Split slider actions into `input` events (providing instant local label updates in JS at 60+ FPS) and `change` events (sending the finalized parameter to Rust exactly once upon mouse release) to completely eliminate IPC message flooding.
+- **State Reconciliation / Self-Healing UI:** Programmed Rust to broadcast the absolute hyperparameter truth back to the UI upon mode swaps, resets, or parameter adjustments, keeping the frontend sliders and labels in perfect, error-proof synchronization with the database.
+- **40/40/20 Ecological Restocking:** Integrated the main ocean simulation with the trainer's SQLite database. When the ocean population drops below 25, Rust spawns a new founder cell with a 40% chance of being an all-time training champion, a 40% chance of being a cloned successful wild species, and a 20% chance of being a fresh random wildtype.
+- **Zero-Delay UI Interaction:** Rewrote the start and reset buttons to toggle their visual states in `0ms` directly in JS, dispatching the Tauri IPC actions to Rust in parallel.
+- **Pristine Zero-Warning Compilation:** Resolved all compiler warnings inside the main Tauri process of `src-tauri` and ensured 100% clean Vite production builds.
+
+### Fixed
+- **Stable Generation Restore:** Programmed the sandbox grid builder to query and load the maximum saved generation of the active run from SQLite, preventing the generation counter from resetting back to 1 on page swaps or session reloads.
+- **Pristine Hard Resets:** Enhanced the reset command to physically delete all saved genomes of the active run ID from SQLite, ensuring a clean Greenfield start (all 16 sandboxes spawning as "🌱 Fresh Random") on reset.
+- **Database Schema Completeness:** Registered the missing `trainer_genomes` table and optimized index inside `init_db` in `database.rs`, restoring full persistence and Hall of Fame tracking capabilities.
+
 ## [1.4.0] - 2026-08-21
 
 ### Added

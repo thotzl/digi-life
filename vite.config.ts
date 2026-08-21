@@ -234,7 +234,8 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         preview: path.resolve(__dirname, 'preview.html'),
-        tauri_ocean: path.resolve(__dirname, 'tauri_ocean.html')
+        tauri_ocean: path.resolve(__dirname, 'tauri_ocean.html'),
+        tauri_trainer: path.resolve(__dirname, 'tauri_trainer.html')
       }
     }
   }

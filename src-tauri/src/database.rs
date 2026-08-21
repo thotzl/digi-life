@@ -68,6 +68,26 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
         [],
     )?;
 
+    // 5. Create trainer_genomes table (RL evolutionary trainer lineage)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS trainer_genomes (
+            id TEXT PRIMARY KEY,
+            run_id TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            genome TEXT NOT NULL,
+            fitness REAL NOT NULL,
+            active INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL
+        );",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trainer_run ON trainer_genomes(run_id);",
+        [],
+    )?;
+
     Ok(conn)
 }
 

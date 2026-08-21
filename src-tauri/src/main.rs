@@ -14,6 +14,10 @@ use src_tauri::shared::spatial_grid::SpatialGrid;
 use src_tauri::shared::physics::apply_creature_physics;
 use src_tauri::shared::brain::execute_brain;
 use src_tauri::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
+use src_tauri::biology::trainer_engine::{
+    init_rust_sandbox, step_trainer_sandbox_physics, calculate_sandbox_fitness,
+    TrainerSandbox, TrainerTelemetrySandbox,
+};
 use src_tauri::database::init_db;
 
 #[tauri::command]
@@ -62,12 +66,180 @@ fn get_registered_species() -> Result<serde_json::Value, String> {
     Ok(json!(list))
 }
 
+#[tauri::command]
+fn get_trainer_runs() -> Result<serde_json::Value, String> {
+    let db_path = "pixel_life_local.db";
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT run_id, MAX(generation) as max_gen, MAX(fitness) as max_fit FROM trainer_genomes GROUP BY run_id")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map([], |row| {
+        Ok(json!({
+            "run_id": row.get::<_, String>(0)?,
+            "max_gen": row.get::<_, i32>(1)?,
+            "max_fit": row.get::<_, f64>(2)?
+        }))
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(item) = row {
+            list.push(item);
+        }
+    }
+
+    Ok(json!(list))
+}
+
+#[tauri::command]
+fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
+    let db_path = "pixel_life_local.db";
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![run_id, limit], |row| {
+        Ok(json!({
+            "name": row.get::<_, String>(0)?,
+            "genome": row.get::<_, String>(1)?,
+            "fitness": row.get::<_, f64>(2)?
+        }))
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(item) = row {
+            list.push(item);
+        }
+    }
+
+    Ok(json!(list))
+}
+
+#[tauri::command]
+fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
+    let db_path = "pixel_life_local.db";
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map(params![run_id, limit], |row| {
+        Ok(json!({
+            "name": row.get::<_, String>(0)?,
+            "genome": row.get::<_, String>(1)?,
+            "fitness": row.get::<_, f64>(2)?
+        }))
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(item) = row {
+            list.push(item);
+        }
+    }
+
+    Ok(json!(list))
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TrainerGenomeInput {
+    pub name: String,
+    pub genome: String,
+    pub fitness: f64,
+}
+
+#[tauri::command]
+fn save_trainer_generation(run_id: String, generation: i32, population: Vec<TrainerGenomeInput>) -> Result<bool, String> {
+    let db_path = "pixel_life_local.db";
+    let mut conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let tx = conn.transaction().map_err(|e| e.to_string())?;
+
+    // Mark previous active genomes for this run as inactive
+    tx.execute(
+        "UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1",
+        params![run_id],
+    ).map_err(|e| e.to_string())?;
+
+    let now_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    // Insert new generation genomes
+    for (idx, gen_input) in population.iter().enumerate() {
+        let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_millis);
+        tx.execute(
+            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+            params![
+                unique_id,
+                run_id,
+                generation,
+                gen_input.name,
+                gen_input.genome,
+                gen_input.fitness,
+                now_millis
+            ],
+        ).map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+#[tauri::command]
+fn clear_trainer_history(run_id: String) -> Result<bool, String> {
+    let db_path = "pixel_life_local.db";
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "DELETE FROM trainer_genomes WHERE run_id = ?1",
+        params![run_id],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+fn apply_champion(genome: String) -> Result<bool, String> {
+    let db_path = "pixel_life_local.db";
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let now_millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('progenitor_genome', ?1, ?2)",
+        params![genome, now_millis],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
 fn main() {
     let (tx, rx): (Sender<String>, Receiver<String>) = channel();
 
     tauri::Builder::default()
         .manage(tx)
-        .invoke_handler(tauri::generate_handler![handle_client_action, get_registered_species])
+        .invoke_handler(tauri::generate_handler![
+            handle_client_action,
+            get_registered_species,
+            get_trainer_runs,
+            get_trainer_population,
+            get_trainer_hof,
+            save_trainer_generation,
+            clear_trainer_history,
+            apply_champion
+        ])
         .setup(|app| {
             let window = app.get_webview_window("main").expect("Failed to locate main window");
 
@@ -85,7 +257,7 @@ fn main() {
                 let logical_width = 19200.0;
                 let logical_height = 10800.0;
                 
-                let mut is_running = true;
+                let mut is_running = false;
                 let mut creatures: Vec<CreatureAgent> = Vec::new();
                 let mut food_pellets: Vec<FoodSpore> = Vec::new();
                 let mut newly_spawned_creatures: Vec<CreatureAgent> = Vec::new();
@@ -93,6 +265,113 @@ fn main() {
                 let mut next_creature_id = 1;
                 let mut next_spore_id = 1000;
                 let mut highest_generation = 1;
+
+                let mut is_trainer_active = false;
+                let mut trainer_is_running = false;
+                let mut trainer_warp_speed = 1;
+                #[allow(non_snake_case)]
+                let mut trainer_N = 16;
+                let mut trainer_elite_ratio = 0.25;
+                let mut trainer_mutation_rate = 0.15;
+                let mut trainer_inflow_rate = 0.10;
+                let mut trainer_hof_rate = 0.10;
+                let mut trainer_multi_trial = false;
+                let mut trainer_is_headless = false;
+
+                let mut trainer_sandboxes: Vec<TrainerSandbox> = Vec::new();
+                let mut trainer_generation = 1;
+                let mut trainer_epoch_ticks = 0;
+                let mut trainer_run_id = "default_run".to_string();
+                let mut trainer_selected_sandbox_id: Option<u32> = Some(1);
+
+                let rebuild_sandbox_grid = |n: usize, run_id: &str, generation_val: u32, mut_rate: f32, db_conn: &rusqlite::Connection, elite_ratio: f32, inflow_rate: f32, hof_rate: f32| -> (Vec<TrainerSandbox>, u32) {
+                    let mut sandboxes = Vec::with_capacity(n);
+                    let mut restored_generation = generation_val;
+                    
+                    // Try to load active parent genomes (elites) from SQLite
+                    let mut parent_genomes = Vec::new();
+                    if let Ok(mut stmt) = db_conn.prepare("SELECT genome, generation FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2") {
+                        if let Ok(rows) = stmt.query_map(params![run_id, n as i32], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))) {
+                            for row in rows {
+                                if let Ok((genome, gen_val)) = row {
+                                    parent_genomes.push(genome);
+                                    restored_generation = restored_generation.max(gen_val as u32);
+                                }
+                            }
+                        }
+                    }
+
+                    // Try to load Hall of Fame genomes from SQLite
+                    let mut hof_genomes = Vec::new();
+                    if let Ok(mut stmt) = db_conn.prepare("SELECT genome FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2") {
+                        if let Ok(rows) = stmt.query_map(params![run_id, n as i32], |row| row.get::<_, String>(0)) {
+                            for row in rows {
+                                if let Ok(genome) = row {
+                                    hof_genomes.push(genome);
+                                }
+                            }
+                        }
+                    }
+
+                    let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+
+                    let elite_count = ((n as f32) * elite_ratio).round() as usize;
+                    let elite_count = elite_count.clamp(1, n);
+
+                    let hof_count = ((n as f32) * hof_rate).round() as usize;
+                    let inflow_count = ((n as f32) * inflow_rate).round() as usize;
+
+                    for idx in 0..n {
+                        let id = (idx + 1) as u32;
+
+                        if parent_genomes.is_empty() {
+                            // Gen 1: Greenfield start
+                            let sb = init_rust_sandbox(
+                                id,
+                                base_dna,
+                                restored_generation,
+                                mut_rate,
+                                "random", // ALL are fresh random wildtypes on Gen 1!
+                                1000.0,
+                                1000.0,
+                            );
+                            sandboxes.push(sb);
+                        } else {
+                            // Gen 2+: Slider-controlled composition matching TS nextGenPlans 1:1!
+                            let (parent_genome, origin, actual_mut_rate) = if idx < elite_count {
+                                if idx < parent_genomes.len() {
+                                    (parent_genomes[idx].clone(), "elite", 0.0) // elites are unmodified clones!
+                                } else {
+                                    (parent_genomes[0].clone(), "mutant", mut_rate)
+                                }
+                            } else if idx < elite_count + hof_count {
+                                let hof_idx = idx - elite_count;
+                                if hof_idx < hof_genomes.len() {
+                                    (hof_genomes[hof_idx].clone(), "hof", mut_rate)
+                                } else {
+                                    (parent_genomes[0].clone(), "mutant", mut_rate)
+                                }
+                            } else if idx < elite_count + hof_count + inflow_count {
+                                (base_dna.to_string(), "random", 0.0) // random immigrants are pure new wildtypes
+                            } else {
+                                let source_idx = (idx - elite_count - hof_count - inflow_count) % parent_genomes.len();
+                                (parent_genomes[source_idx].clone(), "mutant", mut_rate)
+                            };
+
+                            let sb = init_rust_sandbox(
+                                id,
+                                &parent_genome,
+                                restored_generation,
+                                actual_mut_rate,
+                                origin,
+                                1000.0,
+                                1000.0,
+                            );
+                            sandboxes.push(sb);
+                        }
+                    }
+                    (sandboxes, restored_generation)
+                };
 
                 // Ensure the default desktop session exists to satisfy foreign key constraints
                 let _ = conn.execute(
@@ -219,6 +498,7 @@ fn main() {
                                 println!("[SIMULATION] Processing incoming action: {}", act_type);
                                 match act_type {
                                     "CLIENT_READY" => {
+                                        is_trainer_active = false; // Safely force switch back to Ocean mode!
                                         println!("[SIMULATION] Client Handshake successful! Synchronizing {} creatures and {} spores...", creatures.len(), food_pellets.len());
                                         let init_json = json!({
                                             "type": "INIT_STATE",
@@ -422,14 +702,169 @@ fn main() {
                                             println!("[CLIENT LOG] {}", msg);
                                         }
                                     }
+                                    "SET_MODE" => {
+                                        if let Some(mode) = action["mode"].as_str() {
+                                            if mode == "trainer" {
+                                                is_trainer_active = true;
+                                                // Initialize sandboxes grid in Rust when entering trainer
+                                                let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
+                                                trainer_sandboxes = sbs;
+                                                trainer_generation = restored_gen;
+                                                println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer_N, trainer_run_id, trainer_generation);
+                                                
+                                                // Broadcast full hyperparams truth back to the UI!
+                                                emit_state(json!({
+                                                    "type": "TRAINER_STATE_CHANGED",
+                                                    "isRunning": trainer_is_running,
+                                                    "N": trainer_N,
+                                                    "warpSpeed": trainer_warp_speed,
+                                                    "eliteRatio": trainer_elite_ratio,
+                                                    "mutationRate": trainer_mutation_rate,
+                                                    "inflowRate": trainer_inflow_rate,
+                                                    "hofRate": trainer_hof_rate,
+                                                    "multiTrial": trainer_multi_trial,
+                                                    "isHeadless": trainer_is_headless,
+                                                    "runId": trainer_run_id
+                                                }));
+                                            } else {
+                                                is_trainer_active = false;
+                                                println!("[TRAINER] Leaving trainer mode. Resuming Ocean substrate.");
+                                            }
+                                        }
+                                    }
+                                    "START_TRAINING" => {
+                                        trainer_is_running = true;
+                                        emit_state(json!({
+                                            "type": "TRAINER_STATE_CHANGED",
+                                            "isRunning": true,
+                                            "N": trainer_N,
+                                            "warpSpeed": trainer_warp_speed,
+                                            "eliteRatio": trainer_elite_ratio,
+                                            "mutationRate": trainer_mutation_rate,
+                                            "inflowRate": trainer_inflow_rate,
+                                            "hofRate": trainer_hof_rate,
+                                            "multiTrial": trainer_multi_trial,
+                                            "isHeadless": trainer_is_headless,
+                                            "runId": trainer_run_id
+                                        }));
+                                    }
+                                    "PAUSE_TRAINING" => {
+                                        trainer_is_running = false;
+                                        emit_state(json!({
+                                            "type": "TRAINER_STATE_CHANGED",
+                                            "isRunning": false,
+                                            "N": trainer_N,
+                                            "warpSpeed": trainer_warp_speed,
+                                            "eliteRatio": trainer_elite_ratio,
+                                            "mutationRate": trainer_mutation_rate,
+                                            "inflowRate": trainer_inflow_rate,
+                                            "hofRate": trainer_hof_rate,
+                                            "multiTrial": trainer_multi_trial,
+                                            "isHeadless": trainer_is_headless,
+                                            "runId": trainer_run_id
+                                        }));
+                                    }
+                                    "TRAINER_RESET" => {
+                                        trainer_is_running = false;
+                                        trainer_generation = 1;
+                                        trainer_epoch_ticks = 0;
+                                        
+                                        // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
+                                        let _ = conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]);
+
+                                        let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, 1, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
+                                        trainer_sandboxes = sbs;
+                                        emit_state(json!({
+                                            "type": "TRAINER_RESET_COMPLETED",
+                                            "generation": 1,
+                                            "isRunning": false,
+                                            "N": trainer_N,
+                                            "warpSpeed": trainer_warp_speed,
+                                            "eliteRatio": trainer_elite_ratio,
+                                            "mutationRate": trainer_mutation_rate,
+                                            "inflowRate": trainer_inflow_rate,
+                                            "hofRate": trainer_hof_rate,
+                                            "multiTrial": trainer_multi_trial,
+                                            "isHeadless": trainer_is_headless,
+                                            "runId": trainer_run_id
+                                        }));
+                                    }
+                                    "SELECT_TRAINER_SANDBOX" => {
+                                        if let Some(sb_id) = action["id"].as_u64() {
+                                            trainer_selected_sandbox_id = Some(sb_id as u32);
+                                        }
+                                    }
+                                    "UPDATE_TRAINER_HYPERPARAMS" => {
+                                        let mut grid_changed = false;
+
+                                        if let Some(n) = action["N"].as_u64() {
+                                            let prev_n = trainer_N;
+                                            trainer_N = n as usize;
+                                            if trainer_N != prev_n {
+                                                grid_changed = true;
+                                            }
+                                        }
+                                        if let Some(ws) = action["warpSpeed"].as_u64() {
+                                            trainer_warp_speed = ws as u32;
+                                        }
+                                        if let Some(er) = action["eliteRatio"].as_f64() {
+                                            trainer_elite_ratio = er as f32;
+                                        }
+                                        if let Some(mr) = action["mutationRate"].as_f64() {
+                                            trainer_mutation_rate = mr as f32;
+                                        }
+                                        if let Some(ir) = action["inflowRate"].as_f64() {
+                                            trainer_inflow_rate = ir as f32;
+                                        }
+                                        if let Some(hr) = action["hofRate"].as_f64() {
+                                            trainer_hof_rate = hr as f32;
+                                        }
+                                        if let Some(mt) = action["multiTrial"].as_bool() {
+                                            trainer_multi_trial = mt;
+                                        }
+                                        if let Some(hl) = action["isHeadless"].as_bool() {
+                                            trainer_is_headless = hl;
+                                        }
+                                        if let Some(r_id) = action["runId"].as_str() {
+                                            let prev_run = trainer_run_id.clone();
+                                            trainer_run_id = r_id.to_string();
+                                            if trainer_run_id != prev_run {
+                                                trainer_generation = 1;
+                                                trainer_epoch_ticks = 0;
+                                                grid_changed = true;
+                                            }
+                                        }
+
+                                        if grid_changed {
+                                            let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
+                                            trainer_sandboxes = sbs;
+                                            trainer_generation = restored_gen;
+                                        }
+
+                                        // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
+                                        emit_state(json!({
+                                            "type": "TRAINER_STATE_CHANGED",
+                                            "isRunning": trainer_is_running,
+                                            "N": trainer_N,
+                                            "warpSpeed": trainer_warp_speed,
+                                            "eliteRatio": trainer_elite_ratio,
+                                            "mutationRate": trainer_mutation_rate,
+                                            "inflowRate": trainer_inflow_rate,
+                                            "hofRate": trainer_hof_rate,
+                                            "multiTrial": trainer_multi_trial,
+                                            "isHeadless": trainer_is_headless,
+                                            "runId": trainer_run_id
+                                        }));
+                                    }
                                     _ => {}
                                 }
                             }
                         }
                     }
 
-                    if is_running {
-                        // 1. Move and drift food spores
+                    if !is_trainer_active {
+                        if is_running {
+                            // 1. Move and drift food spores
                         for pellet in &mut food_pellets {
                             pellet.vx *= 0.95;
                             pellet.vy *= 0.95;
@@ -696,7 +1131,28 @@ fn main() {
                         while creatures.len() < target_population {
                             let mut rng = rand::thread_rng();
                             
-                            // Check if we have successful alive species in DB to clone
+                            // Query all top training champions from the database
+                            let mut training_champs = Vec::new();
+                            if let Ok(mut stmt) = conn.prepare(
+                                "SELECT t1.genome, t1.generation FROM trainer_genomes t1
+                                 INNER JOIN (
+                                     SELECT run_id, MAX(fitness) as max_fit
+                                     FROM trainer_genomes
+                                     GROUP BY run_id
+                                 ) t2 ON t1.run_id = t2.run_id AND t1.fitness = t2.max_fit"
+                            ) {
+                                if let Ok(rows) = stmt.query_map([], |row| {
+                                    Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)?))
+                                }) {
+                                    for row in rows {
+                                        if let Ok((genome, gen_val)) = row {
+                                            training_champs.push((genome, gen_val));
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Query successful alive wild species in DB to clone
                             let mut cached_alive_species = Vec::new();
                             if let Ok(mut stmt) = conn.prepare("SELECT genome_string, generation FROM species_records WHERE status = 'alive'") {
                                 if let Ok(rows) = stmt.query_map([], |row| {
@@ -710,15 +1166,19 @@ fn main() {
                                 }
                             }
 
-                            let (g, generation_val) = {
+                            let (g, generation_val, source_tag) = {
                                 let roll = rng.gen_range(0.0..1.0);
-                                if !cached_alive_species.is_empty() && roll < 0.60 {
-                                    // 60% Chance: Clone an already successful alive species
+                                if !training_champs.is_empty() && roll < 0.40 {
+                                    // 40% Chance: Spawn one of our trained champions from the database!
+                                    let idx = rng.gen_range(0..training_champs.len());
+                                    (training_champs[idx].0.clone(), training_champs[idx].1 as u32, "🏆 Evolved Champion")
+                                } else if !cached_alive_species.is_empty() && roll < 0.80 {
+                                    // 40% Chance: Clone an already successful species living in the ocean
                                     let idx = rng.gen_range(0..cached_alive_species.len());
-                                    (cached_alive_species[idx].0.clone(), cached_alive_species[idx].1)
+                                    (cached_alive_species[idx].0.clone(), cached_alive_species[idx].1 as u32, "🧬 Wild Clone")
                                 } else {
-                                    // 40% (or 100% if DB empty) Chance: Wild random founder mutation
-                                    (generate_random_genome(256), 1)
+                                    // 20% Chance: Wild random founder mutation
+                                    (generate_random_genome(256), 1, "🌱 Random Founder")
                                 }
                             };
 
@@ -740,7 +1200,7 @@ fn main() {
                                 energy: random_pheno.stomach_capacity * 0.60,
                                 adrenaline: 1.0,
                                 age: 0,
-                                generation: generation_val as u32,
+                                generation: generation_val,
                                 has_eaten: false,
                                 genome: g.clone(),
                                 antisense: String::new(),
@@ -763,6 +1223,12 @@ fn main() {
                             );
 
                             emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                            emit_state(json!({
+                                "type": "LOG_EVENT",
+                                "message": format!("Restocked population: Spawned {} Gen {} ({}).", source_tag, generation_val, random_pheno.latin_name),
+                                "logType": "system"
+                            }));
+
                             next_creature_id += 1;
                         }
 
@@ -939,6 +1405,164 @@ fn main() {
                                 }
                             }
                             last_history_log_time = Instant::now();
+                        }
+                    }
+                    } else {
+                        if trainer_is_running {
+                            // Run trainer_warp_speed physics steps
+                            for _step in 0..trainer_warp_speed {
+                                if !trainer_is_running {
+                                    break;
+                                }
+
+                                trainer_epoch_ticks += 1;
+
+                                // Step all sandbox physical loops in Rust!
+                                for sb in &mut trainer_sandboxes {
+                                    step_trainer_sandbox_physics(sb, 1000.0, 1000.0);
+                                }
+
+                                // If we completed the 300-tick epoch:
+                                if trainer_epoch_ticks >= 300 {
+                                    // 1. Calculate fitness for all sandboxes
+                                    for sb in &mut trainer_sandboxes {
+                                        let is_carnivore = sb.agent.phenotype.carnivory >= 0.35;
+                                        let target_idx = if is_carnivore { 1 } else { 0 };
+                                        let cur_dist = ((sb.foods[target_idx].x - sb.agent.px).powi(2) + (sb.foods[target_idx].y - sb.agent.py).powi(2)).sqrt();
+
+                                        sb.current_fitness = calculate_sandbox_fitness(
+                                            sb.finished,
+                                            sb.finish_tick,
+                                            300,
+                                            sb.start_distance,
+                                            sb.distance_traveled,
+                                            sb.wall_collisions,
+                                            cur_dist,
+                                            sb.agent.px,
+                                            sb.agent.py,
+                                        );
+                                    }
+
+                                    // Sort sandboxes by fitness (highest first)
+                                    trainer_sandboxes.sort_by(|a, b| b.current_fitness.partial_cmp(&a.current_fitness).unwrap_or(std::cmp::Ordering::Equal));
+
+                                    let best_fit = trainer_sandboxes[0].current_fitness;
+                                    let avg_fit: f32 = trainer_sandboxes.iter().map(|sb| sb.current_fitness).sum::<f32>() / (trainer_N as f32);
+
+                                    println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", trainer_generation, best_fit, avg_fit);
+
+                                    // 2. Save Elite Champions to local SQLite
+                                    let elite_count = (((trainer_N as f32) * trainer_elite_ratio).round() as usize).clamp(1, trainer_N);
+                                    
+                                    // Mark previous active genomes as inactive
+                                    let _ = conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]);
+
+                                    let now_millis = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs() as i64;
+
+                                    // Save the elites to SQLite
+                                    for (idx, sb) in trainer_sandboxes.iter().take(elite_count).enumerate() {
+                                        let unique_id = format!("{}-{}-{}-{}", trainer_run_id, trainer_generation, idx, now_millis);
+                                        let _ = conn.execute(
+                                            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
+                                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+                                            params![
+                                                unique_id,
+                                                trainer_run_id,
+                                                trainer_generation as i32,
+                                                sb.agent.phenotype.latin_name,
+                                                sb.agent.genome,
+                                                sb.current_fitness as f64,
+                                                now_millis
+                                            ],
+                                        );
+                                    }
+
+                                    // 3. Broadcast GENERATION_COMPLETED to UI
+                                    emit_state(json!({
+                                        "type": "TRAINER_GENERATION_COMPLETED",
+                                        "generation": trainer_generation,
+                                        "bestFitness": best_fit,
+                                        "avgFitness": avg_fit,
+                                        "bestGenome": trainer_sandboxes[0].agent.genome
+                                    }));
+
+                                    // Increment generation and reset epoch ticks
+                                    trainer_generation += 1;
+                                    trainer_epoch_ticks = 0;
+
+                                    // Rebuild sandbox grid in Rust!
+                                    let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
+                                    trainer_sandboxes = sbs;
+
+                                    // If headless is OFF, let the UI know it has been rebuilt
+                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                                    
+                                    // Automatically restart training loop for next gen
+                                    trainer_is_running = true;
+                                }
+                            }
+                        }
+
+                        // Broadcast Trainer Telemetry Tick to UI (Lightweight 25Hz!)
+                        if last_emit_time.elapsed() >= emit_interval {
+                            let telemetry_sandboxes: Vec<TrainerTelemetrySandbox> = trainer_sandboxes
+                                .iter()
+                                .map(|sb| {
+                                    TrainerTelemetrySandbox {
+                                        id: sb.id,
+                                        px: sb.agent.px,
+                                        py: sb.agent.py,
+                                        vx: sb.agent.vx,
+                                        vy: sb.agent.vy,
+                                        heading_angle: sb.agent.heading_angle,
+                                        omega_rot: sb.agent.omega_rot,
+                                        finished: sb.finished,
+                                        current_fitness: sb.current_fitness,
+                                        origin_type: sb.origin_type.clone(),
+                                        consumed_spore_type: sb.consumed_spore_type.clone(),
+                                        foods: sb.foods.clone(),
+                                        latin_name: sb.agent.phenotype.latin_name.clone(),
+                                        primary_color_h: sb.agent.phenotype.primary_color.h,
+                                        primary_color_s: sb.agent.phenotype.primary_color.s,
+                                        primary_color_l: sb.agent.phenotype.primary_color.l,
+                                        energy: sb.agent.energy,
+                                        age: sb.agent.age,
+                                        generation: sb.agent.generation,
+                                        genome: sb.agent.genome.clone(),
+                                    }
+                                })
+                                .collect();
+
+                            // Compute selected sandbox brain live activations if focused
+                            let selected_brain_json = if let Some(sel_id) = trainer_selected_sandbox_id {
+                                if let Some(sel_sb) = trainer_sandboxes.iter().find(|sb| sb.id == sel_id) {
+                                    json!({
+                                        "id": sel_id,
+                                        "activations": sel_sb.agent.neuron_activations,
+                                        "states": sel_sb.agent.neuron_states
+                                    })
+                                } else {
+                                    json!(null)
+                                }
+                            } else {
+                                json!(null)
+                            };
+
+                            let time_str = format!("{:.1}s", ((300.0 - trainer_epoch_ticks as f32) / 60.0).max(0.0));
+
+                            emit_state(json!({
+                                "type": "TRAINER_TELEMETRY_TICK",
+                                "generation": trainer_generation,
+                                "sandboxes": telemetry_sandboxes,
+                                "selectedBrain": selected_brain_json,
+                                "timeStr": time_str,
+                                "isRunning": trainer_is_running,
+                            }));
+
+                            last_emit_time = Instant::now();
                         }
                     }
 

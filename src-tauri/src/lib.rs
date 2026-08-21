@@ -1,6 +1,7 @@
 pub mod database;
 pub mod biology {
     pub mod dna;
+    pub mod trainer_engine;
 }
 pub mod shared {
     pub mod types;

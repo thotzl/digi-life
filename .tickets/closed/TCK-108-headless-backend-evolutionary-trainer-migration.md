@@ -1,7 +1,7 @@
 ---
 id: TCK-108
 title: Migration des Evolutionary Trainers ins Node.js-Backend mit WebSocket-Replikation
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-08-19
 ---
