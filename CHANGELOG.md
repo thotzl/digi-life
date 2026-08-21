@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-08-21
+
+### Added
+- **Multi-Platform Cloud Releases (TCK-114):** Configured a full parallel automated GitHub Actions workflow (`release.yml`) running on macOS, Windows, and Linux virtual machines. Pushing a `v*` tag automatically compiles, signs, packages, and drafts a GitHub Release with ready-to-run `.dmg`, `.exe`, `.msi`, `.deb`, and `.AppImage` bundle installers attached as download assets!
+- **OnceLock Thread-Safe Config Cache:** Implemented `std::sync::OnceLock` in types.rs to parse and cache `config.json` exactly once on startup. Cuts down thousands of 60Hz disk reads inside physics loops to `0ms` and eliminates terminal log spam entirely.
+
+### Fixed
+- **Clean Bundler Entrypoints:** Removed deleted legacy assets from `vite.config.ts` Rollup options, restoring 100% clean production Vite compiles.
+- **Retired Legacy Web Code:** Retired obsolete browser-based files and structured them inside `OLD_SIMS_ARCHIVE.md` for historical peeks and documentation.
+
 ## [1.5.4] - 2026-08-21
 
 ### Added
