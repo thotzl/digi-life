@@ -380,6 +380,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "RESET_EVOLUTION" => {
                                 println!("[SIMULATION] Performing complete environmental restoration reset...");
+                                
+                                // Wipe old species records, histories, and state caches from SQLite database
+                                let _ = conn.execute("DELETE FROM species_records", []);
+                                let _ = conn.execute("DELETE FROM simulation_history", []);
+                                let _ = conn.execute("DELETE FROM simulation_state", []);
+
                                 creatures.clear();
                                 food_pellets.clear();
                                 next_creature_id = 1;
