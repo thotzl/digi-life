@@ -1,10 +1,10 @@
 {
   "productName": "Pixel DNA Life",
-  "version": "1.3.3",
+  "version": "1.7.0",
   "identifier": "com.pixeldna.life",
   "build": {
-    "beforeDevCommand": "npm run dev:client",
-    "devUrl": "http://localhost:3000/tauri_ocean.html",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:3000/",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

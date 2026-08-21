@@ -1,4 +1,4 @@
-import { CreaturePhenotype, HSLColor } from "../biology/dna";
+import { CreaturePhenotype, HSLColor } from "../shared/types";
 
 function hslToString(color: HSLColor, lightnessModifier = 0, opacity = 1): string {
   const l = Math.max(0, Math.min(100, color.l + lightnessModifier));

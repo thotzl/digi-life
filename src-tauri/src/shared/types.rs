@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use crate::biology::dna::CreaturePhenotype;
+use ts_rs::TS;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct FoodSpore {
     pub id: u32,
     pub x: f32,
@@ -11,10 +13,12 @@ pub struct FoodSpore {
     pub vy: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CreatureAgent {
     pub id: u32,
     #[serde(rename = "speciesId")]
+    #[ts(rename = "speciesId")]
     pub species_id: String,
     
     pub px: f32,
@@ -23,10 +27,13 @@ pub struct CreatureAgent {
     pub vy: f32,
     
     #[serde(rename = "headingAngle")]
+    #[ts(rename = "headingAngle")]
     pub heading_angle: f32,
     #[serde(rename = "bendAngle")]
+    #[ts(rename = "bendAngle")]
     pub bend_angle: f32,
     #[serde(rename = "omegaRot")]
+    #[ts(rename = "omegaRot")]
     pub omega_rot: f32,
     
     pub energy: f32,
@@ -34,6 +41,7 @@ pub struct CreatureAgent {
     pub age: u32,
     pub generation: u32,
     #[serde(rename = "hasEaten")]
+    #[ts(rename = "hasEaten")]
     pub has_eaten: bool,
     
     pub genome: String,
@@ -41,29 +49,36 @@ pub struct CreatureAgent {
     pub phenotype: CreaturePhenotype,
 
     #[serde(rename = "neuronStates")]
+    #[ts(rename = "neuronStates")]
     pub neuron_states: Vec<f32>,
     #[serde(rename = "neuronActivations")]
+    #[ts(rename = "neuronActivations")]
     pub neuron_activations: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TelemetryCreature {
     pub id: u32,
     #[serde(rename = "speciesId")]
+    #[ts(rename = "speciesId")]
     pub species_id: String,
     pub px: f32,
     pub py: f32,
     pub vx: f32,
     pub vy: f32,
     #[serde(rename = "headingAngle")]
+    #[ts(rename = "headingAngle")]
     pub heading_angle: f32,
     #[serde(rename = "omegaRot")]
+    #[ts(rename = "omegaRot")]
     pub omega_rot: f32,
     pub energy: f32,
     pub adrenaline: f32,
     pub age: u32,
     pub generation: u32,
     #[serde(rename = "hasEaten")]
+    #[ts(rename = "hasEaten")]
     pub has_eaten: bool,
 }
 

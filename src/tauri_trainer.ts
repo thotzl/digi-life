@@ -1,19 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
-
-function safeInvoke(cmd: string, args?: any): Promise<any> {
-  try {
-    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && typeof invoke !== "undefined") {
-      return invoke(cmd, args);
-    }
-  } catch (e) {
-    console.error(`Error invoking command ${cmd}:`, e);
-  }
-  return Promise.resolve(null);
-}
-
-import { generateWorld, ProceduralWorld } from './shared/mapGenerator';
-import { parseGenome } from './biology/dna';
+import { generateWorld, ProceduralWorld } from './core/mapGenerator';
 import { CreatureRenderer } from './render/creatureRenderer';
+import { safeInvoke, getPhenotype, phenotypeCache } from './tauri/api';
+import { BrainRenderer } from './render/brainRenderer';
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
@@ -49,9 +37,9 @@ const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
 
 // Diagnostics inspector DOM targets
 const focusMeta = document.getElementById("focus-meta") as HTMLParagraphElement;
-const focusGenome = document.getElementById("focus-genome") as HTMLTextAreaElement;
+const focusGenome = document.getElementById("focus-genome") as HTMLInputElement | HTMLTextAreaElement;
 const neuronMeta = document.getElementById("neuron-meta") as HTMLDivElement;
-const inspectBrainContainer = document.getElementById("inspect-brain-container") as HTMLDivElement;
+const inspectBrainContainer = document.getElementById("inspect-brain-container-trainer") as HTMLDivElement;
 
 const diagCanvas = document.getElementById("diagnostics-preview-canvas") as HTMLCanvasElement;
 const diagCtx = diagCanvas?.getContext('2d');
@@ -60,9 +48,7 @@ if (diagCanvas) {
   diagRenderer = new CreatureRenderer(diagCanvas);
 }
 
-// --------------------------------------------------------------------------
 // State Management
-// --------------------------------------------------------------------------
 interface Sandbox {
   id: number;
   canvas: HTMLCanvasElement;
@@ -147,11 +133,8 @@ let runId = "default_run";
 let currentGeneration = 1;
 
 let hoveredNeuronId: number | null = null;
-const brainSvgCache = new Map<string, SVGElement>();
+const brainRenderer = new BrainRenderer(inspectBrainContainer, "trainer");
 
-// --------------------------------------------------------------------------
-// Core Telemetry & Drawing Steps
-// --------------------------------------------------------------------------
 function drawSandbox(sb: Sandbox) {
   const tele = sb.lastTelemetry;
   if (!tele) return;
@@ -160,7 +143,6 @@ function drawSandbox(sb: Sandbox) {
   ctx.fillStyle = '#020617';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // Draw obstacles
   sb.world.obstacles.forEach(obs => {
     ctx.beginPath();
     const sx = (obs.x / 19200) * canvasWidth;
@@ -172,7 +154,6 @@ function drawSandbox(sb: Sandbox) {
     ctx.fill();
   });
 
-  // Draw Spores (green for plants, red/crimson for meat)
   tele.foods.forEach((spore: any) => {
     const isEaten = tele.finished && tele.consumed_spore_type === (spore.id === 9999 ? "meat" : "plant");
     if (!isEaten) {
@@ -186,10 +167,12 @@ function drawSandbox(sb: Sandbox) {
     }
   });
 
-  // Compile full phenotype locally on demand to support rendering
-  const pheno = parseGenome(tele.genome);
+  let pheno = phenotypeCache.get(tele.genome);
+  if (!pheno) {
+    getPhenotype(tele.genome);
+    return;
+  }
 
-  // Draw Agent
   sb.renderer.render(
     pheno,
     Date.now() * 0.05,
@@ -199,19 +182,17 @@ function drawSandbox(sb: Sandbox) {
     tele.omega_rot
   );
 
-  // Draw centered high-zoom live preview in the diagnostics sidebar if selected
   if (tele.id === (selectedSandboxIdx + 1) && diagCtx && diagRenderer) {
     diagCtx.fillStyle = '#020617';
     diagCtx.fillRect(0, 0, 100, 100);
     
-    // Zoomed-in preview render (scale canvas context manually to fit nicely)
     diagCtx.save();
-    diagCtx.scale(1.2, 1.2); // zoom in slightly
+    diagCtx.scale(1.2, 1.2);
     diagRenderer.render(
       pheno,
       Date.now() * 0.03,
-      42, // adjusted center X
-      42, // adjusted center Y
+      42,
+      42,
       tele.heading_angle,
       tele.omega_rot
     );
@@ -219,9 +200,6 @@ function drawSandbox(sb: Sandbox) {
   }
 }
 
-// --------------------------------------------------------------------------
-// Sandbox Initializations
-// --------------------------------------------------------------------------
 async function rebuildSandboxGrid() {
   gridContainer.innerHTML = "";
   sandboxes = [];
@@ -262,24 +240,27 @@ async function rebuildSandboxGrid() {
       lastTelemetry: null
     });
 
-    // Make canvas selectable on click
     canvas.addEventListener("click", () => {
       document.querySelectorAll(".sandbox-card").forEach(c => c.classList.remove("selected"));
       box.classList.add("selected");
       selectedSandboxIdx = idx;
       
-      // Notify Rust of selected diagnostic sandbox
       safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SELECT_TRAINER_SANDBOX", id }) }).catch(() => {});
       
-      // Render brain SVG directed graph
-      if (sandboxes[selectedSandboxIdx]?.lastTelemetry) {
-        const fullPheno = parseGenome(sandboxes[selectedSandboxIdx].lastTelemetry.genome);
-        compileBrainSVG(fullPheno);
+      const lastTele = sandboxes[selectedSandboxIdx]?.lastTelemetry;
+      if (lastTele) {
+        const fullPheno = phenotypeCache.get(lastTele.genome);
+        if (fullPheno) {
+          brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length);
+        } else {
+          getPhenotype(lastTele.genome).then((p) => {
+            if (p) brainRenderer.compile(p.brain, p.organelles.length);
+          });
+        }
       }
     });
   }
 
-  // Push updated hyperparameters to Rust core
   pushHyperparamsToRust();
 }
 
@@ -300,130 +281,9 @@ function pushHyperparamsToRust() {
   }).catch(() => {});
 }
 
-// --------------------------------------------------------------------------
-// Brain SVG Directed Graph Rendering
-// --------------------------------------------------------------------------
-function compileBrainSVG(pheno: any) {
-  if (!inspectBrainContainer) return;
-
-  const brain = pheno.brain;
-  if (!brain || brain.neurons.length === 0) {
-    inspectBrainContainer.innerHTML = `<div class="fallback-state">No genetically encoded CTRNN brain found.</div>`;
-    return;
-  }
-
-  const K = pheno.organelles.length;
-  brainSvgCache.clear();
-
-  let svgContent = `<svg width="100%" height="100%" viewBox="0 0 310 240" style="background:#020617;">`;
-
-  // Draw synapses
-  brain.synapses.forEach((syn: any) => {
-    const fromId = syn.fromNode;
-    const toId = syn.toNode;
-
-    const fromX = getNeuronX(fromId, K);
-    const fromY = getNeuronY(fromId, K, brain.neurons.length);
-    const toX = getNeuronX(toId, K);
-    const toY = getNeuronY(toId, K, brain.neurons.length);
-
-    const isExcitatory = syn.weight > 0;
-    const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.28)" : "rgba(239, 68, 68, 0.28)";
-
-    svgContent += `
-      <line id="trainer-syn-${fromId}-${toId}" x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}"
-            stroke="${strokeColor}" stroke-width="1.2" marker-end="url(#arrow)" />
-    `;
-  });
-
-  // Draw neurons
-  brain.neurons.forEach((n: any) => {
-    const nx = getNeuronX(n.id, K);
-    const ny = getNeuronY(n.id, K, brain.neurons.length);
-
-    const isInput = n.type === "input";
-    const isOutput = n.type === "output";
-    const fill = isInput ? "#0ea5e9" : (isOutput ? "#c084fc" : "#94a3b8");
-    const radius = isInput || isOutput ? 4.5 : 3.2;
-
-    svgContent += `
-      <circle id="trainer-node-${n.id}" cx="${nx}" cy="${ny}" r="${radius}" fill="${fill}"
-              style="cursor:pointer; filter:drop-shadow(0 0 2px ${fill});" />
-    `;
-  });
-
-  // Arrow markers definition
-  svgContent += `
-    <defs>
-      <marker id="arrow" viewBox="0 0 10 10" refX="16" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
-        <path d="M 0 1 L 10 5 L 0 9 z" fill="rgba(148, 163, 184, 0.4)" />
-      </marker>
-    </defs>
-  </svg>`;
-
-  inspectBrainContainer.innerHTML = svgContent;
-
-  // Add event listeners for hover tooltips on neuron nodes
-  brain.neurons.forEach((n: any) => {
-    const id = `trainer-node-${n.id}`;
-    const el = document.getElementById(id) as any;
-    if (el) {
-      brainSvgCache.set(id, el);
-      
-      el.addEventListener("mouseenter", () => {
-        hoveredNeuronId = n.id;
-        el.setAttribute("stroke", "#ffffff");
-        el.setAttribute("stroke-width", "1.5");
-      });
-      el.addEventListener("mouseleave", () => {
-        hoveredNeuronId = null;
-        el.removeAttribute("stroke");
-        el.removeAttribute("stroke-width");
-        if (neuronMeta) {
-          neuronMeta.innerHTML = `Hover a neuron node to see live telemetry...`;
-        }
-      });
-    }
-  });
-
-  brain.synapses.forEach((syn: any) => {
-    const id = `trainer-syn-${syn.fromNode}-${syn.toNode}`;
-    const el = document.getElementById(id) as any;
-    if (el) brainSvgCache.set(id, el);
-  });
-}
-
-function getNeuronX(id: number, K: number): number {
-  if (id <= K) return 25; // Left Column: Sensors
-  if (id >= K + 1 && id <= K + 4) return 280; // Right Column: Motors
-  return 150; // Center Column: Interneurons
-}
-
-function getNeuronY(id: number, K: number, totalNeurons: number): number {
-  if (id <= K) {
-    // Distribute sensors evenly
-    const step = 200 / (K + 1);
-    return 20 + (id + 1) * step;
-  }
-  if (id >= K + 1 && id <= K + 4) {
-    // Distribute motors evenly
-    const motorIdx = id - (K + 1);
-    const step = 200 / 5;
-    return 20 + (motorIdx + 1) * step;
-  }
-  // Distribute interneurons evenly
-  const interIdx = id - K - 5;
-  const numInter = totalNeurons - K - 5;
-  const step = 200 / (numInter + 1);
-  return 20 + (interIdx + 1) * step;
-}
-
-// --------------------------------------------------------------------------
-// UI Interactivity Bindings
-// --------------------------------------------------------------------------
 btnStart.addEventListener("click", () => {
-  isRunning = !isRunning; // Toggle state instantly!
-  updateStartButtonUI();   // Redraw button visually instantly (0ms)!
+  isRunning = !isRunning;
+  updateStartButtonUI();
   
   if (isRunning) {
     safeInvoke("handle_client_action", { action: JSON.stringify({ type: "START_TRAINING" }) }).catch(() => {});
@@ -435,8 +295,8 @@ btnStart.addEventListener("click", () => {
 btnReset.addEventListener("click", async () => {
   const confirmReset = confirm("Are you sure you want to completely wipe the evolutionary trainer database and start from Gen 1?");
   if (confirmReset) {
-    isRunning = false;      // Stop visually instantly!
-    updateStartButtonUI();   // Redraw button visually instantly!
+    isRunning = false;
+    updateStartButtonUI();
     safeInvoke("handle_client_action", { action: JSON.stringify({ type: "TRAINER_RESET" }) }).catch(() => {});
   }
 });
@@ -485,18 +345,15 @@ async function populateRunSelector() {
     });
   }
 
-  // Update trigger button label to reflect active selection
   const activeItem = listItems.find(item => item.id === runId);
   if (dropdownCurrentLabel && activeItem) {
     dropdownCurrentLabel.innerText = activeItem.label;
   }
 
-  // Render each item as a clickable div with a delete button
   listItems.forEach(item => {
     const row = document.createElement("div");
     row.className = `training-item ${item.id === runId ? "active" : ""}`;
     
-    // Label span (selects session on click)
     const labelSpan = document.createElement("span");
     labelSpan.innerText = item.label;
     labelSpan.style.flex = "1";
@@ -506,14 +363,13 @@ async function populateRunSelector() {
 
     labelSpan.addEventListener("click", () => {
       runId = item.id;
-      dropdownTrigger.click(); // Close list dropdown
+      dropdownTrigger.click();
       rebuildSandboxGrid();
       populateRunSelector();
     });
 
     row.appendChild(labelSpan);
 
-    // Delete span (✕)
     if (item.id !== "default_run") {
       const deleteSpan = document.createElement("span");
       deleteSpan.className = "training-delete-btn";
@@ -521,7 +377,7 @@ async function populateRunSelector() {
       deleteSpan.title = "Delete this training session and clear history";
 
       deleteSpan.addEventListener("click", async (e) => {
-        e.stopPropagation(); // prevent select action
+        e.stopPropagation();
         const wasActive = item.id === runId;
         const confirmDelete = confirm(`Are you sure you want to permanently delete run '${item.id}'?`);
         if (confirmDelete) {
@@ -548,7 +404,6 @@ async function populateRunSelector() {
   });
 }
 
-// Interactivity triggers for dropdown
 dropdownTrigger.addEventListener("click", (e) => {
   e.stopPropagation();
   const isOpen = trainingListContainer.style.display === "flex";
@@ -583,7 +438,6 @@ btnCopyDna.addEventListener("click", () => {
   }
 });
 
-// Slider inputs sync listeners (Buttery-smooth 60FPS: separation of 'input' and 'change'!)
 sliderGridSize.addEventListener("input", () => {
   lblGridSize.innerText = sliderGridSize.value;
 });
@@ -651,14 +505,10 @@ chkMultiTrial.addEventListener("change", () => {
   pushHyperparamsToRust();
 });
 
-// --------------------------------------------------------------------------
-// Webview Event Listeners (Receiving native telemetry ticks from Rust core)
-// --------------------------------------------------------------------------
 async function setupTauriListeners() {
   if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
     const { listen } = await import("@tauri-apps/api/event");
     
-    // Listen to real-time physical telemetry updates sent by Rust
     await listen("simulation-state", (event: any) => {
       const data = event.payload;
 
@@ -667,16 +517,12 @@ async function setupTauriListeners() {
         statGen.innerText = currentGeneration.toString();
         statTimer.innerText = data.timeStr;
 
-        // Render each sandbox canvas with its corresponding telemetry frame
         data.sandboxes.forEach((tele: any) => {
           const sb = sandboxes.find(s => s.id === tele.id);
           if (sb) {
             sb.lastTelemetry = tele;
-            
-            // Render sandbox visual output
             drawSandbox(sb);
 
-            // Sync card label details
             const labelOrigin = document.getElementById(`sb-origin-lbl-${tele.id}`);
             if (labelOrigin) {
               if (tele.origin_type === "elite") {
@@ -707,113 +553,80 @@ async function setupTauriListeners() {
           }
         });
 
-        // 3. Update focused directed brain directed graph in real-time
         if (data.selectedBrain) {
           const activations = data.selectedBrain.activations;
           const states = data.selectedBrain.states;
           const sb = sandboxes[selectedSandboxIdx];
 
           if (sb && sb.lastTelemetry && activations) {
-            const pheno = parseGenome(sb.lastTelemetry.genome);
-            const brain = pheno.brain;
+            const pheno = phenotypeCache.get(sb.lastTelemetry.genome);
+            if (pheno) {
+              const brain = pheno.brain;
 
-            // Update node elements glows
-            brain.neurons.forEach((n: any) => {
-              const id = `trainer-node-${n.id}`;
-              const el = brainSvgCache.get(id);
-              if (el) {
-                const rawAct = Math.max(0.0, Math.min(1.0, Math.abs(activations[n.id] || 0.0)));
-                const isInput = n.type === "input";
-                const isOutput = n.type === "output";
-                const exponent = isInput ? 1.5 : 4.0;
-                const act = Math.pow(rawAct, exponent);
+              brainRenderer.updateLiveGlows(activations, brain);
 
-                const colorGlow = isInput ? "#0ea5e9" : (isOutput ? "#c084fc" : "#e2e8f0");
-                const fill = act > 0.35 ? colorGlow : "#111827";
-                const radius = isInput || isOutput ? (act > 0.45 ? 6.5 : 4.5) : (act > 0.45 ? 5.0 : 3.2);
-
-                el.setAttribute("fill", fill);
-                el.setAttribute("r", radius.toString());
+              if (focusGenome) {
+                focusGenome.value = sb.lastTelemetry.genome;
               }
-            });
 
-            // Update synapse elements strokes
-            brain.synapses.forEach((syn: any) => {
-              const id = `trainer-syn-${syn.fromNode}-${syn.toNode}`;
-              const el = brainSvgCache.get(id);
-              if (el) {
-                const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
-                const act = Math.pow(preVal, 4.0);
-                const isExcitatory = syn.weight > 0;
-                const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
-                const opacity = act > 0.35 ? 0.95 : 0.28;
-                el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
-              }
-            });
+              const seedStr = `SANDBOX_SEED_${sb.id}_GEN_${currentGeneration}`;
+              focusMeta.innerHTML = `
+                Sandbox: #${sb.id}<br/>
+                Status: ${sb.lastTelemetry.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
+                Fitness: ${sb.lastTelemetry.current_fitness.toFixed(1)}<br/>
+                Diet: ${sb.lastTelemetry.consumed_spore_type === "meat" ? "Carnivore (meat)" : "Herbivore (plant)"}<br/>
+                Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
+              `;
 
-            // Update focus text metadata
-            if (focusGenome) {
-              focusGenome.value = sb.lastTelemetry.genome;
-            }
-
-            const seedStr = `SANDBOX_SEED_${sb.id}_GEN_${currentGeneration}`;
-            focusMeta.innerHTML = `
-              Sandbox: #${sb.id}<br/>
-              Status: ${sb.lastTelemetry.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
-              Fitness: ${sb.lastTelemetry.current_fitness.toFixed(1)}<br/>
-              Diet: ${sb.lastTelemetry.consumed_spore_type === "meat" ? "Carnivore (meat)" : "Herbivore (plant)"}<br/>
-              Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
-            `;
-
-            // Hover tooltip mapping
-            if (hoveredNeuronId !== null) {
-              const K = pheno.organelles.length;
-              const isInput = hoveredNeuronId <= K;
-              const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
-              
-              let baseDesc = `Neuron #${hoveredNeuronId}`;
-              let mathFormula = "";
-              let liveValues = "";
-
-              if (isInput) {
-                mathFormula = "f(x) = Identity (Bounded [0, 1])";
-                const act = activations[hoveredNeuronId] || 0.0;
-                liveValues = `<b>Activation (a):</b> ${act.toFixed(3)}`;
-                if (hoveredNeuronId === K) {
-                  baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
-                } else {
-                  baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1}`;
-                }
-              } else {
-                const neuron = brain.neurons[hoveredNeuronId];
-                const state = states[hoveredNeuronId] || 0.0;
-                const act = activations[hoveredNeuronId] || 0.0;
+              if (hoveredNeuronId !== null) {
+                const K = pheno.organelles.length;
+                const isInput = hoveredNeuronId <= K;
+                const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
                 
-                const actType = (neuron && neuron.activationType) || "tanh";
-                if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
-                else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
-                else if (actType === "sin") mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
-                else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
+                let baseDesc = `Neuron #${hoveredNeuronId}`;
+                let mathFormula = "";
+                let liveValues = "";
 
-                liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
-                
-                if (isOutput) {
-                  const outputIndex = hoveredNeuronId - (K + 1);
-                  if (outputIndex === 0) baseDesc = `Output #${hoveredNeuronId}: Thrust`;
-                  else if (outputIndex === 1) baseDesc = `Output #${hoveredNeuronId}: Flexion Steering`;
-                  else if (outputIndex === 2) baseDesc = `Output #${hoveredNeuronId}: Biolum Flash`;
-                  else baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
+                if (isInput) {
+                  mathFormula = "f(x) = Identity (Bounded [0, 1])";
+                  const act = activations[hoveredNeuronId] || 0.0;
+                  liveValues = `<b>Activation (a):</b> ${act.toFixed(3)}`;
+                  if (hoveredNeuronId === K) {
+                    baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
+                  } else {
+                    baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1}`;
+                  }
                 } else {
-                  baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
-                }
-              }
+                  const neuron = brain.neurons[hoveredNeuronId];
+                  const state = states[hoveredNeuronId] || 0.0;
+                  const act = activations[hoveredNeuronId] || 0.0;
+                  
+                  const actType = (neuron && neuron.activationType) || "tanh";
+                  if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
+                  else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
+                  else if (actType === "sin") mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
+                  else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
 
-              if (neuronMeta) {
-                neuronMeta.innerHTML = `
-                  <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
-                  <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
-                  ${liveValues}
-                `;
+                  liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
+                  
+                  if (isOutput) {
+                    const outputIndex = hoveredNeuronId - (K + 1);
+                    if (outputIndex === 0) baseDesc = `Output #${hoveredNeuronId}: Thrust`;
+                    else if (outputIndex === 1) baseDesc = `Output #${hoveredNeuronId}: Flexion Steering`;
+                    else if (outputIndex === 2) baseDesc = `Output #${hoveredNeuronId}: Biolum Flash`;
+                    else baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
+                  } else {
+                    baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
+                  }
+                }
+
+                if (neuronMeta) {
+                  neuronMeta.innerHTML = `
+                    <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
+                    <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
+                    ${liveValues}
+                  `;
+                }
               }
             }
           }
@@ -822,13 +635,13 @@ async function setupTauriListeners() {
       else if (data.type === "TRAINER_STATE_CHANGED") {
         isRunning = data.isRunning;
         updateStartButtonUI();
-        syncSlidersFromBackend(data); // Sync sliders to absolute backend truth!
+        syncSlidersFromBackend(data);
       }
       else if (data.type === "TRAINER_GENERATION_COMPLETED") {
         statBestFit.innerText = data.bestFitness.toFixed(1);
         statAvgFit.innerText = data.avgFitness.toFixed(1);
         txtDna.value = data.bestGenome;
-        populateRunSelector(); // Refresh dropdown metadata on generation completion!
+        populateRunSelector();
       }
       else if (data.type === "TRAINER_RESET_COMPLETED") {
         statGen.innerText = "1";
@@ -838,22 +651,18 @@ async function setupTauriListeners() {
         txtDna.value = "";
         isRunning = false;
         updateStartButtonUI();
-        syncSlidersFromBackend(data); // Sync sliders to reset backend truth!
-        rebuildSandboxGrid(); // Rebuild DOM cards immediately on reset!
-        populateRunSelector(); // Refresh dropdown metadata on reset!
+        syncSlidersFromBackend(data);
+        rebuildSandboxGrid();
+        populateRunSelector();
       }
       else if (data.type === "DATABASE_CHANGED") {
-        populateRunSelector(); // Refresh dropdown when database changes!
+        populateRunSelector();
       }
     });
   }
 }
 
-// --------------------------------------------------------------------------
-// Startup Boot Actions (Registering with Rust)
-// --------------------------------------------------------------------------
 setupTauriListeners().then(() => {
-  // 1. Tell Rust to activate the trainer simulator
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "trainer" }) }).then(() => {
     rebuildSandboxGrid().then(() => {
       populateRunSelector();
@@ -861,7 +670,6 @@ setupTauriListeners().then(() => {
   });
 });
 
-// Pause training and restore background simulation on page leave
 window.addEventListener("unload", () => {
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "PAUSE_TRAINING" }) }).catch(() => {});
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "ocean" }) }).catch(() => {});

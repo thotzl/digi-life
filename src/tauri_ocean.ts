@@ -1,26 +1,21 @@
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { signal, effect } from "@preact/signals-core";
+import { effect } from "@preact/signals-core";
 
-function safeInvoke(cmd: string, args?: any): Promise<any> {
-  try {
-    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && typeof invoke !== "undefined") {
-      return invoke(cmd, args);
-    }
-  } catch (e) {
-    // Silently bypass ESM live-binding resolution errors in normal web browsers
-  }
-  console.log(`[Tauri Simulation Mode] Bypassed native command: ${cmd}`);
-  return Promise.resolve();
-}
-import { 
-  parseGenome,
-  getComplementaryString
-} from "./biology/dna";
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { SpeciesRecord } from "./biology/speciesDb";
-import { CreatureAgent, FoodSpore } from "./shared/types";
-import { generateWorld, ProceduralWorld } from "./shared/mapGenerator";
+import { CreatureAgent, FoodSpore, GeneSpan } from "./shared/types";
+import { generateWorld, ProceduralWorld } from "./core/mapGenerator";
+
+import { safeInvoke } from "./tauri/api";
+import {
+  selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
+  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
+  selectedMethylations, selectedPhenotype, speciesRosterSignal,
+  isAliveExpanded, isExtinctExpanded, getLocusDescription, computeActiveGeneSpans
+} from "./tauri/signals";
+import { InteractiveCamera } from "./core/camera";
+import { BrainRenderer } from "./render/brainRenderer";
 
 let world: ProceduralWorld | null = null;
 let offscreenCanvas: HTMLCanvasElement | null = null;
@@ -43,71 +38,15 @@ function createBiomeCache(world: ProceduralWorld) {
   }
 }
 
-// ============================================================================
-// 📊 STATE 1: Pure Mutable Game-Engine Arrays (0% Memory Allocation, 60 FPS Locked)
-// ============================================================================
+// Pure Mutable Game-Engine Arrays
 let creatures: CreatureAgent[] = [];
 let foodPellets: FoodSpore[] = [];
 let highestGeneration = 1;
 
-// ============================================================================
-// 📷 STATE 2: Interactive Camera State (Zoom, Pan, Scroll)
-// ============================================================================
-let camX = 19200 / 2; // Camera focus look-at X (starts at middle of the giant map)
-let camY = 10800 / 2; // Camera focus look-at Y
-let camZoom = 0.05;   // Scale magnifier (will be set responsively on boot)
+// Interactive Camera Instance
+let camera: InteractiveCamera;
 
-// Mouse drag-panning state trackers
-let isDragging = false;
-let hasDragged = false;
-let startX = 0;
-let startY = 0;
-
-// ============================================================================
-// 🧬 STATE 3: Fine-Grained Preact Signals for HUD Overlays
-// ============================================================================
-const selectedId = signal<number | null>(null);
-const selectedName = signal("Unnamed Creature");
-const selectedTaxa = signal("Clonal strain - Gen. 1");
-const selectedStatus = signal("Alive");
-const selectedEnergy = signal(0);
-const selectedMaxEnergy = signal(100);
-const selectedAdrenaline = signal(1.0);
-const selectedAge = signal(0);
-
-const selectedGenome = signal("");
-const selectedMethylations = signal<number[]>([]);
-const selectedPhenotype = signal<any>(null);
-
-const speciesRosterSignal = signal<SpeciesRecord[]>([]);
-
-function getLocusDescription(i: number): string {
-  if (i === 0) return "Symmetry Profile (Quad vs Vertical)";
-  if (i === 1) return "Muscle Strength / Primary Color Hue / Head Flattening";
-  if (i === 2) return "Size Regulator / Primary Color Saturation / Parapodia Freq";
-  if (i === 3) return "Sensory Acuity / Primary Color Lightness";
-  if (i === 4) return "Secondary Color Hue";
-  if (i === 5) return "Neural Tau (Integration Speed) / Secondary Color Saturation / Thermal Center";
-  if (i === 6) return "Asymmetry Level / Secondary Color Lightness / Thermal Width";
-  if (i === 7) return "Body Thickness (Mean Radius)";
-  if (i === 8) return "Body Length (Base Length)";
-  if (i >= 9 && i <= 11) return `Spinal Curve Amplitude Harmonic #${i - 8}`;
-  if (i === 12) return "Biomorphic Stiffness (Elasticity)";
-  if (i === 13) return "Pulse Speed / Stomach Capacity / Mitosis Threshold";
-  if (i === 14) return "Spinal Curve Phase Shift / Sexual Maturity Age";
-  if (i === 15) return "Wiggle Amplitude / Mitosis Energy Loss / Hydraulic Pressure";
-  if (i === 16) return "Hidden Neurons Count (Brain Topology)";
-  if (i >= 17 && i <= 20) return `Motor Output #${i - 16} Bias / Time Constant / Activation Style`;
-  return `Synaptic Pathway Codon #${i - 20}`;
-}
-
-// Accordion Toggles (Fine-grained UI folding states)
-const isAliveExpanded = signal(true);       // Expanded by default
-const isExtinctExpanded = signal(false);   // Collapsed by default to keep workspace clean
-
-// ============================================================================
-// 🎨 UI 1: High-Speed Direct DOM Signal Binders
-// ============================================================================
+// DOM Binders
 const statPopulation = document.getElementById("stat-population") as HTMLSpanElement;
 const statGeneration = document.getElementById("stat-generation") as HTMLSpanElement;
 const statSpores = document.getElementById("stat-spores") as HTMLSpanElement;
@@ -150,7 +89,7 @@ function renderRosterCardHTML(rec: SpeciesRecord, isSelected: boolean): string {
   `;
 }
 
-// Re-render Left Roster of recorded species only when speciesRosterSignal or toggle signals change!
+// Effect Binders
 effect(() => {
   const list = speciesRosterSignal.value;
   if (list.length === 0) {
@@ -163,7 +102,6 @@ effect(() => {
 
   let html = "";
 
-  // 1. Group 1: Living Species
   const aliveOpen = isAliveExpanded.value;
   html += `
     <div class="accordion-header ${aliveOpen ? 'expanded' : ''}" id="acc-alive-trigger" style="border-left: 3px solid var(--secondary-green);">
@@ -186,7 +124,6 @@ effect(() => {
     html += `</div>`;
   }
 
-  // 2. Group 2: Extinct Species (Fossils)
   const extinctOpen = isExtinctExpanded.value;
   html += `
     <div class="accordion-header ${extinctOpen ? 'expanded' : ''}" id="acc-extinct-trigger" style="border-left: 3px solid var(--text-muted);">
@@ -212,7 +149,6 @@ effect(() => {
   speciesRoster.innerHTML = html;
 });
 
-// Toggle Inspector view states based on active selection
 effect(() => {
   const id = selectedId.value;
   if (id === null) {
@@ -224,7 +160,6 @@ effect(() => {
   }
 });
 
-// Bind Profile Info
 effect(() => { specimenName.innerText = selectedName.value; });
 effect(() => { specimenTaxa.innerText = selectedTaxa.value; });
 effect(() => { 
@@ -233,7 +168,6 @@ effect(() => {
   specimenStatus.style.color = selectedStatus.value === "Alive" ? "var(--secondary-green)" : "var(--text-muted)";
 });
 
-// Bind Energy Progress Bar
 effect(() => {
   const val = selectedEnergy.value;
   const max = selectedMaxEnergy.value;
@@ -242,7 +176,6 @@ effect(() => {
   energyText.innerText = `${Math.round(val)} / ${Math.round(max)}nJ`;
 });
 
-// Bind Adrenaline Progress Bar
 effect(() => {
   const val = selectedAdrenaline.value;
   const pct = Math.max(0, Math.min(100, ((val - 1.0) / 0.8) * 100));
@@ -250,7 +183,6 @@ effect(() => {
   adrenalineText.innerText = `${val.toFixed(2)}x`;
 });
 
-// Bind Age Progress Bar (2700 frames absolute lifespan)
 effect(() => {
   const val = selectedAge.value;
   const pct = Math.max(0, Math.min(100, (val / 2700) * 100));
@@ -258,7 +190,6 @@ effect(() => {
   ageText.innerText = `${Math.round(val / 60)}s`;
 });
 
-// Bind Watson-Crick DNA Helix Split Grid
 effect(() => {
   const g = selectedGenome.value;
   const m = selectedMethylations.value;
@@ -269,15 +200,16 @@ effect(() => {
   }
 
   let html = "";
+  const activeGeneSpans = p ? computeActiveGeneSpans(g, p.chromatinState) : [];
+
   for (let i = 0; i < g.length; i++) {
     const char = g[i];
     const isPromoter = i < 16;
     const isMethylated = m && m[i] !== 0;
 
-    // Check if index falls inside any of the active gene spans (Hox transcribed genes)
     let isActiveGene = false;
-    if (p && p.activeGeneSpans) {
-      isActiveGene = p.activeGeneSpans.some((span: any) => i >= span.start && i <= span.end);
+    if (activeGeneSpans) {
+      isActiveGene = activeGeneSpans.some((span: GeneSpan) => i >= span.start && i <= span.end);
     }
 
     let bg = "rgba(255,255,255,0.02)";
@@ -295,7 +227,6 @@ effect(() => {
         bg = `hsla(${charVal * 13.8}, 75%, 45%, 0.35)`;
         border = `1.2px solid hsla(${charVal * 13.8}, 75%, 45%, 0.8)`;
       } else {
-        // Inactive junk locus (dimmed out)
         lociClass = "inactive";
         bg = `hsla(${charVal * 13.8}, 35%, 15%, 0.03)`;
         border = `1.0px dashed hsla(${charVal * 13.8}, 35%, 15%, 0.15)`;
@@ -317,111 +248,10 @@ effect(() => {
   genomeGrid.innerHTML = html;
 });
 
-// ============================================================================
-// 🎨 UI 2: Brain Directed Graph Cache Renderer
-// ============================================================================
-const brainContainer = document.getElementById("inspect-brain-container") as HTMLDivElement;
-const brainSvgCache = new Map<string, SVGElement>();
+// Brain Render Graph
+const brainContainer = document.getElementById("inspect-brain-container-ocean") as HTMLDivElement;
+const brainRenderer = new BrainRenderer(brainContainer, "beta");
 
-function compileBetaBrainSVG(brain: any): void {
-  brainSvgCache.clear();
-  if (!brain) {
-    brainContainer.innerHTML = "";
-    return;
-  }
-
-  let svgContent = `<svg viewBox="0 0 320 210">`;
-
-  // 1. Draw Synapses
-  brain.synapses.forEach((syn: any) => {
-    const from = brain.neurons[syn.fromNode];
-    const to = brain.neurons[syn.toNode];
-    if (from && to) {
-      const synId = `beta-syn-${syn.fromNode}-${syn.toNode}`;
-      const color = syn.weight > 0 ? "rgba(16, 185, 129, 0.28)" : "rgba(239, 68, 68, 0.28)";
-      svgContent += `
-        <line id="${synId}" x1="${from.x * 320}" y1="${from.y * 210}" x2="${to.x * 320}" y2="${to.y * 210}" 
-              stroke="${color}" stroke-width="${Math.max(0.5, Math.abs(syn.weight) * 1.5)}" />
-      `;
-    }
-  });
-
-  // 2. Draw Neuron Nodes
-  brain.neurons.forEach((n: any) => {
-    const nodeId = `beta-node-${n.id}`;
-    const isInput = n.type === "input";
-    const isOutput = n.type === "output";
-    const color = isInput ? "var(--primary-cyan)" : (isOutput ? "var(--accent-purple)" : "var(--text-muted)");
-
-    svgContent += `
-      <circle id="${nodeId}" cx="${n.x * 320}" cy="${n.y * 210}" r="${isInput || isOutput ? 4.5 : 3.2}" 
-              fill="#111827" stroke="${color}" stroke-width="1.5" />
-    `;
-  });
-
-  svgContent += `</svg>`;
-  brainContainer.innerHTML = svgContent;
-
-  // Cache neuron circle element references for sub-millisecond glows
-  brain.neurons.forEach((n: any) => {
-    const id = `beta-node-${n.id}`;
-    const el = document.getElementById(id) as any;
-    if (el) brainSvgCache.set(id, el);
-  });
-
-  // Cache synapse line element references for sub-millisecond glows
-  brain.synapses.forEach((syn: any) => {
-    const id = `beta-syn-${syn.fromNode}-${syn.toNode}`;
-    const el = document.getElementById(id) as any;
-    if (el) brainSvgCache.set(id, el);
-  });
-}
-
-function updateBetaBrainLiveGlows(activations: number[], brain: any): void {
-  if (!brain || !activations) return;
-
-  // 1. Update Neurons
-  brain.neurons.forEach((n: any) => {
-    const id = `beta-node-${n.id}`;
-    const el = brainSvgCache.get(id);
-    if (el) {
-      const rawAct = Math.max(0.0, Math.min(1.0, Math.abs(activations[n.id] || 0.0)));
-      const act = Math.pow(rawAct, 4.0); // clean contrast
-
-      const isInput = n.type === "input";
-      const isOutput = n.type === "output";
-      const colorGlow = isInput ? "#00f2fe" : (isOutput ? "#c084fc" : "#e2e8f0");
-
-      const fill = act > 0.35 ? colorGlow : "#111827";
-      const radius = isInput || isOutput ? (act > 0.45 ? 6.5 : 4.5) : (act > 0.45 ? 5.0 : 3.2);
-
-      el.setAttribute("fill", fill);
-      el.setAttribute("r", radius.toString());
-    }
-  });
-
-  // 2. Update Synapses (Highlighting active signals in-flight!)
-  brain.synapses.forEach((syn: any) => {
-    const id = `beta-syn-${syn.fromNode}-${syn.toNode}`;
-    const el = brainSvgCache.get(id);
-    if (el) {
-      const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
-      const act = Math.pow(preVal, 4.0); // clean contrast
-
-      const isExcitatory = syn.weight > 0;
-      const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
-      const opacity = act > 0.35 ? 0.95 : 0.28;
-      const strokeWidth = Math.max(0.5, Math.abs(syn.weight) * 1.5) * (act > 0.45 ? 2.2 : 1.0);
-
-      el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
-      el.setAttribute("stroke-width", strokeWidth.toString());
-    }
-  });
-}
-
-// ============================================================================
-// 🔌 MULTIPLAYER ENGINE: Real-Time Sockets Pipeline (Tauri IPC Edition)
-// ============================================================================
 let biteImpacts: { x: number; y: number; age: number }[] = [];
 
 function fetchRosterRecords() {
@@ -439,11 +269,10 @@ async function initBetaWebSocket() {
   fetchRosterRecords();
 
   if (typeof window === "undefined" || !(window as any).__TAURI_INTERNALS__) {
-    logToTerminal("Running in Browser Diagnostic Mode. Sockets/Tauri offline.", "mutation");
+    logToTerminal("Running in Browser Diagnostic Mode. Sockets/Tauri offline.", "system");
     return;
   }
 
-  // Listen to the continuous real-time state emitted by the Rust core
   await listen("simulation-state", (event) => {
     try {
       const data: any = event.payload;
@@ -451,7 +280,7 @@ async function initBetaWebSocket() {
       if (data.type === "INIT_STATE") {
         highestGeneration = data.highestGeneration;
         foodPellets = data.foodPellets;
-        fetchRosterRecords(); // Synchronize species roster list on init!
+        fetchRosterRecords();
 
         isSimRunning = data.running !== undefined ? data.running : true;
         if (lblToggleSim) {
@@ -474,10 +303,9 @@ async function initBetaWebSocket() {
 
         creatures = data.creatures.map((c: any) => ({
           ...c,
-          phenotype: parseGenome(c.genome, c.antisense)
+          phenotype: c.phenotype
         }));
 
-        // Set default selection if none active
         if (creatures.length > 0 && selectedId.value === null) {
           selectSpecimen(creatures[0]);
         }
@@ -501,18 +329,16 @@ async function initBetaWebSocket() {
         highestGeneration = data.highestGeneration;
         const incoming = data.creatures;
 
-        // 0. Synchronously register any new creatures in this frame to prevent race-condition deletions
         if (data.newCreatures && data.newCreatures.length > 0) {
           data.newCreatures.forEach((tele: any) => {
             if (!creatures.some(c => Number(c.id) === Number(tele.id))) {
-              const pheno = parseGenome(tele.genome, tele.antisense);
+              const pheno = tele.phenotype;
               creatures.push({
                 ...tele,
                 phenotype: pheno,
                 neuronStates: [],
                 neuronActivations: []
               });
-              // Diagnostic Mirroring: Tell Rust we successfully registered the spawn!
               safeInvoke("handle_client_action", { 
                 action: JSON.stringify({ 
                   type: "CLIENT_LOG", 
@@ -523,7 +349,6 @@ async function initBetaWebSocket() {
           });
         }
 
-        // 1. High-Performance, In-Place Mutable Update (0 Bytes allocated!)
         incoming.forEach((tele: any) => {
           const local = creatures.find(c => Number(c.id) === Number(tele.id));
           if (local) {
@@ -541,11 +366,9 @@ async function initBetaWebSocket() {
           }
         });
 
-        // 2. Filter dead agents locally (robust dynamic type-safety checks)
         const serverIds = new Set(incoming.map((c: any) => Number(c.id)));
         creatures = creatures.filter(c => serverIds.has(Number(c.id)));
 
-        // 3. Highly-targeted selective signals update
         const id = selectedId.value;
         if (id !== null) {
           const active = creatures.find(c => Number(c.id) === Number(id));
@@ -556,7 +379,7 @@ async function initBetaWebSocket() {
             selectedAge.value = active.age;
 
             if (data.selectedBrain && Number(data.selectedBrain.id) === Number(id)) {
-              updateBetaBrainLiveGlows(data.selectedBrain.activations, active.phenotype.brain);
+              brainRenderer.updateLiveGlows(data.selectedBrain.activations, active.phenotype.brain);
             }
           } else {
             selectedStatus.value = "Extinct (Fossil)";
@@ -565,7 +388,6 @@ async function initBetaWebSocket() {
           }
         }
 
-        // 4. Update global stats DOM
         statPopulation.innerText = `${creatures.length} / 25`;
         statGeneration.innerText = `Gen. ${highestGeneration}`;
         statSpores.innerText = `${foodPellets.length} Spores`;
@@ -577,11 +399,10 @@ async function initBetaWebSocket() {
       else if (data.type === "CREATURE_SPAWNED") {
         const tele = data.creature;
 
-        // Self-healing check to avoid duplicates
         if (!creatures.some(c => Number(c.id) === Number(tele.id))) {
           creatures.push({
             ...tele,
-            phenotype: parseGenome(tele.genome, tele.antisense),
+            phenotype: tele.phenotype,
             neuronStates: [],
             neuronActivations: []
           });
@@ -606,8 +427,7 @@ async function initBetaWebSocket() {
   });
 }
 
-// Function declaration matching typescript original signatures
-function selectSpecimen(agent: any) {
+function selectSpecimen(agent: CreatureAgent) {
   selectedId.value = agent.id;
   selectedName.value = agent.phenotype.latinName;
   selectedTaxa.value = `${agent.phenotype.latinName.substring(0, 16)} (Strain: #${agent.id}, Gen: ${agent.generation})`;
@@ -616,17 +436,13 @@ function selectSpecimen(agent: any) {
   selectedPhenotype.value = agent.phenotype;
   selectedMaxEnergy.value = agent.phenotype.stomachCapacity;
 
-  compileBetaBrainSVG(agent.phenotype.brain);
+  brainRenderer.compile(agent.phenotype.brain, agent.phenotype.organelles.length);
 
-  // Inform the Rust core to start streaming brain activations
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SELECT_AGENT", id: agent.id }) }).catch(err => {
     console.error("Tauri invoke error SELECT_AGENT:", err);
   });
 }
 
-// ============================================================================
-// 📜 LOGGER: Scrollbox terminal updates
-// ============================================================================
 function logToTerminal(message: string, logType: string = "system") {
   const row = document.createElement("div");
   row.className = "log-row";
@@ -648,28 +464,12 @@ function logToTerminal(message: string, logType: string = "system") {
   row.appendChild(msg);
 
   terminalLogs.appendChild(row);
-  terminalLogs.scrollTop = terminalLogs.scrollHeight; // Auto-scroll
+  terminalLogs.scrollTop = terminalLogs.scrollHeight;
 }
 
-// ============================================================================
-// 🌌 GRAPHICS: Render canvas guide
-// ============================================================================
 const canvas = document.getElementById("creature-canvas") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 let renderer: CreatureRenderer;
-
-// Reset camera focal point to optimal fit on load or manual hot-key
-function resetCameraView() {
-  const visibleWidth = window.innerWidth - 680;
-  const visibleHeight = window.innerHeight - 260;
-  
-  // Calculate dynamic fit zoom
-  camZoom = Math.min(visibleWidth / 19200, visibleHeight / 10800);
-  camX = 19200 / 2;
-  camY = 10800 / 2;
-  
-  logToTerminal("Camera view centered on full-screen glass tank and reset.", "system");
-}
 
 function resizeBetaCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -680,7 +480,6 @@ function resizeBetaCanvas() {
 function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
   if (!world) return;
 
-  // 1. Draw Biome Areas (renders seamless organic sharp pixelated coastlines)
   if (offscreenCanvas) {
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -688,7 +487,6 @@ function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
     ctx.restore();
   }
 
-  // 2. Draw Thermal Vents (dotted current zones)
   for (const vent of world.vents) {
     if (vent.strength === 0) continue;
     ctx.beginPath();
@@ -697,22 +495,18 @@ function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
     ctx.lineWidth = 6;
     ctx.stroke();
 
-    // Center vent core
     ctx.beginPath();
     ctx.arc(vent.x, vent.y, 40, 0, Math.PI * 2);
     ctx.fillStyle = vent.forceType === "push" ? "rgba(56, 189, 248, 0.25)" : vent.forceType === "pull" ? "rgba(236, 72, 153, 0.25)" : "rgba(168, 85, 247, 0.25)";
     ctx.fill();
   }
 
-  // 3. Draw Solid Obstacles (circular solid coral reefs / rocks)
   for (const obs of world.obstacles) {
-    // Outer glow
     ctx.beginPath();
     ctx.arc(obs.x, obs.y, obs.radius + 15, 0, Math.PI * 2);
     ctx.fillStyle = obs.type === "rock" ? "rgba(51, 65, 85, 0.05)" : "rgba(244, 63, 94, 0.05)";
     ctx.fill();
 
-    // Solid core (Organic Jagged Polygon)
     ctx.beginPath();
     ctx.moveTo(obs.vertices[0].x, obs.vertices[0].y);
     for (let j = 1; j < obs.vertices.length; j++) {
@@ -738,19 +532,13 @@ function drawBetaSimulationFrame(timestamp: number) {
 
     ctx.clearRect(0, 0, cw, ch);
 
-    // Unobstructed center viewport bounds
-    const visibleWidth = window.innerWidth - 680;
-    const visibleHeight = window.innerHeight - 260;
-    const viewCenterX = 305 + visibleWidth / 2;
-    const viewCenterY = 90 + visibleHeight / 2;
+    const { viewCenterX, viewCenterY } = camera.getViewportBounds();
 
-    // 1. Apply 2D View Projection Matrix (Centered on look-at point)
     ctx.save();
     ctx.translate(viewCenterX * dpr, viewCenterY * dpr);
-    ctx.scale(dpr * camZoom, dpr * camZoom);
-    ctx.translate(-camX, -camY);
+    ctx.scale(dpr * camera.camZoom, dpr * camera.camZoom);
+    ctx.translate(-camera.camX, -camera.camY);
 
-    // 2. Draw glowing space deep gradient over the entire logical boundary
     ctx.save();
     const grad = ctx.createLinearGradient(19200 / 2, 0, 19200 / 2, 10800);
     grad.addColorStop(0, "#080c18");
@@ -760,10 +548,8 @@ function drawBetaSimulationFrame(timestamp: number) {
     ctx.fillRect(0, 0, 19200, 10800);
     ctx.restore();
 
-    // Draw procedural Bio-Basin terrain (biomes, solid reefs, thermal current vents)
     drawWorldTerrain(ctx);
 
-    // 3. Draw algae/food spores
     ctx.save();
     for (const pellet of foodPellets) {
       ctx.beginPath();
@@ -775,12 +561,10 @@ function drawBetaSimulationFrame(timestamp: number) {
     }
     ctx.restore();
 
-    // 4. Draw swimming creatures
     creatures.forEach(agent => {
       if (agent.phenotype) {
         renderer.render(agent.phenotype, timestamp, agent.px, agent.py, agent.headingAngle, agent.omegaRot);
 
-        // Render selector guide ring if selected
         if (Number(agent.id) === Number(selectedId.value)) {
           ctx.save();
           const isPred = agent.phenotype.carnivory >= 0.55;
@@ -795,7 +579,6 @@ function drawBetaSimulationFrame(timestamp: number) {
       }
     });
 
-    // 5. Render shockwave crimson rings (BITE impact)
     ctx.save();
     biteImpacts.forEach(impact => {
       impact.age++;
@@ -812,12 +595,11 @@ function drawBetaSimulationFrame(timestamp: number) {
     biteImpacts = biteImpacts.filter(i => i.age < 24);
     ctx.restore();
 
-    // 6. Draw high-tech glowing glass tank boundary frame!
     ctx.strokeStyle = "rgba(0, 242, 254, 0.4)";
     ctx.lineWidth = 15;
     ctx.strokeRect(0, 0, 19200, 10800);
 
-    ctx.restore(); // Restore camera look-at viewport transforms
+    ctx.restore();
   } catch (err: any) {
     console.error("[Tauri Beta] Render error caught:", err);
     safeInvoke("handle_client_action", { action: JSON.stringify({ type: "CLIENT_ERROR", error: err.stack || err.message || String(err) }) }).catch(e => {
@@ -825,170 +607,60 @@ function drawBetaSimulationFrame(timestamp: number) {
     });
   }
 
-  // Ensure requestAnimationFrame is ALWAYS rescheduled, preventing silent loop deaths!
   requestAnimationFrame(drawBetaSimulationFrame);
 }
 
-// ============================================================================
-// 🖱️ MOUSE INTERACTION & DRAG-PAN CONTROLS
-// ============================================================================
-canvas.addEventListener("mousedown", (e) => {
-  isDragging = true;
-  hasDragged = false;
-  startX = e.clientX;
-  startY = e.clientY;
-  canvas.style.cursor = "grabbing"; // Instantly show grabbing on click hold!
-});
-
-canvas.addEventListener("mousemove", (e) => {
-  if (isDragging) {
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    // Set drag flag only if mouse actually moves past buffer threshold
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      hasDragged = true;
-    }
-
-    // Pan camera focused look-at position (scale velocity inversely with zoom scale!)
-    camX -= dx / camZoom;
-    camY -= dy / camZoom;
-
-    // Hard clamp camera to keep viewport neatly bounded inside the giant tank
-    camX = Math.max(0, Math.min(19200, camX));
-    camY = Math.max(0, Math.min(10800, camY));
-
-    startX = e.clientX;
-    startY = e.clientY;
-    canvas.style.cursor = "grabbing";
-  } else {
-    // If not dragging, check for hovers to toggle between "grab" and "pointer"!
-    const rect = canvas.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    
-    const visibleWidth = window.innerWidth - 680;
-    const visibleHeight = window.innerHeight - 260;
-    const viewCenterX = 305 + visibleWidth / 2;
-    const viewCenterY = 90 + visibleHeight / 2;
-
-    const mx = camX + (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - viewCenterX) / camZoom;
-    const my = camY + (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - viewCenterY) / camZoom;
-
+// Bind Camera Mouse Panning & Zoom Events
+camera = new InteractiveCamera(canvas);
+camera.setupEventListeners(
+  (mx, my) => {
     let hovered = false;
     creatures.forEach(agent => {
       const dx = agent.px - mx;
       const dy = agent.py - my;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      // If hovering near the creature body radius, trigger pointer hover!
       const bodyRadius = agent.phenotype.spinalHarmonics.meanRadius * 2.6 * 0.5 + 10;
       if (dist < bodyRadius) {
         hovered = true;
       }
     });
+    return hovered;
+  },
+  (mx, my) => {
+    let closestAgent: any = null;
+    let minDist = 120;
 
-    canvas.style.cursor = hovered ? "pointer" : "grab";
-  }
-});
-
-canvas.addEventListener("mouseup", () => {
-  isDragging = false;
-  canvas.style.cursor = "grab";
-});
-
-canvas.addEventListener("mouseleave", () => {
-  isDragging = false;
-  canvas.style.cursor = "default";
-});
-
-// Interactive Mouse Wheel Zoom centered on cursor
-canvas.addEventListener("wheel", (e) => {
-  e.preventDefault();
-
-  const rect = canvas.getBoundingClientRect();
-  const visibleWidth = window.innerWidth - 680;
-  const visibleHeight = window.innerHeight - 260;
-  const viewCenterX = 305 + visibleWidth / 2;
-  const viewCenterY = 90 + visibleHeight / 2;
-
-  // Get current mouse coordinate relative to screen center
-  const mouseX = e.clientX - rect.left;
-  const mouseY = e.clientY - rect.top;
-
-  // Back-project screen mouse position to logical space coordinates before scaling
-  const logMouseX = camX + (mouseX - viewCenterX) / camZoom;
-  const logMouseY = camY + (mouseY - viewCenterY) / camZoom;
-
-  // Define zoom intensity scaling multiplier
-  const intensity = 0.12;
-  const direction = e.deltaY < 0 ? 1 : -1;
-  const factor = Math.exp(direction * intensity);
-
-  // Clamp camera zoom values
-  const minZoom = Math.min(visibleWidth / 19200, visibleHeight / 10800) * 0.8;
-  const maxZoom = 2.0;
-
-  camZoom = Math.max(minZoom, Math.min(maxZoom, camZoom * factor));
-
-  // Translate camera focal points to keep mouse coordinates identical after scaling!
-  camX = logMouseX - (mouseX - viewCenterX) / camZoom;
-  camY = logMouseY - (mouseY - viewCenterY) / camZoom;
-
-  // Hard boundary clamps
-  camX = Math.max(0, Math.min(19200, camX));
-  camY = Math.max(0, Math.min(10800, camY));
-}, { passive: false });
-
-// Click selection on canvas (Only triggers if user didn't drag/pan!)
-canvas.addEventListener("click", (e) => {
-  if (hasDragged) return; // Prevent selection triggers when mouse-up ends a camera slide!
-
-  const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-
-  const visibleWidth = window.innerWidth - 680;
-  const visibleHeight = window.innerHeight - 260;
-  const viewCenterX = 305 + visibleWidth / 2;
-  const viewCenterY = 90 + visibleHeight / 2;
-
-  // Translate click screen coordinates to logical world space!
-  const mx = camX + (((e.clientX - rect.left) * (canvas.width / dpr / rect.width)) - viewCenterX) / camZoom;
-  const my = camY + (((e.clientY - rect.top) * (canvas.height / dpr / rect.height)) - viewCenterY) / camZoom;
-
-  let closestAgent: any = null;
-  let minDist = 120; // click proximity buffer
-
-  creatures.forEach(agent => {
-    const dx = agent.px - mx;
-    const dy = agent.py - my;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < minDist) {
-      minDist = dist;
-      closestAgent = agent;
-    }
-  });
-
-  if (closestAgent) {
-    selectSpecimen(closestAgent);
-  } else {
-    // Click on empty water spawns food on logical server coordinates
-    invoke("handle_client_action", { action: JSON.stringify({ type: "SPAWN_FOOD", x: mx, y: my }) }).catch(err => {
-      console.error("Tauri invoke error SPAWN_FOOD:", err);
+    creatures.forEach(agent => {
+      const dx = agent.px - mx;
+      const dy = agent.py - my;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < minDist) {
+        minDist = dist;
+        closestAgent = agent;
+      }
     });
-  }
-});
 
-// Reset Camera View Hot-Key (Press R)
+    if (closestAgent) {
+      selectSpecimen(closestAgent);
+    } else {
+      invoke("handle_client_action", { action: JSON.stringify({ type: "SPAWN_FOOD", x: mx, y: my }) }).catch(err => {
+        console.error("Tauri invoke error SPAWN_FOOD:", err);
+      });
+    }
+  }
+);
+
 window.addEventListener("keydown", (e) => {
   if (e.key.toLowerCase() === "r") {
-    resetCameraView();
+    const { visibleWidth, visibleHeight } = camera.getViewportBounds();
+    camera.reset(visibleWidth, visibleHeight);
+    logToTerminal("Camera view centered on full-screen glass tank and reset.", "system");
   }
 });
 
-// Click list delegation for roster card select and accordion headers
 speciesRoster.addEventListener("click", (e) => {
   const target = e.target as HTMLElement;
 
-  // 1. Accordion Toggles
   const aliveHeader = target.closest("#acc-alive-trigger");
   if (aliveHeader) {
     isAliveExpanded.value = !isAliveExpanded.value;
@@ -1001,7 +673,6 @@ speciesRoster.addEventListener("click", (e) => {
     return;
   }
 
-  // 2. Card Selection
   const item = target.closest(".roster-card") as HTMLDivElement | null;
   if (!item) return;
 
@@ -1010,21 +681,23 @@ speciesRoster.addEventListener("click", (e) => {
     const agent = creatures.find(c => c.speciesId === recId);
     if (agent) {
       selectSpecimen(agent);
-      
-      // Auto focus camera lock-on target on selection click!
-      camX = agent.px;
-      camY = agent.py;
+      camera.camX = agent.px;
+      camera.camY = agent.py;
       logToTerminal(`Camera focused on specimen #${agent.id}.`, "system");
     } else {
-      // Fetch fossil stats
       const record = speciesRosterSignal.value.find(r => r.id === recId);
       if (record) {
-        selectedId.value = 99999; // temporary virtual ID for fossils
+        selectedId.value = 99999;
         selectedName.value = record.name;
         selectedTaxa.value = `${record.name} [FOSSIL - EXTINCT]`;
         selectedGenome.value = record.genome;
-        selectedMethylations.value = Array(256).fill(0); // empty methylations for fossil view
-        selectedPhenotype.value = parseGenome(record.genome, getComplementaryString(record.genome));
+        selectedMethylations.value = Array(256).fill(0);
+        selectedPhenotype.value = null;
+        safeInvoke("get_fossil_phenotype", { genome: record.genome }).then((pheno) => {
+          if (pheno) {
+            selectedPhenotype.value = pheno;
+          }
+        });
         selectedMaxEnergy.value = 100;
         selectedStatus.value = "Extinct (Fossil)";
         selectedEnergy.value = 0;
@@ -1035,7 +708,6 @@ speciesRoster.addEventListener("click", (e) => {
   }
 });
 
-// Action Buttons Event Handlers
 const btnToggleSim = document.getElementById("btn-toggle-sim") as HTMLButtonElement;
 const lblToggleSim = document.getElementById("lbl-toggle-sim") as HTMLSpanElement;
 let isSimRunning = true;
@@ -1065,27 +737,20 @@ document.getElementById("btn-clear-console")?.addEventListener("click", () => {
   terminalLogs.innerHTML = "";
 });
 
-// ============================================================================
-// 🚀 BOOTSTRAP: Window loader initializations
-// ============================================================================
 window.addEventListener("load", async () => {
   resizeBetaCanvas();
   renderer = new CreatureRenderer(canvas);
   
   window.addEventListener("resize", resizeBetaCanvas);
   
-  // Initialize camera responsive fits on boot
-  resetCameraView();
+  const { visibleWidth, visibleHeight } = camera.getViewportBounds();
+  camera.reset(visibleWidth, visibleHeight);
 
-  // Establish web socket stream and await successful listener registration
   await initBetaWebSocket();
 
-  // Inform the Rust core that the webview is fully loaded and ready for INIT_STATE
-  // Since we awaited initBetaWebSocket() above, the listener is 100% active, preventing race conditions!
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "CLIENT_READY" }) }).catch(err => {
     console.error("Failed to send CLIENT_READY handshake:", err);
   });
 
-  // Run graphic frame loop
   requestAnimationFrame(drawBetaSimulationFrame);
 });

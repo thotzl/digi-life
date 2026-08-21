@@ -12,6 +12,8 @@ All commands are executed directly from the **repository root directory**. There
 | :--- | :--- |
 | `npm run tauri:dev` | **Launch Tauri Desktop Application** (Launches the main Ozean-Labor & Evolutionary Trainer) |
 | `npm run build` | **Compile Production Frontend Bundle** (Prepares HTML assets for Tauri compile) |
+| `npm run types:generate` | **Auto-Generate Types from Rust Backend** (Triggers TS-RS compilation to export types) |
+| `npm run test:all` | **Run Unified Verification Test Suite** (Funs Vitest tests, Cargo tests, and balance sim checks) |
 | `cargo test --manifest-path src-tauri/Cargo.toml` | **Run Native Backend Unit Tests** (Tests DNA parsing, CTRNN brain determinism, and database schema) |
 
 ---
@@ -30,6 +32,22 @@ The repository is structured cleanly around a unified configuration model:
     *   `src/tauri_ocean.ts`: Real-time canvas telemetry rendering and inspector panel.
     *   `src/tauri_trainer.ts`: Lightweight spectator renderer and slider action dispatches.
 *   **`OLD_SIMS_ARCHIVE.md` (Legacy Docs):** Contains documentation and commit history details for the legacy, browser-based web assets that have been successfully retired.
+
+---
+
+## 🔄 Automatic TypeScript Type Generation (TS-RS)
+
+To completely eliminate manual API sync errors and enforce 100% stable communication over the Tauri IPC bridge, this workspace integrates **`ts-rs`** inside the Rust core.
+
+### How it works:
+1. **Annotated Rust Structs:** Structures such as `CreatureAgent`, `FoodSpore`, and `CreaturePhenotype` are decorated with the `#[derive(TS)]` and `#[ts(export)]` macros.
+2. **On-Test Compilation:** Whenever backend tests are executed (`npm run types:generate`), the Rust compiler automatically analyzes the fields (including nested structs and enums) and exports bit-perfect TypeScript interfaces into `src-tauri/bindings/`.
+3. **Frontend Type Adapter:** The frontend library at `src/shared/types.ts` is configured as a clean type-adapter that re-exports all 12 auto-generated files from `src-tauri/bindings/` while maintaining purely client-side payload definitions.
+
+To manually trigger a type regeneration cycle, run:
+```bash
+npm run types:generate
+```
 
 ---
 

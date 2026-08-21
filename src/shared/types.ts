@@ -1,4 +1,84 @@
-import { CreaturePhenotype } from "../biology/dna";
+export interface HSLColor {
+  h: number;
+  s: number;
+  l: number;
+}
+
+export interface SpinalHarmonics {
+  amplitudes: number[];
+  phases: number[];
+  baseLength: number;
+  meanRadius: number;
+  spinalCurve: number;
+  spinalCurveFreq: number;
+  parapodiaAmp: number;
+  parapodiaFreq: number;
+  flatteningHead: number;
+}
+
+export interface OrganelleLocus {
+  spectralAffinity: number;
+  bandwidth: number;
+  expressionStyle: number;
+  scale: number;
+  spinalPos: number;
+  hueShift: number;
+  x?: number;
+  y?: number;
+  angle: number;
+}
+
+export interface CTRNNNeuron {
+  id: number;
+  type: "input" | "hidden" | "output";
+  label: string;
+  tau: number;
+  bias: number;
+  activationType?: string;
+  x?: number;
+  y?: number;
+}
+
+export interface CTRNNSynapse {
+  fromNode: number;
+  toNode: number;
+  weight: number;
+}
+
+export interface BrainTopology {
+  neurons: CTRNNNeuron[];
+  synapses: CTRNNSynapse[];
+}
+
+export interface GeneSpan {
+  start: number;
+  end: number;
+}
+
+export interface CreaturePhenotype {
+  symmetry: string;
+  primaryColor: HSLColor;
+  secondaryColor: HSLColor;
+  bodySeed: number;
+  spinalHarmonics: SpinalHarmonics;
+  emergentChambersCount: number;
+  organelles: OrganelleLocus[];
+  pulseSpeed: number;
+  wavePhase: number;
+  wiggleAmplitude: number;
+  stiffness: number;
+  stomachCapacity: number;
+  basalMetabolicRate: number;
+  matureAge: number;
+  reproThreshold: number;
+  splitLoss: number;
+  brain: BrainTopology;
+  carnivory: number;
+  isPredator: boolean;
+  latinName: string;
+  activeGeneSpans: GeneSpan[];
+  methylations: number[];
+}
 
 export interface SpeciesRecord {
   id: string;             // Sense DNA string serves as the unique ID
@@ -40,9 +120,42 @@ export interface CreatureAgent {
 }
 
 export interface FoodSpore {
+  id: number;
   x: number;
   y: number;
   vx: number;
   vy: number;
-  type?: 'plant' | 'meat';
+  amount: number;
+}
+
+export interface TelemetryCreatureInput {
+  id: number;
+  speciesId: string;
+  genome: string;
+  antisense: string;
+  px: number;
+  py: number;
+  vx: number;
+  vy: number;
+  headingAngle: number;
+  omegaRot: number;
+  energy: number;
+  adrenaline: number;
+  age: number;
+  generation: number;
+  hasEaten: boolean;
+  phenotype?: CreaturePhenotype;
+}
+
+export interface TelemetryPayload {
+  type: "TELEMETRY_TICK" | "INIT_STATE" | "DATABASE_CHANGED" | "BITE_EVENT" | "LOG_EVENT";
+  highestGeneration: number;
+  running: boolean;
+  timeStr?: string;
+  creatures: TelemetryCreatureInput[];
+  foodPellets: FoodSpore[];
+  selectedBrain?: {
+    id: number;
+    activations: number[];
+  };
 }

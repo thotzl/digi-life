@@ -1,175 +1,237 @@
 use serde::{Deserialize, Serialize};
 use rand::Rng;
+use ts_rs::TS;
 
 pub const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct HSLColor {
     pub h: f32, // 0 - 360
     pub s: f32, // 0 - 100
     pub l: f32, // 0 - 100
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SensoryPatch {
     #[serde(rename = "spectralAffinity")]
+    #[ts(rename = "spectralAffinity")]
     pub spectral_affinity: f32,
     pub bandwidth: f32,
     #[serde(rename = "expressionStyle")]
+    #[ts(rename = "expressionStyle")]
     pub expression_style: f32,
     pub scale: f32,
     #[serde(rename = "spinalPos")]
+    #[ts(rename = "spinalPos")]
     pub spinal_pos: f32,
     pub angle: f32,
     #[serde(rename = "hueShift")]
+    #[ts(rename = "hueShift")]
     pub hue_shift: f32,
     #[serde(rename = "geneStartIndex")]
+    #[ts(rename = "geneStartIndex")]
     pub gene_start_index: usize,
     #[serde(rename = "geneEndIndex")]
+    #[ts(rename = "geneEndIndex")]
     pub gene_end_index: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct SpinalHarmonics {
     #[serde(rename = "baseLength")]
+    #[ts(rename = "baseLength")]
     pub base_length: f32,
     #[serde(rename = "meanRadius")]
+    #[ts(rename = "meanRadius")]
     pub mean_radius: f32,
     pub amplitudes: Vec<f32>,
     pub phases: Vec<f32>,
     #[serde(rename = "spinalCurve")]
+    #[ts(rename = "spinalCurve")]
     pub spinal_curve: f32,
     #[serde(rename = "spinalCurveFreq")]
+    #[ts(rename = "spinalCurveFreq")]
     pub spinal_curve_freq: f32,
     #[serde(rename = "parapodiaAmp")]
+    #[ts(rename = "parapodiaAmp")]
     pub parapodia_amp: f32,
     #[serde(rename = "parapodiaFreq")]
+    #[ts(rename = "parapodiaFreq")]
     pub parapodia_freq: f32,
     #[serde(rename = "flatteningHead")]
+    #[ts(rename = "flatteningHead")]
     pub flattening_head: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CTRNNSynapse {
     #[serde(rename = "fromNode")]
+    #[ts(rename = "fromNode")]
     pub from_node: usize,
     #[serde(rename = "toNode")]
+    #[ts(rename = "toNode")]
     pub to_node: usize,
     pub weight: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename_all = "lowercase")]
+#[ts(export)]
 pub enum NeuronType {
     Input,
     Hidden,
     Output,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CTRNNNeuron {
     pub id: usize,
     #[serde(rename = "type")]
+    #[ts(rename = "type")]
     pub neuron_type: NeuronType,
     pub label: String,
     pub tau: f32,  // time constant [0.5 to 5.0]
     pub bias: f32, // neural bias [-1.0 to 1.0]
     #[serde(rename = "activationType")]
+    #[ts(rename = "activationType")]
     pub activation_type: Option<String>,
     pub x: Option<f32>,
     pub y: Option<f32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct BrainTopology {
     pub neurons: Vec<CTRNNNeuron>,
     pub synapses: Vec<CTRNNSynapse>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct CreaturePhenotype {
     pub symmetry: String, // "vertical" | "quad"
     #[serde(rename = "primaryColor")]
+    #[ts(rename = "primaryColor")]
     pub primary_color: HSLColor,
     #[serde(rename = "secondaryColor")]
+    #[ts(rename = "secondaryColor")]
     pub secondary_color: HSLColor,
     #[serde(rename = "bodySeed")]
+    #[ts(rename = "bodySeed")]
     pub body_seed: u32,
+    #[ts(type = "any[]")]
     pub segments: Vec<serde_json::Value>,
     #[serde(rename = "spinalHarmonics")]
+    #[ts(rename = "spinalHarmonics")]
     pub spinal_harmonics: SpinalHarmonics,
     #[serde(rename = "emergentChambersCount")]
+    #[ts(rename = "emergentChambersCount")]
     pub emergent_chambers_count: usize,
     pub organelles: Vec<SensoryPatch>,
     #[serde(rename = "pulseSpeed")]
+    #[ts(rename = "pulseSpeed")]
     pub pulse_speed: f32,
     #[serde(rename = "wavePhase")]
+    #[ts(rename = "wavePhase")]
     pub wave_phase: f32,
     #[serde(rename = "wiggleAmplitude")]
+    #[ts(rename = "wiggleAmplitude")]
     pub wiggle_amplitude: f32,
     pub stiffness: f32,
 
     #[serde(rename = "matureAge")]
+    #[ts(rename = "matureAge")]
     pub mature_age: u32,
     #[serde(rename = "reproThreshold")]
+    #[ts(rename = "reproThreshold")]
     pub repro_threshold: f32,
     #[serde(rename = "splitLoss")]
+    #[ts(rename = "splitLoss")]
     pub split_loss: f32,
 
     pub brain: BrainTopology,
     pub carnivory: f32,
     #[serde(rename = "isPredator")]
+    #[ts(rename = "isPredator")]
     pub is_predator: bool,
 
     #[serde(rename = "latinName")]
+    #[ts(rename = "latinName")]
     pub latin_name: String,
     #[serde(rename = "sensoryVisus")]
+    #[ts(rename = "sensoryVisus")]
     pub sensory_visus: f32,
     #[serde(rename = "sensoryOlfaction")]
+    #[ts(rename = "sensoryOlfaction")]
     pub sensory_olfaction: f32,
     #[serde(rename = "sensoryTactility")]
+    #[ts(rename = "sensoryTactility")]
     pub sensory_tactility: f32,
     #[serde(rename = "sensoryBiolum")]
+    #[ts(rename = "sensoryBiolum")]
     pub sensory_biolum: f32,
     #[serde(rename = "dietClass")]
+    #[ts(rename = "dietClass")]
     pub diet_class: String,
     #[serde(rename = "preferredHabitat")]
+    #[ts(rename = "preferredHabitat")]
     pub preferred_habitat: String,
 
     #[serde(rename = "basalMetabolicRate")]
+    #[ts(rename = "basalMetabolicRate")]
     pub basal_metabolic_rate: f32,
     #[serde(rename = "stomachCapacity")]
+    #[ts(rename = "stomachCapacity")]
     pub stomach_capacity: f32,
     #[serde(rename = "thermalToleranceMin")]
+    #[ts(rename = "thermalToleranceMin")]
     pub thermal_tolerance_min: f32,
     #[serde(rename = "thermalToleranceMax")]
+    #[ts(rename = "thermalToleranceMax")]
     pub thermal_tolerance_max: f32,
     #[serde(rename = "hydraulicPressure")]
+    #[ts(rename = "hydraulicPressure")]
     pub hydraulic_pressure: f32,
     #[serde(rename = "rotationalInertia")]
+    #[ts(rename = "rotationalInertia")]
     pub rotational_inertia: f32,
 
     #[serde(rename = "survivalExpectation")]
+    #[ts(rename = "survivalExpectation")]
     pub survival_expectation: f32,
     #[serde(rename = "survivalAnalysis")]
+    #[ts(rename = "survivalAnalysis")]
     pub survival_analysis: String,
 
     #[serde(rename = "chromatinState")]
+    #[ts(rename = "chromatinState")]
     pub chromatin_state: Vec<bool>,
     #[serde(rename = "epigeneticLogs")]
+    #[ts(rename = "epigeneticLogs")]
     pub epigenetic_logs: Vec<String>,
     pub methylations: Vec<f32>,
 
     #[serde(rename = "antisenseStrand")]
+    #[ts(rename = "antisenseStrand")]
     pub antisense_strand: String,
     #[serde(rename = "repairFidelity")]
+    #[ts(rename = "repairFidelity")]
     pub repair_fidelity: f32,
     #[serde(rename = "insertionRate")]
+    #[ts(rename = "insertionRate")]
     pub insertion_rate: f32,
     #[serde(rename = "deletionRate")]
+    #[ts(rename = "deletionRate")]
     pub deletion_rate: f32,
 
     #[serde(rename = "genomeString")]
+    #[ts(rename = "genomeString")]
     pub genome_string: String,
 }
 

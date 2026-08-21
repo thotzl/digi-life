@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use rand::Rng;
+use ts_rs::TS;
 
 use crate::shared::types::{CreatureAgent, FoodSpore};
 use crate::shared::physics::apply_creature_physics;
@@ -23,7 +24,8 @@ pub struct TrainerSandbox {
     pub epoch_ticks: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct TrainerTelemetrySandbox {
     pub id: u32,
     pub px: f32,

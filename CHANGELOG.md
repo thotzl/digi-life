@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-08-22
+
+### Added
+- **Automated TS-RS Type Generation (TCK-115):** Integrated `ts-rs` into the Rust backend to automatically compile and export type-bindings for core data schemas (`CreatureAgent`, `FoodSpore`, `CreaturePhenotype` etc.) on every build/test, eliminating any manual synchronization errors.
+- **Unified Single-Page Application (SPA) Architecture (TCK-115):** Purged separate HTML documents and migrated the entire dashboard and trainings-chamber into a single generic `index.html` skeleton. Toggling between views is now performed instantly via zero-latency CSS visibility classes driven by `src/main.ts`.
+- **Automated Background Sim Pausing:** Configured the SPA switcher to automatically trigger a simulation-wide suspend (`TOGGLE_SIMULATION` with `running: false` and `PAUSE_TRAINING`) when swapping tabs to conserve CPU and GPU performance.
+
+### Fixed
+- **Vite Bundler & Database Simplification:** Permanently deleted the legacy `digilife.db` database and simplified the 240-line `vite.config.ts` down to a clean, generic 10-line Vite bundler configuration, successfully uninstalling the heavy native dependency `better-sqlite3`.
+- **Evolved Brain Constellation Views:** Modularized directed-graph brain drawings into a unified, reusable `BrainRenderer` class. It unifies neural alignments and glow-updates, rendering the Ocean's networks organically via Rust's spring-embedded coordinates while maintaining structured column grids for the Trainer candidates.
+
 ## [1.6.3] - 2026-08-21
 
 ### Fixed

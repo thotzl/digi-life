@@ -1,4 +1,5 @@
 pub mod database;
+pub mod server;
 pub mod biology {
     pub mod dna;
     pub mod trainer_engine;
