@@ -257,7 +257,7 @@ fn main() {
                 let logical_width = 19200.0;
                 let logical_height = 10800.0;
                 
-                let app_config = src_tauri::shared::types::AppConfig::load();
+                let app_config = src_tauri::shared::types::AppConfig::global();
                 
                 let mut is_running = false;
                 let mut creatures: Vec<CreatureAgent> = Vec::new();

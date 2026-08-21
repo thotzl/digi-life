@@ -55,7 +55,7 @@ pub fn apply_creature_physics(
     agent.vy += external_force_y;
 
     // Boundary bounces (Hard boundaries, aligned with config rules!)
-    let app_config = crate::shared::types::AppConfig::load();
+    let app_config = crate::shared::types::AppConfig::global();
     let mean_radius = pheno.spinal_harmonics.mean_radius;
     let restitution = app_config.rules.elastic_wall_restitution;
     let mut hit_wall = false;

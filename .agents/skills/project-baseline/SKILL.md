@@ -9,32 +9,42 @@ description: Baseline configuration, developer toolchains, environment scripts, 
 - **Self-Configuration Mandate:** Register and load the local skills dynamically. Treat this repository as a fully portable AI workspace.
 
 ## II. Tech Stack Discovery
-- **Runtime:** Node.js (with `tsx` for backend execution) and modern web browsers.
+- **Runtime:** Tauri v2 Desktop Environment.
 - **Frontend Framework:** Vite v5 (TypeScript v5) serving high-fps HTML5 Canvas & Preact Signals client UI.
-- **Backend Framework:** Custom headless simulation server in TS running via `tsx` and using the `ws` library for sub-millisecond WebSocket replication.
+- **Backend Framework:** Native, headless Rust 2024 simulation and neuroevolution core running in a parallel background thread.
+- **Persistence Layer:** Local SQLite database (`pixel_life_local.db`) for tracking training runs, HOF lineages, and active/extinct species records.
 - **Core Dependencies:**
   - `@preact/signals-core`: Fine-grained, reactive state tracking for UI overlays.
-  - `zustand`: General application state on the client side.
-  - `ws`: WebSocket server/client for fast state synchronization.
-  - `tsx`: TypeScript execution engine for server.
-  - `concurrently`: Multi-process orchestrator to run both client and server simultaneously.
+  - `tauri`: Cross-platform desktop application framework.
+  - `@tauri-apps/api`: Type-safe IPC bridge and command invoker.
 
 ## III. Primary Workflows & Developer Commands
-- **Launch Development Environment:**
+All commands must be executed directly from the **repository root directory**.
+- **Launch Desktop Application:**
   ```bash
-  npm run dev
+  npm run tauri:dev
   ```
-  Runs both the client Vite compiler (port `3000`) and the WebSocket simulation server (port `3002`) concurrently.
-- **Production Build:**
+  Launches the main Ozean-Labor substrate and Evolutionary Trainer Tauri windows simultaneously.
+- **Production Frontend Build:**
   ```bash
   npm run build
   ```
-  Runs `tsc` type checking and compiles client assets through Vite into `dist/`.
-- **Preview Production Build:**
+  Runs `tsc` type checking and compiles client assets through Vite into `dist/` for Tauri compilation.
+- **Run Native Backend Tests:**
   ```bash
-  npm run preview
+  npm run test:rust
   ```
+  Executes the automated Rust unit-tests suite (DNA parsing, CTRNN brain determinism, SQLite constraints).
 
 ## IV. Core Mandates
-- **Clean Dev Split:** The frontend compiles client logic independently but utilizes an embedded Connect middleware plugin (configured in `vite.config.ts`) to handle `/api` mocks and local DB reads/writes.
-- **Protected Files:** Do NOT commit or track `species_db.json` and `simulation_state.json`. Keep them in `.gitignore` and `.aiignore` to prevent large file pollution in Git history and preserve AI context tokens.
+- **config.json (SSOT):** All physical, biological, and metabolic parameters are loaded dynamically from the central `config.json` file in the root directory. Hardcoding literals in Rust is prohibited.
+- **SQLite Transactions:** DB writes of Elite Champions must be performed asynchronously inside the background loop to prevent thread freezes.
+
+## V. Legacy Simulations Archive (Checkout Guide)
+The legacy, browser-based web assets (Express, standalone WebSockets, and WASD preview sandbox) have been retired in favour of the native desktop app.
+* **Deletion Commit:** `chore: remove legacy browser-based assets and archive configurations` (Commit Hash: **`dd36b90`**).
+* **Retrieval Guide:** Devs and AI agents can temporarily check out the retired web assets at any time using:
+  ```bash
+  git checkout dd36b90^
+  ```
+  Refer to `OLD_SIMS_ARCHIVE.md` in the root directory for full code structures and operational notes on the legacy views.

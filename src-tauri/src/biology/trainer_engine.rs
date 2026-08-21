@@ -327,7 +327,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let out_left = outputs[1];
 
     // 3. Locomotion Physical Kinematics (decoupled from hardcodes, matching config rules!)
-    let app_config = crate::shared::types::AppConfig::load();
+    let app_config = crate::shared::types::AppConfig::global();
     let stiffness = sb.agent.phenotype.stiffness;
     let pulse = sb.agent.phenotype.pulse_speed;
     let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;

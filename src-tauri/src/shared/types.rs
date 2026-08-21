@@ -146,7 +146,14 @@ pub struct AppConfig {
     pub rules: SimulationRules,
 }
 
+use std::sync::OnceLock;
+static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
+
 impl AppConfig {
+    pub fn global() -> &'static Self {
+        GLOBAL_CONFIG.get_or_init(|| Self::load())
+    }
+
     pub fn load() -> Self {
         let paths = ["config.json", "../config.json", "src-tauri/config.json"];
         for path in &paths {
