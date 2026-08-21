@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-08-21
+
+### Added
+- **Global Config SSOT Integration:** Linked the native Rust backend directly to the central `config.json` file. All biological, physical, metabolic, and restocking constraints are now parsed dynamically at runtime.
+- **Robust Fallback Defaults:** Integrated strongly typed struct configurations inside `types.rs` with automatic check of multiple relative paths, fallback default definitions, and zero-panic error protection.
+- **Decoupled Hardcodes:** Stripped out all hardcoded physical and biological literals inside the main physics and predation loop in `main.rs`, replacing them with exact dynamic references to `AppConfig.rules`.
+
 ## [1.5.2] - 2026-08-21
 
 ### Fixed

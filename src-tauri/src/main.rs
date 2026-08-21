@@ -257,6 +257,8 @@ fn main() {
                 let logical_width = 19200.0;
                 let logical_height = 10800.0;
                 
+                let app_config = src_tauri::shared::types::AppConfig::load();
+                
                 let mut is_running = false;
                 let mut creatures: Vec<CreatureAgent> = Vec::new();
                 let mut food_pellets: Vec<FoodSpore> = Vec::new();
@@ -470,8 +472,8 @@ fn main() {
                         next_creature_id += 1;
                     }
 
-                    // Inject 600 Initial Spores with patchy density distribution (nutrient centers!)
-                    for _ in 0..600 {
+                    // Inject Initial Spores with patchy density distribution (nutrient centers!)
+                    for _ in 0..app_config.food_spore_count {
                         let (x, y) = {
                             let roll = rng.gen_range(0.0..1.0);
                             if !nutrient_centers.is_empty() && roll < 0.75 {
@@ -675,8 +677,8 @@ fn main() {
                                             nutrient_centers.push((cx, cy));
                                         }
 
-                                        // Inject 600 Initial Spores with patchy density distribution (nutrient centers!)
-                                        for _ in 0..600 {
+                                        // Inject Initial Spores with patchy density distribution (nutrient centers!)
+                                        for _ in 0..app_config.food_spore_count {
                                             let (x, y) = {
                                                 let roll = rng.gen_range(0.0..1.0);
                                                 if !nutrient_centers.is_empty() && roll < 0.75 {
@@ -944,16 +946,17 @@ fn main() {
                         for mut agent in creatures.drain(..) {
                             agent.age += 1;
                             
-                            // Passive metabolism + Adrenaline surcharge
-                            let metabolic_surcharge = 1.0 + (agent.adrenaline - 1.0) * 1.5;
-                            agent.energy -= agent.phenotype.basal_metabolic_rate * 0.005 * metabolic_surcharge;
+                            // Passive metabolism + Adrenaline surcharge (aligned with config rules!)
+                            let metabolic_surcharge = 1.0 + (agent.adrenaline - 1.0) * app_config.rules.adrenaline_metabolic_surcharge_scale;
+                            let bmr_decay = agent.phenotype.basal_metabolic_rate * app_config.rules.bmr_base_scale * app_config.basal_metabolic_rate_multiplier * metabolic_surcharge;
+                            agent.energy -= bmr_decay;
 
                             // Photosynthesis for green creatures in light zone
                             let hue = agent.phenotype.primary_color.h;
-                            let is_green_prey = (agent.phenotype.carnivory < 0.35) && (hue >= 75.0 && hue <= 175.0);
+                            let is_green_prey = (agent.phenotype.carnivory < app_config.rules.biting_carnivory_threshold) && (hue >= 75.0 && hue <= 175.0);
                             let in_light_zone = agent.py < logical_height * 0.35;
                             if is_green_prey && in_light_zone {
-                                agent.energy = (agent.energy + 0.15).min(agent.phenotype.stomach_capacity);
+                                agent.energy = (agent.energy + app_config.rules.photosynthesis_energy_gain).min(agent.phenotype.stomach_capacity);
                             }
 
                             // Spatial Temperature Stratification and Thermal Limits stress penalty
@@ -962,14 +965,15 @@ fn main() {
                             let temp_max = agent.phenotype.thermal_tolerance_max;
                             let thermal_stress = if local_temp < temp_min { temp_min - local_temp } else if local_temp > temp_max { local_temp - temp_max } else { 0.0 };
                             if thermal_stress > 0.1 {
-                                agent.energy -= thermal_stress * 0.0012;
+                                agent.energy -= thermal_stress * app_config.rules.thermal_stress_penalty_scale;
                             }
 
-                            if agent.energy <= 0.0 || agent.age >= 2700 {
+                            if agent.energy <= 0.0 || agent.age >= app_config.rules.creature_max_age_ticks {
                                 // Decompose corpse into nutrient spores (elastic spore relocation, no array deletion!)
                                 let l_dead = agent.phenotype.spinal_harmonics.base_length;
                                 let r_dead = agent.phenotype.spinal_harmonics.mean_radius;
-                                let num_pellets = (((l_dead * r_dead) / 1200.0).floor() as i32).clamp(1, 5);
+                                let num_pellets = (((l_dead * r_dead) / app_config.rules.decomposition_size_ratio).floor() as i32)
+                                    .clamp(app_config.rules.decomposition_spore_min, app_config.rules.decomposition_spore_max);
 
                                 let mut rng = rand::thread_rng();
                                 for _ in 0..num_pellets {
@@ -1024,7 +1028,7 @@ fn main() {
                             apply_creature_physics(&mut agent, net_thrust, out_left, mass, drag_forward, 0.0, 0.0, logical_width, logical_height);
 
                             // Grazing (Eat Food)
-                            let eat_radius = mean_radius + 10.0;
+                            let eat_radius = mean_radius * app_config.rules.grazing_radius_multiplier + app_config.rules.grazing_radius_offset;
                             let nearby_foods = grid.get_nearby_food(agent.px, agent.py, eat_radius);
                             for f_id in nearby_foods {
                                 if let Some(idx) = food_pellets.iter().position(|x| x.id == f_id) {
@@ -1034,7 +1038,7 @@ fn main() {
                                     if (dx*dx + dy*dy).sqrt() <= eat_radius {
                                         let herbivore_efficiency = 1.0 - agent.phenotype.carnivory;
                                         if herbivore_efficiency > 0.05 {
-                                            let energy_gain = 15.0 * herbivore_efficiency * 1.25;
+                                            let energy_gain = 15.0 * herbivore_efficiency * app_config.rules.grazing_efficiency_herbivore_scale;
                                             agent.energy = (agent.energy + energy_gain).min(agent.phenotype.stomach_capacity);
                                             agent.has_eaten = true;
 
@@ -1078,8 +1082,8 @@ fn main() {
                             }
 
                             // Fight Biting (Predation)
-                            if agent.phenotype.carnivory >= 0.35 {
-                                let bite_range = mean_radius * 1.6 * 0.5 + 5.0;
+                            if agent.phenotype.carnivory >= app_config.rules.biting_carnivory_threshold {
+                                let bite_range = mean_radius * app_config.rules.biting_radius_multiplier * 0.5 + app_config.rules.biting_radius_offset;
                                 let nearby_peers = grid.get_nearby_creatures(agent.px, agent.py, bite_range);
                                 for v_id in nearby_peers {
                                     if v_id == agent.id { continue; }
@@ -1089,12 +1093,12 @@ fn main() {
                                             let dy = victim.py - agent.py;
                                             let dist = (dx*dx + dy*dy).sqrt();
                                             if dist <= bite_range {
-                                                // Record damage
-                                                *damage_map.entry(victim.id).or_insert(0.0) += 50.0;
+                                                // Record damage (configured in config.json!)
+                                                *damage_map.entry(victim.id).or_insert(0.0) += app_config.rules.biting_energy_damage;
 
                                                 // Attacker gain energy
                                                 let carnivore_efficiency = agent.phenotype.carnivory;
-                                                let energy_gain = 45.0 * carnivore_efficiency * 1.25;
+                                                let energy_gain = app_config.rules.biting_base_energy_gain * carnivore_efficiency * app_config.rules.biting_efficiency_carnivore_scale;
                                                 agent.energy = (agent.energy + energy_gain).min(agent.phenotype.stomach_capacity);
                                                 agent.has_eaten = true;
 
@@ -1109,7 +1113,7 @@ fn main() {
 
                                                 emit_state(json!({
                                                     "type": "LOG_EVENT",
-                                                    "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (+{}nJ / -50nJ damage)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, energy_gain.round()),
+                                                    "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (+{:.0}nJ / -{:.0}nJ damage)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, energy_gain.round(), app_config.rules.biting_energy_damage),
                                                     "logType": "mutation"
                                                 }));
                                             }
@@ -1123,10 +1127,10 @@ fn main() {
                             let threshold = agent.phenotype.stomach_capacity * agent.phenotype.repro_threshold;
                             
                             if can_reproduce && agent.energy >= threshold {
-                                agent.energy *= 0.4;
+                                agent.energy *= app_config.rules.reproduction_split_loss_ratio;
                                 agent.has_eaten = false;
                                 
-                                let recoil = agent.phenotype.split_loss * 15.0;
+                                let recoil = agent.phenotype.split_loss * app_config.rules.reproduction_recoil_velocity_scale;
                                 agent.vx += recoil * (agent.heading_angle + std::f32::consts::PI).cos();
                                 agent.vy += recoil * (agent.heading_angle + std::f32::consts::PI).sin();
 
@@ -1188,8 +1192,8 @@ fn main() {
                             }
                         }
 
-                        // Maintain population (restocking founder cells up to min 25, matches TS index.ts!)
-                        let target_population = 25;
+                        // Maintain population (restocking founder cells up to config, matches TS index.ts!)
+                        let target_population = app_config.target_population;
                         while creatures.len() < target_population {
                             let mut rng = rand::thread_rng();
                             
@@ -1259,7 +1263,7 @@ fn main() {
                                 heading_angle,
                                 bend_angle: 0.0,
                                 omega_rot: 0.0,
-                                energy: random_pheno.stomach_capacity * 0.60,
+                                energy: random_pheno.stomach_capacity * app_config.rules.restock_initial_stomach_ratio,
                                 adrenaline: 1.0,
                                 age: 0,
                                 generation: generation_val,
