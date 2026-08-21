@@ -447,8 +447,6 @@ async function initBetaWebSocket() {
   await listen("simulation-state", (event) => {
     try {
       const data: any = event.payload;
-      // Diagnostic Mirroring: Tell Rust we received the event!
-      safeInvoke("handle_client_action", { action: JSON.stringify({ type: "CLIENT_LOG", message: `[CLIENT EVENT] Received event of type: ${data.type}` }) }).catch(() => {});
 
       if (data.type === "INIT_STATE") {
         highestGeneration = data.highestGeneration;
