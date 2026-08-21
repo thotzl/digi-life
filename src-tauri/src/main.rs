@@ -520,7 +520,6 @@ fn main() {
                     while let Ok(action_str) = rx.try_recv() {
                         if let Ok(action) = serde_json::from_str::<serde_json::Value>(&action_str) {
                             if let Some(act_type) = action["type"].as_str() {
-                                println!("[SIMULATION] Processing incoming action: {}", act_type);
                                 match act_type {
                                     "CLIENT_READY" => {
                                         is_trainer_active = false; // Safely force switch back to Ocean mode!
@@ -1382,18 +1381,6 @@ fn main() {
                                 .iter()
                                 .map(|c| TelemetryCreature::from(c))
                                 .collect();
-
-                            if !telemetry_creatures.is_empty() {
-                                println!(
-                                    "[DEBUG PHYSICS] Creature #{} px={:.1}, py={:.1}, vx={:.3}, vy={:.3}, heading={:.3}",
-                                    telemetry_creatures[0].id,
-                                    telemetry_creatures[0].px,
-                                    telemetry_creatures[0].py,
-                                    telemetry_creatures[0].vx,
-                                    telemetry_creatures[0].vy,
-                                    telemetry_creatures[0].heading_angle
-                                );
-                            }
 
                             // Compute selected brain live activations if an agent is selected
                             let selected_brain_json = if let Some(sel_id) = selected_agent_id {

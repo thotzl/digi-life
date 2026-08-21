@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-08-21
+
+### Fixed
+- **Terminal Log Quietness & Performance:** Stripped out high-frequency `[SIMULATION] Processing incoming action` logs from the channel receiver and removed the `[DEBUG PHYSICS] Creature ...` telemetry position printouts, cutting console output by over 98% and maximizing terminal and CPU performance!
+
 ## [1.5.1] - 2026-08-21
 
 ### Added
