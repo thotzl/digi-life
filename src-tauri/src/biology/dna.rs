@@ -257,6 +257,48 @@ pub fn get_complementary_string(sense: &str) -> String {
     sense.chars().map(get_complementary_char).collect()
 }
 
+pub fn extract_raw_gene_signals(
+    genome: &str,
+    start_motif: &str,
+    stop_motif: &str
+) -> Vec<f32> {
+    let mut signals = Vec::new();
+    let genome_bytes = genome.as_bytes();
+    let start_bytes = start_motif.as_bytes();
+    let stop_bytes = stop_motif.as_bytes();
+
+    if start_bytes.is_empty() || stop_bytes.is_empty() || genome.len() < start_motif.len() + stop_motif.len() {
+        return signals;
+    }
+
+    let mut idx = 0;
+    while idx <= genome.len().saturating_sub(start_motif.len()) {
+        if &genome_bytes[idx..idx + start_motif.len()] == start_bytes {
+            let payload_start = idx + start_motif.len();
+            let mut payload_end = None;
+            for j in payload_start..=genome.len().saturating_sub(stop_motif.len()) {
+                if &genome_bytes[j..j + stop_motif.len()] == stop_bytes {
+                    payload_end = Some(j);
+                    break;
+                }
+            }
+
+            if let Some(end_idx) = payload_end {
+                let payload_slice = &genome[payload_start..end_idx];
+                for c in payload_slice.chars() {
+                    signals.push(char_to_value(c) as f32 / 25.0);
+                }
+                idx = end_idx + stop_motif.len();
+            } else {
+                idx += 1;
+            }
+        } else {
+            idx += 1;
+        }
+    }
+    signals
+}
+
 pub fn generate_random_genome(length: usize) -> String {
     let mut rng = rand::thread_rng();
     let mut dna = String::with_capacity(length);
@@ -486,12 +528,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     }
 
     let char_vals: Vec<usize> = clean_genome.chars().map(char_to_value).collect();
-    let get_val = |idx: usize| -> usize { char_vals[idx] };
-
-    // Primary evolutionary drift metrics
-    let insertion_rate = (get_val(9) as f32 / 25.0) * 0.12;
-    let deletion_rate = (get_val(10) as f32 / 25.0) * 0.12;
-    let repair_fidelity = 0.15 + (get_val(11) as f32 / 25.0) * 0.8;
 
     let mut antisense_strand = match antisense_input {
         Some(anti) => anti.to_ascii_uppercase().chars().take(current_length).collect::<String>(),
@@ -618,66 +654,296 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         methylations[idx] = 0.0;
     }
 
-    // Epigenetic regulatory network parameters
-    let m1_size_regulator = 0.55 + (get_methylated_val(2, &char_vals, &methylations) as f32 / 25.0) * 0.9;
-    let m2_muscle_strength = 0.5 + (get_methylated_val(1, &char_vals, &methylations) as f32 / 25.0) * 1.0;
-    let m3_sensory_acuity = 0.3 + (get_methylated_val(3, &char_vals, &methylations) as f32 / 25.0) * 1.2;
-    let m4_neural_tau = 0.4 + (get_methylated_val(5, &char_vals, &methylations) as f32 / 25.0) * 1.2;
-    let m5_asymmetry_level = 0.15 + (get_methylated_val(6, &char_vals, &methylations) as f32 / 25.0) * 1.35;
+    // --- DECOUPLED SEQUENCE-BASED GENOME COMPILER (TCK-116) ---
 
-    let symmetry = if get_methylated_val(0, &char_vals, &methylations) < 13 { "vertical" } else { "quad" };
+    // 1. Symmetry
+    let sym_signals = extract_raw_gene_signals(&clean_genome, "SYM", "EN");
+    let symmetry = if sym_signals.len() >= 1 && sym_signals[0] >= 0.5 { "quad" } else { "vertical" };
 
-    let primary_color = HSLColor {
-        h: ((get_methylated_val(1, &char_vals, &methylations) as f32 / 25.0) * 360.0).round(),
-        s: (55.0 + (get_methylated_val(2, &char_vals, &methylations) as f32 / 25.0) * 45.0).round(),
-        l: (35.0 + (get_methylated_val(3, &char_vals, &methylations) as f32 / 25.0) * 45.0).round(),
+    // 2. Primary & Secondary Colors
+    let col_signals = extract_raw_gene_signals(&clean_genome, "COL", "EN");
+    let primary_color = if col_signals.len() >= 3 {
+        HSLColor {
+            h: (col_signals[0] * 360.0).round(),
+            s: (55.0 + col_signals[1] * 45.0).round(),
+            l: (35.0 + col_signals[2] * 45.0).round(),
+        }
+    } else {
+        HSLColor { h: 130.0, s: 75.0, l: 45.0 } // Default vibrant green
     };
 
-    let secondary_color = HSLColor {
-        h: ((get_methylated_val(4, &char_vals, &methylations) as f32 / 25.0) * 360.0).round(),
-        s: (55.0 + (get_methylated_val(5, &char_vals, &methylations) as f32 / 25.0) * 45.0).round(),
-        l: (35.0 + (get_methylated_val(6, &char_vals, &methylations) as f32 / 25.0) * 45.0).round(),
+    let secondary_color = if col_signals.len() >= 6 {
+        HSLColor {
+            h: (col_signals[3] * 360.0).round(),
+            s: (55.0 + col_signals[4] * 45.0).round(),
+            l: (35.0 + col_signals[5] * 45.0).round(),
+        }
+    } else if col_signals.len() >= 3 {
+        HSLColor {
+            h: ((col_signals[0] * 360.0 + 180.0) % 360.0).round(),
+            s: (55.0 + col_signals[1] * 45.0).round(),
+            l: (35.0 + col_signals[2] * 45.0).round(),
+        }
+    } else {
+        HSLColor { h: 310.0, s: 75.0, l: 45.0 } // Default vibrant purple
     };
 
-    let body_seed = get_methylated_val(7, &char_vals, &methylations) as u32 * 4293 + get_methylated_val(8, &char_vals, &methylations) as u32 * 117;
+    // 3. Body Seed
+    let sed_signals = extract_raw_gene_signals(&clean_genome, "SED", "EN");
+    let body_seed = if sed_signals.len() >= 1 { (sed_signals[0] * 100_000.0) as u32 } else { 4293 };
 
-    let mean_radius = (16.0f32).max((28.0f32).min((18.0 + (get_methylated_val(7, &char_vals, &methylations) as f32 / 25.0) * 18.0) * m1_size_regulator));
-    let base_length = (90.0f32).max((200.0f32).min((90.0 + (get_methylated_val(8, &char_vals, &methylations) as f32 / 25.0) * 110.0) * m1_size_regulator));
+    // 4. Body Size (Mean Radius & Base Length)
+    let size_signals = extract_raw_gene_signals(&clean_genome, "SIZ", "EN");
+    let mean_radius = if size_signals.len() >= 1 { (16.0f32).max((28.0f32).min(16.0 + size_signals[0] * 12.0)) } else { 22.0 };
+    let base_length = if size_signals.len() >= 2 { (90.0f32).max((200.0f32).min(90.0 + size_signals[1] * 110.0)) } else { 145.0 };
 
-    let mut amplitudes = Vec::with_capacity(4);
+    // 5. Spinal Harmonics (Amplitudes & Phases)
+    let wav_signals = extract_raw_gene_signals(&clean_genome, "WAV", "EN");
+    let mut amplitudes = vec![0.0; 4];
     for j in 0..4 {
-        amplitudes.push((get_methylated_val(9 + j, &char_vals, &methylations) as f32 / 25.0) * 0.3 - 0.15);
+        if wav_signals.len() > j {
+            amplitudes[j] = wav_signals[j] * 0.3 - 0.15;
+        }
+    }
+    let mut phases = vec![0.0; 4];
+    for j in 0..4 {
+        if wav_signals.len() > 4 + j {
+            phases[j] = wav_signals[4 + j] * std::f32::consts::PI * 2.0;
+        }
     }
 
-    let mut phases = Vec::with_capacity(4);
-    for j in 0..4 {
-        phases.push((get_methylated_val((3 + j) % 16, &char_vals, &methylations) as f32 / 25.0) * std::f32::consts::PI * 2.0);
-    }
+    // 6. Stiffness
+    let stf_signals = extract_raw_gene_signals(&clean_genome, "STF", "EN");
+    let stiffness = if !stf_signals.is_empty() { (0.15f32).max((1.0f32).min(0.15 + stf_signals[0] * 0.85)) } else { 0.5 };
 
-    let raw_stiffness = 0.15 + (get_methylated_val(12, &char_vals, &methylations) as f32 / 25.0) * 0.85;
-    let stiffness = (0.15f32).max((1.0f32).min(raw_stiffness * m2_muscle_strength));
+    // 7. Curves, Parapodia, etc.
+    let crv_signals = extract_raw_gene_signals(&clean_genome, "CRV", "EN");
+    let spinal_curve = if crv_signals.len() >= 1 { crv_signals[0] * 44.0 - 22.0 } else { 0.0 };
+    let spinal_curve_freq = if crv_signals.len() >= 2 { 1.0 + (crv_signals[1] * 3.0).floor() } else { 2.0 };
+    let parapodia_amp = if crv_signals.len() >= 3 { crv_signals[2] * 0.45 } else { 0.2 };
+    let parapodia_freq = if crv_signals.len() >= 4 { 2.0 + (crv_signals[3] * 3.0).floor() } else { 3.0 };
+    let flattening_head = if crv_signals.len() >= 5 { crv_signals[4] * 1.4 - 0.4 } else { 0.1 };
 
-    let raw_spinal_curve = (get_methylated_val(15, &char_vals, &methylations) as f32 / 25.0) * 44.0 - 22.0;
-    let spinal_curve = (-25.0f32).max((25.0f32).min(raw_spinal_curve * m5_asymmetry_level * (1.0 - stiffness * 0.25)));
+    // 8. Pulse Speed, Wave Phase, Wiggle Amplitude
+    let pul_signals = extract_raw_gene_signals(&clean_genome, "PUL", "EN");
+    let pulse_speed = if pul_signals.len() >= 1 { 0.0015 + pul_signals[0] * 0.0075 } else { 0.005 };
+    let wave_phase = if pul_signals.len() >= 2 { pul_signals[1] * 1.6 } else { 0.8 };
+    let wiggle_amplitude = if pul_signals.len() >= 3 { pul_signals[2] * 0.22 } else { 0.11 };
 
-    let spinal_curve_freq = 1.0 + (get_methylated_val(14, &char_vals, &methylations) / 12) as f32;
-    let parapodia_amp = (get_methylated_val(13, &char_vals, &methylations) as f32 / 25.0) * 0.45;
-    let parapodia_freq = 2.0 + (get_methylated_val(2, &char_vals, &methylations) / 12) as f32;
-    let flattening_head = (get_methylated_val(1, &char_vals, &methylations) as f32 / 25.0) * 1.0 - 0.4;
+    // 9. Stomach Capacity & Hydraulic Pressure
+    let stm_signals = extract_raw_gene_signals(&clean_genome, "STM", "EN");
+    let stomach_capacity = if stm_signals.len() >= 1 { 50.0 + stm_signals[0] * 450.0 } else { 150.0 };
+    let hydraulic_pressure = if stm_signals.len() >= 2 { 0.2 + stm_signals[1] * 0.8 } else { 0.6 };
 
-    let pulse_speed = 0.0015 + (get_methylated_val(13, &char_vals, &methylations) as f32 / 25.0) * 0.0075;
-    let wave_phase = (get_methylated_val(14, &char_vals, &methylations) as f32 / 25.0) * 1.6;
-    let wiggle_amplitude = (get_methylated_val(15, &char_vals, &methylations) as f32 / 25.0) * 0.22;
-
-    let stomach_capacity = 50.0 + get_methylated_val(13, &char_vals, &methylations) as f32 * 18.0;
-    let hydraulic_pressure = 0.2 + (get_methylated_val(15, &char_vals, &methylations) as f32 / 25.0) * 0.8;
-
-    let thermal_center = 10.0 + (get_methylated_val(5, &char_vals, &methylations) as f32 / 25.0) * 60.0;
-    let thermal_width = 10.0 + (get_methylated_val(6, &char_vals, &methylations) as f32 / 25.0) * 30.0;
+    // 10. Thermal Tolerance
+    let tem_signals = extract_raw_gene_signals(&clean_genome, "TEM", "EN");
+    let thermal_center = if tem_signals.len() >= 1 { 10.0 + tem_signals[0] * 60.0 } else { 40.0 };
+    let thermal_width = if tem_signals.len() >= 2 { 10.0 + tem_signals[1] * 30.0 } else { 20.0 };
     let thermal_tolerance_min = -5.0f32.max((thermal_center - thermal_width / 2.0).round());
     let thermal_tolerance_max = 105.0f32.min((thermal_center + thermal_width / 2.0).round());
 
-    // Calculate spinal peaks count
+    // 11. Organelles (Sensory Patches)
+    let mut organelles = Vec::new();
+
+    let eye_signals = extract_raw_gene_signals(&clean_genome, "EYE", "EN");
+    for chunk in eye_signals.chunks_exact(7) {
+        organelles.push(SensoryPatch {
+            spectral_affinity: 0.85 + chunk[0] * 0.15,
+            bandwidth: 0.1 + chunk[1] * 0.4,
+            expression_style: chunk[2],
+            scale: 0.35 + chunk[3] * 1.45,
+            spinal_pos: 0.05 + chunk[4] * 0.9,
+            angle: 10.0 + chunk[5] * 160.0,
+            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            gene_start_index: 0,
+            gene_end_index: 0,
+        });
+    }
+
+    let nos_signals = extract_raw_gene_signals(&clean_genome, "NOS", "EN");
+    for chunk in nos_signals.chunks_exact(7) {
+        organelles.push(SensoryPatch {
+            spectral_affinity: 0.35 + chunk[0] * 0.3,
+            bandwidth: 0.2 + chunk[1] * 0.6,
+            expression_style: chunk[2],
+            scale: 0.35 + chunk[3] * 1.45,
+            spinal_pos: 0.05 + chunk[4] * 0.9,
+            angle: 10.0 + chunk[5] * 160.0,
+            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            gene_start_index: 0,
+            gene_end_index: 0,
+        });
+    }
+
+    let tac_signals = extract_raw_gene_signals(&clean_genome, "TAC", "EN");
+    for chunk in tac_signals.chunks_exact(7) {
+        organelles.push(SensoryPatch {
+            spectral_affinity: 0.05 + chunk[0] * 0.15,
+            bandwidth: 0.3 + chunk[1] * 0.7,
+            expression_style: chunk[2],
+            scale: 0.35 + chunk[3] * 1.45,
+            spinal_pos: 0.05 + chunk[4] * 0.9,
+            angle: 10.0 + chunk[5] * 160.0,
+            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            gene_start_index: 0,
+            gene_end_index: 0,
+        });
+    }
+
+    let lum_signals = extract_raw_gene_signals(&clean_genome, "LUM", "EN");
+    for chunk in lum_signals.chunks_exact(7) {
+        organelles.push(SensoryPatch {
+            spectral_affinity: chunk[0],
+            bandwidth: chunk[1],
+            expression_style: chunk[2],
+            scale: 0.35 + chunk[3] * 1.45,
+            spinal_pos: 0.05 + chunk[4] * 0.9,
+            angle: 10.0 + chunk[5] * 160.0,
+            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            gene_start_index: 0,
+            gene_end_index: 0,
+        });
+    }
+
+    // 12. Carnivory
+    let car_signals = extract_raw_gene_signals(&clean_genome, "CAR", "EN");
+    let carnivory = if !car_signals.is_empty() { car_signals[0] } else { 0.2 };
+    let is_predator = carnivory >= 0.55;
+
+    // 13. Reproduction Metrics
+    let rep_signals = extract_raw_gene_signals(&clean_genome, "REP", "EN");
+    let mature_age = if rep_signals.len() >= 1 { (300.0 + rep_signals[0] * 2400.0).round() as u32 } else { 1200 };
+    let repro_threshold = if rep_signals.len() >= 2 { 0.60 + rep_signals[1] * 0.35 } else { 0.75 };
+    let split_loss = if rep_signals.len() >= 3 { 0.05 + rep_signals[2] * 0.35 } else { 0.15 };
+
+    // 14. Evolutionary Drift
+    let evo_signals = extract_raw_gene_signals(&clean_genome, "EVO", "EN");
+    let insertion_rate = if evo_signals.len() >= 1 { evo_signals[0] * 0.12 } else { 0.05 };
+    let deletion_rate = if evo_signals.len() >= 2 { evo_signals[1] * 0.12 } else { 0.05 };
+    let repair_fidelity = if evo_signals.len() >= 3 { 0.15 + evo_signals[2] * 0.8 } else { 0.85 };
+
+    // 15. CTRNN Brain
+    let k_count = organelles.len();
+
+    // Hidden neurons
+    let neu_signals = extract_raw_gene_signals(&clean_genome, "NEU", "EN");
+    let mut hidden_neurons = Vec::new();
+    for chunk in neu_signals.chunks_exact(3) {
+        let bias = chunk[0] * 2.0 - 1.0;
+        let tau = (0.2 + chunk[1] * 1.8).clamp(0.1, 2.5);
+        let act_val = (chunk[2] * 100.0) as usize;
+        let activation_type = match act_val % 4 {
+            1 => String::from("relu"),
+            2 => String::from("sigmoid"),
+            3 => String::from("sin"),
+            _ => String::from("tanh"),
+        };
+        hidden_neurons.push((bias, tau, activation_type));
+    }
+    let h_count = hidden_neurons.len().clamp(2, 10);
+    let total_nodes = k_count + 1 + 4 + h_count;
+
+    let mut neurons = Vec::with_capacity(total_nodes);
+
+    // A. Inputs
+    for i in 0..k_count {
+        let patch = &organelles[i];
+        let deg = patch.angle.round() as i32;
+        let label = if patch.spectral_affinity >= 0.8 {
+            format!("👁️ Vision ({}°)", deg)
+        } else if (0.25..=0.65).contains(&patch.spectral_affinity) {
+            format!("👃 Smell ({}°)", deg)
+        } else if patch.spectral_affinity < 0.25 {
+            format!("🔊 Tactile ({}°)", deg)
+        } else {
+            format!("Receptor ({}°)", deg)
+        };
+
+        neurons.push(CTRNNNeuron {
+            id: i,
+            neuron_type: NeuronType::Input,
+            label,
+            tau: 1.0,
+            bias: 0.0,
+            activation_type: None,
+            x: Some(0.1),
+            y: Some(0.1 + (i as f32 / k_count.max(1) as f32) * 0.8),
+        });
+    }
+
+    neurons.push(CTRNNNeuron {
+        id: k_count,
+        neuron_type: NeuronType::Input,
+        label: String::from("⌛ Hunger Clock"),
+        tau: 1.0,
+        bias: 0.0,
+        activation_type: None,
+        x: Some(0.1),
+        y: Some(0.9),
+    });
+
+    // B. Outputs (Thrust, Bending, Biolum, Reserved)
+    let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
+    let out_signals = extract_raw_gene_signals(&clean_genome, "OUT", "EN");
+    for i in 0..4 {
+        let bias = if out_signals.len() > i * 2 { out_signals[i * 2] * 2.0 - 1.0 } else { 0.0 };
+        let tau = if out_signals.len() > i * 2 + 1 { (0.2 + out_signals[i * 2 + 1] * 1.8).clamp(0.1, 2.5) } else { 1.0 };
+
+        neurons.push(CTRNNNeuron {
+            id: k_count + 1 + i,
+            neuron_type: NeuronType::Output,
+            label: String::from(out_labels[i]),
+            tau,
+            bias,
+            activation_type: None,
+            x: Some(0.9),
+            y: Some(0.2 + (i as f32 / 3.0) * 0.6),
+        });
+    }
+
+    // C. Hidden Neurons
+    for i in 0..h_count {
+        let (bias, tau, activation_type) = if i < hidden_neurons.len() {
+            hidden_neurons[i].clone()
+        } else {
+            (0.0, 1.0, String::from("tanh"))
+        };
+
+        neurons.push(CTRNNNeuron {
+            id: k_count + 5 + i,
+            neuron_type: NeuronType::Hidden,
+            label: format!("Hidden #{}", i + 1),
+            tau,
+            bias,
+            activation_type: Some(activation_type),
+            x: Some(0.5),
+            y: Some(0.15 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.7),
+        });
+    }
+
+    // D. Synapses
+    let mut synapses = Vec::new();
+    let syn_signals = extract_raw_gene_signals(&clean_genome, "SYN", "EN");
+    for chunk in syn_signals.chunks_exact(4) {
+        let raw_from = (chunk[0] * 1000.0) as usize;
+        let raw_to = (chunk[1] * 1000.0) as usize;
+        let weight = chunk[2] * 4.0 - 2.0;
+
+        let from_node = raw_from % total_nodes;
+        let to_node = (raw_to % (4 + h_count)) + (k_count + 1);
+
+        if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
+            synapses.push(CTRNNSynapse {
+                from_node,
+                to_node,
+                weight,
+            });
+        }
+    }
+
+    let brain = BrainTopology { neurons, synapses };
+
+    // --- RECALCULATE EMERGENCE CHAMBERS ---
     let mut peaks_count = 0;
     let mut was_rising = false;
     let mut prev_r = 0.0;
@@ -717,219 +983,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         flattening_head,
     };
 
-    // 2. Active organelles (sensory patches) de-compilation
-    let mut organelles = Vec::new();
-    let mut scan_idx = 16;
-
-    while scan_idx < current_length.saturating_sub(1) {
-        if chromatin_state[scan_idx] && chromatin_state[scan_idx + 1] {
-            let char_a = clean_genome.as_bytes()[scan_idx];
-            let char_b = clean_genome.as_bytes()[scan_idx + 1];
-            let is_start = (char_a == b'S' && char_b == b'T') || (char_a == b'G' && char_b == b'O');
-
-            if is_start {
-                let gene_start = scan_idx;
-                let payload_start = scan_idx + 2;
-                let mut payload_end = None;
-                let mut stop_found_at = None;
-
-                for j in payload_start..(current_length.saturating_sub(1)) {
-                    let c_a = clean_genome.as_bytes()[j];
-                    let c_b = clean_genome.as_bytes()[j + 1];
-                    let is_stop = (c_a == b'S' && c_b == b'P') || (c_a == b'E' && c_b == b'N');
-
-                    if is_stop {
-                        payload_end = Some(j);
-                        stop_found_at = Some(j);
-                        break;
-                    }
-                }
-
-                let p_end = payload_end.unwrap_or(current_length);
-                let p_stop = stop_found_at.unwrap_or(current_length - 1);
-                let payload_length = p_end.saturating_sub(payload_start);
-
-                if payload_length > 0 {
-                    let get_methylated_payload_val = |offset: usize, fallback: usize| -> usize {
-                        let j_locus = payload_start + offset;
-                        if j_locus < p_end {
-                            get_methylated_val(j_locus, &char_vals, &methylations)
-                        } else {
-                            fallback
-                        }
-                    };
-
-                    let spectral_affinity = get_methylated_payload_val(0, 0) as f32 / 25.0;
-                    let bandwidth = get_methylated_payload_val(1, 12) as f32 / 25.0;
-                    let expression_style = get_methylated_payload_val(2, 10) as f32 / 25.0;
-                    let scale = (0.35f32).max((1.8f32).min((0.35 + (get_methylated_payload_val(3, 12) as f32 / 25.0) * 1.5) * m3_sensory_acuity));
-                    let spinal_pos = 0.05 + (get_methylated_payload_val(4, 0) as f32 / 25.0) * 0.9;
-                    let angle = 10.0 + (get_methylated_payload_val(5, 12) as f32 / 25.0) * 160.0;
-                    let hue_shift = ((get_methylated_payload_val(6, 5) as f32 / 25.0) * 360.0 - 180.0).round();
-
-                    organelles.push(SensoryPatch {
-                        spectral_affinity,
-                        bandwidth,
-                        expression_style,
-                        scale,
-                        spinal_pos,
-                        angle,
-                        hue_shift,
-                        gene_start_index: gene_start,
-                        gene_end_index: (current_length - 1).min(p_stop + 1),
-                    });
-                }
-                scan_idx = (current_length).min(p_stop + 2);
-            } else {
-                scan_idx += 1;
-            }
-        } else {
-            scan_idx += 1;
-        }
-    }
-
-    let mut visus_score = 0.0;
-    for patch in &organelles {
-        let band_adjusted = 0.2 + patch.bandwidth * 0.8;
-        let aff = patch.spectral_affinity;
-        let w_light = (1.0 - (aff - 1.0).abs() / band_adjusted).max(0.0);
-        visus_score += w_light * patch.scale * 22.0;
-    }
-    let _visus = visus_score.min(100.0).round();
-
-    // Predator / Prey classification & Epistatic metabolic trade-off regulation
-    let raw_carnivory = (get_methylated_val(11, &char_vals, &methylations) as f32 / 25.0).clamp(0.0, 1.0);
-    let carnivory = (raw_carnivory * (1.0 - (stiffness * 0.25) * (1.0 - m3_sensory_acuity).max(0.0))).clamp(0.0, 1.0);
-    let is_predator = carnivory >= 0.55;
-
-    let mature_age = (300.0 + (get_methylated_val(14, &char_vals, &methylations) as f32 / 25.0) * 2400.0).round() as u32;
-    let repro_threshold = 0.60 + (get_methylated_val(13, &char_vals, &methylations) as f32 / 25.0) * 0.35;
-    let split_loss = 0.05 + (get_methylated_val(15, &char_vals, &methylations) as f32 / 25.0) * 0.35;
-
-    // 3. CTRNN directed graph compilation (Brain)
-    let k_count = organelles.len();
-    let h_count = 2 + (get_methylated_val(16, &char_vals, &methylations) % 7);
-    let total_nodes = k_count + 1 + 4 + h_count;
-
-    let mut neurons = Vec::with_capacity(total_nodes);
-
-    // A. Inputs (Sensors + Hunger)
-    for i in 0..k_count {
-        let patch = &organelles[i];
-        let deg = patch.angle.round() as i32;
-        let label = if patch.spectral_affinity >= 0.8 {
-            format!("👁️ Vision ({}°)", deg)
-        } else if (0.25..=0.65).contains(&patch.spectral_affinity) {
-            format!("👃 Smell ({}°)", deg)
-        } else if patch.spectral_affinity < 0.25 {
-            format!("🔊 Tactile ({}°)", deg)
-        } else {
-            format!("Receptor ({}°)", deg)
-        };
-
-        neurons.push(CTRNNNeuron {
-            id: i,
-            neuron_type: NeuronType::Input,
-            label,
-            tau: 1.0,
-            bias: 0.0,
-            activation_type: None,
-            x: Some(0.1),
-            y: Some(0.1 + (i as f32 / k_count.max(1) as f32) * 0.8),
-        });
-    }
-
-    neurons.push(CTRNNNeuron {
-        id: k_count,
-        neuron_type: NeuronType::Input,
-        label: String::from("⌛ Hunger Clock"),
-        tau: 1.0,
-        bias: 0.0,
-        activation_type: None,
-        x: Some(0.1),
-        y: Some(0.9),
-    });
-
-    // B. Outputs
-    let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
-    for i in 0..4 {
-        let bias_val = get_methylated_val((17 + i) % current_length, &char_vals, &methylations);
-        let bias = (bias_val as f32 / 25.0) * 2.0 - 1.0;
-
-        let tau_val = get_methylated_val((18 + i) % current_length, &char_vals, &methylations);
-        let raw_tau = 0.2 + (tau_val as f32 / 25.0) * 1.8;
-        let tau = (raw_tau * m4_neural_tau).clamp(0.1, 2.5);
-
-        neurons.push(CTRNNNeuron {
-            id: k_count + 1 + i,
-            neuron_type: NeuronType::Output,
-            label: String::from(out_labels[i]),
-            tau,
-            bias,
-            activation_type: None,
-            x: Some(0.9),
-            y: Some(0.2 + (i as f32 / 3.0) * 0.6),
-        });
-    }
-
-    // C. Hidden Neurons
-    for i in 0..h_count {
-        let bias_val = get_methylated_val((19 + i) % current_length, &char_vals, &methylations);
-        let bias = (bias_val as f32 / 25.0) * 2.0 - 1.0;
-
-        let tau_val = get_methylated_val((20 + i) % current_length, &char_vals, &methylations);
-        let raw_tau = 0.2 + (tau_val as f32 / 25.0) * 1.8;
-        let tau = (raw_tau * m4_neural_tau).clamp(0.1, 2.5);
-
-        let act_val = get_methylated_val((21 + i) % current_length, &char_vals, &methylations);
-        let activation_type = match act_val % 4 {
-            1 => String::from("relu"),
-            2 => String::from("sigmoid"),
-            3 => String::from("sin"),
-            _ => String::from("tanh"),
-        };
-
-        neurons.push(CTRNNNeuron {
-            id: k_count + 5 + i,
-            neuron_type: NeuronType::Hidden,
-            label: format!("Hidden #{}", i + 1),
-            tau,
-            bias,
-            activation_type: Some(activation_type),
-            x: Some(0.5),
-            y: Some(0.15 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.7),
-        });
-    }
-
-    // D. Synapses (NEAT-like topology)
-    let mut synapses = Vec::new();
-    let mut dna_pointer = 21;
-    let synapses_count = (current_length - 21) / 4;
-
-    for _ in 0..synapses_count {
-        let raw_from = get_methylated_val(dna_pointer % current_length, &char_vals, &methylations);
-        let raw_to = get_methylated_val((dna_pointer + 1) % current_length, &char_vals, &methylations);
-        let raw_w = get_methylated_val((dna_pointer + 2) % current_length, &char_vals, &methylations);
-        let raw_unused = get_methylated_val((dna_pointer + 3) % current_length, &char_vals, &methylations);
-        dna_pointer += 4;
-
-        let combined_from = if total_nodes > 26 { raw_from + raw_unused * 26 } else { raw_from };
-        let from_node = combined_from % total_nodes;
-        let to_node = (raw_to % (4 + h_count)) + (k_count + 1);
-        let weight = (raw_w as f32 / 25.0) * 4.0 - 2.0;
-
-        if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
-            synapses.push(CTRNNSynapse {
-                from_node,
-                to_node,
-                weight,
-            });
-        }
-    }
-
-    let brain = BrainTopology { neurons, synapses };
-
-    // 4. BMR and metabolic cost calculation
+    // 16. BMR and metabolic cost calculation
     let mut integrated_area_sum = 0.0;
     for steps in 0..=20 {
         let s_coord = steps as f32 / 20.0;
@@ -1056,6 +1110,19 @@ mod tests {
     }
 
     #[test]
+    fn test_extract_raw_gene_signals() {
+        let genome = "STFAENCOLABSTPEYEAABEN";
+        let stf_signals = extract_raw_gene_signals(genome, "STF", "EN");
+        assert_eq!(stf_signals.len(), 1); // "A" -> 0.0
+        assert_eq!(stf_signals[0], 0.0);
+
+        let col_signals = extract_raw_gene_signals(genome, "COL", "STP");
+        assert_eq!(col_signals.len(), 2); // "AB" -> [0/25, 1/25]
+        assert_eq!(col_signals[0], 0.0);
+        assert_eq!(col_signals[1], 1.0 / 25.0);
+    }
+
+    #[test]
     fn test_mutation() {
         let original = "AAAA";
         if let Some((mutated, idx, old, new)) = mutate_genome(original) {
@@ -1071,7 +1138,7 @@ mod tests {
     #[test]
     fn test_progenitor_parse_genome() {
         // High quality test input representing a well-formed progenitor genome
-        let progenitor_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+        let progenitor_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
         let phenotype = parse_genome(progenitor_dna, None, None);
 
         // Core assertions
@@ -1092,7 +1159,7 @@ mod tests {
 
         assert_eq!(input_count, phenotype.organelles.len() + 1); // Organelles + Hunger clock
         assert_eq!(output_count, 4); // Thrust, Bending, Biolum Flash, Reserved
-        assert!(hidden_count >= 2 && hidden_count <= 8);
+        assert!(hidden_count >= 2 && hidden_count <= 10);
 
         // Verify that BMR scaling values are deterministic and finite
         assert!(phenotype.basal_metabolic_rate.is_finite());

@@ -98,7 +98,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                 }
             }
 
-            let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+            let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
 
             let elite_count = ((n as f32) * elite_ratio).round() as usize;
             let elite_count = elite_count.clamp(1, n);
@@ -197,7 +197,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         // Seeding initial 15 wildtype progenitor cells if starting fresh
         if !loaded_state_success {
             let mut rng = rand::thread_rng();
-            let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+            let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
 
             for _ in 0..15 {
                 let mut mutated_dna = base_dna.to_string();
@@ -393,7 +393,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 highest_generation = 1;
 
                                 let mut rng = rand::thread_rng();
-                                let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+                                let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
 
                                 // Seed fresh 25 unique, highly active, and brilliantly colored viable starting wildtypes
                                 for _ in 0..25 {
@@ -407,11 +407,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         }
                                     }
 
-                                    // Randomize index 1 (Primary Color Hue) and index 4 (Secondary Color Hue) to guarantee beautiful color diversity
+                                    // Randomize characters 3, 4, 5 (the "OOO" color payload of "COLOOOEN") to guarantee beautiful color diversity
                                     let mut char_vec: Vec<char> = mutated_dna.chars().collect();
-                                    if char_vec.len() >= 5 {
-                                        char_vec[1] = rng.gen_range(b'A'..=b'Z') as char;
+                                    if char_vec.len() >= 6 {
+                                        char_vec[3] = rng.gen_range(b'A'..=b'Z') as char;
                                         char_vec[4] = rng.gen_range(b'A'..=b'Z') as char;
+                                        char_vec[5] = rng.gen_range(b'A'..=b'Z') as char;
                                     }
                                     mutated_dna = char_vec.into_iter().collect();
 

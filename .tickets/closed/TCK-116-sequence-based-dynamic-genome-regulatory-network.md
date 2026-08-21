@@ -32,19 +32,60 @@ Refactor the biological DNA parsing engine inside the native Rust core to comple
     2.  **Regulatory Binding:** These factors act as promoters or repressors that bind to downstream operator regions on the same or complementary strands, dynamically scaling up/down motor thrust, steering sensitivity, or metabolic rates.
 *   *The DNA literally decides what the DNA determines!*
 
-### 5. Parameterized Universal Gene Parser Helper (Unified Configs)
-*   To prevent code duplication, establish exactly **one** unified helper class/method inside the Rust biology engine.
-*   **Custom Start & Stop Motifs:** The method must allow passing custom start (promoter) and stop (terminator) sequence markers to scan for custom genes on-the-fly:
+### 5. Parameterized Universal Gene Parser Helper (Neutral Raw Signal Extraction)
+*   To prevent code duplication and enforce complete decoupling, establish exactly **one** unified helper method inside the Rust biology engine.
+*   **The Helper Design:** The helper method does not need to know any phenotypic or neural domain logic. It simply scans the continuous genome for promoter (`start_motif`) and terminator (`stop_motif`) markers, extracts any active gene segments, hashes them, and returns an array of neutral, fully normalized float signals bounded strictly between `0.0` and `1.0`:
     ```rust
-    pub fn parse_sequence_gene(
+    // Der Helper extrahiert nur rohe, neutrale Gendaten als normalisierte Fließkommazahlen [0.0..1.0]
+    pub fn extract_raw_gene_signals(
         genome: &str,
-        start_motif: &str, // e.g. "EYE", "COL", "STF"
-        stop_motif: &str,  // e.g. "SP", "EN"
-        config: GeneParseConfig
-    ) -> Option<GeneToken>;
+        start_motif: &str,
+        stop_motif: &str
+    ) -> Vec<f32>; // Liefert ein neutrales Array von normalisierten Werten (z. B. [0.12, 0.85, 0.44])
     ```
-*   **Custom Output & Normalization Configurations:** The helper accepts a `GeneParseConfig` defining output limits, target ranges, default fallback bounds, and output formats (such as float ranges `[min..max]`, integers modulo `M`, or binary boolean states).
-*   **Single-Source-of-Truth Execution:** Every single physical parameter, neural setting, and aesthetic pigment calculation must call this single, highly optimized helper, guaranteeing 100% test-covered and uniform genomic compile pathways!
+*   **Separation of Concerns:** How these raw signals are interpreted, scaled, or chunked lies completely within the calling domain modules (the color module, the stiffness module, the sensory organelle module, or the brain compiler).
+*   **Examples of Modular Interpretation:**
+
+    #### 1. Das Steifheits-Modul (Nutzung als einzelner Skalar):
+    ```rust
+    // Das Modul will nur einen Wert und skaliert ihn selbst auf seinen Bereich [0.15..1.0]
+    let raw_signals = extract_raw_gene_signals(genome, "STF", "EN");
+    let stiffness = if !raw_signals.is_empty() {
+        0.15 + raw_signals[0] * (1.0 - 0.15)
+    } else {
+        0.50 // Fallback
+    };
+    ```
+
+    #### 2. Das Farbpigment-Modul (Nutzung als Farb-Koordinaten):
+    ```rust
+    // Das Modul fordert rohe Signale an und mappt sie autonom auf H, S und L
+    let raw_signals = extract_raw_gene_signals(genome, "COL", "STP");
+    let (h, s, l) = if raw_signals.len() >= 3 {
+        (
+            raw_signals[0] * 360.0, // Farbton
+            55.0 + raw_signals[1] * 45.0, // Sättigung
+            35.0 + raw_signals[2] * 45.0, // Helligkeit
+        )
+    } else {
+        (130.0, 75.0, 45.0) // Fallback-Grün
+    };
+    ```
+
+    #### 3. Das Augen-Modul (Nutzung eines variablen Signal-Arrays):
+    ```rust
+    // Ein komplexes Gen liefert ein langes Array. Das Modul liest die Werte paarweise aus:
+    let raw_signals = extract_raw_gene_signals(genome, "EYE", "EN");
+    let mut eyes = Vec::new();
+    for chunk in raw_signals.chunks_exact(2) {
+        eyes.push(SensoryPatch {
+            angle: chunk[0] * std::f32::consts::TAU, // Winkel
+            visus_range: 40.0 + chunk[1] * 140.0,    // Sichtweite
+        });
+    }
+    ```
+
+*   **Universelle Reichweite (Wichtigste Mandate):** Die obigen drei Code-Beispiele sind **rein illustrative Szenarien**. Es ist im Sinne eines kompromisslosen Single Point of Truth (SPOT) festgelegt, dass **jede einzelne von der DNA beeinflusste Eigenschaft (Form, Sinne, Stoffwechsel, Pigmentierung)** und insbesondere das **gesamte CTRNN-Gehirn (alle neuronalen Synapsen, Kopplungsgewichte, Decay-Zeitkonstanten $\tau$, Schwellenwerte/Biases $\theta$ und heterogenen Aktivierungsfunktionen)** vollständig so umstrukturiert werden, dass sie ihre Roh-Werte nativ und einheitlich über diesen entkoppelten `extract_raw_gene_signals`-Helper beziehen! Es wird keinerlei Ausnahmen, hartcodierte Slices oder separate Parser mehr geben.
 
 ---
 

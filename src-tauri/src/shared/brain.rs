@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_execute_brain_determinism() {
-        let d_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+        let d_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
         let phenotype = parse_genome(d_dna, None, None);
         let brain = phenotype.brain;
 

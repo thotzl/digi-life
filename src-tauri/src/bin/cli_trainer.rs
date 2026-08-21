@@ -34,7 +34,7 @@ fn main() {
     );
 
     // 3. Setup evolutionary starting population (Progenitor DNA seed)
-    let progenitor_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
+    let progenitor_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
     println!("[TRAINER] Base progenitor loaded (Len: {}).", progenitor_dna.len());
 
     let mut current_generation: Vec<String> = (0..500)
