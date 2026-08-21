@@ -1,0 +1,10 @@
+# Rust build artifacts
+target/
+
+# Local SQLite databases and session cache files
+*.db
+*.db-wal
+*.db-shm
+pixel_life_local.db
+pixel_life_local.db-wal
+pixel_life_local.db-shm

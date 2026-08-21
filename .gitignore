@@ -10,6 +10,12 @@ simulation_state.json
 digilife.db
 digilife.db-wal
 digilife.db-shm
+src-tauri/pixel_life_local.db
+src-tauri/pixel_life_local.db-wal
+src-tauri/pixel_life_local.db-shm
+
+# Rust / Tauri builds
+src-tauri/target/
 
 # System / IDE specifics
 .idea/

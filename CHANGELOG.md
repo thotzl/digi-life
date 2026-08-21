@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-21
+
+### Added
+- **Tauri v2 Desktop Laboratory Shell (TCK-109):** Implemented a high-performance, portless, and standalone desktop lab shell using Tauri v2. The Vite-TypeScript-Preact Signals HUD has been bundled into a native, borderless webview window.
+- **Headless Rust Simulation Core (TCK-110):** Ported the continuous 60Hz physics, Recurrent CTRNN Euler temporal integration, and spatial grid collision partitioning to a native Rust background core under `src-tauri`.
+- **Ecosystem and Biological Alignment:** Ported the full suite of biological and metabolic natural laws from the TS original: Thermal depth-stress penalties, Herbivore photosynthesis near the surface, Adrenaline sprint taxes, and Predatory non-cannibalistic biting attacks with client BITE shockwaves.
+- **Ecological Balance (Spore Relocation):** Re-engineered the grazing and death decomposition mechanics to organically relocate existing food spores (no memory allocations) rather than infinite array deletions/growth, keeping the spore population perfectly locked at 300.
+- **Selected Brain SVG Activations:** Fully supported live kognitive brain activity streaming. When a creature is selected in the sidebar or canvas, Rust streams its real-time neuron activations to drive the SVG Directed Graph glows in the UI.
+- **Robust Session Persistence:** Integrated `simulation_state` table into the local SQLite database. Every 10 seconds, Rust serializes and saves the entire active simulation state, allowing seamless save/resume capabilities on application restarts.
+- **Deterministic Handshake & Type-Safety:** Created a fully awaited startup handshake to resolve Webview load race conditions and enforced strict type-casting (`Number(id)`) inside client filters to prevent race-condition deletions.
+
 ## [1.3.3] - 2026-08-19
 
 ### Added

@@ -224,7 +224,7 @@ const speciesDatabasePlugin = () => ({
 export default defineConfig({
   server: {
     port: 3000,
-    open: true
+    open: process.env.TAURI_ENV_PLATFORM === undefined
   },
   plugins: [
     speciesDatabasePlugin()
@@ -233,7 +233,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: path.resolve(__dirname, 'index.html'),
-        preview: path.resolve(__dirname, 'preview.html')
+        preview: path.resolve(__dirname, 'preview.html'),
+        tauri_ocean: path.resolve(__dirname, 'tauri_ocean.html')
       }
     }
   }

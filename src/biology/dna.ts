@@ -119,7 +119,8 @@ export interface CreaturePhenotype {
   activeGeneSpans: { start: number; end: number }[];
 }
 
-export function charToValue(char: string): number {
+export function charToValue(char: string | undefined): number {
+  if (!char) return 0;
   const index = ALPHABET.indexOf(char.toUpperCase());
   return index === -1 ? 0 : index;
 }

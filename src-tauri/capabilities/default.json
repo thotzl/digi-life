@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "Default permissions for Pixel DNA Life",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default"
+  ]
+}
