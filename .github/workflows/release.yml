@@ -51,13 +51,20 @@ jobs:
       - name: build frontend
         run: npm run build
 
+      - name: Extract version from package.json
+        id: package_version
+        shell: bash
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
+
       - name: build tauri desktop app
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: "Pixel DNA Life ${{ github.ref_name }}"
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (github.event_name == 'workflow_dispatch' && steps.package_version.outputs.version || '') }}
+          releaseName: "Pixel DNA Life ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.package_version.outputs.version }}"
           releaseBody: "Automated multi-platform production installers compile. See CHANGELOG.md for the complete list of additions, performance optimizations, and bio-kinematic realignments."
           releaseDraft: true
           prerelease: false
