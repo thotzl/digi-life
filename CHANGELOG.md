@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-08-21
+
+### Added
+- **Nutrient Hotspots and Algae Forests:** Implemented 12 localized high-density nutrient hotspots across the logical ocean coordinates.
+- **Double Ecosystem Spores:** Increased the baseline food spore count from 300 to 600, providing rich grazing environments to foster herbivore population viability and CTRNN sensory exploration.
+- **Patchy Density Spawning & Relocation:** Programmed the spore-population maintenance to spawn 75% of spores close to our algae centers (creating lush localized food clumps) and 25% scattered across the deep ocean. Relocations upon eating follow the exact same patchy probability, ensuring long-term self-sustaining nutrient fields!
+
 ## [1.5.0] - 2026-08-21
 
 ### Added

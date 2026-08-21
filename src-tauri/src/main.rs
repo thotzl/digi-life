@@ -260,6 +260,15 @@ fn main() {
                 let mut is_running = false;
                 let mut creatures: Vec<CreatureAgent> = Vec::new();
                 let mut food_pellets: Vec<FoodSpore> = Vec::new();
+                let mut nutrient_centers: Vec<(f32, f32)> = Vec::new();
+                {
+                    let mut rng_seed = rand::thread_rng();
+                    for _ in 0..12 {
+                        let cx = rng_seed.gen_range(1000.0..logical_width - 1000.0);
+                        let cy = rng_seed.gen_range(1000.0..logical_height - 1000.0);
+                        nutrient_centers.push((cx, cy));
+                    }
+                }
                 let mut newly_spawned_creatures: Vec<CreatureAgent> = Vec::new();
                 let mut selected_agent_id: Option<u32> = None;
                 let mut next_creature_id = 1;
@@ -461,10 +470,26 @@ fn main() {
                         next_creature_id += 1;
                     }
 
-                    // Inject 300 Initial Spores scattered randomly (matches TS original!)
-                    for _ in 0..300 {
-                        let x = rng.gen_range(100.0..logical_width - 100.0);
-                        let y = rng.gen_range(100.0..logical_height - 100.0);
+                    // Inject 600 Initial Spores with patchy density distribution (nutrient centers!)
+                    for _ in 0..600 {
+                        let (x, y) = {
+                            let roll = rng.gen_range(0.0..1.0);
+                            if !nutrient_centers.is_empty() && roll < 0.75 {
+                                // 75% Chance: Spawn close to one of our nutrient centers (high density algae forest!)
+                                let center_idx = rng.gen_range(0..nutrient_centers.len());
+                                let (cx, cy) = nutrient_centers[center_idx];
+                                let radius = rng.gen_range(50.0..600.0);
+                                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                                let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
+                                let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
+                                (px, py)
+                            } else {
+                                // 25% Chance: Loose scattered spores in open ocean (low density!)
+                                let px = rng.gen_range(100.0..logical_width - 100.0);
+                                let py = rng.gen_range(100.0..logical_height - 100.0);
+                                (px, py)
+                            }
+                        };
 
                         food_pellets.push(FoodSpore {
                             id: next_spore_id,
@@ -643,10 +668,34 @@ fn main() {
                                             next_creature_id += 1;
                                         }
 
-                                        // Inject 300 Initial Spores scattered randomly (matches TS original!)
-                                        for _ in 0..300 {
-                                            let x = rng.gen_range(100.0..logical_width - 100.0);
-                                            let y = rng.gen_range(100.0..logical_height - 100.0);
+                                        // Regenerate 12 random nutrient centers for the reset biosphere
+                                        nutrient_centers.clear();
+                                        for _ in 0..12 {
+                                            let cx = rng.gen_range(1000.0..logical_width - 1000.0);
+                                            let cy = rng.gen_range(1000.0..logical_height - 1000.0);
+                                            nutrient_centers.push((cx, cy));
+                                        }
+
+                                        // Inject 600 Initial Spores with patchy density distribution (nutrient centers!)
+                                        for _ in 0..600 {
+                                            let (x, y) = {
+                                                let roll = rng.gen_range(0.0..1.0);
+                                                if !nutrient_centers.is_empty() && roll < 0.75 {
+                                                    // 75% Chance: Spawn close to one of our nutrient centers (high density algae forest!)
+                                                    let center_idx = rng.gen_range(0..nutrient_centers.len());
+                                                    let (cx, cy) = nutrient_centers[center_idx];
+                                                    let radius = rng.gen_range(50.0..600.0);
+                                                    let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                                                    let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
+                                                    let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
+                                                    (px, py)
+                                                } else {
+                                                    // 25% Chance: Loose scattered spores in open ocean (low density!)
+                                                    let px = rng.gen_range(100.0..logical_width - 100.0);
+                                                    let py = rng.gen_range(100.0..logical_height - 100.0);
+                                                    (px, py)
+                                                }
+                                            };
 
                                             food_pellets.push(FoodSpore {
                                                 id: next_spore_id,
@@ -990,10 +1039,24 @@ fn main() {
                                             agent.energy = (agent.energy + energy_gain).min(agent.phenotype.stomach_capacity);
                                             agent.has_eaten = true;
 
-                                            // Relocate / biological-respawn the spore (no array deletion!)
+                                            // Relocate / biological-respawn the spore (no array deletion!) with patchy density distribution!
                                             let mut rng = rand::thread_rng();
-                                            let new_x = rng.gen_range(100.0..logical_width - 100.0);
-                                            let new_y = rng.gen_range(100.0..logical_height - 100.0);
+                                            let (new_x, new_y) = {
+                                                let roll = rng.gen_range(0.0..1.0);
+                                                if !nutrient_centers.is_empty() && roll < 0.75 {
+                                                    let center_idx = rng.gen_range(0..nutrient_centers.len());
+                                                    let (cx, cy) = nutrient_centers[center_idx];
+                                                    let radius = rng.gen_range(50.0..600.0);
+                                                    let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                                                    let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
+                                                    let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
+                                                    (px, py)
+                                                } else {
+                                                    let px = rng.gen_range(100.0..logical_width - 100.0);
+                                                    let py = rng.gen_range(100.0..logical_height - 100.0);
+                                                    (px, py)
+                                                }
+                                            };
                                             let new_vx = rng.gen_range(-0.15..0.15);
                                             let new_vy = rng.gen_range(-0.15..0.15);
 
