@@ -395,18 +395,25 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 let mut rng = rand::thread_rng();
                                 let base_dna = "HJKLABCDPQRS1234EFGHTRUSTANDBENDPROGENITORALIFEWELLFORMEDMEMBRANEFOURIERSEGMENTSHARMONICSWAVEPHASEPULSESTIFFNESS";
 
-                                // Seed fresh 25 unique and highly diverse wildtypes
-                                for i in 0..25 {
+                                // Seed fresh 25 unique, highly active, and brilliantly colored viable starting wildtypes
+                                for _ in 0..25 {
                                     let mut mutated_dna = base_dna.to_string();
-                                    if i < 5 {
-                                        // 5 are slightly mutated clones of the progenitor worm
-                                        if let Some((mutated, _, _, _)) = mutate_genome(&base_dna) {
+
+                                    // Apply 3 to 8 random sequential mutations to ensure structural and behavioral drift
+                                    let num_mutations = rng.gen_range(3..=8);
+                                    for _ in 0..num_mutations {
+                                        if let Some((mutated, _, _, _)) = mutate_genome(&mutated_dna) {
                                             mutated_dna = mutated;
                                         }
-                                    } else {
-                                        // 20 are completely random wild founder cells (maximum visual & behavioral diversity!)
-                                        mutated_dna = generate_random_genome(256);
                                     }
+
+                                    // Randomize index 1 (Primary Color Hue) and index 4 (Secondary Color Hue) to guarantee beautiful color diversity
+                                    let mut char_vec: Vec<char> = mutated_dna.chars().collect();
+                                    if char_vec.len() >= 5 {
+                                        char_vec[1] = rng.gen_range(b'A'..=b'Z') as char;
+                                        char_vec[4] = rng.gen_range(b'A'..=b'Z') as char;
+                                    }
+                                    mutated_dna = char_vec.into_iter().collect();
 
                                     let random_pheno = parse_genome(&mutated_dna, None, None);
                                     let px = rng.gen_range(500.0..logical_width - 500.0);
