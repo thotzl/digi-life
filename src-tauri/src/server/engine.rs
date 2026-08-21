@@ -1206,8 +1206,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             // B. NATIVE PARALLEL TRAINER EVOLUTION TICK
             if is_trainer_active {
                 if trainer_is_running {
-                    // Run trainer_warp_speed physics steps
-                    for _step in 0..trainer_warp_speed {
+                    // Run trainer_warp_speed physics steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding)
+                    let steps_this_frame = if trainer_warp_speed > 35 { 35 } else { trainer_warp_speed };
+                    for _step in 0..steps_this_frame {
                         if !trainer_is_running {
                             break;
                         }
