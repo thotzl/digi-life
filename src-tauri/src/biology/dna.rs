@@ -639,35 +639,46 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         }
     }
 
+    // Create the active_dna string by filtering clean_genome to keep ONLY open chromatin positions
+    let mut active_dna = clean_genome.chars().enumerate()
+        .filter(|(i, _)| chromatin_state[*i])
+        .map(|(_, c)| c)
+        .collect::<String>();
+    
+    // Fallback if active_dna is empty, keeping a minimal active genome
+    if active_dna.is_empty() {
+        active_dna = String::from("A");
+    }
+
     // --- NON-POSITIONAL WHOLE-GENOME PREFIXED HASH COMPILER (TCK-116) ---
-    // Every trait is determined by hashing the ENTIRE genome, prefixed with a unique string.
-    // This guarantees that any mutation anywhere on the strand shifts color, size, stiffness, etc.
-    let h_sym = hash_genome_slice(&format!("symmetry:{}", clean_genome));
-    let h_color1 = hash_genome_slice(&format!("color1:{}", clean_genome));
-    let h_color2 = hash_genome_slice(&format!("color2:{}", clean_genome));
-    let h_seed = hash_genome_slice(&format!("seed:{}", clean_genome));
-    let h_radius = hash_genome_slice(&format!("radius:{}", clean_genome));
-    let h_length = hash_genome_slice(&format!("length:{}", clean_genome));
-    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", clean_genome));
-    let h_curve = hash_genome_slice(&format!("curve:{}", clean_genome));
-    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", clean_genome));
-    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", clean_genome));
-    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", clean_genome));
-    let h_head = hash_genome_slice(&format!("head:{}", clean_genome));
-    let h_pulse = hash_genome_slice(&format!("pulse:{}", clean_genome));
-    let h_phase = hash_genome_slice(&format!("phase:{}", clean_genome));
-    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", clean_genome));
-    let h_stomach = hash_genome_slice(&format!("stomach:{}", clean_genome));
-    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", clean_genome));
-    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", clean_genome));
-    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", clean_genome));
-    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", clean_genome));
-    let h_mature = hash_genome_slice(&format!("mature:{}", clean_genome));
-    let h_repro = hash_genome_slice(&format!("repro:{}", clean_genome));
-    let h_split = hash_genome_slice(&format!("split:{}", clean_genome));
-    let h_insert = hash_genome_slice(&format!("insert:{}", clean_genome));
-    let h_delete = hash_genome_slice(&format!("delete:{}", clean_genome));
-    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", clean_genome));
+    // Every basic trait is determined by hashing the ACTIVE genome slice, prefixed with a unique string.
+    // Epigenetic open/closed states dynamically shift colors, sizes, and brain parameters fluidly!
+    let h_sym = hash_genome_slice(&format!("symmetry:{}", active_dna));
+    let h_color1 = hash_genome_slice(&format!("color1:{}", active_dna));
+    let h_color2 = hash_genome_slice(&format!("color2:{}", active_dna));
+    let h_seed = hash_genome_slice(&format!("seed:{}", active_dna));
+    let h_radius = hash_genome_slice(&format!("radius:{}", active_dna));
+    let h_length = hash_genome_slice(&format!("length:{}", active_dna));
+    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", active_dna));
+    let h_curve = hash_genome_slice(&format!("curve:{}", active_dna));
+    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", active_dna));
+    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", active_dna));
+    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", active_dna));
+    let h_head = hash_genome_slice(&format!("head:{}", active_dna));
+    let h_pulse = hash_genome_slice(&format!("pulse:{}", active_dna));
+    let h_phase = hash_genome_slice(&format!("phase:{}", active_dna));
+    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", active_dna));
+    let h_stomach = hash_genome_slice(&format!("stomach:{}", active_dna));
+    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", active_dna));
+    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", active_dna));
+    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", active_dna));
+    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", active_dna));
+    let h_mature = hash_genome_slice(&format!("mature:{}", active_dna));
+    let h_repro = hash_genome_slice(&format!("repro:{}", active_dna));
+    let h_split = hash_genome_slice(&format!("split:{}", active_dna));
+    let h_insert = hash_genome_slice(&format!("insert:{}", active_dna));
+    let h_delete = hash_genome_slice(&format!("delete:{}", active_dna));
+    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", active_dna));
 
     // 1. Symmetry
     let symmetry = if h_sym >= 0.5 { "quad" } else { "vertical" };
@@ -853,9 +864,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // B. Outputs (Thrust, Bending, Biolum, Reserved)
     let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
     for i in 0..4 {
-        // Derive biases and taus dynamically from the brain params whole genome hashes
-        let bias_hash = hash_genome_slice(&format!("out_bias:{}:{}", i, clean_genome));
-        let tau_hash = hash_genome_slice(&format!("out_tau:{}:{}", i, clean_genome));
+        // Derive biases and taus dynamically from the brain params active_dna hashes
+        let bias_hash = hash_genome_slice(&format!("out_bias:{}:{}", i, active_dna));
+        let tau_hash = hash_genome_slice(&format!("out_tau:{}:{}", i, active_dna));
         let bias = bias_hash * 2.0 - 1.0;
         let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
 
@@ -873,9 +884,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // C. Hidden Neurons (4 nodes)
     for i in 0..h_count {
-        let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, clean_genome));
-        let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, clean_genome));
-        let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, clean_genome));
+        let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, active_dna));
+        let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, active_dna));
+        let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, active_dna));
 
         let bias = bias_hash * 2.0 - 1.0;
         let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
@@ -898,26 +909,41 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // D. Synapses (100% position-free marker-less sliding window over characters 120..200!)
+    // D. Synapses (100% position-free marker-less sliding window over characters of active_dna!)
     let mut synapses = Vec::with_capacity(20);
-    let syn_slice = &clean_genome[120.min(current_length)..200.min(current_length)];
-    let syn_chars: Vec<char> = syn_slice.chars().collect();
-    for i in (0..syn_chars.len().saturating_sub(3)).step_by(4) {
-        let val_from = char_to_value(syn_chars[i]) as f32 / 25.0;
-        let val_to = char_to_value(syn_chars[i+1]) as f32 / 25.0;
-        let val_weight = char_to_value(syn_chars[i+2]) as f32 / 25.0;
+    let syn_chars: Vec<char> = active_dna.chars().collect();
+    let syn_len = syn_chars.len();
+    if syn_len >= 4 {
+        for i in (0..syn_len.saturating_sub(3)).step_by(4).take(20) {
+            let val_from = char_to_value(syn_chars[i]) as f32 / 25.0;
+            let val_to = char_to_value(syn_chars[i+1]) as f32 / 25.0;
+            let val_weight = char_to_value(syn_chars[i+2]) as f32 / 25.0;
 
-        let from_node = (val_from * 1000.0) as usize % total_nodes;
-        let to_node = ((val_to * 1000.0) as usize % (4 + h_count)) + (k_count + 1);
-        let weight = val_weight * 4.0 - 2.0;
+            let from_node = (val_from * 1000.0) as usize % total_nodes;
+            let to_node = ((val_to * 1000.0) as usize % (4 + h_count)) + (k_count + 1);
+            let weight = val_weight * 4.0 - 2.0;
 
-        if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
-            synapses.push(CTRNNSynapse {
-                from_node,
-                to_node,
-                weight,
-            });
+            if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
+                synapses.push(CTRNNSynapse {
+                    from_node,
+                    to_node,
+                    weight,
+                });
+            }
         }
+    }
+    // Fallback direct wiring if active_dna is too short to provide synapses
+    if synapses.is_empty() {
+        synapses.push(CTRNNSynapse {
+            from_node: k_count, // Hunger Clock
+            to_node: k_count + 1, // Thrust
+            weight: 1.5,
+        });
+        synapses.push(CTRNNSynapse {
+            from_node: k_count, // Hunger Clock
+            to_node: k_count + 2, // Bending
+            weight: 0.5,
+        });
     }
 
     let brain = BrainTopology { neurons, synapses };
