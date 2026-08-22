@@ -301,7 +301,7 @@ pub fn extract_raw_gene_signals(
 
 pub fn generate_random_genome(_length: usize) -> String {
     let mut rng = rand::thread_rng();
-    let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
+    let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
     let mut mutated = base_dna.to_string();
 
     // Apply 15 to 35 sequential mutations to randomize traits deeply while preserving promoter-terminator structures
@@ -1084,7 +1084,7 @@ mod tests {
     #[test]
     fn test_random_generation() {
         let dna = generate_random_genome(128);
-        assert_eq!(dna.len(), 107); // Sequence-based base_dna length is 107
+        assert_eq!(dna.len(), 181); // Sequence-based base_dna length is 181
         for c in dna.chars() {
             assert!(ALPHABET.contains(&(c as u8)));
         }
@@ -1129,7 +1129,7 @@ mod tests {
     #[test]
     fn test_progenitor_parse_genome() {
         // High quality test input representing a well-formed progenitor genome
-        let progenitor_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
+        let progenitor_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
         let phenotype = parse_genome(progenitor_dna, None, None);
 
         // Core assertions
