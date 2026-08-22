@@ -257,18 +257,18 @@ pub fn get_complementary_string(sense: &str) -> String {
     sense.chars().map(get_complementary_char).collect()
 }
 
-pub fn extract_raw_gene_signals(
+pub fn extract_raw_gene_payloads(
     genome: &str,
     start_motif: &str,
     stop_motif: &str
-) -> Vec<f32> {
-    let mut signals = Vec::new();
+) -> Vec<String> {
+    let mut payloads = Vec::new();
     let genome_bytes = genome.as_bytes();
     let start_bytes = start_motif.as_bytes();
     let stop_bytes = stop_motif.as_bytes();
 
     if start_bytes.is_empty() || stop_bytes.is_empty() || genome.len() < start_motif.len() + stop_motif.len() {
-        return signals;
+        return payloads;
     }
 
     let mut idx = 0;
@@ -285,9 +285,7 @@ pub fn extract_raw_gene_signals(
 
             if let Some(end_idx) = payload_end {
                 let payload_slice = &genome[payload_start..end_idx];
-                for c in payload_slice.chars() {
-                    signals.push(char_to_value(c) as f32 / 25.0);
-                }
+                payloads.push(payload_slice.to_string());
                 idx = end_idx + stop_motif.len();
             } else {
                 idx += 1;
@@ -296,7 +294,7 @@ pub fn extract_raw_gene_signals(
             idx += 1;
         }
     }
-    signals
+    payloads
 }
 
 pub fn generate_random_genome(length: usize) -> String {
@@ -636,159 +634,170 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         }
     }
 
-    // --- NON-POSITIONAL INTERVAL HASH COMPILER (TCK-116) ---
-    // Divide clean_genome into 6 distinct, sequential, and deterministic intervals
-    let part_len = current_length / 6;
-    let slice0 = &clean_genome[0..part_len];
-    let slice1 = &clean_genome[part_len..2 * part_len];
-    let slice2 = &clean_genome[2 * part_len..3 * part_len];
-    let slice3 = &clean_genome[3 * part_len..4 * part_len];
-    let slice4 = &clean_genome[4 * part_len..5 * part_len];
-    let slice5 = &clean_genome[5 * part_len..current_length];
-
-    let h0 = hash_genome_slice(slice0);
-    let h1 = hash_genome_slice(slice1);
-    let h2 = hash_genome_slice(slice2);
-    let h3 = hash_genome_slice(slice3);
-    let h4 = hash_genome_slice(slice4);
-    let h5 = hash_genome_slice(slice5);
+    // --- NON-POSITIONAL WHOLE-GENOME PREFIXED HASH COMPILER (TCK-116) ---
+    // Every trait is determined by hashing the ENTIRE genome, prefixed with a unique string.
+    // This guarantees that any mutation anywhere on the strand shifts color, size, stiffness, etc.
+    let h_sym = hash_genome_slice(&format!("symmetry:{}", clean_genome));
+    let h_color1 = hash_genome_slice(&format!("color1:{}", clean_genome));
+    let h_color2 = hash_genome_slice(&format!("color2:{}", clean_genome));
+    let h_seed = hash_genome_slice(&format!("seed:{}", clean_genome));
+    let h_radius = hash_genome_slice(&format!("radius:{}", clean_genome));
+    let h_length = hash_genome_slice(&format!("length:{}", clean_genome));
+    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", clean_genome));
+    let h_curve = hash_genome_slice(&format!("curve:{}", clean_genome));
+    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", clean_genome));
+    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", clean_genome));
+    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", clean_genome));
+    let h_head = hash_genome_slice(&format!("head:{}", clean_genome));
+    let h_pulse = hash_genome_slice(&format!("pulse:{}", clean_genome));
+    let h_phase = hash_genome_slice(&format!("phase:{}", clean_genome));
+    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", clean_genome));
+    let h_stomach = hash_genome_slice(&format!("stomach:{}", clean_genome));
+    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", clean_genome));
+    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", clean_genome));
+    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", clean_genome));
+    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", clean_genome));
+    let h_mature = hash_genome_slice(&format!("mature:{}", clean_genome));
+    let h_repro = hash_genome_slice(&format!("repro:{}", clean_genome));
+    let h_split = hash_genome_slice(&format!("split:{}", clean_genome));
+    let h_insert = hash_genome_slice(&format!("insert:{}", clean_genome));
+    let h_delete = hash_genome_slice(&format!("delete:{}", clean_genome));
+    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", clean_genome));
 
     // 1. Symmetry
-    let symmetry = if h0 >= 0.5 { "quad" } else { "vertical" };
+    let symmetry = if h_sym >= 0.5 { "quad" } else { "vertical" };
 
     // 2. Primary & Secondary Colors
     let primary_color = HSLColor {
-        h: (h0 * 360.0).round(),
-        s: (55.0 + h1 * 45.0).round(),
-        l: (35.0 + h2 * 45.0).round(),
+        h: (h_color1 * 360.0).round(),
+        s: (55.0 + h_color2 * 45.0).round(),
+        l: (35.0 + h_seed * 45.0).round(),
     };
 
     let secondary_color = HSLColor {
-        h: (((h0 * 360.0) + 180.0) % 360.0).round(), // complementary secondary
-        s: (55.0 + h2 * 45.0).round(),
-        l: (35.0 + h1 * 45.0).round(),
+        h: (((h_color1 * 360.0) + 180.0) % 360.0).round(), // complementary secondary color
+        s: (55.0 + h_seed * 45.0).round(),
+        l: (35.0 + h_color2 * 45.0).round(),
     };
 
     // 3. Body Seed
-    let body_seed = (h1 * 100_000.0) as u32;
+    let body_seed = (h_seed * 100_000.0) as u32;
 
     // 4. Body Size (Mean Radius & Base Length)
-    let mean_radius = (16.0f32).max((28.0f32).min(16.0 + h1 * 12.0));
-    let base_length = (90.0f32).max((200.0f32).min(90.0 + h2 * 110.0));
+    let mean_radius = (16.0f32).max((28.0f32).min(16.0 + h_radius * 12.0));
+    let base_length = (90.0f32).max((200.0f32).min(90.0 + h_length * 110.0));
 
     // 5. Spinal Harmonics (Amplitudes & Phases)
     let mut amplitudes = vec![0.0; 4];
     for j in 0..4 {
-        let offset_hash = hash_genome_slice(&format!("{}{}", slice2, j));
+        let offset_hash = hash_genome_slice(&format!("wave_amp:{}:{}", j, clean_genome));
         amplitudes[j] = offset_hash * 0.3 - 0.15;
     }
     let mut phases = vec![0.0; 4];
     for j in 0..4 {
-        let offset_hash = hash_genome_slice(&format!("{}{}", slice2, j + 4));
+        let offset_hash = hash_genome_slice(&format!("wave_phase:{}:{}", j, clean_genome));
         phases[j] = offset_hash * std::f32::consts::PI * 2.0;
     }
 
     // 6. Stiffness
-    let stiffness = (0.15f32).max((1.0f32).min(0.15 + h3 * 0.85));
+    let stiffness = (0.15f32).max((1.0f32).min(0.15 + h_stiffness * 0.85));
 
     // 7. Curves, Parapodia, flattening head
-    let spinal_curve = h3 * 44.0 - 22.0;
-    let spinal_curve_freq = 1.0 + (h4 * 3.0).floor();
-    let parapodia_amp = h3 * 0.45;
-    let parapodia_freq = 2.0 + (h2 * 3.0).floor();
-    let flattening_head = h4 * 1.4 - 0.4;
+    let spinal_curve = h_curve * 44.0 - 22.0;
+    let spinal_curve_freq = 1.0 + (h_curve_freq * 3.0).floor();
+    let parapodia_amp = h_para_amp * 0.45;
+    let parapodia_freq = 2.0 + (h_para_freq * 3.0).floor();
+    let flattening_head = h_head * 1.4 - 0.4;
 
     // 8. Pulse Speed, Wave Phase, Wiggle Amplitude
-    let pulse_speed = 0.0015 + h3 * 0.0075;
-    let wave_phase = h4 * 1.6;
-    let wiggle_amplitude = h5 * 0.22;
+    let pulse_speed = 0.0015 + h_pulse * 0.0075;
+    let wave_phase = h_phase * 1.6;
+    let wiggle_amplitude = h_wiggle * 0.22;
 
     // 9. Stomach Capacity & Hydraulic Pressure
-    let stomach_capacity = 50.0 + h4 * 450.0;
-    let hydraulic_pressure = 0.2 + h5 * 0.8;
+    let stomach_capacity = 50.0 + h_stomach * 450.0;
+    let hydraulic_pressure = 0.2 + h_hydraulic * 0.8;
 
     // 10. Thermal Tolerance
-    let thermal_center = 10.0 + h5 * 60.0;
-    let thermal_width = 10.0 + h0 * 30.0;
-    let thermal_tolerance_min = -5.0f32.max((thermal_center - thermal_width / 2.0).round());
-    let thermal_tolerance_max = 105.0f32.min((thermal_center + thermal_width / 2.0).round());
+    let thermal_tolerance_min = -5.0f32.max((h_thermal_c * 60.0 - h_thermal_w * 15.0).round());
+    let thermal_tolerance_max = 105.0f32.min((h_thermal_c * 60.0 + h_thermal_w * 15.0).round());
 
-    // 11. Organelles (Sensory Patches via dynamic promoter scanning)
+    // 11. Organelles (Sensory Patches via robust dynamic promoter scanning)
     let mut organelles = Vec::new();
 
-    let eye_signals = extract_raw_gene_signals(&clean_genome, "EYE", "EN");
-    for chunk in eye_signals.chunks_exact(7) {
+    let eye_payloads = extract_raw_gene_payloads(&clean_genome, "EYE", "EN");
+    for payload in &eye_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.85 + chunk[0] * 0.15,
-            bandwidth: 0.1 + chunk[1] * 0.4,
-            expression_style: chunk[2],
-            scale: 0.35 + chunk[3] * 1.45,
-            spinal_pos: 0.05 + chunk[4] * 0.9,
-            angle: 10.0 + chunk[5] * 160.0,
-            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            spectral_affinity: 0.85 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.15,
+            bandwidth: 0.1 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.4,
+            expression_style: hash_genome_slice(&format!("style:{}", payload)),
+            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
+            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
+            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
+            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
     }
 
-    let nos_signals = extract_raw_gene_signals(&clean_genome, "NOS", "EN");
-    for chunk in nos_signals.chunks_exact(7) {
+    let nos_payloads = extract_raw_gene_payloads(&clean_genome, "NOS", "EN");
+    for payload in &nos_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.35 + chunk[0] * 0.3,
-            bandwidth: 0.2 + chunk[1] * 0.6,
-            expression_style: chunk[2],
-            scale: 0.35 + chunk[3] * 1.45,
-            spinal_pos: 0.05 + chunk[4] * 0.9,
-            angle: 10.0 + chunk[5] * 160.0,
-            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            spectral_affinity: 0.35 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.3,
+            bandwidth: 0.2 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.6,
+            expression_style: hash_genome_slice(&format!("style:{}", payload)),
+            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
+            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
+            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
+            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
     }
 
-    let tac_signals = extract_raw_gene_signals(&clean_genome, "TAC", "EN");
-    for chunk in tac_signals.chunks_exact(7) {
+    let tac_payloads = extract_raw_gene_payloads(&clean_genome, "TAC", "EN");
+    for payload in &tac_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.05 + chunk[0] * 0.15,
-            bandwidth: 0.3 + chunk[1] * 0.7,
-            expression_style: chunk[2],
-            scale: 0.35 + chunk[3] * 1.45,
-            spinal_pos: 0.05 + chunk[4] * 0.9,
-            angle: 10.0 + chunk[5] * 160.0,
-            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            spectral_affinity: 0.05 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.15,
+            bandwidth: 0.3 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.7,
+            expression_style: hash_genome_slice(&format!("style:{}", payload)),
+            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
+            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
+            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
+            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
     }
 
-    let lum_signals = extract_raw_gene_signals(&clean_genome, "LUM", "EN");
-    for chunk in lum_signals.chunks_exact(7) {
+    let lum_payloads = extract_raw_gene_payloads(&clean_genome, "LUM", "EN");
+    for payload in &lum_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: chunk[0],
-            bandwidth: chunk[1],
-            expression_style: chunk[2],
-            scale: 0.35 + chunk[3] * 1.45,
-            spinal_pos: 0.05 + chunk[4] * 0.9,
-            angle: 10.0 + chunk[5] * 160.0,
-            hue_shift: (chunk[6] * 360.0 - 180.0).round(),
+            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
+            bandwidth: hash_genome_slice(&format!("bandwidth:{}", payload)),
+            expression_style: hash_genome_slice(&format!("style:{}", payload)),
+            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
+            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
+            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
+            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
     }
 
     // 12. Carnivory
-    let carnivory = h4;
+    let carnivory = h_carnivory;
     let is_predator = carnivory >= 0.55;
 
     // 13. Reproduction Metrics
-    let mature_age = (300.0 + h5 * 2400.0).round() as u32;
-    let repro_threshold = 0.60 + h4 * 0.35;
-    let split_loss = 0.05 + h3 * 0.35;
+    let mature_age = (300.0 + h_mature * 2400.0).round() as u32;
+    let repro_threshold = 0.60 + h_repro * 0.35;
+    let split_loss = 0.05 + h_split * 0.35;
 
     // 14. Evolutionary Drift
-    let insertion_rate = h3 * 0.12;
-    let deletion_rate = h4 * 0.12;
-    let repair_fidelity = 0.15 + h5 * 0.8;
+    let insertion_rate = h_insert * 0.12;
+    let deletion_rate = h_delete * 0.12;
+    let repair_fidelity = 0.15 + h_fidelity * 0.8;
 
     // 15. CTRNN Brain
     let k_count = organelles.len();
@@ -839,11 +848,11 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // B. Outputs (Thrust, Bending, Biolum, Reserved)
     let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
     for i in 0..4 {
-        // Derive biases and taus dynamically from the brain params interval (slice5)
-        let hash_bias = hash_genome_slice(&format!("{}{}", slice5, i));
-        let hash_tau = hash_genome_slice(&format!("{}{}", slice5, i + 4));
-        let bias = hash_bias * 2.0 - 1.0;
-        let tau = (0.2 + hash_tau * 1.8).clamp(0.1, 2.5);
+        // Derive biases and taus dynamically from the brain params whole genome hashes
+        let bias_hash = hash_genome_slice(&format!("out_bias:{}:{}", i, clean_genome));
+        let tau_hash = hash_genome_slice(&format!("out_tau:{}:{}", i, clean_genome));
+        let bias = bias_hash * 2.0 - 1.0;
+        let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
 
         neurons.push(CTRNNNeuron {
             id: k_count + 1 + i,
@@ -859,13 +868,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // C. Hidden Neurons (4 nodes)
     for i in 0..h_count {
-        let hash_bias = hash_genome_slice(&format!("{}{}", slice5, i + 8));
-        let hash_tau = hash_genome_slice(&format!("{}{}", slice5, i + 12));
-        let hash_act = hash_genome_slice(&format!("{}{}", slice5, i + 16));
+        let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, clean_genome));
+        let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, clean_genome));
+        let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, clean_genome));
 
-        let bias = hash_bias * 2.0 - 1.0;
-        let tau = (0.2 + hash_tau * 1.8).clamp(0.1, 2.5);
-        let activation_type = match (hash_act * 100.0) as usize % 4 {
+        let bias = bias_hash * 2.0 - 1.0;
+        let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
+        let activation_type = match (act_hash * 100.0) as usize % 4 {
             1 => String::from("relu"),
             2 => String::from("sigmoid"),
             3 => String::from("sin"),
@@ -1075,16 +1084,15 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_raw_gene_signals() {
+    fn test_extract_raw_gene_payloads() {
         let genome = "STFAENCOLABSTPEYEAABEN";
-        let stf_signals = extract_raw_gene_signals(genome, "STF", "EN");
-        assert_eq!(stf_signals.len(), 1); // "A" -> 0.0
-        assert_eq!(stf_signals[0], 0.0);
+        let stf_payloads = extract_raw_gene_payloads(genome, "STF", "EN");
+        assert_eq!(stf_payloads.len(), 1);
+        assert_eq!(stf_payloads[0], "A");
 
-        let col_signals = extract_raw_gene_signals(genome, "COL", "STP");
-        assert_eq!(col_signals.len(), 2); // "AB" -> [0/25, 1/25]
-        assert_eq!(col_signals[0], 0.0);
-        assert_eq!(col_signals[1], 1.0 / 25.0);
+        let col_payloads = extract_raw_gene_payloads(genome, "COL", "STP");
+        assert_eq!(col_payloads.len(), 1);
+        assert_eq!(col_payloads[0], "AB");
     }
 
     #[test]
