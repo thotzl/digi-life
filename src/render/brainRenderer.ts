@@ -6,7 +6,8 @@ export class BrainRenderer {
   constructor(
     private container: HTMLDivElement, 
     private elementIdPrefix: string,
-    private onNeuronHover?: (id: number | null) => void
+    private onNeuronHover?: (id: number | null) => void,
+    private onSynapseHover?: (from: number, to: number, weight: number | null) => void
   ) {}
 
   public getNeuronX(id: number, K: number): number {
@@ -109,6 +110,26 @@ export class BrainRenderer {
             this.onNeuronHover?.(null);
             el.removeAttribute("stroke");
             el.removeAttribute("stroke-width");
+          });
+        }
+      });
+    }
+
+    // Add event listeners for hover tooltips on synapses (lines)
+    if (this.onSynapseHover) {
+      brain.synapses.forEach((syn: CTRNNSynapse) => {
+        const id = `${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}`;
+        const el = this.elementCache.get(id);
+        if (el) {
+          el.addEventListener("mouseenter", () => {
+            this.onSynapseHover?.(syn.fromNode, syn.toNode, syn.weight);
+            el.setAttribute("stroke-width", "3.0");
+            el.setAttribute("stroke-opacity", "1.0");
+          });
+          el.addEventListener("mouseleave", () => {
+            this.onSynapseHover?.(0, 0, null);
+            el.removeAttribute("stroke-width");
+            el.removeAttribute("stroke-opacity");
           });
         }
       });

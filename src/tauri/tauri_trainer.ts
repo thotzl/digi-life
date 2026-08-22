@@ -133,9 +133,92 @@ let runId = "default_run";
 let currentGeneration = 1;
 
 let hoveredNeuronId: number | null = null;
+let hoveredSynapse: { from: number; to: number; weight: number } | null = null;
 let lastFocusedGenome = "";
+
+function updateNeuronMeta(neuronId: number | null) {
+  if (!neuronMeta) return;
+
+  if (neuronId === null) {
+    neuronMeta.innerHTML = "Hover a neuron node to see live telemetry...";
+    return;
+  }
+
+  const sb = sandboxes[selectedSandboxIdx];
+  if (!sb || !sb.lastTelemetry) {
+    neuronMeta.innerHTML = `Neuron #${neuronId}`;
+    return;
+  }
+
+  const pheno = phenotypeCache.get(sb.lastTelemetry.genome);
+  if (!pheno) {
+    neuronMeta.innerHTML = `Neuron #${neuronId}`;
+    return;
+  }
+
+  const brain = pheno.brain;
+  const K = pheno.organelles.length;
+  const isInput = neuronId <= K;
+  const isOutput = neuronId >= K + 1 && neuronId <= K + 4;
+
+  let baseDesc = `Neuron #${neuronId}`;
+  let mathFormula = "";
+  let liveValues = "";
+
+  if (isInput) {
+    mathFormula = "f(x) = Identity (Bounded [0, 1])";
+    if (neuronId === K) {
+      baseDesc = `Input #${neuronId}: Internal Clock`;
+    } else {
+      const patch = pheno.organelles[neuronId];
+      let organLabel = "Vision Eye";
+      if (patch) {
+        const aff = patch.spectralAffinity;
+        if (aff >= 0.8) organLabel = "Thermal (Heat)";
+        else if (aff >= 0.65) organLabel = "Vibration";
+        else if (aff >= 0.25) organLabel = "Olfactory (Smell)";
+      }
+      baseDesc = `Input #${neuronId}: Organelle #${neuronId + 1} (${organLabel})`;
+    }
+  } else {
+    const neuron = brain.neurons.find(n => n.id === neuronId);
+    const actType = (neuron && neuron.activationType) || "tanh";
+    if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
+    else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
+    else if (actType === "sin") mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
+    else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
+
+    if (neuron) {
+      liveValues += `<br/><b>Decay (tau):</b> ${neuron.tau.toFixed(1)}f | <b>Bias:</b> ${neuron.bias.toFixed(2)}`;
+    }
+
+    if (isOutput) {
+      const outputIndex = neuronId - (K + 1);
+      if (outputIndex === 0) baseDesc = `Output #${neuronId}: Thrust`;
+      else if (outputIndex === 1) baseDesc = `Output #${neuronId}: Flexion Steering`;
+      else if (outputIndex === 2) baseDesc = `Output #${neuronId}: Biolum Flash`;
+      else baseDesc = `Output #${neuronId}: Reserved Motor`;
+    } else {
+      baseDesc = `Neuron #${neuronId} (Interneuron #${neuronId - K - 4})`;
+    }
+  }
+
+  neuronMeta.innerHTML = `
+    <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
+    <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
+    ${liveValues}
+  `;
+}
+
 const brainRenderer = new BrainRenderer(inspectBrainContainer, "trainer", (id) => {
   hoveredNeuronId = id;
+  updateNeuronMeta(id);
+}, (from, to, weight) => {
+  if (weight !== null) {
+    hoveredSynapse = { from, to, weight };
+  } else {
+    hoveredSynapse = null;
+  }
 });
 
 function drawSandbox(sb: Sandbox) {
@@ -645,6 +728,24 @@ async function setupTauriListeners() {
                     <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
                     <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
                     ${liveValues}
+                  `;
+                }
+              } else if (hoveredSynapse !== null) {
+                const fromLabel = brain.neurons.find(n => n.id === hoveredSynapse!.from)?.label || `Node ${hoveredSynapse!.from}`;
+                const toLabel = brain.neurons.find(n => n.id === hoveredSynapse!.to)?.label || `Node ${hoveredSynapse!.to}`;
+                const isExcitatory = hoveredSynapse!.weight > 0;
+                const synType = isExcitatory ? "Excitatory (+)" : "Inhibitory (-)";
+                const synColor = isExcitatory ? "var(--primary-cyan)" : "#ef4444";
+                const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[hoveredSynapse!.from] || 0.0)));
+                const act = Math.pow(preVal, 4.0);
+
+                if (neuronMeta) {
+                  neuronMeta.innerHTML = `
+                    <span style="color: ${synColor}; font-weight: bold;">⚡ Synaptic Pathway</span><br/>
+                    <span style="color: var(--text-muted); font-size: 0.51rem;">From: ${fromLabel}</span><br/>
+                    <span style="color: var(--text-muted); font-size: 0.51rem;">To: ${toLabel}</span><br/>
+                    <b>Type:</b> ${synType} | <b>Weight:</b> ${hoveredSynapse!.weight.toFixed(3)}<br/>
+                    <b>Signal Flow Strength:</b> ${act.toFixed(3)}
                   `;
                 }
               } else {
