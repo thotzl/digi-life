@@ -299,19 +299,56 @@ pub fn extract_raw_gene_signals(
     signals
 }
 
-pub fn generate_random_genome(_length: usize) -> String {
+pub fn generate_random_genome(length: usize) -> String {
     let mut rng = rand::thread_rng();
-    let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
-    let mut mutated = base_dna.to_string();
 
-    // Apply 15 to 35 sequential mutations to randomize traits deeply while preserving promoter-terminator structures
-    let num_mutations = rng.gen_range(15..=35);
-    for _ in 0..num_mutations {
-        if let Some((mut_dna, _, _, _)) = mutate_genome(&mutated) {
-            mutated = mut_dna;
+    // 1. Start with a completely random, flat letter sequence
+    let mut dna_chars = Vec::with_capacity(length);
+    for _ in 0..length {
+        let idx = rng.gen_range(0..26);
+        dna_chars.push(ALPHABET[idx] as char);
+    }
+
+    // 2. Define our active gene promoters and their desired payload lengths
+    let gene_specs = [
+        ("COL", 6),  // Color: primary and secondary
+        ("STF", 1),  // Stiffness
+        ("PUL", 3),  // Pulse speed
+        ("SIZ", 2),  // Size
+        ("WAV", 8),  // Wave harmonics
+        ("SYM", 1),  // Symmetry
+        ("STM", 2),  // Stomach
+        ("TEM", 2),  // Thermal
+        ("CAR", 1),  // Carnivory
+        ("REP", 3),  // Reproduction
+        ("EVO", 3),  // Evolution
+        ("OUT", 8),  // Outputs
+        ("EYE", 7),  // Eye
+        ("NOS", 7),  // Nose
+        ("NEU", 12), // Neurons (Hidden layer - gives 4 hidden neurons)
+        ("SYN", 80), // Synapses (gives exactly 20 synapses!)
+    ];
+
+    // 3. Procedurally assemble and insert each gene block at a random location!
+    for &(promoter, payload_len) in &gene_specs {
+        let mut gene_block = promoter.to_string();
+        for _ in 0..payload_len {
+            let idx = rng.gen_range(0..26);
+            gene_block.push(ALPHABET[idx] as char);
+        }
+        gene_block.push_str("EN");
+
+        // Insert this gene block at a random index in the flat random string
+        if length >= gene_block.len() {
+            let insert_idx = rng.gen_range(0..=length - gene_block.len());
+            let block_chars: Vec<char> = gene_block.chars().collect();
+            for i in 0..block_chars.len() {
+                dna_chars[insert_idx + i] = block_chars[i];
+            }
         }
     }
-    mutated
+
+    dna_chars.into_iter().collect()
 }
 
 pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
@@ -1083,8 +1120,9 @@ mod tests {
 
     #[test]
     fn test_random_generation() {
-        let dna = generate_random_genome(128);
-        assert_eq!(dna.len(), 181); // Sequence-based base_dna length is 181
+        let length = 128;
+        let dna = generate_random_genome(length);
+        assert_eq!(dna.len(), length); // Sequence-based base_dna length is dynamic and matches requested length exactly
         for c in dna.chars() {
             assert!(ALPHABET.contains(&(c as u8)));
         }
