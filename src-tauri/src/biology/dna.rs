@@ -590,7 +590,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     }
 
     // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning for specialized organs - TCK-116)
-    let mut chromatin_state = vec![false; current_length];
+    let mut chromatin_state = vec![true; current_length];
     let mut epigenetic_logs = Vec::new();
     
     if let Some(m) = parent_methylations {
