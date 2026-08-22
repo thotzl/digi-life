@@ -301,54 +301,12 @@ pub fn extract_raw_gene_signals(
 
 pub fn generate_random_genome(length: usize) -> String {
     let mut rng = rand::thread_rng();
-
-    // 1. Start with a completely random, flat letter sequence
-    let mut dna_chars = Vec::with_capacity(length);
+    let mut dna = String::with_capacity(length);
     for _ in 0..length {
         let idx = rng.gen_range(0..26);
-        dna_chars.push(ALPHABET[idx] as char);
+        dna.push(ALPHABET[idx] as char);
     }
-
-    // 2. Define our active gene promoters and their desired payload lengths
-    let gene_specs = [
-        ("COL", 6),  // Color: primary and secondary
-        ("STF", 1),  // Stiffness
-        ("PUL", 3),  // Pulse speed
-        ("SIZ", 2),  // Size
-        ("WAV", 8),  // Wave harmonics
-        ("SYM", 1),  // Symmetry
-        ("STM", 2),  // Stomach
-        ("TEM", 2),  // Thermal
-        ("CAR", 1),  // Carnivory
-        ("REP", 3),  // Reproduction
-        ("EVO", 3),  // Evolution
-        ("OUT", 8),  // Outputs
-        ("EYE", 7),  // Eye
-        ("NOS", 7),  // Nose
-        ("NEU", 12), // Neurons (Hidden layer - gives 4 hidden neurons)
-        ("SYN", 80), // Synapses (gives exactly 20 synapses!)
-    ];
-
-    // 3. Procedurally assemble and insert each gene block at a random location!
-    for &(promoter, payload_len) in &gene_specs {
-        let mut gene_block = promoter.to_string();
-        for _ in 0..payload_len {
-            let idx = rng.gen_range(0..26);
-            gene_block.push(ALPHABET[idx] as char);
-        }
-        gene_block.push_str("EN");
-
-        // Insert this gene block at a random index in the flat random string
-        if length >= gene_block.len() {
-            let insert_idx = rng.gen_range(0..=length - gene_block.len());
-            let block_chars: Vec<char> = gene_block.chars().collect();
-            for i in 0..block_chars.len() {
-                dna_chars[insert_idx + i] = block_chars[i];
-            }
-        }
-    }
-
-    dna_chars.into_iter().collect()
+    dna
 }
 
 pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
@@ -603,6 +561,15 @@ fn derive_ecological_metrics(
     }
 }
 
+fn hash_genome_slice(slice: &str) -> f32 {
+    let mut hash: u64 = 14695981039346656037; // FNV offset basis
+    for c in slice.chars() {
+        hash ^= c as u64;
+        hash = hash.wrapping_mul(1099511628211); // FNV prime
+    }
+    ((hash % 1_000_000) as f32) / 1_000_000.0
+}
+
 /// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
 pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
     let current_length = genome.len().clamp(128, 384);
@@ -619,7 +586,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         antisense_strand.push('Z');
     }
 
-    // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning - TCK-116)
+    // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning for specialized organs - TCK-116)
     let mut chromatin_state = vec![false; current_length];
     let mut epigenetic_logs = Vec::new();
     
@@ -633,11 +600,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         _ => vec![0.0; current_length],
     };
 
-    // Scan for all active gene promoter regions and map them to chromatin_state and epigenetic logs!
-    let active_promoters = [
-        "SYM", "COL", "SED", "SIZ", "WAV", "STF", "CRV", "PUL", "STM", "TEM",
-        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SYN", "OUT"
-    ];
+    // Scan for active specialized organ promoters to highlight active gene spans on the DNA Helix
+    let active_promoters = ["EYE", "NOS", "TAC", "LUM"];
     let genome_bytes = clean_genome.as_bytes();
     for promoter in &active_promoters {
         let promoter_bytes = promoter.as_bytes();
@@ -656,7 +620,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 }
 
                 if let Some(end_idx) = payload_end {
-                    // Mark the entire transcribing gene span as active/open (true) on chromatin!
                     for s in idx..(end_idx + 2) {
                         if s < current_length {
                             chromatin_state[s] = true;
@@ -673,95 +636,84 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         }
     }
 
-    // --- DECOUPLED SEQUENCE-BASED GENOME COMPILER (TCK-116) ---
+    // --- NON-POSITIONAL INTERVAL HASH COMPILER (TCK-116) ---
+    // Divide clean_genome into 6 distinct, sequential, and deterministic intervals
+    let part_len = current_length / 6;
+    let slice0 = &clean_genome[0..part_len];
+    let slice1 = &clean_genome[part_len..2 * part_len];
+    let slice2 = &clean_genome[2 * part_len..3 * part_len];
+    let slice3 = &clean_genome[3 * part_len..4 * part_len];
+    let slice4 = &clean_genome[4 * part_len..5 * part_len];
+    let slice5 = &clean_genome[5 * part_len..current_length];
+
+    let h0 = hash_genome_slice(slice0);
+    let h1 = hash_genome_slice(slice1);
+    let h2 = hash_genome_slice(slice2);
+    let h3 = hash_genome_slice(slice3);
+    let h4 = hash_genome_slice(slice4);
+    let h5 = hash_genome_slice(slice5);
 
     // 1. Symmetry
-    let sym_signals = extract_raw_gene_signals(&clean_genome, "SYM", "EN");
-    let symmetry = if sym_signals.len() >= 1 && sym_signals[0] >= 0.5 { "quad" } else { "vertical" };
+    let symmetry = if h0 >= 0.5 { "quad" } else { "vertical" };
 
     // 2. Primary & Secondary Colors
-    let col_signals = extract_raw_gene_signals(&clean_genome, "COL", "EN");
-    let primary_color = if col_signals.len() >= 3 {
-        HSLColor {
-            h: (col_signals[0] * 360.0).round(),
-            s: (55.0 + col_signals[1] * 45.0).round(),
-            l: (35.0 + col_signals[2] * 45.0).round(),
-        }
-    } else {
-        HSLColor { h: 130.0, s: 75.0, l: 45.0 } // Default vibrant green
+    let primary_color = HSLColor {
+        h: (h0 * 360.0).round(),
+        s: (55.0 + h1 * 45.0).round(),
+        l: (35.0 + h2 * 45.0).round(),
     };
 
-    let secondary_color = if col_signals.len() >= 6 {
-        HSLColor {
-            h: (col_signals[3] * 360.0).round(),
-            s: (55.0 + col_signals[4] * 45.0).round(),
-            l: (35.0 + col_signals[5] * 45.0).round(),
-        }
-    } else if col_signals.len() >= 3 {
-        HSLColor {
-            h: ((col_signals[0] * 360.0 + 180.0) % 360.0).round(),
-            s: (55.0 + col_signals[1] * 45.0).round(),
-            l: (35.0 + col_signals[2] * 45.0).round(),
-        }
-    } else {
-        HSLColor { h: 310.0, s: 75.0, l: 45.0 } // Default vibrant purple
+    let secondary_color = HSLColor {
+        h: (((h0 * 360.0) + 180.0) % 360.0).round(), // complementary secondary
+        s: (55.0 + h2 * 45.0).round(),
+        l: (35.0 + h1 * 45.0).round(),
     };
 
     // 3. Body Seed
-    let sed_signals = extract_raw_gene_signals(&clean_genome, "SED", "EN");
-    let body_seed = if sed_signals.len() >= 1 { (sed_signals[0] * 100_000.0) as u32 } else { 4293 };
+    let body_seed = (h1 * 100_000.0) as u32;
 
     // 4. Body Size (Mean Radius & Base Length)
-    let size_signals = extract_raw_gene_signals(&clean_genome, "SIZ", "EN");
-    let mean_radius = if size_signals.len() >= 1 { (16.0f32).max((28.0f32).min(16.0 + size_signals[0] * 12.0)) } else { 22.0 };
-    let base_length = if size_signals.len() >= 2 { (90.0f32).max((200.0f32).min(90.0 + size_signals[1] * 110.0)) } else { 145.0 };
+    let mean_radius = (16.0f32).max((28.0f32).min(16.0 + h1 * 12.0));
+    let base_length = (90.0f32).max((200.0f32).min(90.0 + h2 * 110.0));
 
     // 5. Spinal Harmonics (Amplitudes & Phases)
-    let wav_signals = extract_raw_gene_signals(&clean_genome, "WAV", "EN");
     let mut amplitudes = vec![0.0; 4];
     for j in 0..4 {
-        if wav_signals.len() > j {
-            amplitudes[j] = wav_signals[j] * 0.3 - 0.15;
-        }
+        let offset_hash = hash_genome_slice(&format!("{}{}", slice2, j));
+        amplitudes[j] = offset_hash * 0.3 - 0.15;
     }
     let mut phases = vec![0.0; 4];
     for j in 0..4 {
-        if wav_signals.len() > 4 + j {
-            phases[j] = wav_signals[4 + j] * std::f32::consts::PI * 2.0;
-        }
+        let offset_hash = hash_genome_slice(&format!("{}{}", slice2, j + 4));
+        phases[j] = offset_hash * std::f32::consts::PI * 2.0;
     }
 
     // 6. Stiffness
-    let stf_signals = extract_raw_gene_signals(&clean_genome, "STF", "EN");
-    let stiffness = if !stf_signals.is_empty() { (0.15f32).max((1.0f32).min(0.15 + stf_signals[0] * 0.85)) } else { 0.5 };
+    let stiffness = (0.15f32).max((1.0f32).min(0.15 + h3 * 0.85));
 
-    // 7. Curves, Parapodia, etc.
-    let crv_signals = extract_raw_gene_signals(&clean_genome, "CRV", "EN");
-    let spinal_curve = if crv_signals.len() >= 1 { crv_signals[0] * 44.0 - 22.0 } else { 0.0 };
-    let spinal_curve_freq = if crv_signals.len() >= 2 { 1.0 + (crv_signals[1] * 3.0).floor() } else { 2.0 };
-    let parapodia_amp = if crv_signals.len() >= 3 { crv_signals[2] * 0.45 } else { 0.2 };
-    let parapodia_freq = if crv_signals.len() >= 4 { 2.0 + (crv_signals[3] * 3.0).floor() } else { 3.0 };
-    let flattening_head = if crv_signals.len() >= 5 { crv_signals[4] * 1.4 - 0.4 } else { 0.1 };
+    // 7. Curves, Parapodia, flattening head
+    let spinal_curve = h3 * 44.0 - 22.0;
+    let spinal_curve_freq = 1.0 + (h4 * 3.0).floor();
+    let parapodia_amp = h3 * 0.45;
+    let parapodia_freq = 2.0 + (h2 * 3.0).floor();
+    let flattening_head = h4 * 1.4 - 0.4;
 
     // 8. Pulse Speed, Wave Phase, Wiggle Amplitude
-    let pul_signals = extract_raw_gene_signals(&clean_genome, "PUL", "EN");
-    let pulse_speed = if pul_signals.len() >= 1 { 0.0015 + pul_signals[0] * 0.0075 } else { 0.005 };
-    let wave_phase = if pul_signals.len() >= 2 { pul_signals[1] * 1.6 } else { 0.8 };
-    let wiggle_amplitude = if pul_signals.len() >= 3 { pul_signals[2] * 0.22 } else { 0.11 };
+    let pulse_speed = 0.0015 + h3 * 0.0075;
+    let wave_phase = h4 * 1.6;
+    let wiggle_amplitude = h5 * 0.22;
 
     // 9. Stomach Capacity & Hydraulic Pressure
-    let stm_signals = extract_raw_gene_signals(&clean_genome, "STM", "EN");
-    let stomach_capacity = if stm_signals.len() >= 1 { 50.0 + stm_signals[0] * 450.0 } else { 150.0 };
-    let hydraulic_pressure = if stm_signals.len() >= 2 { 0.2 + stm_signals[1] * 0.8 } else { 0.6 };
+    let stomach_capacity = 50.0 + h4 * 450.0;
+    let hydraulic_pressure = 0.2 + h5 * 0.8;
 
     // 10. Thermal Tolerance
-    let tem_signals = extract_raw_gene_signals(&clean_genome, "TEM", "EN");
-    let thermal_center = if tem_signals.len() >= 1 { 10.0 + tem_signals[0] * 60.0 } else { 40.0 };
-    let thermal_width = if tem_signals.len() >= 2 { 10.0 + tem_signals[1] * 30.0 } else { 20.0 };
+    let thermal_center = 10.0 + h5 * 60.0;
+    let thermal_width = 10.0 + h0 * 30.0;
     let thermal_tolerance_min = -5.0f32.max((thermal_center - thermal_width / 2.0).round());
     let thermal_tolerance_max = 105.0f32.min((thermal_center + thermal_width / 2.0).round());
 
-    // 11. Organelles (Sensory Patches)
+    // 11. Organelles (Sensory Patches via dynamic promoter scanning)
     let mut organelles = Vec::new();
 
     let eye_signals = extract_raw_gene_signals(&clean_genome, "EYE", "EN");
@@ -825,41 +777,24 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     }
 
     // 12. Carnivory
-    let car_signals = extract_raw_gene_signals(&clean_genome, "CAR", "EN");
-    let carnivory = if !car_signals.is_empty() { car_signals[0] } else { 0.2 };
+    let carnivory = h4;
     let is_predator = carnivory >= 0.55;
 
     // 13. Reproduction Metrics
-    let rep_signals = extract_raw_gene_signals(&clean_genome, "REP", "EN");
-    let mature_age = if rep_signals.len() >= 1 { (300.0 + rep_signals[0] * 2400.0).round() as u32 } else { 1200 };
-    let repro_threshold = if rep_signals.len() >= 2 { 0.60 + rep_signals[1] * 0.35 } else { 0.75 };
-    let split_loss = if rep_signals.len() >= 3 { 0.05 + rep_signals[2] * 0.35 } else { 0.15 };
+    let mature_age = (300.0 + h5 * 2400.0).round() as u32;
+    let repro_threshold = 0.60 + h4 * 0.35;
+    let split_loss = 0.05 + h3 * 0.35;
 
     // 14. Evolutionary Drift
-    let evo_signals = extract_raw_gene_signals(&clean_genome, "EVO", "EN");
-    let insertion_rate = if evo_signals.len() >= 1 { evo_signals[0] * 0.12 } else { 0.05 };
-    let deletion_rate = if evo_signals.len() >= 2 { evo_signals[1] * 0.12 } else { 0.05 };
-    let repair_fidelity = if evo_signals.len() >= 3 { 0.15 + evo_signals[2] * 0.8 } else { 0.85 };
+    let insertion_rate = h3 * 0.12;
+    let deletion_rate = h4 * 0.12;
+    let repair_fidelity = 0.15 + h5 * 0.8;
 
     // 15. CTRNN Brain
     let k_count = organelles.len();
 
-    // Hidden neurons
-    let neu_signals = extract_raw_gene_signals(&clean_genome, "NEU", "EN");
-    let mut hidden_neurons = Vec::new();
-    for chunk in neu_signals.chunks_exact(3) {
-        let bias = chunk[0] * 2.0 - 1.0;
-        let tau = (0.2 + chunk[1] * 1.8).clamp(0.1, 2.5);
-        let act_val = (chunk[2] * 100.0) as usize;
-        let activation_type = match act_val % 4 {
-            1 => String::from("relu"),
-            2 => String::from("sigmoid"),
-            3 => String::from("sin"),
-            _ => String::from("tanh"),
-        };
-        hidden_neurons.push((bias, tau, activation_type));
-    }
-    let h_count = hidden_neurons.len().clamp(2, 10);
+    // Hidden neurons (Always exactly 4 hidden neurons for rich baseline wiring depth!)
+    let h_count = 4;
     let total_nodes = k_count + 1 + 4 + h_count;
 
     let mut neurons = Vec::with_capacity(total_nodes);
@@ -903,10 +838,12 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // B. Outputs (Thrust, Bending, Biolum, Reserved)
     let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
-    let out_signals = extract_raw_gene_signals(&clean_genome, "OUT", "EN");
     for i in 0..4 {
-        let bias = if out_signals.len() > i * 2 { out_signals[i * 2] * 2.0 - 1.0 } else { 0.0 };
-        let tau = if out_signals.len() > i * 2 + 1 { (0.2 + out_signals[i * 2 + 1] * 1.8).clamp(0.1, 2.5) } else { 1.0 };
+        // Derive biases and taus dynamically from the brain params interval (slice5)
+        let hash_bias = hash_genome_slice(&format!("{}{}", slice5, i));
+        let hash_tau = hash_genome_slice(&format!("{}{}", slice5, i + 4));
+        let bias = hash_bias * 2.0 - 1.0;
+        let tau = (0.2 + hash_tau * 1.8).clamp(0.1, 2.5);
 
         neurons.push(CTRNNNeuron {
             id: k_count + 1 + i,
@@ -920,12 +857,19 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // C. Hidden Neurons
+    // C. Hidden Neurons (4 nodes)
     for i in 0..h_count {
-        let (bias, tau, activation_type) = if i < hidden_neurons.len() {
-            hidden_neurons[i].clone()
-        } else {
-            (0.0, 1.0, String::from("tanh"))
+        let hash_bias = hash_genome_slice(&format!("{}{}", slice5, i + 8));
+        let hash_tau = hash_genome_slice(&format!("{}{}", slice5, i + 12));
+        let hash_act = hash_genome_slice(&format!("{}{}", slice5, i + 16));
+
+        let bias = hash_bias * 2.0 - 1.0;
+        let tau = (0.2 + hash_tau * 1.8).clamp(0.1, 2.5);
+        let activation_type = match (hash_act * 100.0) as usize % 4 {
+            1 => String::from("relu"),
+            2 => String::from("sigmoid"),
+            3 => String::from("sin"),
+            _ => String::from("tanh"),
         };
 
         neurons.push(CTRNNNeuron {
@@ -940,16 +884,18 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // D. Synapses
-    let mut synapses = Vec::new();
-    let syn_signals = extract_raw_gene_signals(&clean_genome, "SYN", "EN");
-    for chunk in syn_signals.chunks_exact(4) {
-        let raw_from = (chunk[0] * 1000.0) as usize;
-        let raw_to = (chunk[1] * 1000.0) as usize;
-        let weight = chunk[2] * 4.0 - 2.0;
+    // D. Synapses (100% position-free marker-less sliding window over characters 120..200!)
+    let mut synapses = Vec::with_capacity(20);
+    let syn_slice = &clean_genome[120.min(current_length)..200.min(current_length)];
+    let syn_chars: Vec<char> = syn_slice.chars().collect();
+    for i in (0..syn_chars.len().saturating_sub(3)).step_by(4) {
+        let val_from = char_to_value(syn_chars[i]) as f32 / 25.0;
+        let val_to = char_to_value(syn_chars[i+1]) as f32 / 25.0;
+        let val_weight = char_to_value(syn_chars[i+2]) as f32 / 25.0;
 
-        let from_node = raw_from % total_nodes;
-        let to_node = (raw_to % (4 + h_count)) + (k_count + 1);
+        let from_node = (val_from * 1000.0) as usize % total_nodes;
+        let to_node = ((val_to * 1000.0) as usize % (4 + h_count)) + (k_count + 1);
+        let weight = val_weight * 4.0 - 2.0;
 
         if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
             synapses.push(CTRNNSynapse {
