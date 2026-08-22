@@ -167,18 +167,17 @@ function updateNeuronMeta(neuronId: number | null) {
 
   if (isInput) {
     mathFormula = "f(x) = Identity (Bounded [0, 1])";
-    if (neuronId === K) {
-      baseDesc = `Input #${neuronId}: Internal Clock`;
+    
+    // Read the perfect, pre-compiled friendly label straight from the Rust SSOT!
+    const neuron = brain.neurons.find(n => n.id === neuronId);
+    if (neuron) {
+      baseDesc = neuron.label;
     } else {
-      const patch = pheno.organelles[neuronId];
-      let organLabel = "Vision Eye";
-      if (patch) {
-        const aff = patch.spectralAffinity;
-        if (aff >= 0.8) organLabel = "Thermal (Heat)";
-        else if (aff >= 0.65) organLabel = "Vibration";
-        else if (aff >= 0.25) organLabel = "Olfactory (Smell)";
+      if (neuronId === K) {
+        baseDesc = "⌛ Hunger Clock";
+      } else {
+        baseDesc = `Input #${neuronId}: Organelle #${neuronId + 1}`;
       }
-      baseDesc = `Input #${neuronId}: Organelle #${neuronId + 1} (${organLabel})`;
     }
   } else {
     const neuron = brain.neurons.find(n => n.id === neuronId);
