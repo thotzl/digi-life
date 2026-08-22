@@ -915,12 +915,15 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let syn_len = syn_chars.len();
     if syn_len >= 4 {
         for i in (0..syn_len.saturating_sub(3)).step_by(4).take(20) {
-            let val_from = char_to_value(syn_chars[i]) as f32 / 25.0;
-            let val_to = char_to_value(syn_chars[i+1]) as f32 / 25.0;
+            let raw_from = char_to_value(syn_chars[i]);
+            let raw_to = char_to_value(syn_chars[i+1]);
             let val_weight = char_to_value(syn_chars[i+2]) as f32 / 25.0;
+            let raw_unused = char_to_value(syn_chars[i+3]);
 
-            let from_node = (val_from * 1000.0) as usize % total_nodes;
-            let to_node = ((val_to * 1000.0) as usize % (4 + h_count)) + (k_count + 1);
+            let combined_from = raw_from + raw_unused * 26;
+
+            let from_node = combined_from % total_nodes;
+            let to_node = (raw_to % (4 + h_count)) + (k_count + 1);
             let weight = val_weight * 4.0 - 2.0;
 
             if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
