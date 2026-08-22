@@ -299,14 +299,19 @@ pub fn extract_raw_gene_signals(
     signals
 }
 
-pub fn generate_random_genome(length: usize) -> String {
+pub fn generate_random_genome(_length: usize) -> String {
     let mut rng = rand::thread_rng();
-    let mut dna = String::with_capacity(length);
-    for _ in 0..length {
-        let idx = rng.gen_range(0..26);
-        dna.push(ALPHABET[idx] as char);
+    let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLEN";
+    let mut mutated = base_dna.to_string();
+
+    // Apply 15 to 35 sequential mutations to randomize traits deeply while preserving promoter-terminator structures
+    let num_mutations = rng.gen_range(15..=35);
+    for _ in 0..num_mutations {
+        if let Some((mut_dna, _, _, _)) = mutate_genome(&mutated) {
+            mutated = mut_dna;
+        }
     }
-    dna
+    mutated
 }
 
 pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
@@ -1036,9 +1041,8 @@ mod tests {
 
     #[test]
     fn test_random_generation() {
-        let length = 100;
-        let dna = generate_random_genome(length);
-        assert_eq!(dna.len(), length);
+        let dna = generate_random_genome(128);
+        assert_eq!(dna.len(), 107); // Sequence-based base_dna length is 107
         for c in dna.chars() {
             assert!(ALPHABET.contains(&(c as u8)));
         }
