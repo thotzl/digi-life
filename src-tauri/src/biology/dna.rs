@@ -288,7 +288,12 @@ pub fn extract_raw_gene_payloads(
                 payloads.push(payload_slice.to_string());
                 idx = end_idx + stop_motif.len();
             } else {
-                idx += 1;
+                // Point 1 Fallback: No stop motif found, so read until the end of the genome!
+                let payload_slice = &genome[payload_start..];
+                if !payload_slice.is_empty() {
+                    payloads.push(payload_slice.to_string());
+                }
+                break;
             }
         } else {
             idx += 1;
@@ -1093,6 +1098,19 @@ mod tests {
         let col_payloads = extract_raw_gene_payloads(genome, "COL", "STP");
         assert_eq!(col_payloads.len(), 1);
         assert_eq!(col_payloads[0], "AB");
+
+        // Test Point 1: Implicit end-of-genome stop fallback (no stop_motif present)
+        let genome_no_stop = "EYEAA";
+        let eye_payloads = extract_raw_gene_payloads(genome_no_stop, "EYE", "EN");
+        assert_eq!(eye_payloads.len(), 1);
+        assert_eq!(eye_payloads[0], "AA"); // Read successfully until the end of the strand!
+
+        // Test Point 2: Isolated, non-greedy scanning (no merging of EYE...EN...EYE...EN)
+        let genome_multi = "EYEAAENEYECCDEN";
+        let multi_payloads = extract_raw_gene_payloads(genome_multi, "EYE", "EN");
+        assert_eq!(multi_payloads.len(), 2);
+        assert_eq!(multi_payloads[0], "AA");
+        assert_eq!(multi_payloads[1], "CCD"); // Two distinct, isolated organs successfully translated!
     }
 
     #[test]
