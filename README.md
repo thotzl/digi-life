@@ -51,6 +51,22 @@ npm run types:generate
 
 ---
 
+## 🧬 Hybrid Sequence Genetics & Epigenetic GRN Compiler
+
+This application features a highly advanced, biologically authentic genetic compiler inside the native Rust core. Rather than mapping genes to fixed positional indices (coordinates), the engine uses a hybrid sequence-based paradigm:
+
+### 1. Epigenetic Basics & CTRNN Brain (Filtered via Euchromatin)
+*   **The Active Chromatin State (`chromatin_state`):** Calculated dynamically via a transgenerational, 3-wave epigenetic Hox cascade wave loop that propagates somatic methylations and opens/closes gene loops on the DNA Helix.
+*   **Basics Filtration:** All physical and metabolic variables (muscle stiffness, colors, base size, wiggling speed) and the entire **20-synapse temporal CTRNN brain** are compiled strictly from the **`active_dna` string** (containing only the character positions where `chromatin_state[idx] == true`).
+*   **Lamarckian Learning:** Epigenetic chromatin opening/closing shifts the active genome, causing the creature's wiggling synapses and body dimensions to shift dynamically and fluidly in real-time.
+
+### 2. Emergent Specialized Organs (Marker-Autonomously)
+*   Specialized sensory organelles (Eyes, Noses, Tactile Fühlers, Biolum Photophores) are transcribed directly from the raw `clean_genome` using a robust, any-length promoter-payload model.
+*   **No Payload Constraints:** If a promoter (e.g. `"EYE"`) and terminator (`"EN"`) are found anywhere on the strand (of any length!), it compiles successfully into a unique organ. Properties like scale, spinal position, and angle are computed deterministically by hashing the extracted payload.
+*   **Pristine Sandboxing:** Pure, starting wildtypes are born completely blind and organless, with specialized sensory organs emerging purely randomly over generations through natural selection and mutation.
+
+---
+
 ## 🧪 Testing Standards & Guidelines
 
 Our native backend is covered by an automated test suite verifying core biological and physical determinism:
