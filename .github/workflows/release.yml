@@ -63,7 +63,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (github.event_name == 'workflow_dispatch' && steps.package_version.outputs.version || '') }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.package_version.outputs.version }}
           releaseName: "Pixel DNA Life ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.package_version.outputs.version }}"
           releaseBody: "Automated multi-platform production installers compile. See CHANGELOG.md for the complete list of additions, performance optimizations, and bio-kinematic realignments."
           releaseDraft: true
