@@ -319,9 +319,51 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
         return None;
     }
     let mut rng = rand::thread_rng();
-    let index = rng.gen_range(0..genome.len());
+    let current_length = genome.len();
+
+    // Protect crucial promoter/terminator motifs from mutations to prevent catastrophic brain-death / synapse loss
+    let protected_motifs = [
+        "COL", "STF", "PUL", "SIZ", "WAV", "SYM", "STM", "TEM",
+        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SYN", "OUT", "EN"
+    ];
+
+    let mut protected = vec![false; current_length];
+    for motif in &protected_motifs {
+        let motif_bytes = motif.as_bytes();
+        let genome_bytes = genome.as_bytes();
+        let mut idx = 0;
+        while idx <= current_length.saturating_sub(motif.len()) {
+            if &genome_bytes[idx..idx + motif.len()] == motif_bytes {
+                for s in idx..idx + motif.len() {
+                    if s < current_length {
+                        protected[s] = true;
+                    }
+                }
+                idx += motif.len();
+            } else {
+                idx += 1;
+            }
+        }
+    }
+
+    // Gather all unprotected indices
+    let mut unprotected_indices = Vec::new();
+    for i in 0..current_length {
+        if !protected[i] {
+            unprotected_indices.push(i);
+        }
+    }
+
+    // Choose index to mutate
+    let index = if !unprotected_indices.is_empty() {
+        let idx_in_list = rng.gen_range(0..unprotected_indices.len());
+        unprotected_indices[idx_in_list]
+    } else {
+        // Fallback if everything is protected
+        rng.gen_range(0..current_length)
+    };
+
     let current_char = genome.chars().nth(index)?;
-    
     let mut new_char = current_char;
     while new_char == current_char {
         let idx = rng.gen_range(0..26);
@@ -330,7 +372,7 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
 
     let mut new_genome = String::from(genome);
     new_genome.replace_range(index..index + 1, &new_char.to_string());
-    
+
     Some((new_genome, index, current_char, new_char))
 }
 
@@ -1071,6 +1113,16 @@ mod tests {
             assert_eq!(mutated.chars().nth(idx).unwrap(), new);
         } else {
             panic!("Mutation failed");
+        }
+
+        // Verify promoter-safe conservation
+        let genome_with_promoter = "COLABCEN"; // "COL" (promoter), "ABC" (payload), "EN" (terminator)
+        for _ in 0..100 {
+            if let Some((mutated, idx, _, _)) = mutate_genome(genome_with_promoter) {
+                // The mutation index should only ever land in the unprotected payload "ABC" (indices 3, 4, or 5)
+                assert!(idx >= 3 && idx <= 5, "Mutation indices must only target unprotected payload regions! Found index: {}", idx);
+                assert!(mutated.starts_with("COL") && mutated.ends_with("EN"), "Promoters and terminators must never be broken!");
+            }
         }
     }
 
