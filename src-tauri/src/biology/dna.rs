@@ -527,8 +527,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         clean_genome.push('A');
     }
 
-    let char_vals: Vec<usize> = clean_genome.chars().map(char_to_value).collect();
-
     let mut antisense_strand = match antisense_input {
         Some(anti) => anti.to_ascii_uppercase().chars().take(current_length).collect::<String>(),
         None => get_complementary_string(&clean_genome),
@@ -537,105 +535,51 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         antisense_strand.push('Z');
     }
 
-    // 1. Epigenetic chromatin mapping (Embryology cascade waves)
+    // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning - TCK-116)
     let mut chromatin_state = vec![false; current_length];
-    for idx in 0..16 {
-        chromatin_state[idx] = true;
-    }
-
-    for idx in 16..(current_length.saturating_sub(2)) {
-        let char_a = clean_genome.as_bytes()[idx];
-        let char_b = clean_genome.as_bytes()[idx + 1];
-        if (char_a == b'S' && char_b == b'T') || (char_a == b'G' && char_b == b'O') {
-            chromatin_state[idx] = true;
-            chromatin_state[idx + 1] = true;
-            if idx + 2 < current_length { chromatin_state[idx + 2] = true; }
-            if idx + 3 < current_length { chromatin_state[idx + 3] = true; }
-        }
-    }
-
     let mut epigenetic_logs = Vec::new();
-    let mut methylations = match parent_methylations {
-        Some(m) if m.len() == current_length => {
+    
+    if let Some(m) = parent_methylations {
+        if m.len() == current_length {
             epigenetic_logs.push(String::from("Transgenerational epigenetic inheritance: Learned brain methylation pattern of the parent cell successfully assimilated."));
-            m.to_vec()
         }
+    }
+    let methylations = match parent_methylations {
+        Some(m) if m.len() == current_length => m.to_vec(),
         _ => vec![0.0; current_length],
     };
 
-    let get_methylated_val = |idx: usize, genome_chars: &[usize], meths: &[f32]| -> usize {
-        let raw = genome_chars[idx] as i32;
-        let meth = meths[idx] as i32;
-        ((raw + meth).rem_euclid(26)) as usize
-    };
+    // Scan for all active gene promoter regions and map them to chromatin_state and epigenetic logs!
+    let active_promoters = [
+        "SYM", "COL", "SED", "SIZ", "WAV", "STF", "CRV", "PUL", "STM", "TEM",
+        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SYN", "OUT"
+    ];
+    let genome_bytes = clean_genome.as_bytes();
+    for promoter in &active_promoters {
+        let promoter_bytes = promoter.as_bytes();
+        let mut idx = 0;
+        while idx <= current_length.saturating_sub(promoter.len()) {
+            if &genome_bytes[idx..idx + promoter.len()] == promoter_bytes {
+                let payload_start = idx + promoter.len();
+                let mut payload_end = None;
+                for j in payload_start..=current_length.saturating_sub(2) {
+                    let c_a = genome_bytes[j];
+                    let c_b = genome_bytes[j + 1];
+                    if (c_a == b'S' && c_b == b'P') || (c_a == b'E' && c_b == b'N') {
+                        payload_end = Some(j);
+                        break;
+                    }
+                }
 
-    // Execute 3 embryological cascade hox waves
-    for wave in 1..=3 {
-        let mut wave_loci_modified = 0;
-        let mut wave_methylations = 0;
-
-        let mut idx = 16;
-        while idx < current_length.saturating_sub(2) {
-            if chromatin_state[idx] && chromatin_state[idx + 1] {
-                let char_a = clean_genome.as_bytes()[idx];
-                let char_b = clean_genome.as_bytes()[idx + 1];
-                let is_hox = (char_a == b'E' && char_b == b'P') || (char_a == b'H' && char_b == b'X');
-
-                if is_hox {
-                    let hox_start = idx;
-                    let payload_start = idx + 2;
-                    let mut payload_end = None;
-
-                    for j in payload_start..(current_length.saturating_sub(1)) {
-                        let c_a = clean_genome.as_bytes()[j];
-                        let c_b = clean_genome.as_bytes()[j + 1];
-                        if (c_a == b'S' && c_b == b'P') || (c_a == b'E' && c_b == b'N') {
-                            payload_end = Some(j);
-                            break;
+                if let Some(end_idx) = payload_end {
+                    // Mark the entire transcribing gene span as active/open (true) on chromatin!
+                    for s in idx..(end_idx + 2) {
+                        if s < current_length {
+                            chromatin_state[s] = true;
                         }
                     }
-
-                    let end_idx = payload_end.unwrap_or(current_length);
-                    let payload_length = end_idx.saturating_sub(payload_start);
-
-                    if payload_length >= 3 {
-                        let target_char_idx = get_methylated_val(payload_start, &char_vals, &methylations);
-                        let target_letter = ALPHABET[target_char_idx];
-                        let action_val = get_methylated_val(payload_start + 1, &char_vals, &methylations);
-                        let power_radius = 5.0 + get_methylated_val(payload_start + 2, &char_vals, &methylations) as f32 * 1.5;
-
-                        for target_idx in 16..current_length {
-                            if clean_genome.as_bytes()[target_idx] == target_letter {
-                                let distance = (target_idx as f32 - hox_start as f32).abs();
-                                if distance <= power_radius {
-                                    if action_val < 9 {
-                                        let start_slot = (target_idx.saturating_sub(3)).max(16);
-                                        let end_slot = (target_idx + 3).min(current_length - 1);
-                                        for s in start_slot..=end_slot {
-                                            if !chromatin_state[s] {
-                                                chromatin_state[s] = true;
-                                                wave_loci_modified += 1;
-                                            }
-                                        }
-                                    } else if action_val < 18 {
-                                        let start_slot = (target_idx.saturating_sub(3)).max(16);
-                                        let end_slot = (target_idx + 3).min(current_length - 1);
-                                        for s in start_slot..=end_slot {
-                                            if chromatin_state[s] {
-                                                chromatin_state[s] = false;
-                                                wave_loci_modified += 1;
-                                            }
-                                        }
-                                    } else {
-                                        let shift_direction = if action_val % 2 == 0 { 5.0 } else { -5.0 };
-                                        methylations[target_idx] += shift_direction;
-                                        wave_methylations += 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    idx = (end_idx + 2).min(current_length);
+                    epigenetic_logs.push(format!("Active Gene Found: Transcribing \"{}\" promoter block at locus {}..{} successfully completed.", promoter, idx, end_idx + 2));
+                    idx = end_idx + 2;
                 } else {
                     idx += 1;
                 }
@@ -643,15 +587,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 idx += 1;
             }
         }
-        if wave_loci_modified > 0 || wave_methylations > 0 {
-            epigenetic_logs.push(format!("Wave {}: Hox networks active. {} chromatin loops formed, {} methylations completed.", wave, wave_loci_modified, wave_methylations));
-        }
-    }
-
-    // Loci 0-15 are hard-locked against somatic methylations during embryogenesis
-    for idx in 0..16 {
-        chromatin_state[idx] = true;
-        methylations[idx] = 0.0;
     }
 
     // --- DECOUPLED SEQUENCE-BASED GENOME COMPILER (TCK-116) ---
