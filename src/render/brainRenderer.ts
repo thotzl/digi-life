@@ -3,7 +3,11 @@ import { BrainTopology, CTRNNNeuron, CTRNNSynapse } from "../shared/types";
 export class BrainRenderer {
   private elementCache = new Map<string, SVGElement>();
 
-  constructor(private container: HTMLDivElement, private elementIdPrefix: string) {}
+  constructor(
+    private container: HTMLDivElement, 
+    private elementIdPrefix: string,
+    private onNeuronHover?: (id: number | null) => void
+  ) {}
 
   public getNeuronX(id: number, K: number): number {
     if (id <= K) return 25; // Left Column: Sensors
@@ -49,6 +53,9 @@ export class BrainRenderer {
       const isExcitatory = syn.weight > 0;
       const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.28)" : "rgba(239, 68, 68, 0.28)";
 
+      const fromLabel = brain.neurons.find(n => n.id === fromId)?.label || `Node ${fromId}`;
+      const toLabel = brain.neurons.find(n => n.id === toId)?.label || `Node ${toId}`;
+
       svgContent += `
         <line id="${this.elementIdPrefix}-syn-${fromId}-${toId}" x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}"
               stroke="${strokeColor}" stroke-width="1.2" />
@@ -86,6 +93,26 @@ export class BrainRenderer {
       const el = document.getElementById(id) as SVGElement | null;
       if (el) this.elementCache.set(id, el);
     });
+
+    // Add event listeners for hover tooltips on neuron nodes
+    if (this.onNeuronHover) {
+      brain.neurons.forEach((n: CTRNNNeuron) => {
+        const id = `${this.elementIdPrefix}-node-${n.id}`;
+        const el = this.elementCache.get(id);
+        if (el) {
+          el.addEventListener("mouseenter", () => {
+            this.onNeuronHover?.(n.id);
+            el.setAttribute("stroke", "#ffffff");
+            el.setAttribute("stroke-width", "1.5");
+          });
+          el.addEventListener("mouseleave", () => {
+            this.onNeuronHover?.(null);
+            el.removeAttribute("stroke");
+            el.removeAttribute("stroke-width");
+          });
+        }
+      });
+    }
   }
 
   public updateLiveGlows(activations: number[], brain: BrainTopology): void {

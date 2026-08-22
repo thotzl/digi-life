@@ -133,7 +133,10 @@ let runId = "default_run";
 let currentGeneration = 1;
 
 let hoveredNeuronId: number | null = null;
-const brainRenderer = new BrainRenderer(inspectBrainContainer, "trainer");
+let lastFocusedGenome = "";
+const brainRenderer = new BrainRenderer(inspectBrainContainer, "trainer", (id) => {
+  hoveredNeuronId = id;
+});
 
 function drawSandbox(sb: Sandbox) {
   const tele = sb.lastTelemetry;
@@ -563,6 +566,12 @@ async function setupTauriListeners() {
             if (pheno) {
               const brain = pheno.brain;
 
+              // Compile the brain SVG if it hasn't been compiled yet, or if the active focused genome has changed!
+              if (sb.lastTelemetry.genome !== lastFocusedGenome || (inspectBrainContainer && (inspectBrainContainer.innerHTML.includes("fallback-state") || inspectBrainContainer.innerHTML.includes("Select a sandbox")))) {
+                brainRenderer.compile(brain, pheno.organelles.length);
+                lastFocusedGenome = sb.lastTelemetry.genome;
+              }
+
               brainRenderer.updateLiveGlows(activations, brain);
 
               if (focusGenome) {
@@ -594,7 +603,15 @@ async function setupTauriListeners() {
                   if (hoveredNeuronId === K) {
                     baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
                   } else {
-                    baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1}`;
+                    const patch = pheno.organelles[hoveredNeuronId];
+                    let organLabel = "Vision Eye";
+                    if (patch) {
+                      const aff = patch.spectralAffinity;
+                      if (aff >= 0.8) organLabel = "Thermal (Heat)";
+                      else if (aff >= 0.65) organLabel = "Vibration";
+                      else if (aff >= 0.25) organLabel = "Olfactory (Smell)";
+                    }
+                    baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1} (${organLabel})`;
                   }
                 } else {
                   const neuron = brain.neurons[hoveredNeuronId];
@@ -608,6 +625,9 @@ async function setupTauriListeners() {
                   else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
 
                   liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
+                  if (neuron) {
+                    liveValues += `<br/><b>Decay (tau):</b> ${neuron.tau.toFixed(1)}f | <b>Bias:</b> ${neuron.bias.toFixed(2)}`;
+                  }
                   
                   if (isOutput) {
                     const outputIndex = hoveredNeuronId - (K + 1);
@@ -626,6 +646,10 @@ async function setupTauriListeners() {
                     <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
                     ${liveValues}
                   `;
+                }
+              } else {
+                if (neuronMeta) {
+                  neuronMeta.innerHTML = "Hover a neuron node to see live telemetry...";
                 }
               }
             }
