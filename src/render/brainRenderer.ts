@@ -152,7 +152,7 @@ export class BrainRenderer {
   public updateLiveGlows(activations: number[], brain: BrainTopology): void {
     if (!brain || !activations) return;
 
-    // 1. Update Neurons (Smoothly scaled opacity from dim 0.15 to fully solid 1.0)
+    // 1. Update Neurons (Smoothly scaled opacity from dim 0.15 to fully solid 1.0 with high contrast)
     brain.neurons.forEach((n: CTRNNNeuron) => {
       const id = `${this.elementIdPrefix}-node-${n.id}`;
       const el = this.elementCache.get(id);
@@ -164,24 +164,24 @@ export class BrainRenderer {
         const act = Math.pow(rawAct, exponent);
 
         const colorGlow = isInput ? "#0ea5e9" : (isOutput ? "#c084fc" : "#e2e8f0");
-        const fill = act > 0.35 ? colorGlow : "#111827";
+        const fill = colorGlow; // Always retain beautiful, high-contrast colored beads!
         const radius = isInput || isOutput ? (act > 0.45 ? 6.5 : 4.5) : (act > 0.45 ? 5.0 : 3.2);
 
         el.setAttribute("fill", fill);
         el.setAttribute("r", radius.toString());
 
-        // Smooth continuous opacity representing activity
-        const opacity = 0.15 + rawAct * 0.85;
+        // High-contrast continuous opacity scaling
+        const opacity = 0.18 + rawAct * 0.82;
         el.style.opacity = opacity.toString();
-        if (act > 0.35) {
-          el.style.filter = `drop-shadow(0 0 3px ${colorGlow})`;
+        if (rawAct > 0.18) {
+          el.style.filter = `drop-shadow(0 0 4px ${colorGlow})`;
         } else {
           el.style.filter = "none";
         }
       }
     });
 
-    // 2. Update Synapses (Continuous scaling by weight and pre-synaptic activation)
+    // 2. Update Synapses (High contrast: quiet synapses are faded, active synapses are blazing bright!)
     brain.synapses.forEach((syn: CTRNNSynapse) => {
       const id = `${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}`;
       const el = this.elementCache.get(id);
@@ -193,14 +193,20 @@ export class BrainRenderer {
         }
 
         const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
-        const act = Math.pow(preVal, 4.0);
+        const act = Math.pow(preVal, 3.5); // slightly more responsive activation curve for synapses
 
         const isExcitatory = syn.weight > 0;
         const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
 
         const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
-        const opacity = act > 0.35 ? Math.min(0.20 + weightFactor * 1.2, 0.95) : weightFactor * 0.4;
-        const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0) * (act > 0.45 ? 2.0 : 1.0);
+        
+        // High contrast mapping: active synapses light up bright and clear (up to 1.0 opacity), quiet ones fade out!
+        let opacity = weightFactor * 0.35;
+        if (act > 0.15) {
+          opacity = Math.min(0.35 + act * 0.65, 1.0);
+        }
+
+        const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0) * (act > 0.45 ? 1.8 : 1.0);
 
         el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
         el.setAttribute("stroke-width", strokeWidth.toString());
