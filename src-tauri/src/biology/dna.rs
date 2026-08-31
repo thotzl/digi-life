@@ -733,35 +733,65 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         active_dna = String::from("A");
     }
 
-    // --- NON-POSITIONAL WHOLE-GENOME PREFIXED HASH COMPILER (TCK-116) ---
-    // Every basic trait is determined by hashing the ACTIVE genome slice, prefixed with a unique string.
-    // Epigenetic open/closed states dynamically shift colors, sizes, and brain parameters fluidly!
-    let h_sym = hash_genome_slice(&format!("symmetry:{}", active_dna));
-    let h_color1 = hash_genome_slice(&format!("color1:{}", active_dna));
-    let h_color2 = hash_genome_slice(&format!("color2:{}", active_dna));
-    let h_seed = hash_genome_slice(&format!("seed:{}", active_dna));
-    let h_radius = hash_genome_slice(&format!("radius:{}", active_dna));
-    let h_length = hash_genome_slice(&format!("length:{}", active_dna));
-    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", active_dna));
-    let h_curve = hash_genome_slice(&format!("curve:{}", active_dna));
-    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", active_dna));
-    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", active_dna));
-    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", active_dna));
-    let h_head = hash_genome_slice(&format!("head:{}", active_dna));
-    let h_pulse = hash_genome_slice(&format!("pulse:{}", active_dna));
-    let h_phase = hash_genome_slice(&format!("phase:{}", active_dna));
-    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", active_dna));
-    let h_stomach = hash_genome_slice(&format!("stomach:{}", active_dna));
-    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", active_dna));
-    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", active_dna));
-    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", active_dna));
-    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", active_dna));
-    let h_mature = hash_genome_slice(&format!("mature:{}", active_dna));
-    let h_repro = hash_genome_slice(&format!("repro:{}", active_dna));
-    let h_split = hash_genome_slice(&format!("split:{}", active_dna));
-    let h_insert = hash_genome_slice(&format!("insert:{}", active_dna));
-    let h_delete = hash_genome_slice(&format!("delete:{}", active_dna));
-    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", active_dna));
+    // --- MODULAR GENOME LOCI HASH COMPILER ---
+    // Every basic trait is determined locally by hashing its specific gene payload,
+    // falling back to active_dna if the specific promoter is absent. This decouples
+    // genes and restores realistic transgenerational family similarity!
+    let col_payloads = extract_raw_gene_payloads(&clean_genome, "COL", "EN");
+    let col_source = col_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_sym = hash_genome_slice(&format!("symmetry:{}", col_source));
+    let h_color1 = hash_genome_slice(&format!("color1:{}", col_source));
+    let h_color2 = hash_genome_slice(&format!("color2:{}", col_source));
+
+    let siz_payloads = extract_raw_gene_payloads(&clean_genome, "SIZ", "EN");
+    let siz_source = siz_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_radius = hash_genome_slice(&format!("radius:{}", siz_source));
+    let h_length = hash_genome_slice(&format!("length:{}", siz_source));
+    let h_seed = hash_genome_slice(&format!("seed:{}", siz_source));
+
+    let stf_payloads = extract_raw_gene_payloads(&clean_genome, "STF", "EN");
+    let stf_source = stf_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", stf_source));
+    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", stf_source));
+
+    let wav_payloads = extract_raw_gene_payloads(&clean_genome, "WAV", "EN");
+    let wav_source = wav_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_curve = hash_genome_slice(&format!("curve:{}", wav_source));
+    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", wav_source));
+    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", wav_source));
+    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", wav_source));
+
+    let pul_payloads = extract_raw_gene_payloads(&clean_genome, "PUL", "EN");
+    let pul_source = pul_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_head = hash_genome_slice(&format!("head:{}", pul_source));
+    let h_pulse = hash_genome_slice(&format!("pulse:{}", pul_source));
+    let h_phase = hash_genome_slice(&format!("phase:{}", pul_source));
+    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", pul_source));
+
+    let stm_payloads = extract_raw_gene_payloads(&clean_genome, "STM", "EN");
+    let stm_source = stm_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_stomach = hash_genome_slice(&format!("stomach:{}", stm_source));
+
+    let tem_payloads = extract_raw_gene_payloads(&clean_genome, "TEM", "EN");
+    let tem_source = tem_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", tem_source));
+    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", tem_source));
+
+    let car_payloads = extract_raw_gene_payloads(&clean_genome, "CAR", "EN");
+    let car_source = car_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", car_source));
+
+    let rep_payloads = extract_raw_gene_payloads(&clean_genome, "REP", "EN");
+    let rep_source = rep_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_mature = hash_genome_slice(&format!("mature:{}", rep_source));
+    let h_repro = hash_genome_slice(&format!("repro:{}", rep_source));
+    let h_split = hash_genome_slice(&format!("split:{}", rep_source));
+
+    let evo_payloads = extract_raw_gene_payloads(&clean_genome, "EVO", "EN");
+    let evo_source = evo_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
+    let h_insert = hash_genome_slice(&format!("insert:{}", evo_source));
+    let h_delete = hash_genome_slice(&format!("delete:{}", evo_source));
+    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", evo_source));
 
     // 1. Symmetry
     let symmetry = if h_sym >= 0.5 { "quad" } else { "vertical" };

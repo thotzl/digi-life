@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enforced uncoupled receptor evolution, allowing any physical organ (Eyes, Noses, Biolums) to freely evolve its spectral affinity and focus-bandwidth across the entire `[0.0 .. 1.0]` spectrum.
   - Programmed multidimensional biophysical environmental emissions (Algae emits on Blue/Green channels; Meat/Prey emits on Infrarot/Red channels).
   - Expanded Tastorgane (`aff < 0.25`) into advanced haptics measuring mechanical hardness (Wands 1.0 vs Spores 0.3), fluid flow rheotaxis, surrounding hydrothermal vent temperature, proprioceptive spine bending strain, and high-impact physical pain on distinct channels.
+- **Decoupled Modular Loci Hash Compiler (Verwandtschafts-Fix):**
+  - Completely decoupled physical, metabolic, and behavioral traits from one another by removing the global `active_dna` whole-genome hashing loop inside `parse_genome`.
+  - Every basic trait (Colors, Symmetrie, Sizes, Stiffness, Waves, Pulses, Stomach, Tolerances, Carnivory) is now compiled locally from its specific gene payload (e.g. `"COL"` payload for primary/secondary colors).
+  - Restored real biological family resemblance. Mutating a color gene now only modifies the creature's coloration, leaving its muscle dynamics, body shape, and neural CTRNN brain connections completely intact and identical to the parent.
 
 ### Fixed
 - **Epigenetic Chromatin State Scanning:** Corrected the chromatin initialization to start closed (`false`) by default. Active chromatin states now open and transcribe all physical, metabolic, and neural promoters, fully restoring color and form diversity of starting species records and newly born cells.
