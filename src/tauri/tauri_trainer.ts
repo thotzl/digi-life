@@ -665,7 +665,7 @@ async function setupTauriListeners() {
                 Sandbox: #${sb.id}<br/>
                 Status: ${sb.lastTelemetry.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
                 Fitness: ${sb.lastTelemetry.current_fitness.toFixed(1)}<br/>
-                Diet: ${pheno.carnivory >= 0.35 ? "Carnivore (meat)" : "Herbivore (plant)"}<br/>
+                Diet: ${pheno.dietClass}<br/>
                 Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
               `;
 
