@@ -655,6 +655,19 @@ fn hash_genome_slice(slice: &str) -> f32 {
     ((hash % 1_000_000) as f32) / 1_000_000.0
 }
 
+pub fn get_payload_linear_value_offset(payload: &str, shift: usize) -> f32 {
+    if payload.is_empty() {
+        return 0.5;
+    }
+    let mut sum = 0.0;
+    for (i, c) in payload.chars().enumerate() {
+        // Continuous shift: Shifts character index with a unique multiplier, creating a perfectly continuous, shifted allele value!
+        let val = (char_to_value(c) + shift * (i + 1)) % 26;
+        sum += val as f32;
+    }
+    (sum / (payload.len() as f32 * 25.0)).clamp(0.0, 1.0)
+}
+
 /// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
 pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
     let current_length = genome.len().clamp(128, 512);
@@ -733,65 +746,65 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         active_dna = String::from("A");
     }
 
-    // --- MODULAR GENOME LOCI HASH COMPILER ---
-    // Every basic trait is determined locally by hashing its specific gene payload,
+    // --- MODULAR GENOME LOCI LINEAR COMPILER ---
+    // Every basic trait is determined locally by parsing and linearly scaling its specific gene payload,
     // falling back to active_dna if the specific promoter is absent. This decouples
     // genes and restores realistic transgenerational family similarity!
     let col_payloads = extract_raw_gene_payloads(&clean_genome, "COL", "EN");
     let col_source = col_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_sym = hash_genome_slice(&format!("symmetry:{}", col_source));
-    let h_color1 = hash_genome_slice(&format!("color1:{}", col_source));
-    let h_color2 = hash_genome_slice(&format!("color2:{}", col_source));
+    let h_sym = get_payload_linear_value_offset(&col_source, 11);
+    let h_color1 = get_payload_linear_value_offset(&col_source, 0);
+    let h_color2 = get_payload_linear_value_offset(&col_source, 5);
 
     let siz_payloads = extract_raw_gene_payloads(&clean_genome, "SIZ", "EN");
     let siz_source = siz_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_radius = hash_genome_slice(&format!("radius:{}", siz_source));
-    let h_length = hash_genome_slice(&format!("length:{}", siz_source));
-    let h_seed = hash_genome_slice(&format!("seed:{}", siz_source));
+    let h_radius = get_payload_linear_value_offset(&siz_source, 0);
+    let h_length = get_payload_linear_value_offset(&siz_source, 4);
+    let h_seed = get_payload_linear_value_offset(&siz_source, 8);
 
     let stf_payloads = extract_raw_gene_payloads(&clean_genome, "STF", "EN");
     let stf_source = stf_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_stiffness = hash_genome_slice(&format!("stiffness:{}", stf_source));
-    let h_hydraulic = hash_genome_slice(&format!("hydraulic:{}", stf_source));
+    let h_stiffness = get_payload_linear_value_offset(&stf_source, 0);
+    let h_hydraulic = get_payload_linear_value_offset(&stf_source, 7);
 
     let wav_payloads = extract_raw_gene_payloads(&clean_genome, "WAV", "EN");
     let wav_source = wav_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_curve = hash_genome_slice(&format!("curve:{}", wav_source));
-    let h_curve_freq = hash_genome_slice(&format!("curve_freq:{}", wav_source));
-    let h_para_amp = hash_genome_slice(&format!("para_amp:{}", wav_source));
-    let h_para_freq = hash_genome_slice(&format!("para_freq:{}", wav_source));
+    let h_curve = get_payload_linear_value_offset(&wav_source, 0);
+    let h_curve_freq = get_payload_linear_value_offset(&wav_source, 3);
+    let h_para_amp = get_payload_linear_value_offset(&wav_source, 6);
+    let h_para_freq = get_payload_linear_value_offset(&wav_source, 9);
 
     let pul_payloads = extract_raw_gene_payloads(&clean_genome, "PUL", "EN");
     let pul_source = pul_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_head = hash_genome_slice(&format!("head:{}", pul_source));
-    let h_pulse = hash_genome_slice(&format!("pulse:{}", pul_source));
-    let h_phase = hash_genome_slice(&format!("phase:{}", pul_source));
-    let h_wiggle = hash_genome_slice(&format!("wiggle:{}", pul_source));
+    let h_head = get_payload_linear_value_offset(&pul_source, 0);
+    let h_pulse = get_payload_linear_value_offset(&pul_source, 2);
+    let h_phase = get_payload_linear_value_offset(&pul_source, 5);
+    let h_wiggle = get_payload_linear_value_offset(&pul_source, 9);
 
     let stm_payloads = extract_raw_gene_payloads(&clean_genome, "STM", "EN");
     let stm_source = stm_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_stomach = hash_genome_slice(&format!("stomach:{}", stm_source));
+    let h_stomach = get_payload_linear_value_offset(&stm_source, 0);
 
     let tem_payloads = extract_raw_gene_payloads(&clean_genome, "TEM", "EN");
     let tem_source = tem_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_thermal_c = hash_genome_slice(&format!("thermal_c:{}", tem_source));
-    let h_thermal_w = hash_genome_slice(&format!("thermal_w:{}", tem_source));
+    let h_thermal_c = get_payload_linear_value_offset(&tem_source, 0);
+    let h_thermal_w = get_payload_linear_value_offset(&tem_source, 6);
 
     let car_payloads = extract_raw_gene_payloads(&clean_genome, "CAR", "EN");
     let car_source = car_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_carnivory = hash_genome_slice(&format!("carnivory:{}", car_source));
+    let h_carnivory = get_payload_linear_value_offset(&car_source, 0);
 
     let rep_payloads = extract_raw_gene_payloads(&clean_genome, "REP", "EN");
     let rep_source = rep_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_mature = hash_genome_slice(&format!("mature:{}", rep_source));
-    let h_repro = hash_genome_slice(&format!("repro:{}", rep_source));
-    let h_split = hash_genome_slice(&format!("split:{}", rep_source));
+    let h_mature = get_payload_linear_value_offset(&rep_source, 0);
+    let h_repro = get_payload_linear_value_offset(&rep_source, 4);
+    let h_split = get_payload_linear_value_offset(&rep_source, 8);
 
     let evo_payloads = extract_raw_gene_payloads(&clean_genome, "EVO", "EN");
     let evo_source = evo_payloads.get(0).cloned().unwrap_or_else(|| active_dna.clone());
-    let h_insert = hash_genome_slice(&format!("insert:{}", evo_source));
-    let h_delete = hash_genome_slice(&format!("delete:{}", evo_source));
-    let h_fidelity = hash_genome_slice(&format!("fidelity:{}", evo_source));
+    let h_insert = get_payload_linear_value_offset(&evo_source, 0);
+    let h_delete = get_payload_linear_value_offset(&evo_source, 5);
+    let h_fidelity = get_payload_linear_value_offset(&evo_source, 10);
 
     // 1. Symmetry
     let symmetry = if h_sym >= 0.5 { "quad" } else { "vertical" };
@@ -819,12 +832,12 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // 5. Spinal Harmonics (Amplitudes & Phases)
     let mut amplitudes = vec![0.0; 4];
     for j in 0..4 {
-        let offset_hash = hash_genome_slice(&format!("wave_amp:{}:{}", j, clean_genome));
+        let offset_hash = get_payload_linear_value_offset(&wav_source, j + 15);
         amplitudes[j] = offset_hash * 0.3 - 0.15;
     }
     let mut phases = vec![0.0; 4];
     for j in 0..4 {
-        let offset_hash = hash_genome_slice(&format!("wave_phase:{}:{}", j, clean_genome));
+        let offset_hash = get_payload_linear_value_offset(&wav_source, j + 25);
         phases[j] = offset_hash * std::f32::consts::PI * 2.0;
     }
 
@@ -998,9 +1011,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // B. Outputs (Thrust, Bending, Biolum, Reserved)
     let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
     for i in 0..4 {
-        // Derive biases and taus dynamically from the brain params active_dna hashes
-        let bias_hash = hash_genome_slice(&format!("out_bias:{}:{}", i, active_dna));
-        let tau_hash = hash_genome_slice(&format!("out_tau:{}:{}", i, active_dna));
+        // Derive biases and taus dynamically from the brain params active_dna hashes linearly
+        let bias_hash = get_payload_linear_value_offset(&active_dna, i + 1);
+        let tau_hash = get_payload_linear_value_offset(&active_dna, i + 10);
         let bias = bias_hash * 2.0 - 1.0;
         let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
 
@@ -1032,10 +1045,10 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     for i in 0..h_count {
         let (bias, tau, activation_type, depth) = if !fallback_h_count && i < neu_payloads.len() {
             let payload = &neu_payloads[i];
-            let bias_hash = hash_genome_slice(&format!("neu_bias:{}", payload));
-            let tau_hash = hash_genome_slice(&format!("neu_tau:{}", payload));
-            let act_hash = hash_genome_slice(&format!("neu_act:{}", payload));
-            let depth_hash = hash_genome_slice(&format!("neu_depth:{}", payload));
+            let bias_hash = get_payload_linear_value_offset(payload, 1);
+            let tau_hash = get_payload_linear_value_offset(payload, 4);
+            let act_hash = get_payload_linear_value_offset(payload, 7);
+            let depth_hash = get_payload_linear_value_offset(payload, 10);
 
             let bias = bias_hash * 2.0 - 1.0;
             let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
@@ -1049,9 +1062,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             (bias, tau, activation_type, depth)
         } else {
             // Fallback default values
-            let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, active_dna));
-            let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, active_dna));
-            let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, active_dna));
+            let bias_hash = get_payload_linear_value_offset(&active_dna, i + 2);
+            let tau_hash = get_payload_linear_value_offset(&active_dna, i + 12);
+            let act_hash = get_payload_linear_value_offset(&active_dna, i + 22);
 
             let bias = bias_hash * 2.0 - 1.0;
             let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
@@ -1093,9 +1106,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // Parse all explicit "SY" promoter genes into a lookup list
     let mut explicit_synapses = Vec::new();
     for (idx, payload) in syn_payloads.iter().enumerate().take(30) {
-        let h_from = hash_genome_slice(&format!("from:{}:{}", idx, payload));
-        let h_to = hash_genome_slice(&format!("to:{}:{}", idx, payload));
-        let h_weight = hash_genome_slice(&format!("weight:{}:{}", idx, payload));
+        let h_from = get_payload_linear_value_offset(payload, 1);
+        let h_to = get_payload_linear_value_offset(payload, 4);
+        let h_weight = get_payload_linear_value_offset(payload, 7);
 
         let from_node = sources[(h_from * 1000.0) as usize % sources.len()];
         let to_node = destinations[(h_to * 1000.0) as usize % destinations.len()];
@@ -1117,7 +1130,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 explicit.2 // use strong, genetically specialized weight!
             } else {
                 // Initialize as a weak, random exploratory synapse
-                let h_weight = hash_genome_slice(&format!("base_weight:{}:{}", from_node, to_node));
+                let h_weight = get_payload_linear_value_offset(&active_dna, from_node + to_node * 13);
                 h_weight * 0.15 - 0.075 // small weight in [-0.075 .. 0.075]
             };
 
@@ -1447,7 +1460,7 @@ mod tests {
     fn test_hebbian_learning_and_epigenetics() {
         use crate::shared::brain::execute_brain_with_learning;
 
-        let dna = "NEUAAESNEUBBESYBAAESYBBBES"; // 2 hiddens
+        let dna = "NEUAAESNEUBBESZZSYBCAESYBBBES"; // 3 hiddens, 1 SY
         let phenotype = parse_genome(dna, None, None);
         let brain = phenotype.brain;
 
@@ -1481,16 +1494,13 @@ mod tests {
     fn test_synaptic_exuberance_and_active_pruning() {
         use crate::shared::brain::execute_brain_with_learning;
 
-        let dna = "NEUAAESNEUBBESYBAAESYBBBES"; // 2 hiddens
+        let dna = "NEUAAESNEUBBESZZSYBCAESYBBBES"; // 3 hiddens, 1 SY
         let phenotype = parse_genome(dna, None, None);
         let brain = phenotype.brain;
 
-        // Verify Exuberance: 2 inputs, 2 hiddens, 4 outputs
-        // Sources: 4. Destinations: 6.
-        // Total fully-connected synapses (excluding identical self-loops):
-        // Inputs (2) connect to Outputs (4) + Hiddens (2) = 12 synapses
-        // Hiddens (2) connect to Outputs (4) + other Hidden (1) = 10 synapses
-        // Total synapses should be exactly 25!
+        // Verify Exuberance: 1 input (0 organelles + 1 clock), 3 hiddens, 4 outputs
+        // Sources: 4. Destinations: 7.
+        // Total synapses (excluding direct self-loops): 4 * 7 - 3 = 25!
         assert_eq!(brain.synapses.len(), 25);
 
         // Verify that exploratory synapses start very weak, while explicit "SY" start strong
