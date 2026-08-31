@@ -257,27 +257,73 @@ pub fn get_complementary_string(sense: &str) -> String {
     sense.chars().map(get_complementary_char).collect()
 }
 
+pub fn get_bio_class(c: char) -> u8 {
+    match c.to_ascii_uppercase() {
+        'A' | 'E' | 'I' | 'O' | 'U' => 1,       // Alpha (Polar/Hydrophilic)
+        'Y' | 'W' | 'F' | 'H' | 'K' | 'R' => 2, // Beta (Aromatic/Basic)
+        'L' | 'M' | 'V' | 'P' | 'T' => 3,       // Gamma (Hydrophobic)
+        'D' | 'N' | 'Q' | 'S' | 'C' => 4,       // Delta (Acidic/Amide)
+        _ => 5,                                 // Epsilon (Inert/Rare)
+    }
+}
+
+pub fn matches_degenerate(segment: &str, classic_promoter: &str) -> bool {
+    let len = classic_promoter.len();
+    if segment.len() != len {
+        return false;
+    }
+    
+    // For brain-related promoters ("NEU", "SY"), use full biochemical group matching (full wobble)
+    if classic_promoter == "NEU" || classic_promoter == "SY" {
+        return segment.chars().zip(classic_promoter.chars()).all(|(s, p)| {
+            get_bio_class(s) == get_bio_class(p)
+        });
+    }
+
+    if len <= 1 {
+        let s_char = segment.chars().next().unwrap();
+        let p_char = classic_promoter.chars().next().unwrap();
+        return get_bio_class(s_char) == get_bio_class(p_char);
+    }
+
+    let s_chars: Vec<char> = segment.chars().collect();
+    let p_chars: Vec<char> = classic_promoter.chars().collect();
+
+    // Golden-Middle matching: First character must match EXACTLY
+    if s_chars[0] != p_chars[0] {
+        return false;
+    }
+
+    // Remaining characters match degenerately (wobble)
+    for i in 1..len {
+        if get_bio_class(s_chars[i]) != get_bio_class(p_chars[i]) {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub fn extract_raw_gene_payloads(
     genome: &str,
     start_motif: &str,
     stop_motif: &str
 ) -> Vec<String> {
     let mut payloads = Vec::new();
-    let genome_bytes = genome.as_bytes();
-    let start_bytes = start_motif.as_bytes();
-    let stop_bytes = stop_motif.as_bytes();
 
-    if start_bytes.is_empty() || stop_bytes.is_empty() || genome.len() < start_motif.len() + stop_motif.len() {
+    if start_motif.is_empty() || stop_motif.is_empty() || genome.len() < start_motif.len() + stop_motif.len() {
         return payloads;
     }
 
     let mut idx = 0;
     while idx <= genome.len().saturating_sub(start_motif.len()) {
-        if &genome_bytes[idx..idx + start_motif.len()] == start_bytes {
+        let segment_start = &genome[idx..idx + start_motif.len()];
+        if matches_degenerate(segment_start, start_motif) {
             let payload_start = idx + start_motif.len();
             let mut payload_end = None;
             for j in payload_start..=genome.len().saturating_sub(stop_motif.len()) {
-                if &genome_bytes[j..j + stop_motif.len()] == stop_bytes {
+                let segment_stop = &genome[j..j + stop_motif.len()];
+                if matches_degenerate(segment_stop, stop_motif) {
                     payload_end = Some(j);
                     break;
                 }
@@ -322,16 +368,15 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
     // Protect crucial promoter/terminator motifs from mutations to prevent catastrophic brain-death / synapse loss
     let protected_motifs = [
         "COL", "STF", "PUL", "SIZ", "WAV", "SYM", "STM", "TEM",
-        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SYN", "OUT", "EN"
+        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SY", "OUT", "EN"
     ];
 
     let mut protected = vec![false; current_length];
     for motif in &protected_motifs {
-        let motif_bytes = motif.as_bytes();
-        let genome_bytes = genome.as_bytes();
         let mut idx = 0;
         while idx <= current_length.saturating_sub(motif.len()) {
-            if &genome_bytes[idx..idx + motif.len()] == motif_bytes {
+            let segment = &genome[idx..idx + motif.len()];
+            if matches_degenerate(segment, motif) {
                 for s in idx..idx + motif.len() {
                     if s < current_length {
                         protected[s] = true;
@@ -352,12 +397,42 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
         }
     }
 
-    // Choose index to mutate
+    // Parse current genome to fetch dynamic insertion/deletion rates determined by phenotype
+    let pheno = parse_genome(genome, None, None);
+    let insertion_rate = pheno.insertion_rate; // 0.0 .. 0.12
+    let deletion_rate = pheno.deletion_rate;   // 0.0 .. 0.12
+
+    let roll = rng.gen_range(0.0..1.0);
+
+    // 1. Try Deletion mutation (scaled by phenotype rate)
+    if roll < deletion_rate * 0.5 && current_length > 128 && !unprotected_indices.is_empty() {
+        let idx_in_list = rng.gen_range(0..unprotected_indices.len());
+        let index = unprotected_indices[idx_in_list];
+        let mut new_genome = String::from(genome);
+        let deleted_char = new_genome.remove(index);
+        return Some((new_genome, index, '-', deleted_char));
+    }
+
+    // 2. Try Insertion mutation (scaled by phenotype rate)
+    if roll < (deletion_rate * 0.5) + (insertion_rate * 0.5) && current_length < 512 {
+        let index = if !unprotected_indices.is_empty() {
+            let idx_in_list = rng.gen_range(0..unprotected_indices.len());
+            unprotected_indices[idx_in_list]
+        } else {
+            rng.gen_range(0..current_length)
+        };
+        let idx = rng.gen_range(0..26);
+        let inserted_char = ALPHABET[idx] as char;
+        let mut new_genome = String::from(genome);
+        new_genome.insert(index, inserted_char);
+        return Some((new_genome, index, '+', inserted_char));
+    }
+
+    // 3. Fallback: Point Mutation (Substitution)
     let index = if !unprotected_indices.is_empty() {
         let idx_in_list = rng.gen_range(0..unprotected_indices.len());
         unprotected_indices[idx_in_list]
     } else {
-        // Fallback if everything is protected
         rng.gen_range(0..current_length)
     };
 
@@ -575,7 +650,7 @@ fn hash_genome_slice(slice: &str) -> f32 {
 
 /// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
 pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
-    let current_length = genome.len().clamp(128, 384);
+    let current_length = genome.len().clamp(128, 512);
     let mut clean_genome = genome.to_ascii_uppercase().chars().take(current_length).collect::<String>();
     while clean_genome.len() < current_length {
         clean_genome.push('A');
@@ -590,7 +665,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     }
 
     // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning for specialized organs - TCK-116)
-    let mut chromatin_state = vec![true; current_length];
+    let mut chromatin_state = vec![false; current_length];
     let mut epigenetic_logs = Vec::new();
     
     if let Some(m) = parent_methylations {
@@ -603,20 +678,21 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         _ => vec![0.0; current_length],
     };
 
-    // Scan for active specialized organ promoters to highlight active gene spans on the DNA Helix
-    let active_promoters = ["EYE", "NOS", "TAC", "LUM"];
-    let genome_bytes = clean_genome.as_bytes();
+    // Scan for active specialized organ and trait promoters to highlight active gene spans on the DNA Helix
+    let active_promoters = [
+        "COL", "STF", "PUL", "SIZ", "WAV", "SYM", "STM", "TEM",
+        "EYE", "NOS", "TAC", "LUM", "CAR", "REP", "EVO", "NEU", "SY", "OUT"
+    ];
     for promoter in &active_promoters {
-        let promoter_bytes = promoter.as_bytes();
         let mut idx = 0;
         while idx <= current_length.saturating_sub(promoter.len()) {
-            if &genome_bytes[idx..idx + promoter.len()] == promoter_bytes {
+            let segment_start = &clean_genome[idx..idx + promoter.len()];
+            if matches_degenerate(segment_start, promoter) {
                 let payload_start = idx + promoter.len();
                 let mut payload_end = None;
                 for j in payload_start..=current_length.saturating_sub(2) {
-                    let c_a = genome_bytes[j];
-                    let c_b = genome_bytes[j + 1];
-                    if (c_a == b'S' && c_b == b'P') || (c_a == b'E' && c_b == b'N') {
+                    let segment_stop = &clean_genome[j..j + 2];
+                    if matches_degenerate(segment_stop, "SP") || matches_degenerate(segment_stop, "EN") {
                         payload_end = Some(j);
                         break;
                     }
@@ -744,8 +820,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let eye_payloads = extract_raw_gene_payloads(&clean_genome, "EYE", "EN");
     for payload in &eye_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.85 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.15,
-            bandwidth: 0.1 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.4,
+            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
+            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
             expression_style: hash_genome_slice(&format!("style:{}", payload)),
             scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
             spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
@@ -759,8 +835,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let nos_payloads = extract_raw_gene_payloads(&clean_genome, "NOS", "EN");
     for payload in &nos_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.35 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.3,
-            bandwidth: 0.2 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.6,
+            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
+            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
             expression_style: hash_genome_slice(&format!("style:{}", payload)),
             scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
             spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
@@ -774,8 +850,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let tac_payloads = extract_raw_gene_payloads(&clean_genome, "TAC", "EN");
     for payload in &tac_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: 0.05 + hash_genome_slice(&format!("affinity:{}", payload)) * 0.15,
-            bandwidth: 0.3 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.7,
+            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
+            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
             expression_style: hash_genome_slice(&format!("style:{}", payload)),
             scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
             spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
@@ -790,7 +866,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     for payload in &lum_payloads {
         organelles.push(SensoryPatch {
             spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
-            bandwidth: hash_genome_slice(&format!("bandwidth:{}", payload)),
+            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
             expression_style: hash_genome_slice(&format!("style:{}", payload)),
             scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
             spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
@@ -882,19 +958,53 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // C. Hidden Neurons (4 nodes)
-    for i in 0..h_count {
-        let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, active_dna));
-        let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, active_dna));
-        let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, active_dna));
+    // C. Hidden Neurons (dynamically compiled from "NEU" payloads or fallbacks!)
+    let neu_payloads = extract_raw_gene_payloads(&clean_genome, "NEU", "EN");
+    let mut h_count = neu_payloads.len();
+    
+    // Fallback if no NEU promoters exist
+    let fallback_h_count = if h_count == 0 {
+        h_count = 2; // baseline of 2 hidden neurons
+        true
+    } else {
+        false
+    };
+    let h_count = h_count.clamp(2, 12);
 
-        let bias = bias_hash * 2.0 - 1.0;
-        let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
-        let activation_type = match (act_hash * 100.0) as usize % 4 {
-            1 => String::from("relu"),
-            2 => String::from("sigmoid"),
-            3 => String::from("sin"),
-            _ => String::from("tanh"),
+    for i in 0..h_count {
+        let (bias, tau, activation_type, depth) = if !fallback_h_count && i < neu_payloads.len() {
+            let payload = &neu_payloads[i];
+            let bias_hash = hash_genome_slice(&format!("neu_bias:{}", payload));
+            let tau_hash = hash_genome_slice(&format!("neu_tau:{}", payload));
+            let act_hash = hash_genome_slice(&format!("neu_act:{}", payload));
+            let depth_hash = hash_genome_slice(&format!("neu_depth:{}", payload));
+
+            let bias = bias_hash * 2.0 - 1.0;
+            let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
+            let activation_type = match (act_hash * 100.0) as usize % 4 {
+                1 => String::from("relu"),
+                2 => String::from("sigmoid"),
+                3 => String::from("sin"),
+                _ => String::from("tanh"),
+            };
+            let depth = 0.15 + depth_hash * 0.7; // maps depth between 0.15 and 0.85
+            (bias, tau, activation_type, depth)
+        } else {
+            // Fallback default values
+            let bias_hash = hash_genome_slice(&format!("hid_bias:{}:{}", i, active_dna));
+            let tau_hash = hash_genome_slice(&format!("hid_tau:{}:{}", i, active_dna));
+            let act_hash = hash_genome_slice(&format!("hid_act:{}:{}", i, active_dna));
+
+            let bias = bias_hash * 2.0 - 1.0;
+            let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
+            let activation_type = match (act_hash * 100.0) as usize % 4 {
+                1 => String::from("relu"),
+                2 => String::from("sigmoid"),
+                3 => String::from("sin"),
+                _ => String::from("tanh"),
+            };
+            let depth = 0.15 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.7;
+            (bias, tau, activation_type, depth)
         };
 
         neurons.push(CTRNNNeuron {
@@ -905,26 +1015,33 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             bias,
             activation_type: Some(activation_type),
             x: Some(0.5),
-            y: Some(0.15 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.7),
+            y: Some(depth),
         });
     }
 
-    // D. Synapses (100% position-free marker-less sliding window over characters of active_dna!)
-    let mut synapses = Vec::with_capacity(20);
-    let syn_chars: Vec<char> = active_dna.chars().collect();
-    let syn_len = syn_chars.len();
-    if syn_len >= 4 {
-        for i in (0..syn_len.saturating_sub(3)).step_by(4).take(20) {
-            let raw_from = char_to_value(syn_chars[i]);
-            let raw_to = char_to_value(syn_chars[i+1]);
-            let val_weight = char_to_value(syn_chars[i+2]) as f32 / 25.0;
-            let raw_unused = char_to_value(syn_chars[i+3]);
+    // D. Synapses (Dynamically compiled from "SY" payloads!)
+    let mut synapses = Vec::with_capacity(30);
+    let syn_payloads = extract_raw_gene_payloads(&clean_genome, "SY", "EN");
 
-            let combined_from = raw_from + raw_unused * 26;
+    // Establish valid sources and destinations arrays for robust modulo index wiring!
+    let mut sources = Vec::new();
+    for s in 0..=k_count { sources.push(s); }
+    for h in 0..h_count { sources.push(k_count + 5 + h); }
 
-            let from_node = combined_from % total_nodes;
-            let to_node = (raw_to % (4 + h_count)) + (k_count + 1);
-            let weight = val_weight * 4.0 - 2.0;
+    let mut destinations = Vec::new();
+    for o in 0..4 { destinations.push(k_count + 1 + o); }
+    for h in 0..h_count { destinations.push(k_count + 5 + h); }
+
+    if !syn_payloads.is_empty() {
+        // Build synapses from genome's "SY" gene segments!
+        for (idx, payload) in syn_payloads.iter().enumerate().take(30) {
+            let h_from = hash_genome_slice(&format!("from:{}:{}", idx, payload));
+            let h_to = hash_genome_slice(&format!("to:{}:{}", idx, payload));
+            let h_weight = hash_genome_slice(&format!("weight:{}:{}", idx, payload));
+
+            let from_node = sources[(h_from * 1000.0) as usize % sources.len()];
+            let to_node = destinations[(h_to * 1000.0) as usize % destinations.len()];
+            let weight = h_weight * 4.0 - 2.0; // range [-2.0..2.0]
 
             if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
                 synapses.push(CTRNNSynapse {
@@ -935,7 +1052,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             }
         }
     }
-    // Fallback direct wiring if active_dna is too short to provide synapses
+
+    // Direct wiring fallback if everything is empty
     if synapses.is_empty() {
         synapses.push(CTRNNSynapse {
             from_node: k_count, // Hunger Clock
@@ -1118,7 +1236,36 @@ mod tests {
     }
 
     #[test]
+    fn test_biochem_groups_and_degenerate_matching() {
+        // Alpha class: A, E, I, O, U
+        assert_eq!(get_bio_class('A'), 1);
+        assert_eq!(get_bio_class('E'), 1);
+        // Beta class: Y, W, F, H, K, R
+        assert_eq!(get_bio_class('Y'), 2);
+        assert_eq!(get_bio_class('W'), 2);
+        // Gamma class: L, M, V, P, T
+        assert_eq!(get_bio_class('L'), 3);
+        // Delta class: D, N, Q, S, C
+        assert_eq!(get_bio_class('N'), 4);
+        assert_eq!(get_bio_class('S'), 4);
+
+        // Degenerate matching checks (Golden-Middle: 1st exact, rest wobble)
+        assert!(matches_degenerate("EYE", "EYE"));
+        assert!(matches_degenerate("EYO", "EYE")); // matches exact 'E' + wobble Beta 'Y' + wobble Alpha 'O'
+        assert!(matches_degenerate("EWA", "EYE")); // matches exact 'E' + wobble Beta 'W' + wobble Alpha 'A'
+        assert!(!matches_degenerate("OWO", "EYE")); // different first character ('O' != 'E')
+        assert!(!matches_degenerate("ABC", "EYE")); // completely different
+
+        // Brain-related promoters ("NEU", "SY") must support full-wobble group matching!
+        assert!(matches_degenerate("NEU", "NEU"));
+        assert!(matches_degenerate("DAA", "NEU")); // D is Delta (like N), A is Alpha (like E), A is Alpha (like U)
+        assert!(matches_degenerate("CAA", "NEU")); // C is Delta, A is Alpha, A is Alpha
+        assert!(!matches_degenerate("DAA", "EYE")); // different promoter, should not match
+    }
+
+    #[test]
     fn test_extract_raw_gene_payloads() {
+        // Standard matching (which is backward compatible)
         let genome = "STFAENCOLABSTPEYEAABEN";
         let stf_payloads = extract_raw_gene_payloads(genome, "STF", "EN");
         assert_eq!(stf_payloads.len(), 1);
@@ -1128,11 +1275,17 @@ mod tests {
         assert_eq!(col_payloads.len(), 1);
         assert_eq!(col_payloads[0], "AB");
 
+        // Degenerate matching: "EYO" as EYE, "ES" as EN
+        let degenerate_genome = "EYOAABES"; // EYO matches EYE, ES matches EN
+        let eye_payloads = extract_raw_gene_payloads(degenerate_genome, "EYE", "EN");
+        assert_eq!(eye_payloads.len(), 1);
+        assert_eq!(eye_payloads[0], "AAB");
+
         // Test Point 1: Implicit end-of-genome stop fallback (no stop_motif present)
         let genome_no_stop = "EYEAA";
-        let eye_payloads = extract_raw_gene_payloads(genome_no_stop, "EYE", "EN");
-        assert_eq!(eye_payloads.len(), 1);
-        assert_eq!(eye_payloads[0], "AA"); // Read successfully until the end of the strand!
+        let eye_payloads_fallback = extract_raw_gene_payloads(genome_no_stop, "EYE", "EN");
+        assert_eq!(eye_payloads_fallback.len(), 1);
+        assert_eq!(eye_payloads_fallback[0], "AA"); // Read successfully until the end of the strand!
 
         // Test Point 2: Isolated, non-greedy scanning (no merging of EYE...EN...EYE...EN)
         let genome_multi = "EYEAAENEYECCDEN";
@@ -1144,23 +1297,40 @@ mod tests {
 
     #[test]
     fn test_mutation() {
-        let original = "AAAA";
-        if let Some((mutated, idx, old, new)) = mutate_genome(original) {
-            assert_eq!(mutated.len(), original.len());
+        // Let's use a 200-char random genome which is in the safe range for substitution, deletion, and insertion
+        let original = generate_random_genome(200);
+        if let Some((mutated, idx, old, new)) = mutate_genome(&original) {
+            assert!(mutated.len() == original.len() || mutated.len() == original.len() + 1 || mutated.len() == original.len() - 1);
             assert_ne!(mutated, original);
-            assert_eq!(old, 'A');
-            assert_eq!(mutated.chars().nth(idx).unwrap(), new);
+            if mutated.len() == original.len() {
+                // Substitution
+                assert_eq!(original.chars().nth(idx).unwrap(), old);
+                assert_eq!(mutated.chars().nth(idx).unwrap(), new);
+            } else if mutated.len() == original.len() + 1 {
+                // Insertion
+                assert_eq!(old, '+');
+                assert_eq!(mutated.chars().nth(idx).unwrap(), new);
+            } else {
+                // Deletion
+                assert_eq!(old, '-');
+                assert_eq!(original.chars().nth(idx).unwrap(), new);
+            }
         } else {
             panic!("Mutation failed");
         }
 
-        // Verify promoter-safe conservation
+        // Verify promoter-safe conservation with degenerate matching
         let genome_with_promoter = "COLABCEN"; // "COL" (promoter), "ABC" (payload), "EN" (terminator)
         for _ in 0..100 {
             if let Some((mutated, idx, _, _)) = mutate_genome(genome_with_promoter) {
-                // The mutation index should only ever land in the unprotected payload "ABC" (indices 3, 4, or 5)
+                // The mutation index should only target unprotected regions.
+                // In "COLABCEN", COL is protected, EN is protected. ABC is at index 3..=5.
+                // But wait! If mutate_genome rolls an insertion, mutated.len() can become 9, adding a char at 3..=5.
+                // If it rolls a deletion, mutated.len() can become 7, removing a char from 3..=5.
+                // If it rolls substitution, length remains 8.
+                // In all cases, the index should be within 3..=5 (of original) and the promoter/terminator must remain unbroken.
                 assert!(idx >= 3 && idx <= 5, "Mutation indices must only target unprotected payload regions! Found index: {}", idx);
-                assert!(mutated.starts_with("COL") && mutated.ends_with("EN"), "Promoters and terminators must never be broken!");
+                assert!(matches_degenerate(&mutated[0..3], "COL") && matches_degenerate(&mutated[mutated.len()-2..], "EN"), "Promoters and terminators must never be broken!");
             }
         }
     }
@@ -1194,5 +1364,54 @@ mod tests {
         // Verify that BMR scaling values are deterministic and finite
         assert!(phenotype.basal_metabolic_rate.is_finite());
         assert!(phenotype.stomach_capacity > 0.0);
+    }
+
+    #[test]
+    fn test_dynamic_neuro_generation() {
+        // DNA with 3 NEU promoters and 2 SY promoters using degenerate Option A + full wobble matching
+        // Ending with Z prevents S-A padding boundary matches, and YNB prevents N-A-A matches.
+        let dna = "NEUAAESNEUBBESNEUCCESYBAAESYBBBESZ";
+        let phenotype = parse_genome(dna, None, None);
+        
+        let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
+        // Since we have 3 NEU blocks, we should have exactly 3 hidden neurons compiled dynamically!
+        assert_eq!(hidden_count, 3);
+        
+        // Synapses should be dynamically compiled from "SY" payloads
+        assert!(!phenotype.brain.synapses.is_empty());
+    }
+
+    #[test]
+    fn test_hebbian_learning_and_epigenetics() {
+        use crate::shared::brain::execute_brain_with_learning;
+
+        let dna = "NEUAAESNEUBBESYBAAESYBBBES"; // 2 hiddens
+        let phenotype = parse_genome(dna, None, None);
+        let brain = phenotype.brain;
+
+        let mut states = vec![0.0; brain.neurons.len()];
+        let mut activations = vec![0.0; brain.neurons.len()];
+        let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
+
+        let inputs = vec![0.5, 0.5]; // 1 sensor, 1 clock
+
+        // Step 1: Execute brain with learning active (hebbian_rate > 0.0)
+        let original_weight = synapse_weights[0];
+        for _ in 0..5 {
+            execute_brain_with_learning(
+                &brain,
+                &inputs,
+                &mut states,
+                &mut activations,
+                &mut synapse_weights,
+                0.1, // high learning rate
+                0.0,
+                0.001, // small decay
+            );
+        }
+
+        let learned_weight = synapse_weights[0];
+        // Weight should change due to Hebbian correlation!
+        assert_ne!(learned_weight, original_weight);
     }
 }

@@ -4,7 +4,6 @@ use ts_rs::TS;
 
 use crate::shared::types::{CreatureAgent, FoodSpore};
 use crate::shared::physics::apply_creature_physics;
-use crate::shared::brain::execute_brain;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +21,7 @@ pub struct TrainerSandbox {
     pub consumed_spore_type: Option<String>,
     pub origin_type: String, // "elite" | "hof" | "mutant" | "random"
     pub epoch_ticks: u32,
+    pub min_distance: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -69,78 +69,56 @@ pub fn compute_trainer_sensory_inputs(
 
         let mut max_stimulus: f32 = 0.0;
 
-        // A. Food / Algae Scan (Herbivore sensors - plant spore is foods[0])
-        let pellet = &foods[0];
-        let dx = pellet.x - agent.px;
-        let dy = pellet.y - agent.py;
-        let dist = (dx*dx + dy*dy).sqrt();
+        // 1. Light and Chemical Sensory Detection (for Eyes/Noses, aff >= 0.25)
+        if aff >= 0.25 {
+            // A. Plant Spore / Algae Scan (foods[0] - emitts on spectrum 0.35 with 100% intensity)
+            let pellet = &foods[0];
+            let dx = pellet.x - agent.px;
+            let dy = pellet.y - agent.py;
+            let dist = (dx*dx + dy*dy).sqrt();
 
-        if dist <= range {
-            let mut angle_rel = dy.atan2(dx) - agent.heading_angle;
-            while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
-            while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
-            let mut delta_beta = angle_rel - alpha;
-            while delta_beta > std::f32::consts::PI { delta_beta -= std::f32::consts::TAU; }
-            while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
+            if dist <= range {
+                let mut angle_rel = dy.atan2(dx) - agent.heading_angle;
+                while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
+                while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
+                let mut delta_beta = angle_rel - alpha;
+                while delta_beta > std::f32::consts::PI { delta_beta -= std::f32::consts::TAU; }
+                while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
-            if delta_beta.abs() <= half_cone {
-                let match_val: f32;
-                if aff >= 0.8 {
-                    match_val = (1.0 - (aff - 0.33).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else if aff >= 0.25 && aff <= 0.65 {
-                    match_val = (1.0 - (aff - 0.35).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else if aff < 0.25 {
-                    match_val = (1.0 - (aff - 0.05).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else {
-                    match_val = 0.0;
-                }
-
-                if match_val > 0.05 {
-                    let strength = match_val * organ_power * (1.0 - dist / range) * delta_beta.cos();
-                    max_stimulus = max_stimulus.max(strength);
+                if delta_beta.abs() <= half_cone {
+                    let match_val = (1.0 - (aff - 0.35).abs() / (patch.bandwidth * 1.8 + 0.12)).clamp(0.0, 1.0);
+                    if match_val > 0.05 {
+                        let strength = match_val * organ_power * (1.0 - dist / range) * delta_beta.cos();
+                        max_stimulus = max_stimulus.max(strength);
+                    }
                 }
             }
-        }
 
-        // B. Peer / Prey Scan (Carnivore sensors - detecting the mocked MEATBALL spore foods[1])
-        let other = &foods[1];
-        let dx_peer = other.x - agent.px;
-        let dy_peer = other.y - agent.py;
-        let dist_peer = (dx_peer*dx_peer + dy_peer*dy_peer).sqrt();
+            // B. Meat Spore / Prey Scan (foods[1] - emitts on spectrum 0.85 with 100% intensity)
+            let other = &foods[1];
+            let dx_peer = other.x - agent.px;
+            let dy_peer = other.y - agent.py;
+            let dist_peer = (dx_peer*dx_peer + dy_peer*dy_peer).sqrt();
 
-        if dist_peer <= range {
-            let mut angle_rel = dy_peer.atan2(dx_peer) - agent.heading_angle;
-            while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
-            while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
-            let mut delta_beta = angle_rel - alpha;
-            while delta_beta > std::f32::consts::PI { delta_beta -= std::f32::consts::TAU; }
-            while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
+            if dist_peer <= range {
+                let mut angle_rel = dy_peer.atan2(dx_peer) - agent.heading_angle;
+                while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
+                while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
+                let mut delta_beta = angle_rel - alpha;
+                while delta_beta > std::f32::consts::PI { delta_beta -= std::f32::consts::TAU; }
+                while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
-            if delta_beta.abs() <= half_cone {
-                let match_val: f32;
-                if aff >= 0.8 {
-                    // Thermal Heat Scan (target is 0.15)
-                    match_val = (1.0 - (aff - 0.15).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else if aff >= 0.65 && aff < 0.8 {
-                    // Vibration Scan (target is 0.0)
-                    match_val = (1.0 - (aff - 0.0).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else if aff >= 0.25 && aff < 0.65 {
-                    // Olfactory/Smell Scan (target is 0.50)
-                    match_val = (1.0 - (aff - 0.50).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                } else {
-                    // Visual Eye Scan (target is 1.0)
-                    match_val = (1.0 - (aff - 1.0).abs() / (patch.bandwidth * 1.8 + 0.12)).max(0.0);
-                }
-
-                if match_val > 0.05 {
-                    let strength = match_val * organ_power * (1.0 - dist_peer / range) * delta_beta.cos();
-                    max_stimulus = max_stimulus.max(strength);
+                if delta_beta.abs() <= half_cone {
+                    let match_val_peer = (1.0 - (aff - 0.85).abs() / (patch.bandwidth * 1.8 + 0.12)).clamp(0.0, 1.0);
+                    if match_val_peer > 0.05 {
+                        let strength_peer = match_val_peer * organ_power * (1.0 - dist_peer / range) * delta_beta.cos();
+                        max_stimulus = max_stimulus.max(strength_peer);
+                    }
                 }
             }
-        }
-
-        // C. Boundary wall pressure warning
-        if aff < 0.25 {
+        } else {
+            // 2. Tactile and Proprioceptive Sensory Detection (for Tactiles, aff < 0.25)
+            // A. Boundary wall pressure warning
             let wall_warning_zone = range * 0.5;
             let mut boundary_pressure = 0.0;
             if agent.px < wall_warning_zone {
@@ -157,10 +135,8 @@ pub fn compute_trainer_sensory_inputs(
             if boundary_pressure > 0.0 {
                 max_stimulus = max_stimulus.max(boundary_pressure * organ_power);
             }
-        }
 
-        // D. Proprioceptive centrifugal touch
-        if aff < 0.25 {
+            // B. Proprioceptive centrifugal touch
             let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
             let rot_speed = agent.omega_rot.abs();
             let proprioceptive_stimulus = (speed * 0.15 + rot_speed * 0.35).min(1.0);
@@ -182,11 +158,11 @@ pub fn calculate_sandbox_fitness(
     start_distance: f32,
     distance_traveled: f32,
     wall_collisions: u32,
-    cur_dist: f32,
+    min_dist: f32,
     end_x: f32,
     end_y: f32,
 ) -> f32 {
-    let wall_penalty = (1.0 - (wall_collisions as f32) * 0.15).max(0.2);
+    let wall_penalty = (1.0 - (wall_collisions as f32) * 0.10).max(0.1);
     let fit;
 
     if finished && finish_tick.is_some() {
@@ -197,23 +173,27 @@ pub fn calculate_sandbox_fitness(
         fit = (1000.0 + 2000.0 * path_efficiency + speed_bonus) * wall_penalty;
     } else {
         // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
-        if distance_traveled < 180.0 && cur_dist >= 20.0 {
-            return 0.0;
+        // We use scaling multipliers instead of harsh 0.0 cuts to keep a smooth fitness landscape!
+        let mut penalty_multiplier = 1.0;
+
+        // 1. Standstill penalty (applied if candidate barely moved and is still far from target)
+        if distance_traveled < 120.0 && min_dist >= 40.0 {
+            penalty_multiplier *= 0.3; // 70% penalty
         }
 
-        // Kreisel-Erkennung (Circular movement detection):
+        // 2. Kreisel-Erkennung (Circular movement detection)
         let displacement = ((end_x - 500.0).powi(2) + (end_y - 500.0).powi(2)).sqrt();
-        if distance_traveled > 150.0 && displacement < 75.0 {
-            return 0.0;
+        if distance_traveled > 150.0 && displacement < 80.0 {
+            penalty_multiplier *= 0.2; // 80% penalty
         }
 
-        let base_fit = if cur_dist < start_distance {
-            1000.0 * (1.0 - cur_dist / start_distance)
+        let base_fit = if min_dist < start_distance {
+            1000.0 * (1.0 - min_dist / start_distance)
         } else {
             0.0
         };
-        let kinetic_waste = distance_traveled * 0.1;
-        fit = ((base_fit - kinetic_waste) * wall_penalty).max(0.0);
+        let kinetic_waste = distance_traveled * 0.05; // 50% reduced kinetic penalty to encourage early swimming
+        fit = ((base_fit - kinetic_waste).max(0.0) * penalty_multiplier * wall_penalty).max(0.0);
     }
 
     if fit.is_nan() || fit.is_infinite() {
@@ -268,6 +248,7 @@ pub fn init_rust_sandbox(
         phenotype: pheno.clone(),
         neuron_states: Vec::new(),
         neuron_activations: Vec::new(),
+        synapse_weights: pheno.brain.synapses.iter().map(|s| s.weight).collect(),
     };
 
     // Setup exactly two food spores (1 plant green [1000], 1 meat red [9999])
@@ -284,7 +265,7 @@ pub fn init_rust_sandbox(
             let dx = spore.x - agent.px;
             let dy = spore.y - agent.py;
             let dist = (dx*dx + dy*dy).sqrt();
-            if dist >= 80.0 {
+            if dist >= 200.0 { // Enforce minimum distance of 200 pixels to eliminate lucky immediate hits
                 valid_spawn = true;
             }
         }
@@ -308,6 +289,7 @@ pub fn init_rust_sandbox(
         consumed_spore_type: None,
         origin_type: origin_type.to_string(),
         epoch_ticks: 0,
+        min_distance: start_distance,
     }
 }
 
@@ -323,13 +305,23 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let clock_val = 0.5 + 0.5 * ((sb.agent.age as f32) * 0.1).sin();
     let inputs = compute_trainer_sensory_inputs(&sb.agent, clock_val, &sb.foods, canvas_width, canvas_height);
 
-    // 2. Execute Recurrent CTRNN Brain Euler Integration
-    let outputs = execute_brain(&sb.agent.phenotype.brain, &inputs, &mut sb.agent.neuron_states, &mut sb.agent.neuron_activations);
+    // 2. Execute Recurrent CTRNN Brain Euler Integration with live Hebbian learning
+    let app_config = crate::shared::types::AppConfig::global();
+    use crate::shared::brain::execute_brain_with_learning;
+    let outputs = execute_brain_with_learning(
+        &sb.agent.phenotype.brain,
+        &inputs,
+        &mut sb.agent.neuron_states,
+        &mut sb.agent.neuron_activations,
+        &mut sb.agent.synapse_weights,
+        app_config.rules.hebbian_learning_rate_base,
+        app_config.rules.hebbian_learning_stiffness_decay,
+        app_config.rules.hebbian_forgetting_decay,
+    );
     let out_thrust = outputs[0];
     let out_left = outputs[1];
 
     // 3. Locomotion Physical Kinematics (decoupled from hardcodes, matching config rules!)
-    let app_config = crate::shared::types::AppConfig::global();
     let stiffness = sb.agent.phenotype.stiffness;
     let pulse = sb.agent.phenotype.pulse_speed;
     let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
@@ -371,6 +363,9 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let dx = sb.foods[target_idx].x - sb.agent.px;
     let dy = sb.foods[target_idx].y - sb.agent.py;
     let dist = (dx*dx + dy*dy).sqrt();
+    
+    // Update minimum distance to spore reached during this trial run
+    sb.min_distance = sb.min_distance.min(dist);
 
     let base_eat_dist = if is_carnivore {
         mean_radius * 1.6 * 0.5 + 5.0

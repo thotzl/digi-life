@@ -1,13 +1,26 @@
 use crate::biology::dna::BrainTopology;
 
-/// Dynamic Deep CTRNN Recurrent Brain signal execution (Euler temporal memory integration)
-pub fn execute_brain(
+/// Dynamic Deep CTRNN Recurrent Brain signal execution with Hebbian Learning (Euler integration + Plasticity)
+pub fn execute_brain_with_learning(
     brain: &BrainTopology,
     inputs: &[f32],
     neuron_states: &mut Vec<f32>,
     neuron_activations: &mut Vec<f32>,
+    synapse_weights: &mut Vec<f32>,
+    hebbian_rate: f32,
+    _hebbian_decay: f32, // stiffness decay
+    forgetting_decay: f32,
 ) -> Vec<f32> {
     let total_nodes = brain.neurons.len();
+    let total_synapses = brain.synapses.len();
+
+    // Dynamically resize and initialize synapse weights if needed
+    if synapse_weights.len() != total_synapses {
+        synapse_weights.clear();
+        for syn in &brain.synapses {
+            synapse_weights.push(syn.weight);
+        }
+    }
 
     // Dynamically resize internal arrays to ensure thread-safety and no-allocation runs
     if neuron_states.len() != total_nodes {
@@ -32,11 +45,11 @@ pub fn execute_brain(
         let tau = if neuron.tau > 0.1 { neuron.tau } else { 1.0 };
         let bias = neuron.bias;
 
-        // Sum synaptic weights from all active connections
+        // Sum synaptic weights from all active connections using dynamic synapse_weights
         let mut sum = 0.0;
-        for syn in &brain.synapses {
+        for (syn_idx, syn) in brain.synapses.iter().enumerate() {
             if syn.to_node == i {
-                sum += neuron_activations[syn.from_node] * syn.weight;
+                sum += neuron_activations[syn.from_node] * synapse_weights[syn_idx];
             }
         }
 
@@ -56,7 +69,26 @@ pub fn execute_brain(
         };
     }
 
-    // 3. Map output node activations directly to the 4 motor directions
+    // 3. Hebbian learning update for dynamic weights
+    if hebbian_rate > 0.0 {
+        for (syn_idx, syn) in brain.synapses.iter().enumerate() {
+            let act_pre = neuron_activations[syn.from_node];
+            let act_post = neuron_activations[syn.to_node];
+
+            // Hebbian Correlation delta
+            let correlation = act_pre * act_post;
+            
+            // Weight update: dw = learning_rate * correlation - forgetting * weight
+            let delta = hebbian_rate * correlation;
+            let decay = forgetting_decay * synapse_weights[syn_idx];
+
+            synapse_weights[syn_idx] += delta - decay;
+            // Clamp synaptic weights to avoid divergent explosions
+            synapse_weights[syn_idx] = synapse_weights[syn_idx].clamp(-4.0, 4.0);
+        }
+    }
+
+    // 4. Map output node activations directly to the 4 motor directions
     // Outputs are mapped at indices K+1 to K+4
     let mut outputs = vec![0.0; 4];
     for i in 0..4 {
@@ -67,6 +99,17 @@ pub fn execute_brain(
     }
 
     outputs
+}
+
+/// Legacy wrapper for execute_brain without live learning
+pub fn execute_brain(
+    brain: &BrainTopology,
+    inputs: &[f32],
+    neuron_states: &mut Vec<f32>,
+    neuron_activations: &mut Vec<f32>,
+) -> Vec<f32> {
+    let mut temp_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
+    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, 0.0, 0.0, 0.0)
 }
 
 #[cfg(test)]

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-08-31
+
+### Added
+- **Biochemical Codon Groups & Golden-Middle Wobble-Matching (TCK-117):**
+  - Mapped the 26 ASCII uppercase letters into 5 distinct biological groups (Alpha: Polar, Beta: Aromatic, Gamma: Hydrophobic, Delta: Acidic, Epsilon: Inert).
+  - Implemented the "Golden-Middle" Wobble-Matching rule for physical organs (Eyes, Noses, Tactiles, Biolums) requiring exact matching of the first $N-1$ letters and wobble matching for the last letter, stabilizing random founder organ occurrence rates and preserving evolutionary mutations.
+  - Enabled **fully-degenerate matching** for brain-related promoters (`"NEU"`, `"SY"`) allowing rapid, dense, and highly evolvable neural structures.
+  - Upgraded `mutate_genome` to support structural **Insertion and Deletion mutations** driven dynamically by parent phenotypic rates, letting species shrink or expand their genomes (capped strictly between 128 and 512 characters).
+- **Dynamic CTRNN Brain Compilation & Epigenetic Hebbian Learning (TCK-119):**
+  - Scans for `"NEU"` promoters to compile a variable number of hidden neurons, hashing properties ($\tau$, bias, activation types, and continuous layout-depth layers) from payloads.
+  - Scans for 2-character `"SY"` promoters to build synapses dynamically with absolute modulo-mapping index safety, completely purging the legacy sliding-window compiler and eliminating index out-of-bound errors.
+  - Integrated real-time Hebbian synaptic learning and forgetting decays into both background physics loops (Ocean and Trainer sandbox ticks) utilizing the new `synapse_weights` vector.
+  - Implemented transgenerational Lamarckian epigenetic inheritance. Mutated offspring created during mitosis copy parental learned synaptic offsets ($\Delta W$) to homologous child synapses (same `from_node` and `to_node`) scaled by 25%.
+- **Echte Multi-Trial-Schleife & Lamarckian Starvation Filter (TCK-120):**
+  - Created a robust 3-trial epoch loop (3 x 300 ticks) in the Rust simulation background thread, ensuring average fitness calculations across consecutive evaluations to completely eliminate accidental lucky champions.
+  - Enforced a minimum spore spawning distance of **`200.0` pixels** to prevent instant collisions.
+  - Implemented a Lamarckian Starvation Filter (Viability Gate). Candidates that fail to eat in any of the 3 trials are penalized by 90% (average fitness multiplied by `0.1`), while successful hunts receive a massive `+150` points bonus per catch, creating a clean, stable evolutionary gradient from scratch.
+
+### Fixed
+- **Epigenetic Chromatin State Scanning:** Corrected the chromatin initialization to start closed (`false`) by default. Active chromatin states now open and transcribe all physical, metabolic, and neural promoters, fully restoring color and form diversity of starting species records and newly born cells.
+
 ## [1.7.0] - 2026-08-22
 
 ### Added

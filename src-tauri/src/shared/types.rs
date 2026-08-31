@@ -54,6 +54,10 @@ pub struct CreatureAgent {
     #[serde(rename = "neuronActivations")]
     #[ts(rename = "neuronActivations")]
     pub neuron_activations: Vec<f32>,
+
+    #[serde(rename = "synapseWeights")]
+    #[ts(rename = "synapseWeights")]
+    pub synapse_weights: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

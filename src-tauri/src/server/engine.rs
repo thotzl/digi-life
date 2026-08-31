@@ -9,7 +9,6 @@ use rand::Rng;
 use crate::shared::types::{CreatureAgent, FoodSpore, TelemetryCreature};
 use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::physics::apply_creature_physics;
-use crate::shared::brain::execute_brain;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
 use crate::biology::trainer_engine::{
     init_rust_sandbox, step_trainer_sandbox_physics, calculate_sandbox_fitness,
@@ -56,11 +55,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let mut trainer_warp_speed = 1;
         #[allow(non_snake_case)]
         let mut trainer_N = 16;
-        let mut trainer_elite_ratio = 0.25;
-        let mut trainer_mutation_rate = 0.15;
-        let mut trainer_inflow_rate = 0.10;
-        let mut trainer_hof_rate = 0.10;
-        let mut trainer_multi_trial = false;
+        let mut trainer_elite_ratio = 0.15;
+        let mut trainer_mutation_rate = 0.06;
+        let mut trainer_inflow_rate = 0.15;
+        let mut trainer_hof_rate = 0.15;
+        let mut trainer_multi_trial = true;
         let mut trainer_is_headless = false;
         let mut trainer_run_id = "default_run".to_string();
         let mut trainer_selected_sandbox_id: Option<u32> = Some(1);
@@ -232,6 +231,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     phenotype: random_pheno.clone(),
                     neuron_states: Vec::new(),
                     neuron_activations: Vec::new(),
+                    synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
                 };
 
                 creatures.push(new_agent.clone());
@@ -290,6 +290,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let food_emit_interval = Duration::from_millis(500); // 2Hz food broadcast rate
 
         let mut trainer_sandboxes: Vec<TrainerSandbox> = Vec::new();
+        let mut trainer_trial_index: usize = 0;
+        let mut trainer_accumulated_fitness: Vec<f32> = Vec::new();
+        let mut trainer_accumulated_eaten: Vec<u32> = Vec::new();
 
         loop {
             let loop_start = Instant::now();
@@ -356,6 +359,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     phenotype: random_pheno.clone(),
                                     neuron_states: Vec::new(),
                                     neuron_activations: Vec::new(),
+                                    synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
                                 };
 
                                 creatures.push(new_agent.clone());
@@ -441,6 +445,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         phenotype: random_pheno.clone(),
                                         neuron_states: Vec::new(),
                                         neuron_activations: Vec::new(),
+                                        synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
                                     };
 
                                     creatures.push(new_agent.clone());
@@ -527,6 +532,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
                                         trainer_sandboxes = sbs;
                                         trainer_generation = restored_gen;
+                                        trainer_trial_index = 0;
+                                        trainer_accumulated_fitness = vec![0.0; trainer_N];
+                                        trainer_accumulated_eaten = vec![0; trainer_N];
                                         println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer_N, trainer_run_id, trainer_generation);
                                         
                                         // Broadcast full hyperparams truth back to the UI!
@@ -591,6 +599,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                 let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, 1, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
                                 trainer_sandboxes = sbs;
+                                trainer_trial_index = 0;
+                                trainer_accumulated_fitness = vec![0.0; trainer_N];
+                                trainer_accumulated_eaten = vec![0; trainer_N];
                                 emit_state(json!({
                                     "type": "TRAINER_RESET_COMPLETED",
                                     "generation": 1,
@@ -657,6 +668,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
                                     trainer_sandboxes = sbs;
                                     trainer_generation = restored_gen;
+                                    trainer_trial_index = 0;
+                                    trainer_accumulated_fitness = vec![0.0; trainer_N];
+                                    trainer_accumulated_eaten = vec![0; trainer_N];
                                 }
 
                                 // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
@@ -724,8 +738,18 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         }
                         inputs[k] = 0.5; // clock / hunger
 
-                        // Execute Recurrent CTRNN Brain Euler Integration
-                        let outputs = execute_brain(&agent.phenotype.brain, &inputs, &mut agent.neuron_states, &mut agent.neuron_activations);
+                        // Execute Recurrent CTRNN Brain Euler Integration with live Hebbian learning
+                        use crate::shared::brain::execute_brain_with_learning;
+                        let outputs = execute_brain_with_learning(
+                            &agent.phenotype.brain,
+                            &inputs,
+                            &mut agent.neuron_states,
+                            &mut agent.neuron_activations,
+                            &mut agent.synapse_weights,
+                            app_config.rules.hebbian_learning_rate_base,
+                            app_config.rules.hebbian_learning_stiffness_decay,
+                            app_config.rules.hebbian_forgetting_decay,
+                        );
                         let out_thrust = outputs[0];
                         let out_left = outputs[1];
 
@@ -925,6 +949,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     }
                                     child.species_id = child.genome.clone();
                                     child.phenotype = parse_genome(&child.genome, None, None);
+                                    
+                                    // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses
+                                    let parent_synapses = &agent.phenotype.brain.synapses;
+                                    let parent_weights = &agent.synapse_weights;
+                                    
+                                    let mut child_weights = vec![0.0; child.phenotype.brain.synapses.len()];
+                                    for (c_idx, c_syn) in child.phenotype.brain.synapses.iter().enumerate() {
+                                        let mut w = c_syn.weight;
+                                        if let Some(p_idx) = parent_synapses.iter().position(|ps| ps.from_node == c_syn.from_node && ps.to_node == c_syn.to_node) {
+                                            if p_idx < parent_weights.len() {
+                                                let parent_learned_offset = parent_weights[p_idx] - parent_synapses[p_idx].weight;
+                                                w += parent_learned_offset * app_config.rules.lamarckian_assimilation_chance;
+                                            }
+                                        }
+                                        child_weights[c_idx] = w.clamp(-4.0, 4.0);
+                                    }
+                                    child.synapse_weights = child_weights;
                                     
                                     // Save new mutated child species into SQLite database
                                     let now_millis = std::time::SystemTime::now()
@@ -1126,6 +1167,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             phenotype: random_pheno.clone(),
                             neuron_states: Vec::new(),
                             neuron_activations: Vec::new(),
+                            synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
                         };
 
                         creatures.push(new_restocked.clone());
@@ -1249,10 +1291,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         // Step all sandbox physical loops in Rust!
                         for sb in &mut trainer_sandboxes {
-                            let is_carnivore = sb.agent.phenotype.carnivory >= 0.35;
-                            let target_idx = if is_carnivore { 1 } else { 0 };
-                            let cur_dist = ((sb.foods[target_idx].x - sb.agent.px).powi(2) + (sb.foods[target_idx].y - sb.agent.py).powi(2)).sqrt();
-
                             sb.current_fitness = calculate_sandbox_fitness(
                                 sb.finished,
                                 sb.finish_tick,
@@ -1260,7 +1298,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 sb.start_distance,
                                 sb.distance_traveled,
                                 sb.wall_collisions,
-                                cur_dist,
+                                sb.min_distance,
                                 sb.agent.px,
                                 sb.agent.py,
                             );
@@ -1275,9 +1313,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         if trainer_epoch_ticks >= 300 {
                             // 1. Calculate fitness for all sandboxes
                             for sb in &mut trainer_sandboxes {
-                                let is_carnivore = sb.agent.phenotype.carnivory >= 0.35;
-                                let target_idx = if is_carnivore { 1 } else { 0 };
-                                let cur_dist = ((sb.foods[target_idx].x - sb.agent.px).powi(2) + (sb.foods[target_idx].y - sb.agent.py).powi(2)).sqrt();
                                 sb.current_fitness = calculate_sandbox_fitness(
                                     sb.finished,
                                     sb.finish_tick,
@@ -1285,75 +1320,166 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     sb.start_distance,
                                     sb.distance_traveled,
                                     sb.wall_collisions,
-                                    cur_dist,
+                                    sb.min_distance,
                                     sb.agent.px,
                                     sb.agent.py,
                                 );
                             }
 
-                            // Sort by fitness DESC
-                            trainer_sandboxes.sort_by(|a, b| b.current_fitness.partial_cmp(&a.current_fitness).unwrap_or(std::cmp::Ordering::Equal));
+                            // If Multi-Trial is active, manage trial runs
+                            let mut run_breeding_step = true;
+                            if trainer_multi_trial {
+                                if trainer_accumulated_fitness.len() != trainer_sandboxes.len() {
+                                    trainer_accumulated_fitness = vec![0.0; trainer_sandboxes.len()];
+                                }
+                                if trainer_accumulated_eaten.len() != trainer_sandboxes.len() {
+                                    trainer_accumulated_eaten = vec![0; trainer_sandboxes.len()];
+                                }
+                                for (idx, sb) in trainer_sandboxes.iter().enumerate() {
+                                    trainer_accumulated_fitness[idx] += sb.current_fitness;
+                                    if sb.finished {
+                                        trainer_accumulated_eaten[idx] += 1;
+                                    }
+                                }
 
-                            let best_fit = trainer_sandboxes[0].current_fitness;
-                            let avg_fit = trainer_sandboxes.iter().map(|s| s.current_fitness).sum::<f32>() / (trainer_N as f32);
-                            let best_genome = trainer_sandboxes[0].agent.genome.clone();
-
-                            println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", trainer_generation, best_fit, avg_fit);
-
-                            // Broadcast completion metadata back to UI instantly
-                            emit_state(json!({
-                                "type": "TRAINER_GENERATION_COMPLETED",
-                                "generation": trainer_generation,
-                                "bestFitness": best_fit,
-                                "avgFitness": avg_fit,
-                                "bestGenome": best_genome,
-                            }));
-
-                            // 2. Save Elite Champions to local SQLite
-                            let elite_count = (((trainer_N as f32) * trainer_elite_ratio).round() as usize).clamp(1, trainer_N);
-                            
-                            // Mark previous active genomes as inactive
-                            let _ = conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]);
-
-                            let now_millis = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs() as i64;
-
-                            // Save the elites to SQLite
-                            for (idx, sb) in trainer_sandboxes.iter().take(elite_count).enumerate() {
-                                let unique_id = format!("{}-{}-{}-{}", trainer_run_id, trainer_generation, idx, now_millis);
-                                let _ = conn.execute(
-                                    "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
-                                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
-                                    params![
-                                        unique_id,
-                                        trainer_run_id,
-                                        trainer_generation as i32,
-                                        sb.agent.phenotype.latin_name,
-                                        sb.agent.genome,
-                                        sb.current_fitness as f64,
-                                        now_millis
-                                    ],
-                                );
+                                if trainer_trial_index < 2 {
+                                    trainer_trial_index += 1;
+                                    trainer_epoch_ticks = 0;
+                                    
+                                    let mut rng = rand::thread_rng();
+                                    for sb in &mut trainer_sandboxes {
+                                        sb.agent.px = 500.0;
+                                        sb.agent.py = 500.0;
+                                        sb.agent.vx = 0.0;
+                                        sb.agent.vy = 0.0;
+                                        sb.agent.heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                                        sb.agent.bend_angle = 0.0;
+                                        sb.agent.omega_rot = 0.0;
+                                        sb.agent.energy = 100.0;
+                                        sb.agent.adrenaline = 1.0;
+                                        sb.agent.age = 0;
+                                        sb.agent.has_eaten = false;
+                                        
+                                        sb.agent.neuron_states.clear();
+                                        sb.agent.neuron_activations.clear();
+                                        
+                                        sb.finished = false;
+                                        sb.finish_tick = None;
+                                        sb.distance_traveled = 0.0;
+                                        sb.wall_collisions = 0;
+                                        sb.wall_collision_cooldown = 0;
+                                        sb.consumed_spore_type = None;
+                                        sb.epoch_ticks = 0;
+                                        
+                                        // Randomize spores respecting minimum 200px distance
+                                        for spore in &mut sb.foods {
+                                            let mut valid_spawn = false;
+                                            while !valid_spawn {
+                                                spore.x = 25.0 + rng.gen_range(0.0..950.0);
+                                                spore.y = 25.0 + rng.gen_range(0.0..950.0);
+                                                let dx = spore.x - sb.agent.px;
+                                                let dy = spore.y - sb.agent.py;
+                                                let dist = (dx*dx + dy*dy).sqrt();
+                                                if dist >= 200.0 {
+                                                    valid_spawn = true;
+                                                }
+                                            }
+                                            spore.vx = 0.0;
+                                            spore.vy = 0.0;
+                                        }
+                                        
+                                        let target_type = if sb.agent.phenotype.carnivory >= 0.35 { "meat" } else { "plant" };
+                                        let target_food = if target_type == "meat" { &sb.foods[1] } else { &sb.foods[0] };
+                                        sb.start_distance = ((target_food.x - sb.agent.px).powi(2) + (target_food.y - sb.agent.py).powi(2)).sqrt();
+                                        sb.min_distance = sb.start_distance;
+                                        sb.current_fitness = 0.0;
+                                    }
+                                    run_breeding_step = false;
+                                } else {
+                                    // Average the fitness scores across the 3 trials and apply Lamarckian Viability Gate
+                                    for (idx, sb) in trainer_sandboxes.iter_mut().enumerate() {
+                                        let avg_fit = trainer_accumulated_fitness[idx] / 3.0;
+                                        let eaten = trainer_accumulated_eaten[idx];
+                                        
+                                        if eaten == 0 {
+                                            // Starvation-Filter: 90% penalty if candidate didn't eat in any trial!
+                                            sb.current_fitness = avg_fit * 0.1;
+                                        } else {
+                                            // Success: Keep full average fitness and add +150 per successful catch!
+                                            sb.current_fitness = avg_fit + (eaten as f32 * 150.0);
+                                        }
+                                    }
+                                    trainer_trial_index = 0;
+                                    trainer_accumulated_fitness.clear();
+                                    trainer_accumulated_eaten.clear();
+                                }
                             }
 
-                            // Re-trigger species selection / listing refreshes
-                            emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                            
-                            // Increment generation and reset epoch ticks
-                            trainer_generation += 1;
-                            trainer_epoch_ticks = 0;
+                            if run_breeding_step {
+                                // Sort by fitness DESC
+                                trainer_sandboxes.sort_by(|a, b| b.current_fitness.partial_cmp(&a.current_fitness).unwrap_or(std::cmp::Ordering::Equal));
 
-                            // Rebuild sandbox grid in Rust!
-                            let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
-                            trainer_sandboxes = sbs;
+                                let best_fit = trainer_sandboxes[0].current_fitness;
+                                let avg_fit = trainer_sandboxes.iter().map(|s| s.current_fitness).sum::<f32>() / (trainer_N as f32);
+                                let best_genome = trainer_sandboxes[0].agent.genome.clone();
 
-                            // If headless is OFF, let the UI know it has been rebuilt
-                            emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                            
-                            // Automatically restart training loop for next gen
-                            trainer_is_running = true;
+                                println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", trainer_generation, best_fit, avg_fit);
+
+                                // Broadcast completion metadata back to UI instantly
+                                emit_state(json!({
+                                    "type": "TRAINER_GENERATION_COMPLETED",
+                                    "generation": trainer_generation,
+                                    "bestFitness": best_fit,
+                                    "avgFitness": avg_fit,
+                                    "bestGenome": best_genome,
+                                }));
+
+                                // 2. Save Elite Champions to local SQLite
+                                let elite_count = (((trainer_N as f32) * trainer_elite_ratio).round() as usize).clamp(1, trainer_N);
+                                
+                                // Mark previous active genomes as inactive
+                                let _ = conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]);
+
+                                let now_millis = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs() as i64;
+
+                                // Save the elites to SQLite
+                                for (idx, sb) in trainer_sandboxes.iter().take(elite_count).enumerate() {
+                                    let unique_id = format!("{}-{}-{}-{}", trainer_run_id, trainer_generation, idx, now_millis);
+                                    let _ = conn.execute(
+                                        "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
+                                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
+                                        params![
+                                            unique_id,
+                                            trainer_run_id,
+                                            trainer_generation as i32,
+                                            sb.agent.phenotype.latin_name,
+                                            sb.agent.genome,
+                                            sb.current_fitness as f64,
+                                            now_millis
+                                        ],
+                                    );
+                                }
+
+                                // Re-trigger species selection / listing refreshes
+                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                                
+                                // Increment generation and reset epoch ticks
+                                trainer_generation += 1;
+                                trainer_epoch_ticks = 0;
+
+                                // Rebuild sandbox grid in Rust!
+                                let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate);
+                                trainer_sandboxes = sbs;
+
+                                // If headless is OFF, let the UI know it has been rebuilt
+                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                                
+                                // Automatically restart training loop for next gen
+                                trainer_is_running = true;
+                            }
                         }
                     }
                 }

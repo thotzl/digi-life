@@ -124,11 +124,11 @@ function syncSlidersFromBackend(data: any) {
 
 let N = 16;
 let warpSpeed = 1;
-let eliteRatio = 0.25;
-let genomeMutationRate = 0.15;
-let inflowRate = 0.10;
-let hofRate = 0.10;
-let isMultiTrial = false;
+let eliteRatio = 0.15;
+let genomeMutationRate = 0.06;
+let inflowRate = 0.15;
+let hofRate = 0.15;
+let isMultiTrial = true;
 let runId = "default_run";
 let currentGeneration = 1;
 
