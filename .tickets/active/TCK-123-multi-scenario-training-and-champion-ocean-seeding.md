@@ -25,7 +25,9 @@ Eradicate isolated random ocean restocking and uncoordinated single-target train
   3. `WanderingSpore`: Targets drift slowly in random brownian motion, requiring continuous course correction.
   4. `WallHugger`: Target spawns near boundaries, requiring precise deceleration and wall-avoiding approaches.
   5. `MultiFood`: Multiple target spores spawn simultaneously, challenging decision-making and proximity targeting.
-  6. `DietShowdown`: Spawns the current candidate alongside the database's best opposing diet champion (e.g. best herbivore if candidate is carnivore, and vice-versa) in the same room, racing and colliding for their respective spores.
+  6. `DietShowdown`: Spawns the current candidate alongside the database's best opposing diet champion in the same room. Implements active interactive rules:
+     - **Predator-Prey (Carnivore vs. Herbivore):** Carnivores actively hunt and bite herbivores (earning 1.0 yield); Herbivores must learn to dodge/flee using infrared sensors while still foraging for plants.
+     - **Territorial Rivalry (Omnivore vs. Omnivore):** Both compete for the same spores, but can actively bite and attack each other (inflicting physical pain on Tactile Channel 5 and stealing 0.25 energy/yield on collision).
   7. `DriftingCurrent`: A constant current drifts the candidate sideways, requiring compensation and tacking.
   8. `FastPrey`: Meat target actively flees at high speed upon approach, requiring high reaction speed.
   9. `ObstacleReef`: A single solid circular reef blocks the direct path, requiring haptic reef circumvention.
