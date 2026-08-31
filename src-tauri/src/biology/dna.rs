@@ -1121,9 +1121,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             let weight = if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
                 explicit.2 // use strong, genetically specialized weight!
             } else {
-                // Initialize as a weak, random exploratory synapse
+                // Initialize as a weak, random exploratory synapse with enough active power to drive Hebbian learning
                 let h_weight = get_payload_linear_value_offset(&active_dna, from_node + to_node * 13);
-                h_weight * 0.15 - 0.075 // small weight in [-0.075 .. 0.075]
+                h_weight * 1.0 - 0.5 // exploratory weight in [-0.5 .. 0.5]
             };
 
             synapses.push(CTRNNSynapse {
