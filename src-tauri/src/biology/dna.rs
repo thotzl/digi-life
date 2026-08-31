@@ -1537,4 +1537,23 @@ mod tests {
         }
         assert!(pruned_count > 0);
     }
+
+    #[test]
+    fn test_linear_allele_mapping() {
+        // 1. Verify middle fallback on empty payload
+        assert_eq!(get_payload_linear_value_offset("", 0), 0.5);
+        assert_eq!(get_payload_linear_value_offset("", 10), 0.5);
+
+        // 2. Verify bounds of different alphabet values
+        let val_a = get_payload_linear_value_offset("A", 0);
+        let val_z = get_payload_linear_value_offset("Z", 0);
+        assert_eq!(val_a, 0.0);
+        assert_eq!(val_z, 1.0);
+
+        // 3. Verify perfect mutational continuity: transition from 'O' to 'P'
+        let val_o = get_payload_linear_value_offset("O", 0);
+        let val_p = get_payload_linear_value_offset("P", 0);
+        // 'O' is index 14, 'P' is index 15. The difference should be exactly 1 / 25 = 0.04 (4%)!
+        assert!((val_p - val_o - 0.04).abs() < 1e-6);
+    }
 }
