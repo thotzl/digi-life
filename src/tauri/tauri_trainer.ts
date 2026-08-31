@@ -48,6 +48,49 @@ if (diagCanvas) {
   diagRenderer = new CreatureRenderer(diagCanvas);
 }
 
+// Module-level animation state for butter-smooth diagnostics preview at 60Hz/120Hz
+let lastFocusedPheno: any | null = null;
+let animFrameId: number | null = null;
+let animTime: number = 0;
+
+function startPreviewAnimation() {
+  function loop() {
+    animTime += 0.045; // Uniform time increments per frame
+    if (diagCtx && diagRenderer && lastFocusedPheno) {
+      diagCtx.fillStyle = '#020617';
+      diagCtx.fillRect(0, 0, 100, 100);
+
+      const baseLength = lastFocusedPheno.spinalHarmonics?.baseLength || 130;
+      const dynamicScale = 75.0 / (baseLength * 0.5);
+
+      diagCtx.save();
+      diagCtx.translate(50, 50);
+      diagCtx.scale(dynamicScale, dynamicScale);
+
+      diagRenderer.render(
+        lastFocusedPheno,
+        animTime, // butter-smooth continuous time variable
+        0,
+        0,
+        -Math.PI / 2, // oriented North
+        0
+      );
+      diagCtx.restore();
+    }
+    animFrameId = requestAnimationFrame(loop);
+  }
+  if (!animFrameId) {
+    loop();
+  }
+}
+
+function setFocusedPhenotype(pheno: any) {
+  lastFocusedPheno = pheno;
+  if (!animFrameId) {
+    startPreviewAnimation();
+  }
+}
+
 // State Management
 interface Sandbox {
   id: number;
@@ -268,33 +311,7 @@ function drawSandbox(sb: Sandbox) {
   );
 
   if (tele.id === (selectedSandboxIdx + 1)) {
-    drawDiagnosticsPreview(pheno, tele);
-  }
-}
-
-function drawDiagnosticsPreview(pheno: any, tele: any) {
-  if (diagCtx && diagRenderer) {
-    diagCtx.fillStyle = '#020617';
-    diagCtx.fillRect(0, 0, 100, 100);
-    
-    const baseLength = pheno.spinalHarmonics?.baseLength || 130;
-    // Scale to fit exactly 75 pixels on the 100x100 canvas (since renderer internal scale is 0.5)
-    const dynamicScale = 75.0 / (baseLength * 0.5);
-
-    diagCtx.save();
-    // Center at exactly (50, 50)
-    diagCtx.translate(50, 50);
-    diagCtx.scale(dynamicScale, dynamicScale);
-    
-    diagRenderer.render(
-      pheno,
-      Date.now() * 0.03,
-      0,
-      0,
-      -Math.PI / 2, // oriented North (straight up)
-      0 // omega_rot = 0
-    );
-    diagCtx.restore();
+    setFocusedPhenotype(pheno);
   }
 }
 
