@@ -410,9 +410,24 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
         sb.wall_collision_cooldown -= 1;
     }
 
-    // 4. Collision and Spore Consumption Checks
-    let is_carnivore = sb.agent.phenotype.carnivory >= 0.35;
-    let target_idx = if is_carnivore { 1 } else { 0 }; // meat vs plant spore
+    // 4. Collision and Spore Consumption Checks (TCK-122: Dynamic Omnivore Targeting)
+    let carnivory = sb.agent.phenotype.carnivory;
+    let target_idx = if carnivory >= 0.65 {
+        1 // Strict Carnivore targets meat
+    } else if carnivory >= 0.35 {
+        // Omnivore targets whichever spore is closer!
+        let dx_plant = sb.foods[0].x - sb.agent.px;
+        let dy_plant = sb.foods[0].y - sb.agent.py;
+        let dist_plant = (dx_plant*dx_plant + dy_plant*dy_plant).sqrt();
+
+        let dx_meat = sb.foods[1].x - sb.agent.px;
+        let dy_meat = sb.foods[1].y - sb.agent.py;
+        let dist_meat = (dx_meat*dx_meat + dy_meat*dy_meat).sqrt();
+
+        if dist_meat <= dist_plant { 1 } else { 0 }
+    } else {
+        0 // Strict Herbivore targets plant
+    };
 
     let dx = sb.foods[target_idx].x - sb.agent.px;
     let dy = sb.foods[target_idx].y - sb.agent.py;
@@ -421,7 +436,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     // Update minimum distance to spore reached during this trial run
     sb.min_distance = sb.min_distance.min(dist);
 
-    let base_eat_dist = if is_carnivore {
+    let base_eat_dist = if target_idx == 1 {
         mean_radius * 1.6 * 0.5 + 5.0
     } else {
         mean_radius * 1.5 * 0.5 + 8.0
@@ -431,7 +446,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     if dist <= eat_dist {
         sb.finished = true;
         sb.finish_tick = Some(sb.epoch_ticks);
-        sb.consumed_spore_type = Some(if is_carnivore { "meat" } else { "plant" }.to_string());
+        sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
         sb.agent.has_eaten = true;
     }
 
