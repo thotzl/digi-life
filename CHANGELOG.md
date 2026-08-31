@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Created a robust 3-trial epoch loop (3 x 300 ticks) in the Rust simulation background thread, ensuring average fitness calculations across consecutive evaluations to completely eliminate accidental lucky champions.
   - Enforced a minimum spore spawning distance of **`200.0` pixels** to prevent instant collisions.
   - Implemented a Lamarckian Starvation Filter (Viability Gate). Candidates that fail to eat in any of the 3 trials are penalized by 90% (average fitness multiplied by `0.1`), while successful hunts receive a massive `+150` points bonus per catch, creating a clean, stable evolutionary gradient from scratch.
+- **Synaptic Exuberance and Active Lifetime Pruning (TCK-121):**
+  - Implemented Synaptic Exuberance at birth. The brain now compiles as a fully connected graph of all inputs, hiddens, and outputs.
+  - Specialized `"SY"` genes determine strong, genetically specialized starting weights (`[-2.0 .. 2.0]`), while all other connections are initialized as weak, exploratory synapses (`[-0.075 .. 0.075]`).
+  - Integrated Active Lifetime Pruning inside `execute_brain_with_learning`. Synapses whose weights drop below the absolute threshold of `0.015` under forgetting decay are set to exactly `0.0` and permanently locked/pruned, saving metabolic energy and stabilizing CTRNN oscillations.
 
 ### Fixed
 - **Epigenetic Chromatin State Scanning:** Corrected the chromatin initialization to start closed (`false`) by default. Active chromatin states now open and transcribe all physical, metabolic, and neural promoters, fully restoring color and form diversity of starting species records and newly born cells.

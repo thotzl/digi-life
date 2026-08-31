@@ -1019,11 +1019,11 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // D. Synapses (Dynamically compiled from "SY" payloads!)
-    let mut synapses = Vec::with_capacity(30);
+    // D. Synapses (Exuberant Fully-Connected Brain!)
+    let mut synapses = Vec::with_capacity(120);
     let syn_payloads = extract_raw_gene_payloads(&clean_genome, "SY", "EN");
 
-    // Establish valid sources and destinations arrays for robust modulo index wiring!
+    // Establish valid sources and destinations arrays for robust wiring!
     let mut sources = Vec::new();
     for s in 0..=k_count { sources.push(s); }
     for h in 0..h_count { sources.push(k_count + 5 + h); }
@@ -1032,39 +1032,43 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     for o in 0..4 { destinations.push(k_count + 1 + o); }
     for h in 0..h_count { destinations.push(k_count + 5 + h); }
 
-    if !syn_payloads.is_empty() {
-        // Build synapses from genome's "SY" gene segments!
-        for (idx, payload) in syn_payloads.iter().enumerate().take(30) {
-            let h_from = hash_genome_slice(&format!("from:{}:{}", idx, payload));
-            let h_to = hash_genome_slice(&format!("to:{}:{}", idx, payload));
-            let h_weight = hash_genome_slice(&format!("weight:{}:{}", idx, payload));
+    // Parse all explicit "SY" promoter genes into a lookup list
+    let mut explicit_synapses = Vec::new();
+    for (idx, payload) in syn_payloads.iter().enumerate().take(30) {
+        let h_from = hash_genome_slice(&format!("from:{}:{}", idx, payload));
+        let h_to = hash_genome_slice(&format!("to:{}:{}", idx, payload));
+        let h_weight = hash_genome_slice(&format!("weight:{}:{}", idx, payload));
 
-            let from_node = sources[(h_from * 1000.0) as usize % sources.len()];
-            let to_node = destinations[(h_to * 1000.0) as usize % destinations.len()];
-            let weight = h_weight * 4.0 - 2.0; // range [-2.0..2.0]
+        let from_node = sources[(h_from * 1000.0) as usize % sources.len()];
+        let to_node = destinations[(h_to * 1000.0) as usize % destinations.len()];
+        let weight = h_weight * 4.0 - 2.0;
 
-            if !synapses.iter().any(|syn: &CTRNNSynapse| syn.from_node == from_node && syn.to_node == to_node) {
-                synapses.push(CTRNNSynapse {
-                    from_node,
-                    to_node,
-                    weight,
-                });
-            }
-        }
+        explicit_synapses.push((from_node, to_node, weight));
     }
 
-    // Direct wiring fallback if everything is empty
-    if synapses.is_empty() {
-        synapses.push(CTRNNSynapse {
-            from_node: k_count, // Hunger Clock
-            to_node: k_count + 1, // Thrust
-            weight: 1.5,
-        });
-        synapses.push(CTRNNSynapse {
-            from_node: k_count, // Hunger Clock
-            to_node: k_count + 2, // Bending
-            weight: 0.5,
-        });
+    // Build a fully-connected graph (Exuberance at birth)
+    for &from_node in &sources {
+        for &to_node in &destinations {
+            // Avoid direct self-loops to prevent trivial infinite positive feedback loops
+            if from_node == to_node {
+                continue;
+            }
+
+            // Check if there is an explicit, strong "SY" gene for this connection
+            let weight = if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
+                explicit.2 // use strong, genetically specialized weight!
+            } else {
+                // Initialize as a weak, random exploratory synapse
+                let h_weight = hash_genome_slice(&format!("base_weight:{}:{}", from_node, to_node));
+                h_weight * 0.15 - 0.075 // small weight in [-0.075 .. 0.075]
+            };
+
+            synapses.push(CTRNNSynapse {
+                from_node,
+                to_node,
+                weight,
+            });
+        }
     }
 
     let brain = BrainTopology { neurons, synapses };
@@ -1413,5 +1417,64 @@ mod tests {
         let learned_weight = synapse_weights[0];
         // Weight should change due to Hebbian correlation!
         assert_ne!(learned_weight, original_weight);
+    }
+
+    #[test]
+    fn test_synaptic_exuberance_and_active_pruning() {
+        use crate::shared::brain::execute_brain_with_learning;
+
+        let dna = "NEUAAESNEUBBESYBAAESYBBBES"; // 2 hiddens
+        let phenotype = parse_genome(dna, None, None);
+        let brain = phenotype.brain;
+
+        // Verify Exuberance: 2 inputs, 2 hiddens, 4 outputs
+        // Sources: 4. Destinations: 6.
+        // Total fully-connected synapses (excluding identical self-loops):
+        // Inputs (2) connect to Outputs (4) + Hiddens (2) = 12 synapses
+        // Hiddens (2) connect to Outputs (4) + other Hidden (1) = 10 synapses
+        // Total synapses should be exactly 25!
+        assert_eq!(brain.synapses.len(), 25);
+
+        // Verify that exploratory synapses start very weak, while explicit "SY" start strong
+        let mut exploratory_count = 0;
+        let mut specialized_count = 0;
+        for syn in &brain.synapses {
+            if syn.weight.abs() < 0.1 {
+                exploratory_count += 1;
+            } else {
+                specialized_count += 1;
+            }
+        }
+        assert!(exploratory_count > 0);
+        assert!(specialized_count > 0);
+
+        // Test Active Pruning
+        let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
+        let mut states = vec![0.0; brain.neurons.len()];
+        let mut activations = vec![0.0; brain.neurons.len()];
+        let inputs = vec![0.0, 0.0]; // Zero inputs to trigger pure forgetting decay
+
+        // Run 50 steps of forgetting decay to prune weak connections
+        for _ in 0..50 {
+            execute_brain_with_learning(
+                &brain,
+                &inputs,
+                &mut states,
+                &mut activations,
+                &mut synapse_weights,
+                0.0001, // tiny learning rate to keep the learning block active!
+                0.0,
+                0.1, // high forgetting rate to prune quickly
+            );
+        }
+
+        // Weak exploratory synapses should now be exactly 0.0 (permanently pruned!)
+        let mut pruned_count = 0;
+        for &w in &synapse_weights {
+            if w == 0.0 {
+                pruned_count += 1;
+            }
+        }
+        assert!(pruned_count > 0);
     }
 }

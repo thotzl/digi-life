@@ -69,9 +69,14 @@ pub fn execute_brain_with_learning(
         };
     }
 
-    // 3. Hebbian learning update for dynamic weights
+    // 3. Hebbian learning update with Active Lifetime Pruning!
     if hebbian_rate > 0.0 {
         for (syn_idx, syn) in brain.synapses.iter().enumerate() {
+            // Skip permanently pruned synapses
+            if synapse_weights[syn_idx] == 0.0 {
+                continue;
+            }
+
             let act_pre = neuron_activations[syn.from_node];
             let act_post = neuron_activations[syn.to_node];
 
@@ -83,8 +88,14 @@ pub fn execute_brain_with_learning(
             let decay = forgetting_decay * synapse_weights[syn_idx];
 
             synapse_weights[syn_idx] += delta - decay;
-            // Clamp synaptic weights to avoid divergent explosions
-            synapse_weights[syn_idx] = synapse_weights[syn_idx].clamp(-4.0, 4.0);
+
+            // Active Pruning: if weight drops below threshold, lock permanently at 0.0
+            if synapse_weights[syn_idx].abs() < 0.015 {
+                synapse_weights[syn_idx] = 0.0;
+            } else {
+                // Clamp active weights to avoid divergent explosions
+                synapse_weights[syn_idx] = synapse_weights[syn_idx].clamp(-4.0, 4.0);
+            }
         }
     }
 
