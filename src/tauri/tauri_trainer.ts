@@ -336,10 +336,10 @@ async function rebuildSandboxGrid() {
       if (lastTele) {
         const fullPheno = phenotypeCache.get(lastTele.genome);
         if (fullPheno) {
-          brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length);
+          brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length * 5);
         } else {
           getPhenotype(lastTele.genome).then((p) => {
-            if (p) brainRenderer.compile(p.brain, p.organelles.length);
+            if (p) brainRenderer.compile(p.brain, p.organelles.length * 5);
           });
         }
       }
@@ -650,7 +650,7 @@ async function setupTauriListeners() {
 
               // Compile the brain SVG if it hasn't been compiled yet, or if the active focused genome has changed!
               if (sb.lastTelemetry.genome !== lastFocusedGenome || (inspectBrainContainer && (inspectBrainContainer.innerHTML.includes("fallback-state") || inspectBrainContainer.innerHTML.includes("Select a sandbox")))) {
-                brainRenderer.compile(brain, pheno.organelles.length);
+                brainRenderer.compile(brain, pheno.organelles.length * 5);
                 lastFocusedGenome = sb.lastTelemetry.genome;
               }
 

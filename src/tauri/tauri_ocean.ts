@@ -436,7 +436,7 @@ function selectSpecimen(agent: CreatureAgent) {
   selectedPhenotype.value = agent.phenotype;
   selectedMaxEnergy.value = agent.phenotype.stomachCapacity;
 
-  brainRenderer.compile(agent.phenotype.brain, agent.phenotype.organelles.length);
+  brainRenderer.compile(agent.phenotype.brain, agent.phenotype.organelles.length * 5);
 
   safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SELECT_AGENT", id: agent.id }) }).catch(err => {
     console.error("Tauri invoke error SELECT_AGENT:", err);
