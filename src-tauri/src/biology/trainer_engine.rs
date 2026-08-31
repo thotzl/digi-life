@@ -325,8 +325,16 @@ pub fn init_rust_sandbox(
         }
     }
 
-    let target_type = if pheno.carnivory >= 0.35 { "meat" } else { "plant" };
-    let target_food = if target_type == "meat" { &foods[1] } else { &foods[0] };
+    let target_food = if pheno.carnivory >= 0.65 {
+        &foods[1] // Strict Carnivore targets meat
+    } else if pheno.carnivory >= 0.35 {
+        // Omnivore targets whichever is closer initially!
+        let dist_plant = ((foods[0].x - agent.px).powi(2) + (foods[0].y - agent.py).powi(2)).sqrt();
+        let dist_meat = ((foods[1].x - agent.px).powi(2) + (foods[1].y - agent.py).powi(2)).sqrt();
+        if dist_meat <= dist_plant { &foods[1] } else { &foods[0] }
+    } else {
+        &foods[0] // Strict Herbivore targets plant
+    };
     let start_distance = ((target_food.x - agent.px).powi(2) + (target_food.y - agent.py).powi(2)).sqrt();
 
     TrainerSandbox {

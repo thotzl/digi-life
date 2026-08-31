@@ -1388,8 +1388,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             spore.vy = 0.0;
                                         }
                                         
-                                        let target_type = if sb.agent.phenotype.carnivory >= 0.35 { "meat" } else { "plant" };
-                                        let target_food = if target_type == "meat" { &sb.foods[1] } else { &sb.foods[0] };
+                                        let carnivory = sb.agent.phenotype.carnivory;
+                                        let target_food = if carnivory >= 0.65 {
+                                            &sb.foods[1] // Strict Carnivore targets meat
+                                        } else if carnivory >= 0.35 {
+                                            // Omnivore targets whichever is closer on reset!
+                                            let dist_plant = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
+                                            let dist_meat = ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt();
+                                            if dist_meat <= dist_plant { &sb.foods[1] } else { &sb.foods[0] }
+                                        } else {
+                                            &sb.foods[0] // Strict Herbivore targets plant
+                                        };
                                         sb.start_distance = ((target_food.x - sb.agent.px).powi(2) + (target_food.y - sb.agent.py).powi(2)).sqrt();
                                         sb.min_distance = sb.start_distance;
                                         sb.current_fitness = 0.0;
