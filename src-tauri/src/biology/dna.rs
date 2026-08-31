@@ -1556,4 +1556,67 @@ mod tests {
         // 'O' is index 14, 'P' is index 15. The difference should be exactly 1 / 25 = 0.04 (4%)!
         assert!((val_p - val_o - 0.04).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_mutation_robustness_and_deadlocks() {
+        use crate::shared::brain::execute_brain_with_learning;
+
+        // 1. Generate 50 heavily mutated genomes of different lengths (fuzzing sweep)
+        for trial in 0..50 {
+            let start_len = 128 + (trial * 7) % 380; // various lengths in [128..508]
+            let mut genome = generate_random_genome(start_len);
+
+            // Apply 50 random mutations, insertions, or deletions consecutively to scramble promoters and terminators
+            for _ in 0..50 {
+                if let Some((mutated, _, _, _)) = mutate_genome(&genome) {
+                    genome = mutated;
+                }
+            }
+
+            // A. Assert compilation robustness: must NEVER panic, crash or deadlock
+            let phenotype = parse_genome(&genome, None, None);
+            let brain = phenotype.brain;
+
+            // B. Assert state boundaries are finite
+            assert!(phenotype.stiffness.is_finite());
+            assert!(phenotype.stiffness >= 0.15 && phenotype.stiffness <= 1.0);
+            assert!(phenotype.basal_metabolic_rate.is_finite());
+            assert!(phenotype.stomach_capacity > 0.0);
+
+            // C. Assert brain execution robustness: run euler integration for 10 ticks and ensure zero NaNs/Infs
+            let mut states = vec![0.0; brain.neurons.len()];
+            let mut activations = vec![0.0; brain.neurons.len()];
+            let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
+
+            let k_count = brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Input).count() - 1;
+            let inputs = vec![0.5; k_count + 1];
+
+            for _tick in 0..10 {
+                let outputs = execute_brain_with_learning(
+                    &brain,
+                    &inputs,
+                    &mut states,
+                    &mut activations,
+                    &mut synapse_weights,
+                    0.05, // active Hebbian learning
+                    0.01, // active stiffness decay
+                    0.02, // active forgetting decay
+                );
+
+                // Assert that all outputs, neuron states, activations and synapse weights are perfectly finite and NOT NaN
+                for &out in &outputs {
+                    assert!(out.is_finite(), "Output was NaN or Infinite!");
+                }
+                for &s in &states {
+                    assert!(s.is_finite(), "Neuron state was NaN or Infinite!");
+                }
+                for &a in &activations {
+                    assert!(a.is_finite(), "Neuron activation was NaN or Infinite!");
+                }
+                for &w in &synapse_weights {
+                    assert!(w.is_finite(), "Synapse weight was NaN or Infinite!");
+                }
+            }
+        }
+    }
 }
