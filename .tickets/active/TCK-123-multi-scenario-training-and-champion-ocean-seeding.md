@@ -25,11 +25,11 @@ Eradicate isolated random ocean restocking and uncoordinated single-target train
   3. `WanderingSpore`: Targets drift slowly in random brownian motion, requiring continuous course correction.
   4. `WallHugger`: Target spawns near boundaries, requiring precise deceleration and wall-avoiding approaches.
   5. `MultiFood`: Multiple target spores spawn simultaneously, challenging decision-making and proximity targeting.
-  6. `CreatureDuel`: Spawns two cloned candidates inside the same sandbox, racing and competing for the same spore.
+  6. `DietShowdown`: Spawns the current candidate alongside the database's best opposing diet champion (e.g. best herbivore if candidate is carnivore, and vice-versa) in the same room, racing and colliding for their respective spores.
   7. `DriftingCurrent`: A constant current drifts the candidate sideways, requiring compensation and tacking.
   8. `FastPrey`: Meat target actively flees at high speed upon approach, requiring high reaction speed.
   9. `ObstacleReef`: A single solid circular reef blocks the direct path, requiring haptic reef circumvention.
-  10. `TidalRotation`: Rotates challenges dynamically every 100 ticks (Static -> Distant -> Duel -> WallHugger).
+  10. `TidalRotation`: Rotates challenges dynamically every 100 ticks (Static -> Distant -> DietShowdown -> WallHugger).
 - Program these scenario physics parameters inside `step_trainer_sandbox_physics`.
 - Add `scenario` field to `TrainerSandbox` and implement real-time switching of scenarios inside a running training.
 
