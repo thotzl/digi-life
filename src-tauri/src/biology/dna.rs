@@ -646,15 +646,6 @@ fn derive_ecological_metrics(
     }
 }
 
-fn hash_genome_slice(slice: &str) -> f32 {
-    let mut hash: u64 = 14695981039346656037; // FNV offset basis
-    for c in slice.chars() {
-        hash ^= c as u64;
-        hash = hash.wrapping_mul(1099511628211); // FNV prime
-    }
-    ((hash % 1_000_000) as f32) / 1_000_000.0
-}
-
 pub fn get_payload_linear_value_offset(payload: &str, shift: usize) -> f32 {
     if payload.is_empty() {
         return 0.5;
@@ -871,13 +862,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let eye_payloads = extract_raw_gene_payloads(&clean_genome, "EYE", "EN");
     for payload in &eye_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
-            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
-            expression_style: hash_genome_slice(&format!("style:{}", payload)),
-            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
-            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
-            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
-            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
+            spectral_affinity: get_payload_linear_value_offset(payload, 1),
+            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
+            expression_style: get_payload_linear_value_offset(payload, 7),
+            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
+            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
+            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
+            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
@@ -886,13 +877,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let nos_payloads = extract_raw_gene_payloads(&clean_genome, "NOS", "EN");
     for payload in &nos_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
-            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
-            expression_style: hash_genome_slice(&format!("style:{}", payload)),
-            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
-            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
-            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
-            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
+            spectral_affinity: get_payload_linear_value_offset(payload, 1),
+            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
+            expression_style: get_payload_linear_value_offset(payload, 7),
+            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
+            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
+            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
+            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
@@ -901,13 +892,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let tac_payloads = extract_raw_gene_payloads(&clean_genome, "TAC", "EN");
     for payload in &tac_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
-            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
-            expression_style: hash_genome_slice(&format!("style:{}", payload)),
-            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
-            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
-            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
-            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
+            spectral_affinity: get_payload_linear_value_offset(payload, 1),
+            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
+            expression_style: get_payload_linear_value_offset(payload, 7),
+            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
+            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
+            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
+            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
@@ -916,13 +907,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let lum_payloads = extract_raw_gene_payloads(&clean_genome, "LUM", "EN");
     for payload in &lum_payloads {
         organelles.push(SensoryPatch {
-            spectral_affinity: hash_genome_slice(&format!("affinity:{}", payload)),
-            bandwidth: 0.05 + hash_genome_slice(&format!("bandwidth:{}", payload)) * 0.85,
-            expression_style: hash_genome_slice(&format!("style:{}", payload)),
-            scale: 0.35 + hash_genome_slice(&format!("scale:{}", payload)) * 1.45,
-            spinal_pos: 0.05 + hash_genome_slice(&format!("pos:{}", payload)) * 0.9,
-            angle: 10.0 + hash_genome_slice(&format!("angle:{}", payload)) * 160.0,
-            hue_shift: (hash_genome_slice(&format!("hue:{}", payload)) * 360.0 - 180.0).round(),
+            spectral_affinity: get_payload_linear_value_offset(payload, 1),
+            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
+            expression_style: get_payload_linear_value_offset(payload, 7),
+            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
+            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
+            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
+            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
             gene_start_index: 0,
             gene_end_index: 0,
         });
