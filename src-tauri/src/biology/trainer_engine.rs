@@ -326,17 +326,9 @@ pub fn init_rust_sandbox(
         }
     }
 
-    let target_food = if pheno.carnivory >= 0.65 {
-        &foods[1] // Strict Carnivore targets meat
-    } else if pheno.carnivory >= 0.35 {
-        // Omnivore targets whichever is closer initially!
-        let dist_plant = ((foods[0].x - agent.px).powi(2) + (foods[0].y - agent.py).powi(2)).sqrt();
-        let dist_meat = ((foods[1].x - agent.px).powi(2) + (foods[1].y - agent.py).powi(2)).sqrt();
-        if dist_meat <= dist_plant { &foods[1] } else { &foods[0] }
-    } else {
-        &foods[0] // Strict Herbivore targets plant
-    };
-    let start_distance = ((target_food.x - agent.px).powi(2) + (target_food.y - agent.py).powi(2)).sqrt();
+    let dist_plant = ((foods[0].x - agent.px).powi(2) + (foods[0].y - agent.py).powi(2)).sqrt();
+    let dist_meat = ((foods[1].x - agent.px).powi(2) + (foods[1].y - agent.py).powi(2)).sqrt();
+    let start_distance = dist_plant.min(dist_meat);
 
     TrainerSandbox {
         id,
@@ -417,72 +409,66 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
         sb.wall_collision_cooldown -= 1;
     }
 
-    // 4. Collision and Spore Consumption Checks (TCK-122: Dynamic Omnivore Targeting & Continuous Foraging)
+    // 4. Collision and Spore Consumption Checks (TCK-122: 100% Continuous Foraging without any Eat Blocks!)
     let carnivory = sb.agent.phenotype.carnivory;
-    let target_idx = if carnivory >= 0.65 {
-        1 // Strict Carnivore targets meat
-    } else if carnivory >= 0.35 {
-        // Omnivore targets whichever spore is closer!
-        let dx_plant = sb.foods[0].x - sb.agent.px;
-        let dy_plant = sb.foods[0].y - sb.agent.py;
-        let dist_plant = (dx_plant*dx_plant + dy_plant*dy_plant).sqrt();
 
-        let dx_meat = sb.foods[1].x - sb.agent.px;
-        let dy_meat = sb.foods[1].y - sb.agent.py;
-        let dist_meat = (dx_meat*dx_meat + dy_meat*dy_meat).sqrt();
+    let dx_plant = sb.foods[0].x - sb.agent.px;
+    let dy_plant = sb.foods[0].y - sb.agent.py;
+    let dist_plant = (dx_plant*dx_plant + dy_plant*dy_plant).sqrt();
 
-        if dist_meat <= dist_plant { 1 } else { 0 }
-    } else {
-        0 // Strict Herbivore targets plant
-    };
+    let dx_meat = sb.foods[1].x - sb.agent.px;
+    let dy_meat = sb.foods[1].y - sb.agent.py;
+    let dist_meat = (dx_meat*dx_meat + dy_meat*dy_meat).sqrt();
 
-    let dx = sb.foods[target_idx].x - sb.agent.px;
-    let dy = sb.foods[target_idx].y - sb.agent.py;
-    let dist = (dx*dx + dy*dy).sqrt();
-    
-    // Update minimum distance to spore reached during this trial run
-    sb.min_distance = sb.min_distance.min(dist);
+    // Update minimum distance to ANY spore reached during this trial run
+    let min_dist = dist_plant.min(dist_meat);
+    sb.min_distance = sb.min_distance.min(min_dist);
 
-    let base_eat_dist = if target_idx == 1 {
-        mean_radius * 1.6 * 0.5 + 5.0
-    } else {
-        mean_radius * 1.5 * 0.5 + 8.0
-    };
-    let eat_dist = (mean_radius + 10.0).max(base_eat_dist);
+    // Separately check collisions and consumption for BOTH plant (index 0) and meat (index 1) spores!
+    for target_idx in 0..2 {
+        let dist = if target_idx == 0 { dist_plant } else { dist_meat };
 
-    if dist <= eat_dist {
-        // Calculate metabolic yield based on what spore was consumed
-        let yield_val = if target_idx == 1 {
-            carnivory // Meat gives C
+        let base_eat_dist = if target_idx == 1 {
+            mean_radius * 1.6 * 0.5 + 5.0
         } else {
-            1.0 - carnivory // Plant gives 1 - C
+            mean_radius * 1.5 * 0.5 + 8.0
         };
+        let eat_dist = (mean_radius + 10.0).max(base_eat_dist);
 
-        sb.accumulated_yield += yield_val;
-        sb.consumed_count += 1;
+        if dist <= eat_dist {
+            // Calculate metabolic yield based on what spore was consumed
+            let yield_val = if target_idx == 1 {
+                carnivory // Meat gives C
+            } else {
+                1.0 - carnivory // Plant gives 1 - C
+            };
 
-        if !sb.finished {
-            sb.finished = true; // Still mark finished as true for green SUCCESS label!
-            sb.finish_tick = Some(sb.epoch_ticks);
-            sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
-            sb.agent.has_eaten = true;
-        }
+            sb.accumulated_yield += yield_val;
+            sb.consumed_count += 1;
 
-        // Instant Spore Respawn!
-        let mut rng = rand::thread_rng();
-        let mut valid_spawn = false;
-        while !valid_spawn {
-            sb.foods[target_idx].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-            sb.foods[target_idx].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-            let rdx = sb.foods[target_idx].x - sb.agent.px;
-            let rdy = sb.foods[target_idx].y - sb.agent.py;
-            let rdist = (rdx*rdx + rdy*rdy).sqrt();
-            if rdist >= 200.0 {
-                valid_spawn = true;
+            if !sb.finished {
+                sb.finished = true; // Still mark finished as true for green SUCCESS label!
+                sb.finish_tick = Some(sb.epoch_ticks);
+                sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
+                sb.agent.has_eaten = true;
             }
+
+            // Instant Spore Respawn!
+            let mut rng = rand::thread_rng();
+            let mut valid_spawn = false;
+            while !valid_spawn {
+                sb.foods[target_idx].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
+                sb.foods[target_idx].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
+                let rdx = sb.foods[target_idx].x - sb.agent.px;
+                let rdy = sb.foods[target_idx].y - sb.agent.py;
+                let rdist = (rdx*rdx + rdy*rdy).sqrt();
+                if rdist >= 200.0 {
+                    valid_spawn = true;
+                }
+            }
+            sb.foods[target_idx].vx = 0.0;
+            sb.foods[target_idx].vy = 0.0;
         }
-        sb.foods[target_idx].vx = 0.0;
-        sb.foods[target_idx].vy = 0.0;
     }
 
     // 5. Spore physical displacement impulse pushes
