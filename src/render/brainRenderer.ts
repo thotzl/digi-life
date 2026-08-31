@@ -60,14 +60,19 @@ export class BrainRenderer {
       const toY = this.getNeuronY(toId, K, brain.neurons.length);
 
       const isExcitatory = syn.weight > 0;
-      const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.28)" : "rgba(239, 68, 68, 0.28)";
+      const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.85)" : "rgba(239, 68, 68, 0.85)";
 
       const fromLabel = brain.neurons.find(n => n.id === fromId)?.label || `Node ${fromId}`;
       const toLabel = brain.neurons.find(n => n.id === toId)?.label || `Node ${toId}`;
 
+      const absWeight = Math.abs(syn.weight);
+      const displayStyle = absWeight === 0.0 ? "display: none;" : "";
+      const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
+      const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0);
+
       svgContent += `
         <line id="${this.elementIdPrefix}-syn-${fromId}-${toId}" x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}"
-              stroke="${strokeColor}" stroke-width="1.2" />
+              stroke="${strokeColor}" stroke-width="${strokeWidth}" style="opacity: ${weightFactor}; ${displayStyle}" />
       `;
     });
 
@@ -83,7 +88,7 @@ export class BrainRenderer {
 
       svgContent += `
         <circle id="${this.elementIdPrefix}-node-${n.id}" cx="${nx}" cy="${ny}" r="${radius}" fill="${fill}"
-                style="cursor:pointer; filter:drop-shadow(0 0 2px ${fill});" />
+                style="cursor:pointer; filter:drop-shadow(0 0 2px ${fill}); opacity: 0.25;" />
       `;
     });
 
@@ -113,6 +118,7 @@ export class BrainRenderer {
             this.onNeuronHover?.(n.id);
             el.setAttribute("stroke", "#ffffff");
             el.setAttribute("stroke-width", "1.5");
+            el.style.opacity = "1.0";
           });
           el.addEventListener("mouseleave", () => {
             this.onNeuronHover?.(null);
@@ -132,12 +138,11 @@ export class BrainRenderer {
           el.addEventListener("mouseenter", () => {
             this.onSynapseHover?.(syn.fromNode, syn.toNode, syn.weight);
             el.setAttribute("stroke-width", "3.0");
-            el.setAttribute("stroke-opacity", "1.0");
+            el.style.opacity = "1.0";
           });
           el.addEventListener("mouseleave", () => {
             this.onSynapseHover?.(0, 0, null);
             el.removeAttribute("stroke-width");
-            el.removeAttribute("stroke-opacity");
           });
         }
       });
@@ -147,7 +152,7 @@ export class BrainRenderer {
   public updateLiveGlows(activations: number[], brain: BrainTopology): void {
     if (!brain || !activations) return;
 
-    // 1. Update Neurons
+    // 1. Update Neurons (Smoothly scaled opacity from dim 0.15 to fully solid 1.0)
     brain.neurons.forEach((n: CTRNNNeuron) => {
       const id = `${this.elementIdPrefix}-node-${n.id}`;
       const el = this.elementCache.get(id);
@@ -164,21 +169,38 @@ export class BrainRenderer {
 
         el.setAttribute("fill", fill);
         el.setAttribute("r", radius.toString());
+
+        // Smooth continuous opacity representing activity
+        const opacity = 0.15 + rawAct * 0.85;
+        el.style.opacity = opacity.toString();
+        if (act > 0.35) {
+          el.style.filter = `drop-shadow(0 0 3px ${colorGlow})`;
+        } else {
+          el.style.filter = "none";
+        }
       }
     });
 
-    // 2. Update Synapses
+    // 2. Update Synapses (Continuous scaling by weight and pre-synaptic activation)
     brain.synapses.forEach((syn: CTRNNSynapse) => {
       const id = `${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}`;
       const el = this.elementCache.get(id);
       if (el) {
+        const absWeight = Math.abs(syn.weight);
+        if (absWeight === 0.0) {
+          el.style.display = "none";
+          return;
+        }
+
         const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
         const act = Math.pow(preVal, 4.0);
 
         const isExcitatory = syn.weight > 0;
         const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
-        const opacity = act > 0.35 ? 0.95 : 0.28;
-        const strokeWidth = Math.max(0.5, Math.abs(syn.weight) * 1.5) * (act > 0.45 ? 2.2 : 1.0);
+
+        const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
+        const opacity = act > 0.35 ? Math.min(0.20 + weightFactor * 1.2, 0.95) : weightFactor * 0.4;
+        const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0) * (act > 0.45 ? 2.0 : 1.0);
 
         el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
         el.setAttribute("stroke-width", strokeWidth.toString());
