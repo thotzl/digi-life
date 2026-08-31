@@ -659,13 +659,14 @@ pub fn get_payload_linear_value_offset(payload: &str, shift: usize) -> f32 {
     if payload.is_empty() {
         return 0.5;
     }
-    let mut sum = 0.0;
-    for (i, c) in payload.chars().enumerate() {
-        // Continuous shift: Shifts character index with a unique multiplier, creating a perfectly continuous, shifted allele value!
-        let val = (char_to_value(c) + shift * (i + 1)) % 26;
-        sum += val as f32;
-    }
-    (sum / (payload.len() as f32 * 25.0)).clamp(0.0, 1.0)
+    let chars: Vec<char> = payload.chars().collect();
+    // Deterministically select exactly one character locus based on the shift offset
+    let idx = shift % chars.len();
+    let c = chars[idx];
+    
+    // Add shift to character value, wrapping modulo 26, to get a beautifully uniform single-character value!
+    let val = (char_to_value(c) + shift) % 26;
+    val as f32 / 25.0
 }
 
 /// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
