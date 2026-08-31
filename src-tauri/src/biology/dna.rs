@@ -1097,7 +1097,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // Parse all explicit "SY" promoter genes into a lookup list
     let mut explicit_synapses = Vec::new();
-    for (idx, payload) in syn_payloads.iter().enumerate().take(30) {
+    for payload in syn_payloads.iter().take(30) {
         let h_from = get_payload_linear_value_offset(payload, 1);
         let h_to = get_payload_linear_value_offset(payload, 4);
         let h_weight = get_payload_linear_value_offset(payload, 7);
