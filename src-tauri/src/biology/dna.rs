@@ -891,8 +891,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let deletion_rate = h_delete * 0.12;
     let repair_fidelity = 0.15 + h_fidelity * 0.8;
 
-    // 15. CTRNN Brain
-    let k_count = organelles.len();
+    // 15. CTRNN Brain (TCK-122: 5-Channel Multispectral Sensory Inputs)
+    let k_count = organelles.len() * 5;
 
     // Hidden neurons (Always exactly 4 hidden neurons for rich baseline wiring depth!)
     let h_count = 4;
@@ -900,30 +900,51 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     let mut neurons = Vec::with_capacity(total_nodes);
 
-    // A. Inputs
-    for i in 0..k_count {
+    // A. Inputs (5 overlapping receptive fields/cones per organelle)
+    for i in 0..organelles.len() {
         let patch = &organelles[i];
         let deg = patch.angle.round() as i32;
-        let label = if patch.spectral_affinity >= 0.8 {
-            format!("👁️ Vision ({}°)", deg)
-        } else if (0.25..=0.65).contains(&patch.spectral_affinity) {
-            format!("👃 Smell ({}°)", deg)
-        } else if patch.spectral_affinity < 0.25 {
-            format!("🔊 Tactile ({}°)", deg)
+        let aff = patch.spectral_affinity;
+
+        let channel_labels = if aff >= 0.80 {
+            vec![
+                format!("👁️ UV Vision ({}°)", deg),
+                format!("👁️ Blue Vision ({}°)", deg),
+                format!("👁️ Green Vision ({}°)", deg),
+                format!("👁️ Red Vision ({}°)", deg),
+                format!("👁️ IR Vision ({}°)", deg),
+            ]
+        } else if aff >= 0.25 && aff <= 0.65 {
+            vec![
+                format!("👃 Acid Smell ({}°)", deg),
+                format!("👃 Sugar Smell ({}°)", deg),
+                format!("👃 Keton Smell ({}°)", deg),
+                format!("👃 Protein Smell ({}°)", deg),
+                format!("👃 Phero Smell ({}°)", deg),
+            ]
         } else {
-            format!("Receptor ({}°)", deg)
+            vec![
+                format!("🔊 Tactile Hardness ({}°)", deg),
+                format!("🔊 Tactile Strömung ({}°)", deg),
+                format!("🔊 Tactile Temperatur ({}°)", deg),
+                format!("🔊 Tactile Dehnung ({}°)", deg),
+                format!("🔊 Tactile Schmerz ({}°)", deg),
+            ]
         };
 
-        neurons.push(CTRNNNeuron {
-            id: i,
-            neuron_type: NeuronType::Input,
-            label,
-            tau: 1.0,
-            bias: 0.0,
-            activation_type: None,
-            x: Some(0.1),
-            y: Some(0.1 + (i as f32 / k_count.max(1) as f32) * 0.8),
-        });
+        for c in 0..5 {
+            let id = i * 5 + c;
+            neurons.push(CTRNNNeuron {
+                id,
+                neuron_type: NeuronType::Input,
+                label: channel_labels[c].clone(),
+                tau: 1.0,
+                bias: 0.0,
+                activation_type: None,
+                x: Some(0.1),
+                y: Some(0.1 + (id as f32 / k_count.max(1) as f32) * 0.8),
+            });
+        }
     }
 
     neurons.push(CTRNNNeuron {
@@ -1361,7 +1382,7 @@ mod tests {
         let output_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Output).count();
         let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
 
-        assert_eq!(input_count, phenotype.organelles.len() + 1); // Organelles + Hunger clock
+        assert_eq!(input_count, phenotype.organelles.len() * 5 + 1); // 5 Channels per Organelle + Hunger clock
         assert_eq!(output_count, 4); // Thrust, Bending, Biolum Flash, Reserved
         assert!(hidden_count >= 2 && hidden_count <= 10);
 

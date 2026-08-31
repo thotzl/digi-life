@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented Synaptic Exuberance at birth. The brain now compiles as a fully connected graph of all inputs, hiddens, and outputs.
   - Specialized `"SY"` genes determine strong, genetically specialized starting weights (`[-2.0 .. 2.0]`), while all other connections are initialized as weak, exploratory synapses (`[-0.075 .. 0.075]`).
   - Integrated Active Lifetime Pruning inside `execute_brain_with_learning`. Synapses whose weights drop below the absolute threshold of `0.015` under forgetting decay are set to exactly `0.0` and permanently locked/pruned, saving metabolic energy and stabilizing CTRNN oscillations.
+- **Multispectral Receptive Fields & Haptics (TCK-122):**
+  - Implemented 5-Channel Multispectral Sensory Inputs. Each organelle de-compiles exactly 5 separate input neurons (receptive cones) mapped dynamically to standard spektral frequencies (UV/Druck 0.10, Blue/Ester 0.30, Green/Zucker 0.50, Red/Aminosäure 0.70, IR/Pheromone 0.90).
+  - Enforced uncoupled receptor evolution, allowing any physical organ (Eyes, Noses, Biolums) to freely evolve its spectral affinity and focus-bandwidth across the entire `[0.0 .. 1.0]` spectrum.
+  - Programmed multidimensional biophysical environmental emissions (Algae emits on Blue/Green channels; Meat/Prey emits on Infrarot/Red channels).
+  - Expanded Tastorgane (`aff < 0.25`) into advanced haptics measuring mechanical hardness (Wands 1.0 vs Spores 0.3), fluid flow rheotaxis, surrounding hydrothermal vent temperature, proprioceptive spine bending strain, and high-impact physical pain on distinct channels.
 
 ### Fixed
 - **Epigenetic Chromatin State Scanning:** Corrected the chromatin initialization to start closed (`false`) by default. Active chromatin states now open and transcribe all physical, metabolic, and neural promoters, fully restoring color and form diversity of starting species records and newly born cells.

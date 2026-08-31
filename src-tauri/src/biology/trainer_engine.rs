@@ -57,8 +57,11 @@ pub fn compute_trainer_sensory_inputs(
     canvas_height: f32,
 ) -> Vec<f32> {
     let k = agent.phenotype.organelles.len();
-    let mut inputs = vec![0.0; k + 1];
-    inputs[k] = clock_val;
+    let mut inputs = vec![0.0; k * 5 + 1];
+    inputs[k * 5] = clock_val;
+
+    // Feste Mittenfrequenzen für die 5 Rezeptorkanäle (Cones)
+    let channel_frequencies = [0.10, 0.30, 0.50, 0.70, 0.90];
 
     for (idx, patch) in agent.phenotype.organelles.iter().enumerate() {
         let range = patch.scale * 550.0;
@@ -67,11 +70,20 @@ pub fn compute_trainer_sensory_inputs(
         let aff = patch.spectral_affinity;
         let organ_power = patch.scale * (1.1 - patch.bandwidth);
 
-        let mut max_stimulus: f32 = 0.0;
+        // Calculate channel sensitivities (S_c) based on Gaussian curves for each of the 5 channels
+        let mut channel_sensitivities = [0.0f32; 5];
+        for c in 0..5 {
+            let f_c = channel_frequencies[c];
+            let denominator = patch.bandwidth * 1.8 + 0.12;
+            channel_sensitivities[c] = (1.0 - (f_c - aff).abs() / denominator).clamp(0.0, 1.0);
+        }
 
-        // 1. Light and Chemical Sensory Detection (for Eyes/Noses, aff >= 0.25)
+        // Initialize stimuli array for the 5 channels
+        let mut channel_stimuli = [0.0f32; 5];
+
         if aff >= 0.25 {
-            // A. Plant Spore / Algae Scan (foods[0] - emitts on spectrum 0.35 with 100% intensity)
+            // --- LIGHT AND CHEMICAL SENSORY DETECTION (EYE / NOSE) ---
+            // A. Plant Spore / Algae Scan (foods[0] - emitts on channels 2 [Blue, weight 1.0] and 3 [Green, weight 0.5])
             let pellet = &foods[0];
             let dx = pellet.x - agent.px;
             let dy = pellet.y - agent.py;
@@ -86,15 +98,20 @@ pub fn compute_trainer_sensory_inputs(
                 while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
                 if delta_beta.abs() <= half_cone {
-                    let match_val = (1.0 - (aff - 0.35).abs() / (patch.bandwidth * 1.8 + 0.12)).clamp(0.0, 1.0);
-                    if match_val > 0.05 {
-                        let strength = match_val * organ_power * (1.0 - dist / range) * delta_beta.cos();
-                        max_stimulus = max_stimulus.max(strength);
+                    let falloff = (1.0 - dist / range) * delta_beta.cos();
+                    
+                    // Algae emits: 1.0 on Channel 2 (Blue) and 0.5 on Channel 3 (Green)
+                    let emission = [0.0, 1.0, 0.5, 0.0, 0.0];
+                    for c in 0..5 {
+                        let match_val = channel_sensitivities[c] * emission[c];
+                        if match_val > 0.05 {
+                            channel_stimuli[c] = channel_stimuli[c].max(match_val * organ_power * falloff);
+                        }
                     }
                 }
             }
 
-            // B. Meat Spore / Prey Scan (foods[1] - emitts on spectrum 0.85 with 100% intensity)
+            // B. Meat Spore / Prey Scan (foods[1] - emitts on channels 5 [Infrarot, weight 1.0] and 4 [Rot, weight 0.5])
             let other = &foods[1];
             let dx_peer = other.x - agent.px;
             let dy_peer = other.y - agent.py;
@@ -109,16 +126,22 @@ pub fn compute_trainer_sensory_inputs(
                 while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
                 if delta_beta.abs() <= half_cone {
-                    let match_val_peer = (1.0 - (aff - 0.85).abs() / (patch.bandwidth * 1.8 + 0.12)).clamp(0.0, 1.0);
-                    if match_val_peer > 0.05 {
-                        let strength_peer = match_val_peer * organ_power * (1.0 - dist_peer / range) * delta_beta.cos();
-                        max_stimulus = max_stimulus.max(strength_peer);
+                    let falloff_peer = (1.0 - dist_peer / range) * delta_beta.cos();
+                    
+                    // Meat emits: 1.0 on Channel 5 (IR) and 0.5 on Channel 4 (Red)
+                    let emission_peer = [0.0, 0.0, 0.0, 0.5, 1.0];
+                    for c in 0..5 {
+                        let match_val = channel_sensitivities[c] * emission_peer[c];
+                        if match_val > 0.05 {
+                            channel_stimuli[c] = channel_stimuli[c].max(match_val * organ_power * falloff_peer);
+                        }
                     }
                 }
             }
         } else {
-            // 2. Tactile and Proprioceptive Sensory Detection (for Tactiles, aff < 0.25)
-            // A. Boundary wall pressure warning
+            // --- TACTILE AND PROPRIOCEPTIVE SENSORY DETECTION (TACTILE / HAPTIC) ---
+            // A. Mechanical Hardness & Texture (Channel 1, Mitte 0.10)
+            // Wall warning is hard (1.0). Spores are soft (0.3).
             let wall_warning_zone = range * 0.5;
             let mut boundary_pressure = 0.0;
             if agent.px < wall_warning_zone {
@@ -133,19 +156,50 @@ pub fn compute_trainer_sensory_inputs(
             }
 
             if boundary_pressure > 0.0 {
-                max_stimulus = max_stimulus.max(boundary_pressure * organ_power);
+                // Channel 1 receives wall hardness (1.0)
+                channel_stimuli[0] = channel_stimuli[0].max(boundary_pressure * organ_power * 1.0);
             }
 
-            // B. Proprioceptive centrifugal touch
+            // Spore tactile proximity (spores foods[0] and foods[1] emit soft tactile feedback of 0.3)
+            for f in foods {
+                let dx = f.x - agent.px;
+                let dy = f.y - agent.py;
+                let d = (dx*dx + dy*dy).sqrt();
+                if d <= range {
+                    let proximity = (1.0 - d / range).clamp(0.0, 1.0);
+                    // Channel 1 receives soft food texture (0.3)
+                    channel_stimuli[0] = channel_stimuli[0].max(proximity * organ_power * 0.3);
+                }
+            }
+
+            // B. Fluid Drag & Flow (Channel 2, Mitte 0.30)
             let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
+            let flow_reception = (speed * 0.4).min(1.0);
+            channel_stimuli[1] = channel_stimuli[1].max(flow_reception * organ_power);
+
+            // C. Water Temperature (Channel 3, Mitte 0.50)
+            // Mock temperature gradient: center is warm (0.5), outer bounds are colder
+            let dist_from_center = ((agent.px - 500.0).powi(2) + (agent.py - 500.0).powi(2)).sqrt();
+            let temp = (1.0 - dist_from_center / 700.0).clamp(0.15, 0.95);
+            channel_stimuli[2] = channel_stimuli[2].max(temp * organ_power);
+
+            // D. Proprioceptive Strain & Rotation (Channel 4, Mitte 0.70)
             let rot_speed = agent.omega_rot.abs();
-            let proprioceptive_stimulus = (speed * 0.15 + rot_speed * 0.35).min(1.0);
-            if proprioceptive_stimulus > 0.0 {
-                max_stimulus = max_stimulus.max(proprioceptive_stimulus * organ_power);
+            let strain = (rot_speed * 0.8).min(1.0);
+            channel_stimuli[3] = channel_stimuli[3].max(strain * organ_power);
+
+            // E. Physical Pain / Impact Damage (Channel 5, Mitte 0.90)
+            // High-speed wall impact pain triggers a response!
+            if speed > 1.5 && boundary_pressure > 0.3 {
+                let pain = (speed * 0.3).min(1.0);
+                channel_stimuli[4] = channel_stimuli[4].max(pain * organ_power);
             }
         }
 
-        inputs[idx] = max_stimulus.clamp(0.0, 1.0);
+        // Write the 5 compiled channel signals into their respective input neurons!
+        for c in 0..5 {
+            inputs[idx * 5 + c] = channel_stimuli[c].clamp(0.0, 1.0);
+        }
     }
 
     inputs
