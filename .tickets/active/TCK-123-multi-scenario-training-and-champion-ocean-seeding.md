@@ -20,16 +20,16 @@ Eradicate isolated random ocean restocking and uncoordinated single-target train
 
 ### 2. Multi-Scenario Training Engine (trainer_engine.rs)
 - Register 10 distinct environmental scenarios as an enum `TrainingScenario`:
-  1. `StaticForaging`: Calm water, static plant spore.
-  2. `PreyChase`: Moving meat spore with sinusoidal drifting velocity.
-  3. `Rheotaxis`: Constant fluid current (East to West force vector) challenging forward thrust.
-  4. `ThermalStress`: Hot thermal bands causing kinetic waste; safe zone huddled near spores.
-  5. `ReefAvoidance`: Circular rock obstacles block direct line of sight; requires haptic avoidance.
-  6. `MetabolicStarvation`: Synaptic BMR coefficient is tripled, causing rapid energy depletion.
-  7. `PredatorEvasion`: A hostile predator agent chases the creature, requiring active evasion.
-  8. `BlinkNavigation`: Ambient visibility is pitch black; food only visible when the creature flashes its bioluminescence.
-  9. `SensorySwarm`: Decoy spores emit distractor signals; requires precise chemical affinity.
-  10. `TidalRotation`: Rotates environmental challenges dynamically every 100 ticks (Calm -> Current -> Reef).
+  1. `StaticTarget`: Calm water, static plant spore spawned at standard distance (250px).
+  2. `DistantTarget`: Long-range target spawned at extreme distance (450px - 600px) to test course stability.
+  3. `WanderingSpore`: Targets drift slowly in random brownian motion, requiring continuous course correction.
+  4. `WallHugger`: Target spawns near boundaries, requiring precise deceleration and wall-avoiding approaches.
+  5. `MultiFood`: Multiple target spores spawn simultaneously, challenging decision-making and proximity targeting.
+  6. `CreatureDuel`: Spawns two cloned candidates inside the same sandbox, racing and competing for the same spore.
+  7. `DriftingCurrent`: A constant current drifts the candidate sideways, requiring compensation and tacking.
+  8. `FastPrey`: Meat target actively flees at high speed upon approach, requiring high reaction speed.
+  9. `ObstacleReef`: A single solid circular reef blocks the direct path, requiring haptic reef circumvention.
+  10. `TidalRotation`: Rotates challenges dynamically every 100 ticks (Static -> Distant -> Duel -> WallHugger).
 - Program these scenario physics parameters inside `step_trainer_sandbox_physics`.
 - Add `scenario` field to `TrainerSandbox` and implement real-time switching of scenarios inside a running training.
 
