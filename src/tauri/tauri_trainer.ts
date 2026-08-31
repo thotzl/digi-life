@@ -267,19 +267,32 @@ function drawSandbox(sb: Sandbox) {
     tele.omega_rot
   );
 
-  if (tele.id === (selectedSandboxIdx + 1) && diagCtx && diagRenderer) {
+  if (tele.id === (selectedSandboxIdx + 1)) {
+    drawDiagnosticsPreview(pheno, tele);
+  }
+}
+
+function drawDiagnosticsPreview(pheno: any, tele: any) {
+  if (diagCtx && diagRenderer) {
     diagCtx.fillStyle = '#020617';
     diagCtx.fillRect(0, 0, 100, 100);
     
+    const baseLength = pheno.spinalHarmonics?.baseLength || 130;
+    // Scale to fit exactly 75 pixels on the 100x100 canvas (since renderer internal scale is 0.5)
+    const dynamicScale = 75.0 / (baseLength * 0.5);
+
     diagCtx.save();
-    diagCtx.scale(1.2, 1.2);
+    // Center at exactly (50, 50)
+    diagCtx.translate(50, 50);
+    diagCtx.scale(dynamicScale, dynamicScale);
+    
     diagRenderer.render(
       pheno,
       Date.now() * 0.03,
-      42,
-      42,
-      tele.heading_angle,
-      tele.omega_rot
+      0,
+      0,
+      -Math.PI / 2, // oriented North (straight up)
+      0 // omega_rot = 0
     );
     diagCtx.restore();
   }
@@ -337,9 +350,13 @@ async function rebuildSandboxGrid() {
         const fullPheno = phenotypeCache.get(lastTele.genome);
         if (fullPheno) {
           brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length * 5);
+          drawDiagnosticsPreview(fullPheno, lastTele);
         } else {
           getPhenotype(lastTele.genome).then((p) => {
-            if (p) brainRenderer.compile(p.brain, p.organelles.length * 5);
+            if (p) {
+              brainRenderer.compile(p.brain, p.organelles.length * 5);
+              drawDiagnosticsPreview(p, lastTele);
+            }
           });
         }
       }
