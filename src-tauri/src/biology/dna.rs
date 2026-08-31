@@ -321,7 +321,12 @@ pub fn extract_raw_gene_payloads(
         if matches_degenerate(segment_start, start_motif) {
             let payload_start = idx + start_motif.len();
             let mut payload_end = None;
+            // Limit the stop motif search to at most 40 characters (gene size limitation)
+            let max_search = (payload_start + 40).min(genome.len());
             for j in payload_start..=genome.len().saturating_sub(stop_motif.len()) {
+                if j > max_search {
+                    break;
+                }
                 let segment_stop = &genome[j..j + stop_motif.len()];
                 if matches_degenerate(segment_stop, stop_motif) {
                     payload_end = Some(j);
@@ -334,12 +339,14 @@ pub fn extract_raw_gene_payloads(
                 payloads.push(payload_slice.to_string());
                 idx = end_idx + stop_motif.len();
             } else {
-                // Point 1 Fallback: No stop motif found, so read until the end of the genome!
-                let payload_slice = &genome[payload_start..];
+                // Point 1 Fallback: If no stop motif found within 40 characters, read a standard 15-char payload
+                // and resume scanning after it, instead of swallowing the remaining genome and breaking!
+                let end_idx = (payload_start + 15).min(genome.len());
+                let payload_slice = &genome[payload_start..end_idx];
                 if !payload_slice.is_empty() {
                     payloads.push(payload_slice.to_string());
                 }
-                break;
+                idx = end_idx;
             }
         } else {
             idx += 1;
@@ -990,7 +997,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     } else {
         false
     };
-    let h_count = h_count.clamp(2, 12);
+    let h_count = h_count.clamp(1, 12);
 
     for i in 0..h_count {
         let (bias, tau, activation_type, depth) = if !fallback_h_count && i < neu_payloads.len() {
@@ -1384,7 +1391,7 @@ mod tests {
 
         assert_eq!(input_count, phenotype.organelles.len() * 5 + 1); // 5 Channels per Organelle + Hunger clock
         assert_eq!(output_count, 4); // Thrust, Bending, Biolum Flash, Reserved
-        assert!(hidden_count >= 2 && hidden_count <= 10);
+        assert!(hidden_count >= 1 && hidden_count <= 10);
 
         // Verify that BMR scaling values are deterministic and finite
         assert!(phenotype.basal_metabolic_rate.is_finite());

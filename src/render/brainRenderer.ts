@@ -10,9 +10,12 @@ export class BrainRenderer {
     private onSynapseHover?: (from: number, to: number, weight: number | null) => void
   ) {}
 
-  public getNeuronX(id: number, K: number): number {
+  public getNeuronX(id: number, K: number, depth?: number | null): number {
     if (id <= K) return 25; // Left Column: Sensors
     if (id >= K + 1 && id <= K + 4) return 280; // Right Column: Motors
+    if (depth !== undefined && depth !== null) {
+      return 25 + depth * 255; // Scale horizontal coordinate dynamically based on compiled depth!
+    }
     return 150; // Center Column: Interneurons
   }
 
@@ -46,9 +49,14 @@ export class BrainRenderer {
       const fromId = syn.fromNode;
       const toId = syn.toNode;
 
-      const fromX = this.getNeuronX(fromId, K);
+      const fromNeuron = brain.neurons.find(n => n.id === fromId);
+      const toNeuron = brain.neurons.find(n => n.id === toId);
+      const fromDepth = fromNeuron ? fromNeuron.y : null;
+      const toDepth = toNeuron ? toNeuron.y : null;
+
+      const fromX = this.getNeuronX(fromId, K, fromDepth);
       const fromY = this.getNeuronY(fromId, K, brain.neurons.length);
-      const toX = this.getNeuronX(toId, K);
+      const toX = this.getNeuronX(toId, K, toDepth);
       const toY = this.getNeuronY(toId, K, brain.neurons.length);
 
       const isExcitatory = syn.weight > 0;
@@ -65,7 +73,7 @@ export class BrainRenderer {
 
     // Draw neurons (always 3-column layout!)
     brain.neurons.forEach((n: CTRNNNeuron) => {
-      const nx = this.getNeuronX(n.id, K);
+      const nx = this.getNeuronX(n.id, K, n.y);
       const ny = this.getNeuronY(n.id, K, brain.neurons.length);
 
       const isInput = n.type === "input";
