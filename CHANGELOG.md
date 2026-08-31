@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Every basic trait (Colors, Symmetrie, Sizes, Stiffness, Waves, Pulses, Stomach, Tolerances, Carnivory) is compiled locally from its specific gene payload (e.g. `"COL"` payload for colors).
   - **Eliminated Hashing for Physical/Neural Attributes:** Replaced `hash_genome_slice` with `get_payload_linear_value_offset` across the entire genome-to-phenotype compilation (including color, size, stiffness, neural constants, biases, layer depths, and synapse weights).
   - **Smooth Mutational Drift (Echte Vererbungsähnlichkeit):** Replaced cryptographic "hash avalanche" chaos with a continuous linear shift. A 1-point mutation in a payload now only shifts its compiled trait smoothly and graduell by 1-2% (e.g. slight color hue shift), leaving all other decoupled traits 100% stable and preserving parent skills/instincts perfectly.
+- **Continuous Block-Free Foraging & Smooth Metabolism:**
+  - Removed all binary/ternary diet thresholds and 'target_idx' eat-gating inside `step_trainer_sandbox_physics`.
+  - Enabled 100% continuous foraging during the full 300 ticks of the trial, where creatures can consume both plants and meat at any time (plants give `1.0 - C` yield, meat gives `C` yield) followed by instant respawning of the consumed spore.
+  - Aligned starting and minimum target distance calculations to use the closer spore on spawn/reset.
+- **60Hz requestAnimationFrame Decoupled Preview Loop:**
+  - Decoupled the diagnostics preview rendering from the 25Hz telemetry stream, moving it to a 60Hz requestAnimationFrame loop. The wiggling preview is now 100% butter-smooth and fluid.
+  - Locked the preview heading to North (pointed straight up).
+- **High-Contrast Triggered Neural Path Glow:**
+  - Programmed a binary-triggered state (threshold > 0.02) where active neurons glow at 1.0 opacity with 5px shadows, and quiet ones drop to 0.22 opacity. Active synapses glow at 1.0 opacity, and quiet ones fade out cleanly.
 
 ### Fixed
 - **Epigenetic Chromatin State Scanning:** Corrected the chromatin initialization to start closed (`false`) by default. Active chromatin states now open and transcribe all physical, metabolic, and neural promoters, fully restoring color and form diversity of starting species records and newly born cells.

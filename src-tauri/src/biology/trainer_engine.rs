@@ -62,7 +62,7 @@ pub fn compute_trainer_sensory_inputs(
     let mut inputs = vec![0.0; k * 5 + 1];
     inputs[k * 5] = clock_val;
 
-    // Feste Mittenfrequenzen für die 5 Rezeptorkanäle (Cones)
+    // Fixed center frequencies for the 5 receptive channels (Cones)
     let channel_frequencies = [0.10, 0.30, 0.50, 0.70, 0.90];
 
     for (idx, patch) in agent.phenotype.organelles.iter().enumerate() {
@@ -142,7 +142,7 @@ pub fn compute_trainer_sensory_inputs(
             }
         } else {
             // --- TACTILE AND PROPRIOCEPTIVE SENSORY DETECTION (TACTILE / HAPTIC) ---
-            // A. Mechanical Hardness & Texture (Channel 1, Mitte 0.10)
+            // A. Mechanical Hardness & Texture (Channel 1, Center 0.10)
             // Wall warning is hard (1.0). Spores are soft (0.3).
             let wall_warning_zone = range * 0.5;
             let mut boundary_pressure = 0.0;
@@ -174,23 +174,23 @@ pub fn compute_trainer_sensory_inputs(
                 }
             }
 
-            // B. Fluid Drag & Flow (Channel 2, Mitte 0.30)
+            // B. Fluid Drag & Flow (Channel 2, Center 0.30)
             let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
             let flow_reception = (speed * 0.4).min(1.0);
             channel_stimuli[1] = channel_stimuli[1].max(flow_reception * organ_power);
 
-            // C. Water Temperature (Channel 3, Mitte 0.50)
+            // C. Water Temperature (Channel 3, Center 0.50)
             // Mock temperature gradient: center is warm (0.5), outer bounds are colder
             let dist_from_center = ((agent.px - 500.0).powi(2) + (agent.py - 500.0).powi(2)).sqrt();
             let temp = (1.0 - dist_from_center / 700.0).clamp(0.15, 0.95);
             channel_stimuli[2] = channel_stimuli[2].max(temp * organ_power);
 
-            // D. Proprioceptive Strain & Rotation (Channel 4, Mitte 0.70)
+            // D. Proprioceptive Strain & Rotation (Channel 4, Center 0.70)
             let rot_speed = agent.omega_rot.abs();
             let strain = (rot_speed * 0.8).min(1.0);
             channel_stimuli[3] = channel_stimuli[3].max(strain * organ_power);
 
-            // E. Physical Pain / Impact Damage (Channel 5, Mitte 0.90)
+            // E. Physical Pain / Impact Damage (Channel 5, Center 0.90)
             // High-speed wall impact pain triggers a response!
             if speed > 1.5 && boundary_pressure > 0.3 {
                 let pain = (speed * 0.3).min(1.0);

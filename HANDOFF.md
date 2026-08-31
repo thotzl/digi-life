@@ -1,71 +1,70 @@
-# 🧬 Handoff: Pixel DNA Life - Paralleler Tauri/Rust Ozean-Prototyp
+# 🧬 Handoff: Pixel DNA Life - Parallel Tauri/Rust Ocean Prototype
 
 ---
 
-## 1. Ist-Zustand (Erreichte Meilensteine)
+## 1. Current State (Milestones Achieved)
 
-In dieser Session wurde ein vollständig paralleler, funktionaler Desktop-Entwicklungs-Stack aufgebaut. Das ursprüngliche TypeScript/Browser-Spiel bleibt zu 100% unberührt und unbeschädigt lauffähig.
+In this session, a fully parallel, functional desktop development stack was established. The original TypeScript/browser game remains 100% untouched and undamaged, and is fully playable.
 
-### A. Der native Simulationscore (Rust - `src-tauri/`)
-*   **Initialisierung & Multithreading:** Tauri v2 wurde in das Projekt integriert. Beim Starten wird automatisch ein paralleler Simulations-Hintergrund-Thread in `src-tauri/src/main.rs` hochgefahren.
-*   **Volle Ozean-Simulation:** Die physikalische Weltbewegung (`physics.rs`), das Gitter zur schnellen Kollisionsabfrage (`spatial_grid.rs`), die BMR-Metabolismussteuerungen, das Fressen, die asexuelle Fortpflanzung (Mitose), die Mutationslogik und die CTRNN-Euler-Gehirn-Kopplungen wurden vollständig in nativem Rust implementiert.
-*   **Lokale SQLite-Datenhaltung:** Spezies-Stammbäume und Neuentdeckungen werden transaktional direkt in der lokalen Datei `pixel_life_local.db` persistiert.
-*   **Isolierter CLI-Trainer:** Der ungedrosselte Konsolen-Trainer wurde in ein eigenständiges Cargo-Binary verschoben. Er läuft weiterhin unabhängig von Tauri und ohne GTK-Systempakete direkt über:
+### A. The Native Simulation Core (Rust - `src-tauri/`)
+*   **Initialization & Multithreading:** Tauri v2 was integrated into the project. Upon startup, a parallel simulation background thread is automatically spun up in `src-tauri/src/main.rs`.
+*   **Full Ocean Simulation:** The physical world movement (`physics.rs`), the grid for fast collision queries (`spatial_grid.rs`), the BMR metabolism controls, feeding, asexual reproduction (mitosis), mutation logic, and CTRNN-Euler brain couplings have been fully implemented in native Rust.
+*   **Local SQLite Data Persistence:** Species lineage trees and new discoveries are transactionally persisted directly into the local file `pixel_life_local.db`.
+*   **Isolated CLI Trainer:** The unthrottled console trainer has been moved to a standalone Cargo binary. It still runs independently of Tauri and without GTK system packages directly via:
     ```bash
     cargo run --bin cli_trainer
     ```
 
-### B. Das rahmenlose Frontend (Tauri Webview)
-*   **Eigene HTML-Ansicht (`tauri_ocean.html`):** Ein unberührter, isolierter Einstiegspunkt für das Desktop-Fenster.
-*   **Reaktiver Tauri-Fork (`src/tauri_ocean.ts`):** 
-    *   Sämtliche WebSockets und HTTP-POST-Schnittstellen wurden restlos durch die nativen Tauri-Schnittstellen (`listen` für Datenströme, `invoke` für Steuerbefehle) ersetzt.
-    *   Ein **asynchrones Handshake-Verfahren (`"CLIENT_READY"`)** mit 200 ms Delay wurde etabliert, um Race-Conditions beim Laden des Event-Listeners vollständig zu eliminieren.
-    *   Die Hilfsfunktion `safeInvoke` mit einem robusten ESM-Try-Catch-Wrapper fängt Modulauflösungsfehler im normalen Webbrowser komplett ab, sodass die Diagnoseseite im Browser nicht abstürzt.
-    *   Die linke Sidebar wurde über das Tauri-Kommando `get_registered_species` direkt an die lokale Rust-Datenbank angebunden.
+### B. The Frameless Frontend (Tauri Webview)
+*   **Custom HTML View (`tauri_ocean.html`):** An untouched, isolated entry point for the desktop window.
+*   **Reactive Tauri Fork (`src/tauri_ocean.ts`):** 
+    *   All WebSockets and HTTP-POST interfaces have been completely replaced with native Tauri interfaces (`listen` for data streams, `invoke` for control commands).
+    *   An **asynchronous handshake procedure (`"CLIENT_READY"`)** with a 200 ms delay was established to completely eliminate race conditions when loading the event listener.
+    *   The helper function `safeInvoke` with a robust ESM try-catch wrapper completely intercepts module resolution errors in the normal web browser, preventing the diagnostic page in the browser from crashing.
+    *   The left sidebar was connected directly to the local Rust database via the Tauri command `get_registered_species`.
 
 ---
 
-## 2. Diagnose der aktuellen Bruchstelle
+## 2. Diagnosis of the Current Point of Failure
 
-### Die Symptome:
-*   Die Sidebars (HUD) links und rechts aktualisieren sich dynamisch.
-*   Die Generationen zählen hoch, Organismen verändern ihre Anzahl im HUD (z. B. von `5/20` auf `9/20`), und neue Spezies werden der linken Sidebar live hinzugefügt.
-*   **Aber:** Das Canvas im Hintergrund bleibt leer (keine grünen Sporen, keine Zellen sichtbar).
+### The Symptoms:
+*   The left and right sidebars (HUD) update dynamically.
+*   The generations increment, organisms change their counts in the HUD (e.g., from `5/20` to `9/20`), and new species are added live to the left sidebar.
+*   **But:** The canvas in the background remains blank (no green spores, no cells visible).
 
-### Die technische Ursache:
-*   **Asynchrone Entkopplung:** Die HUD-Werte (Sidebars) werden über den asynchronen Tauri-Event-Listener (`listen("simulation-state")`) empfangen und über reaktive Preact Signals direkt an das HTML-DOM gebunden. Das funktioniert tadellos (der Datenstrom fließt also fehlerfrei im RAM-IPC-Kanal!).
-*   **Bruch im Render-Loop:** Das eigentliche Zeichnen auf dem Canvas läuft in einem getrennten, kontinuierlichen Browser-Animations-Thread (`drawBetaSimulationFrame`). 
-*   Wenn dieser Loop einmalig beim Start (z. B. während der Kamera-Zoom-Initialisierung oder innerhalb des `CreatureRenderer`) an einem nicht definierten Wert (z. B. `dpr`, `canvas.getContext` oder nicht passenden Transformations-Matrix-Werten) scheitert, bricht die Render-Schleife stillschweigend ab. Das Canvas bleibt schwarz, während das HTML-HUD sich im Vordergrund munter weiter aktualisiert.
-
----
-
-## 3. Exakte nächste Schritte (Für das nächste Vibe-Coding)
-
-Um das Canvas im Tauri-Fenster zum Leben zu erwecken, müssen folgende Punkte im Frontend-Fork `src/tauri_ocean.ts` untersucht werden:
-
-1.  **Canvas-Transformationen im Viewport prüfen:**
-    Überprüfen, ob die Kamera-Matrix in `drawBetaSimulationFrame` (Zeile 640) korrekte Werte für `camZoom`, `camX` und `camY` erhält, wenn das Tauri-Fenster im Standard-HD-Format ($1280 \times 720$) bootet, oder ob die mathematische Transformation die Kreaturen außerhalb des sichtbaren Bildschirms positioniert.
-2.  **Debuggen des `CreatureRenderer` im Tauri-Inspektor:**
-    Mache im offenen Tauri-Fenster einen **Rechtsklick ➔ Untersuchen (Inspect)** und wechsle auf den Reiter **Console**. Lies dort den genauen Stacktrace aus, der beim Ausführen des Canvas-Frames geworfen wird (z. B. ob im `renderer.render` ein unerwartetes Feld im de-kompilierten `CreaturePhenotype` gesucht wird, das Rust leicht abweichend serialisiert hat).
-
-Der gesamte Kommunikations- und Berechnungs-Fluss steht felsenfest und läuft mit enormer Stabilität. Wir haben die technologische Barriere für eine native Desktop-Distribution erfolgreich durchbrochen!
+### The Technical Cause:
+*   **Asynchronous Decoupling:** The HUD values (sidebars) are received via the asynchronous Tauri event listener (`listen("simulation-state")`) and bound directly to the HTML DOM via reactive Preact Signals. This works flawlessly (so the data stream flows error-free in the RAM IPC channel!).
+*   **Break in the Render Loop:** The actual drawing on the canvas runs in a separate, continuous browser animation thread (`drawBetaSimulationFrame`). 
+*   If this loop fails even once at startup (e.g., during camera zoom initialization or within the `CreatureRenderer`) due to an undefined value (e.g., `dpr`, `canvas.getContext`, or mismatching transformation matrix values), the rendering loop silently terminates. The canvas remains black, while the HTML HUD continues to update actively in the foreground.
 
 ---
 
-## 4. Konzepte für KI-gestütztes Remote-Debugging (Direkte KI-Verbindung)
+## 3. Exact Next Steps (For the Next Vibe Coding)
 
-Damit ich (die KI) in Zukunft Fehler im Tauri-Fenster und auf dem Canvas selbstständig einsehen und analysieren kann, können wir eine der folgenden asynchronen Diagnose-Schnittstellen einrichten:
+To bring the canvas to life in the Tauri window, the following points must be investigated in the frontend fork `src/tauri_ocean.ts`:
 
-### Konzept A: Der "Error Mirroring"-Kanal (Dringend empfohlen)
-*   **Wie es funktioniert:** Wir registrieren im Frontend (`src/tauri_ocean.ts`) einen globalen Fehler-Listener (`window.onerror` und `window.onunhandledrejection`). 
-*   Tritt ein Render- oder JavaScript-Fehler im Tauri-Fenster auf, schickt das Frontend diesen Stacktrace per `safeInvoke` sofort an Rust.
-*   Rust schreibt diese Fehlermeldungen fortlaufend in eine lokale Datei `src-tauri/client_debug.log`.
-*   *Der Vorteil:* Ich kann diese Log-Datei im Terminal mit meinem `read_file`-Werkzeug live auslesen. Ich sehe jeden Absturz auf deinem Bildschirm sofort, ohne dass du etwas kopieren musst.
+1.  **Verify Canvas Transformations in the Viewport:**
+    Check whether the camera matrix in `drawBetaSimulationFrame` (line 640) receives correct values for `camZoom`, `camX`, and `camY` when the Tauri window boots in the default HD format ($1280 \times 720$), or whether the mathematical transformation positions the creatures off-screen.
+2.  **Debug the `CreatureRenderer` in the Tauri Inspector:**
+    In the open Tauri window, **right-click ➔ Inspect** and switch to the **Console** tab. Read the exact stack trace thrown when executing the canvas frame (e.g., whether `renderer.render` is looking for an unexpected field in the decompiled `CreaturePhenotype` that Rust has serialized slightly differently).
 
-### Konzept B: Tauri stdout Mirroring (Konsolen-Umleitung)
-*   Wir binden das offizielle Tauri-Plugin `tauri-plugin-log` ein. Dieses leitet alle Standard-Ausgaben von `console.log` und `console.error` der Webview direkt in das System-Terminal (stdout) von Tauri um. Ich sehe deine Web-Logs dann direkt in den CLI-Prozessen.
+The entire communication and calculation flow is solid and runs with immense stability. We have successfully broken through the technological barrier for a native desktop distribution!
 
-### Konzept C: Der "Debug-Snapshot" (F8-Trigger)
-*   Wir richten einen Hotkey im Frontend ein (z. B. Taste `F8`). 
-*   Bei Tastendruck speichert das Frontend alle aktuellen Variablen (Kamera-Zoom, geladene Entities, letzte 15 Konsolen-Ausgaben) in eine temporäre Datei `client_snapshot.json`. Ich kann diese Datei einlesen und erhalte ein vollständiges, mathematisches Abbild des aktuellen Render-Zustands.
+---
 
+## 4. Concepts for AI-Assisted Remote Debugging (Direct AI Connection)
+
+In order for me (the AI) to autonomously inspect and analyze errors in the Tauri window and on the canvas in the future, we can set up one of the following asynchronous diagnostic interfaces:
+
+### Concept A: The "Error Mirroring" Channel (Highly Recommended)
+*   **How it works:** We register a global error listener (`window.onerror` and `window.onunhandledrejection`) in the frontend (`src/tauri_ocean.ts`). 
+*   If a render or JavaScript error occurs in the Tauri window, the frontend immediately sends this stack trace to Rust via `safeInvoke`.
+*   Rust continuously writes these error messages to a local file `src-tauri/client_debug.log`.
+*   *The advantage:* I can read this log file live in the terminal using my `read_file` tool. I see every crash on your screen instantly without you needing to copy anything.
+
+### Concept B: Tauri stdout Mirroring (Console Redirection)
+*   We integrate the official Tauri plugin `tauri-plugin-log`. This redirects all standard outputs from `console.log` and `console.error` of the webview directly to the system terminal (stdout) of Tauri. I can then see your web logs directly in the CLI processes.
+
+### Concept C: The "Debug Snapshot" (F8 Trigger)
+*   We set up a hotkey in the frontend (e.g., key `F8`). 
+*   Upon pressing the key, the frontend saves all current variables (camera zoom, loaded entities, last 15 console outputs) into a temporary file `client_snapshot.json`. I can read this file and obtain a complete mathematical representation of the current render state.

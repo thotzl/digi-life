@@ -967,10 +967,10 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         } else {
             vec![
                 format!("🔊 Tactile Hardness ({}°)", deg),
-                format!("🔊 Tactile Strömung ({}°)", deg),
-                format!("🔊 Tactile Temperatur ({}°)", deg),
-                format!("🔊 Tactile Dehnung ({}°)", deg),
-                format!("🔊 Tactile Schmerz ({}°)", deg),
+                format!("🔊 Tactile Flow ({}°)", deg),
+                format!("🔊 Tactile Temperature ({}°)", deg),
+                format!("🔊 Tactile Strain ({}°)", deg),
+                format!("🔊 Tactile Pain ({}°)", deg),
             ]
         };
 

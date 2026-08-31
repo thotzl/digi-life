@@ -90,7 +90,7 @@ export class CreatureRenderer {
       const wLongitudinal = (style >= 0.72 ? 0.12 : 0.07) * scale;
 
       if (style >= 0.72) {
-        // A. FLESHY MUSCULAR LIMB (Schwimmfuß / Kriechtentakel)
+        // A. FLESHY MUSCULAR LIMB (Swimming Foot / Creeping Tentacle)
         const length = 38 * scale * style; 
         const wAngular = 0.22 + patch.bandwidth * 0.4; // thick muscular root
         
@@ -105,10 +105,9 @@ export class CreatureRenderer {
         const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
         r += length * Math.exp(-distSquared);
       } else {
-        // C. CILIATED PROTRUSION (Flimmerhaar / Feeler)
+        // C. CILIATED PROTRUSION (Cilia / Feeler)
         const height = 24 * scale * style;
         const wAngular = 0.05 + patch.bandwidth * 0.08; // highly focused needle
-
         const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
         r += height * Math.exp(-distSquared);
       }
