@@ -152,7 +152,7 @@ export class BrainRenderer {
   public updateLiveGlows(activations: number[], brain: BrainTopology): void {
     if (!brain || !activations) return;
 
-    // 1. Update Neurons (Instant 100% glow on trigger, else dimmed to 0.15 for absolute contrast)
+    // 1. Update Neurons (Instant 100% glow on trigger, else dimmed to 0.22 for subtle background visibility)
     brain.neurons.forEach((n: CTRNNNeuron) => {
       const id = `${this.elementIdPrefix}-node-${n.id}`;
       const el = this.elementCache.get(id);
@@ -169,9 +169,9 @@ export class BrainRenderer {
         el.setAttribute("fill", colorGlow); // Always retain beautiful colored beads
         el.setAttribute("r", radius.toString());
 
-        // Instant 100% brightness on trigger, else dimmed
-        const isTriggered = rawAct > 0.05;
-        const opacity = isTriggered ? 1.0 : 0.15;
+        // Instant 100% brightness on trigger, else dimmed to 0.22
+        const isTriggered = rawAct > 0.02; // Lowered threshold from 0.05 to 0.02 for high sensitivity!
+        const opacity = isTriggered ? 1.0 : 0.22; // Raised quiet opacity from 0.15 to 0.22!
         el.style.opacity = opacity.toString();
         
         if (isTriggered) {
@@ -194,7 +194,7 @@ export class BrainRenderer {
         }
 
         const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[syn.fromNode] || 0.0)));
-        const isTriggered = preVal > 0.05;
+        const isTriggered = preVal > 0.02; // Lowered threshold from 0.05 to 0.02 for high sensitivity!
 
         const isExcitatory = syn.weight > 0;
         const baseColor = isExcitatory ? "16, 185, 129" : "239, 68, 68";
@@ -202,7 +202,7 @@ export class BrainRenderer {
         const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
         
         // Active synapses light up 100% solid, quiet ones fade out!
-        const opacity = isTriggered ? 1.0 : weightFactor * 0.35;
+        const opacity = isTriggered ? 1.0 : weightFactor * 0.48; // Raised quiet multiplier from 0.35 to 0.48!
         const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0) * (isTriggered ? 1.6 : 1.0);
 
         el.setAttribute("stroke", `rgba(${baseColor}, ${opacity})`);
