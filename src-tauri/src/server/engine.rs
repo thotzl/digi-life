@@ -1292,7 +1292,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         // Step all sandbox physical loops in Rust!
                         for sb in &mut trainer_sandboxes {
                             sb.current_fitness = calculate_sandbox_fitness(
-                                sb.finished,
+                                sb.accumulated_yield,
                                 sb.finish_tick,
                                 300,
                                 sb.start_distance,
@@ -1303,10 +1303,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 sb.agent.py,
                             );
 
-                            if !sb.finished {
-                                // Run 1 tick of continuous physics, neural nets, and collisions in Rust!
-                                step_trainer_sandbox_physics(sb, 1000.0, 1000.0);
-                            }
+                            // Run 1 tick of continuous physics, neural nets, and collisions in Rust for full 300 ticks!
+                            step_trainer_sandbox_physics(sb, 1000.0, 1000.0);
                         }
 
                         // If we completed the 300-tick epoch:
@@ -1314,7 +1312,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             // 1. Calculate fitness for all sandboxes
                             for sb in &mut trainer_sandboxes {
                                 sb.current_fitness = calculate_sandbox_fitness(
-                                    sb.finished,
+                                    sb.accumulated_yield,
                                     sb.finish_tick,
                                     300,
                                     sb.start_distance,
@@ -1370,6 +1368,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         sb.wall_collision_cooldown = 0;
                                         sb.consumed_spore_type = None;
                                         sb.epoch_ticks = 0;
+                                        sb.accumulated_yield = 0.0;
+                                        sb.consumed_count = 0;
                                         
                                         // Randomize spores respecting minimum 200px distance
                                         for spore in &mut sb.foods {

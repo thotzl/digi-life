@@ -22,6 +22,8 @@ pub struct TrainerSandbox {
     pub origin_type: String, // "elite" | "hof" | "mutant" | "random"
     pub epoch_ticks: u32,
     pub min_distance: f32,
+    pub accumulated_yield: f32,
+    pub consumed_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -206,7 +208,7 @@ pub fn compute_trainer_sensory_inputs(
 }
 
 pub fn calculate_sandbox_fitness(
-    finished: bool,
+    accumulated_yield: f32,
     finish_tick: Option<u32>,
     epoch_duration_ticks: u32,
     start_distance: f32,
@@ -219,12 +221,11 @@ pub fn calculate_sandbox_fitness(
     let wall_penalty = (1.0 - (wall_collisions as f32) * 0.10).max(0.1);
     let fit;
 
-    if finished && finish_tick.is_some() {
-        let f_tick = finish_tick.unwrap();
+    if accumulated_yield > 0.0 {
         // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
         let path_efficiency = start_distance / (start_distance.max(distance_traveled)).max(0.1);
-        let speed_bonus = (epoch_duration_ticks - f_tick) as f32 * 0.2;
-        fit = (1000.0 + 2000.0 * path_efficiency + speed_bonus) * wall_penalty;
+        let speed_bonus = (epoch_duration_ticks - finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.2;
+        fit = (accumulated_yield * 1000.0 + 1000.0 * path_efficiency + speed_bonus) * wall_penalty;
     } else {
         // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
         // We use scaling multipliers instead of harsh 0.0 cuts to keep a smooth fitness landscape!
@@ -352,14 +353,12 @@ pub fn init_rust_sandbox(
         origin_type: origin_type.to_string(),
         epoch_ticks: 0,
         min_distance: start_distance,
+        accumulated_yield: 0.0,
+        consumed_count: 0,
     }
 }
 
 pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32) {
-    if sb.finished {
-        return;
-    }
-
     sb.agent.age += 1;
     sb.epoch_ticks += 1;
 
@@ -418,7 +417,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
         sb.wall_collision_cooldown -= 1;
     }
 
-    // 4. Collision and Spore Consumption Checks (TCK-122: Dynamic Omnivore Targeting)
+    // 4. Collision and Spore Consumption Checks (TCK-122: Dynamic Omnivore Targeting & Continuous Foraging)
     let carnivory = sb.agent.phenotype.carnivory;
     let target_idx = if carnivory >= 0.65 {
         1 // Strict Carnivore targets meat
@@ -452,47 +451,73 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
     let eat_dist = (mean_radius + 10.0).max(base_eat_dist);
 
     if dist <= eat_dist {
-        sb.finished = true;
-        sb.finish_tick = Some(sb.epoch_ticks);
-        sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
-        sb.agent.has_eaten = true;
+        // Calculate metabolic yield based on what spore was consumed
+        let yield_val = if target_idx == 1 {
+            carnivory // Meat gives C
+        } else {
+            1.0 - carnivory // Plant gives 1 - C
+        };
+
+        sb.accumulated_yield += yield_val;
+        sb.consumed_count += 1;
+
+        if !sb.finished {
+            sb.finished = true; // Still mark finished as true for green SUCCESS label!
+            sb.finish_tick = Some(sb.epoch_ticks);
+            sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
+            sb.agent.has_eaten = true;
+        }
+
+        // Instant Spore Respawn!
+        let mut rng = rand::thread_rng();
+        let mut valid_spawn = false;
+        while !valid_spawn {
+            sb.foods[target_idx].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
+            sb.foods[target_idx].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
+            let rdx = sb.foods[target_idx].x - sb.agent.px;
+            let rdy = sb.foods[target_idx].y - sb.agent.py;
+            let rdist = (rdx*rdx + rdy*rdy).sqrt();
+            if rdist >= 200.0 {
+                valid_spawn = true;
+            }
+        }
+        sb.foods[target_idx].vx = 0.0;
+        sb.foods[target_idx].vy = 0.0;
     }
 
     // 5. Spore physical displacement impulse pushes
-    if !sb.finished {
-        for pellet in &mut sb.foods {
-            let pdx = pellet.x - sb.agent.px;
-            let pdy = pellet.y - sb.agent.py;
-            let pd = (pdx*pdx + pdy*pdy).sqrt();
-            let min_dist = mean_radius + 8.0; // Spore radius = 8
+    for pellet in &mut sb.foods {
+        let pdx = pellet.x - sb.agent.px;
+        let pdy = pellet.y - sb.agent.py;
+        let pd = (pdx*pdx + pdy*pdy).sqrt();
+        let min_dist = mean_radius + 8.0; // Spore radius = 8
 
-            if pd < min_dist && pd > 0.1 {
-                let overlap = min_dist - pd;
-                let nx = pdx / pd;
-                let ny = pdy / pd;
+        if pd < min_dist && pd > 0.1 {
+            let overlap = min_dist - pd;
+            let nx = pdx / pd;
+            let ny = pdy / pd;
 
-                pellet.x += nx * overlap;
-                pellet.y += ny * overlap;
+            pellet.x += nx * overlap;
+            pellet.y += ny * overlap;
 
-                // Clip spore to boundary
-                pellet.x = pellet.x.clamp(8.0, canvas_width - 8.0);
-                pellet.y = pellet.y.clamp(8.0, canvas_height - 8.0);
+            // Clip spore to boundary
+            pellet.x = pellet.x.clamp(8.0, canvas_width - 8.0);
+            pellet.y = pellet.y.clamp(8.0, canvas_height - 8.0);
 
-                pellet.vx = sb.agent.vx + nx * 2.0;
-                pellet.vy = sb.agent.vy + ny * 2.0;
-            }
-
-            // Spore drift friction
-            pellet.x += pellet.vx;
-            pellet.y += pellet.vy;
-            pellet.vx *= 0.92;
-            pellet.vy *= 0.92;
-
-            // Wall bounces for food spores
-            if pellet.x < 8.0 { pellet.x = 8.0; pellet.vx = -pellet.vx.abs(); }
-            else if pellet.x > canvas_width - 8.0 { pellet.x = canvas_width - 8.0; pellet.vx = pellet.vx.abs(); }
-            if pellet.y < 8.0 { pellet.y = 8.0; pellet.vy = -pellet.vy.abs(); }
-            else if pellet.y > canvas_height - 8.0 { pellet.y = canvas_height - 8.0; pellet.vy = pellet.vy.abs(); }
+            pellet.vx = sb.agent.vx + nx * 2.0;
+            pellet.vy = sb.agent.vy + ny * 2.0;
         }
+
+        // Spore drift friction
+        pellet.x += pellet.vx;
+        pellet.y += pellet.vy;
+        pellet.vx *= 0.92;
+        pellet.vy *= 0.92;
+
+        // Wall bounces for food spores
+        if pellet.x < 8.0 { pellet.x = 8.0; pellet.vx = -pellet.vx.abs(); }
+        else if pellet.x > canvas_width - 8.0 { pellet.x = canvas_width - 8.0; pellet.vx = pellet.vx.abs(); }
+        if pellet.y < 8.0 { pellet.y = 8.0; pellet.vy = -pellet.vy.abs(); }
+        else if pellet.y > canvas_height - 8.0 { pellet.y = canvas_height - 8.0; pellet.vy = pellet.vy.abs(); }
     }
 }
