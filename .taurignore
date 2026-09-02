@@ -1,0 +1,7 @@
+# Ignore SQLite local databases from triggering Tauri v2 rebuilds
+*.db
+*.db-shm
+*.db-wal
+target/
+dist/
+node_modules/
