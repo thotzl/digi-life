@@ -9,6 +9,7 @@ use rand::Rng;
 use crate::shared::types::{CreatureAgent, FoodSpore, TelemetryCreature};
 use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::physics::apply_creature_physics;
+use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
 use crate::biology::trainer_engine::{
     init_rust_sandbox, step_trainer_sandbox_physics, calculate_sandbox_fitness,
@@ -18,7 +19,7 @@ use crate::database::init_db;
 
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
     thread::spawn(move || {
-        let db_path = "pixel_life_local.db";
+        let db_path = crate::database::DB_PATH;
         let conn = init_db(db_path).expect("Failed to initialize local DB");
 
         let emit_state = |payload: serde_json::Value| {
@@ -305,11 +306,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "CLIENT_READY" => {
                                 is_trainer_active = false; // Safely force switch back to Ocean mode!
                                 println!("[SIMULATION] Client Handshake successful! Synchronizing {} creatures and {} spores...", creatures.len(), food_pellets.len());
+                                let world = generate_world("ocean-tauri-seed-77", 19200.0, 10800.0);
                                 let init_json = json!({
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
                                     "seed": "ocean-tauri-seed-77",
+                                    "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
                                     },
@@ -503,11 +506,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 emit_state(json!({ "type": "DATABASE_CHANGED" }));
 
                                 // Emit full fresh INIT_STATE so client successfully overwrites its local lists
+                                let world = generate_world("ocean-tauri-seed-77", 19200.0, 10800.0);
                                 let init_json = json!({
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
                                     "seed": "ocean-tauri-seed-77",
+                                    "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
                                     },
@@ -1511,6 +1516,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 origin_type: sb.origin_type.clone(),
                                 consumed_spore_type: sb.consumed_spore_type.clone(),
                                 foods: sb.foods.clone(),
+                                world: sb.world.clone(),
                                 latin_name: sb.agent.phenotype.latin_name.clone(),
                                 primary_color_h: sb.agent.phenotype.primary_color.h,
                                 primary_color_s: sb.agent.phenotype.primary_color.s,

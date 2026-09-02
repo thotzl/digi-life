@@ -4,6 +4,7 @@ use ts_rs::TS;
 
 use crate::shared::types::{CreatureAgent, FoodSpore};
 use crate::shared::physics::apply_creature_physics;
+use crate::shared::map_generator::{generate_trainer_world, ProceduralWorld};
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,6 +12,7 @@ pub struct TrainerSandbox {
     pub id: u32,
     pub agent: CreatureAgent,
     pub foods: Vec<FoodSpore>,
+    pub world: ProceduralWorld,
     pub finished: bool,
     pub finish_tick: Option<u32>,
     pub start_distance: f32,
@@ -41,6 +43,7 @@ pub struct TrainerTelemetrySandbox {
     pub origin_type: String,
     pub consumed_spore_type: Option<String>,
     pub foods: Vec<FoodSpore>,
+    pub world: ProceduralWorld,
     pub latin_name: String,
     pub primary_color_h: f32,
     pub primary_color_s: f32,
@@ -330,10 +333,13 @@ pub fn init_rust_sandbox(
     let dist_meat = ((foods[1].x - agent.px).powi(2) + (foods[1].y - agent.py).powi(2)).sqrt();
     let start_distance = dist_plant.min(dist_meat);
 
+    let world = generate_trainer_world(&format!("SANDBOX_SEED_{}_GEN_{}", id, current_generation), 19200.0, 10800.0);
+
     TrainerSandbox {
         id,
         agent,
         foods,
+        world,
         finished: false,
         finish_tick: None,
         start_distance,

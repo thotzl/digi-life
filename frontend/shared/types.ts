@@ -159,3 +159,51 @@ export interface TelemetryPayload {
     activations: number[];
   };
 }
+
+export interface Vertex {
+  x: number;
+  y: number;
+  r: number;
+  angle: number;
+}
+
+export interface ProceduralObstacle {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  type: 'rock' | 'coral';
+  color: string;
+  vertices: Vertex[];
+}
+
+export interface CurrentVent {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  forceType: 'push' | 'pull' | 'vortex';
+  strength: number;
+}
+
+export interface BiomeArea {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  sporeSpawnRate: number;
+  sporeEnergyValue: number;
+  hazardDamage: number;
+  color: string;
+}
+
+export interface ProceduralWorld {
+  seed: string;
+  width: number;
+  height: number;
+  obstacles: ProceduralObstacle[];
+  vents: CurrentVent[];
+  biomes: BiomeArea[];
+}

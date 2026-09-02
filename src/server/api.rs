@@ -23,7 +23,7 @@ pub fn handle_client_action(action: String, app_handle: AppHandle) -> Result<(),
 
 #[tauri::command]
 pub fn get_registered_species() -> Result<serde_json::Value, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
     
     let mut stmt = conn
@@ -60,7 +60,7 @@ pub fn get_registered_species() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn get_trainer_runs() -> Result<serde_json::Value, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -87,7 +87,7 @@ pub fn get_trainer_runs() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -114,7 +114,7 @@ pub fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::
 
 #[tauri::command]
 pub fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     let mut stmt = conn
@@ -141,7 +141,7 @@ pub fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, 
 
 #[tauri::command]
 pub fn save_trainer_generation(run_id: String, generation: i32, population: Vec<TrainerGenomeInput>) -> Result<bool, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let mut conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
@@ -179,7 +179,7 @@ pub fn save_trainer_generation(run_id: String, generation: i32, population: Vec<
 
 #[tauri::command]
 pub fn clear_trainer_history(run_id: String) -> Result<bool, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     conn.execute(
@@ -192,7 +192,7 @@ pub fn clear_trainer_history(run_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub fn apply_champion(genome: String) -> Result<bool, String> {
-    let db_path = "pixel_life_local.db";
+    let db_path = crate::database::DB_PATH;
     let conn = init_db(db_path).map_err(|e| e.to_string())?;
 
     let now_millis = std::time::SystemTime::now()

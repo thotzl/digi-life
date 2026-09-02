@@ -1,8 +1,15 @@
 use rusqlite::{Connection, Result};
 use std::path::Path;
 
+pub const DB_PATH: &str = "target/pixel_life_local.db";
+
 /// Initializes the local SQLite database and creates all necessary schemas if they do not exist.
 pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
+    // Automatically ensure the target parent directory exists
+    if let Some(parent) = path.as_ref().parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
     let conn = Connection::open(path)?;
 
     // Enable foreign keys for data integrity

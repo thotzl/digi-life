@@ -1,6 +1,6 @@
 use src_tauri::biology::dna::{parse_genome, mutate_genome, generate_random_genome, CreaturePhenotype};
 use src_tauri::shared::brain::execute_brain;
-use src_tauri::database::init_db;
+use src_tauri::database::{init_db, DB_PATH};
 use std::time::Instant;
 
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
     println!("==================================================================");
 
     // 1. Initialize safe local SQLite database
-    let db_path = "pixel_life_local.db";
+    let db_path = DB_PATH;
     println!("[DB] Connecting to local database: {}", db_path);
     let conn = match init_db(db_path) {
         Ok(c) => {

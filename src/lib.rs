@@ -9,4 +9,5 @@ pub mod shared {
     pub mod spatial_grid;
     pub mod physics;
     pub mod brain;
+    pub mod map_generator;
 }

@@ -269,17 +269,27 @@ function drawSandbox(sb: Sandbox) {
   ctx.fillStyle = '#020617';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  tele.foods.forEach((spore: any) => {
-    const isEaten = tele.finished && tele.consumed_spore_type === (spore.id === 9999 ? "meat" : "plant");
-    if (!isEaten) {
+  if (tele.world && tele.world.obstacles) {
+    tele.world.obstacles.forEach((obs: any) => {
       ctx.beginPath();
-      ctx.arc(spore.x, spore.y, 8, 0, Math.PI * 2);
-      ctx.fillStyle = spore.id === 9999 ? '#ef4444' : '#10b981';
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = spore.id === 9999 ? '#ef4444' : '#10b981';
+      const sx = (obs.x / 19200.0) * canvasWidth;
+      const sy = (obs.y / 10800.0) * canvasHeight;
+      const sr = (obs.radius / 19200.0) * canvasWidth * 1.5;
+
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fillStyle = "#1e293b"; // Clean Slate-800 grey for obstacles
       ctx.fill();
-      ctx.shadowBlur = 0;
-    }
+    });
+  }
+
+  tele.foods.forEach((spore: any) => {
+    ctx.beginPath();
+    ctx.arc(spore.x, spore.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = spore.id === 9999 ? '#ef4444' : '#10b981';
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = spore.id === 9999 ? '#ef4444' : '#10b981';
+    ctx.fill();
+    ctx.shadowBlur = 0;
   });
 
   let pheno = phenotypeCache.get(tele.genome);
