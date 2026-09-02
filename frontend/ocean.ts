@@ -4,7 +4,6 @@ import { effect } from "@preact/signals-core";
 
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { CreatureAgent, FoodSpore, GeneSpan, SpeciesRecord } from "./shared/types";
-import { generateWorld, ProceduralWorld } from "./core/mapGenerator";
 
 import { safeInvoke } from "./api";
 import {
@@ -15,27 +14,6 @@ import {
 } from "./signals";
 import { InteractiveCamera } from "./core/camera";
 import { BrainRenderer } from "./render/brainRenderer";
-
-let world: ProceduralWorld | null = null;
-let offscreenCanvas: HTMLCanvasElement | null = null;
-
-function createBiomeCache(world: ProceduralWorld) {
-  offscreenCanvas = document.createElement('canvas');
-  offscreenCanvas.width = 240;
-  offscreenCanvas.height = 135;
-  const oCtx = offscreenCanvas.getContext('2d')!;
-
-  for (let c = 0; c < 240; c++) {
-    for (let r = 0; r < 135; r++) {
-      const idx = c * 135 + r;
-      const biome = world.biomes[idx];
-      if (biome) {
-        oCtx.fillStyle = biome.color;
-        oCtx.fillRect(c, r, 1, 1);
-      }
-    }
-  }
-}
 
 // Pure Mutable Game-Engine Arrays
 let creatures: CreatureAgent[] = [];
@@ -295,11 +273,6 @@ async function initBetaWebSocket() {
           }
         }
 
-        if (data.seed) {
-          world = generateWorld(data.seed, 19200, 10800, data.rules);
-          createBiomeCache(world);
-        }
-
         creatures = data.creatures.map((c: any) => ({
           ...c,
           phenotype: c.phenotype
@@ -476,51 +449,6 @@ function resizeBetaCanvas() {
   canvas.height = window.innerHeight * dpr;
 }
 
-function drawWorldTerrain(ctx: CanvasRenderingContext2D) {
-  if (!world) return;
-
-  if (offscreenCanvas) {
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(offscreenCanvas, 0, 0, 19200, 10800);
-    ctx.restore();
-  }
-
-  for (const vent of world.vents) {
-    if (vent.strength === 0) continue;
-    ctx.beginPath();
-    ctx.arc(vent.x, vent.y, vent.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(14, 165, 233, 0.05)";
-    ctx.lineWidth = 6;
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(vent.x, vent.y, 40, 0, Math.PI * 2);
-    ctx.fillStyle = vent.forceType === "push" ? "rgba(56, 189, 248, 0.25)" : vent.forceType === "pull" ? "rgba(236, 72, 153, 0.25)" : "rgba(168, 85, 247, 0.25)";
-    ctx.fill();
-  }
-
-  for (const obs of world.obstacles) {
-    ctx.beginPath();
-    ctx.arc(obs.x, obs.y, obs.radius + 15, 0, Math.PI * 2);
-    ctx.fillStyle = obs.type === "rock" ? "rgba(51, 65, 85, 0.05)" : "rgba(244, 63, 94, 0.05)";
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(obs.vertices[0].x, obs.vertices[0].y);
-    for (let j = 1; j < obs.vertices.length; j++) {
-      ctx.lineTo(obs.vertices[j].x, obs.vertices[j].y);
-    }
-    ctx.closePath();
-    ctx.fillStyle = obs.color;
-    ctx.fill();
-
-    ctx.strokeStyle = "#f1f5f9";
-    ctx.lineWidth = 6;
-    ctx.stroke();
-  }
-}
-
 function drawBetaSimulationFrame(timestamp: number) {
   if (!ctx) return;
 
@@ -546,8 +474,6 @@ function drawBetaSimulationFrame(timestamp: number) {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 19200, 10800);
     ctx.restore();
-
-    drawWorldTerrain(ctx);
 
     ctx.save();
     for (const pellet of foodPellets) {

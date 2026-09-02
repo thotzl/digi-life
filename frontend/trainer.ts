@@ -1,4 +1,3 @@
-import { generateWorld, ProceduralWorld } from './core/mapGenerator';
 import { CreatureRenderer } from './render/creatureRenderer';
 import { safeInvoke, getPhenotype, phenotypeCache } from './api';
 import { BrainRenderer } from './render/brainRenderer';
@@ -97,7 +96,6 @@ interface Sandbox {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   renderer: CreatureRenderer;
-  world: ProceduralWorld;
   lastTelemetry: any | null;
 }
 
@@ -271,17 +269,6 @@ function drawSandbox(sb: Sandbox) {
   ctx.fillStyle = '#020617';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  sb.world.obstacles.forEach(obs => {
-    ctx.beginPath();
-    const sx = (obs.x / 19200) * canvasWidth;
-    const sy = (obs.y / 10800) * canvasHeight;
-    const sr = (obs.radius / 19200) * canvasWidth * 1.5;
-
-    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-    ctx.fillStyle = "#334155";
-    ctx.fill();
-  });
-
   tele.foods.forEach((spore: any) => {
     const isEaten = tele.finished && tele.consumed_spore_type === (spore.id === 9999 ? "meat" : "plant");
     if (!isEaten) {
@@ -344,14 +331,12 @@ async function rebuildSandboxGrid() {
 
     const ctx = canvas.getContext('2d')!;
     const renderer = new CreatureRenderer(canvas);
-    const world = generateWorld("SANDBOX_SEED_" + id + "_GEN_" + currentGeneration);
 
     sandboxes.push({
       id,
       canvas,
       ctx,
       renderer,
-      world,
       lastTelemetry: null
     });
 
