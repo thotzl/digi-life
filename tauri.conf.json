@@ -4,9 +4,16 @@
   "identifier": "com.pixeldna.life",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:3000/",
+    "devUrl": "http://localhost:8765/",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "./dist"
+    "frontendDist": "./dist",
+    "watch": {
+      "ignore": [
+        "**/*.db",
+        "**/*.db-shm",
+        "**/*.db-wal"
+      ]
+    }
   },
   "app": {
     "windows": [
