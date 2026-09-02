@@ -9,10 +9,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "sim:balance": "cargo run --bin cli_trainer --manifest-path src-tauri/Cargo.toml",
-    "types:generate": "cargo test --manifest-path src-tauri/Cargo.toml",
-    "test:all": "npm run test && npm run test:rust && cargo check --bin cli_trainer --manifest-path src-tauri/Cargo.toml",
+    "test:rust": "cargo test",
+    "sim:balance": "cargo run --bin cli_trainer",
+    "types:generate": "cargo test",
+    "test:all": "npm run test && npm run test:rust && cargo check --bin cli_trainer",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run"
@@ -21,7 +21,6 @@
     "@stryker-mutator/core": "^8.2.0",
     "@stryker-mutator/vitest-runner": "^8.2.0",
     "@tauri-apps/cli": "^2.11.4",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^1.6.0",
     "concurrently": "^10.0.5",
     "tsx": "^4.23.12",
@@ -32,7 +31,6 @@
   "dependencies": {
     "@preact/signals-core": "^1.14.4",
     "@tauri-apps/api": "^2.11.1",
-    "ws": "^8.21.3",
     "zustand": "^5.0.15"
   }
 }

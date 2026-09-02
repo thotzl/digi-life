@@ -4,11 +4,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['frontend/**/*.test.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
-      exclude: ['node_modules/', 'dist/', 'src/**/*.css', 'vite.config.ts', 'vitest.config.ts', '.agents/**'],
+      exclude: ['node_modules/', 'dist/', 'frontend/**/*.css', 'vite.config.ts', 'vitest.config.ts', '.agents/**'],
     },
   },
 });

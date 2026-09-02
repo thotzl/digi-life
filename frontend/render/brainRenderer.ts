@@ -62,9 +62,6 @@ export class BrainRenderer {
       const isExcitatory = syn.weight > 0;
       const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.85)" : "rgba(239, 68, 68, 0.85)";
 
-      const fromLabel = brain.neurons.find(n => n.id === fromId)?.label || `Node ${fromId}`;
-      const toLabel = brain.neurons.find(n => n.id === toId)?.label || `Node ${toId}`;
-
       const absWeight = Math.abs(syn.weight);
       const displayStyle = absWeight === 0.0 ? "display: none;" : "";
       const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);

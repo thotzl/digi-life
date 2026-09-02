@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-core";
-import { SpeciesRecord, GeneSpan } from "../shared/types";
+import { SpeciesRecord, GeneSpan } from "./shared/types";
 
 // REACTIVE HUD STATE OVERLAYS (Signals)
 export const selectedId = signal<number | null>(null);

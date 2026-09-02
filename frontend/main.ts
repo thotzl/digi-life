@@ -1,6 +1,6 @@
-import "./tauri/tauri_ocean";
-import "./tauri/tauri_trainer";
-import { safeInvoke } from "./tauri/api";
+import "./ocean";
+import "./trainer";
+import { safeInvoke } from "./api";
 
 const tabOcean = document.getElementById("tab-ocean") as HTMLButtonElement;
 const tabTrainer = document.getElementById("tab-trainer") as HTMLButtonElement;

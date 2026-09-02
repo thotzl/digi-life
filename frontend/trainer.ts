@@ -1,7 +1,7 @@
-import { generateWorld, ProceduralWorld } from '../core/mapGenerator';
-import { CreatureRenderer } from '../render/creatureRenderer';
+import { generateWorld, ProceduralWorld } from './core/mapGenerator';
+import { CreatureRenderer } from './render/creatureRenderer';
 import { safeInvoke, getPhenotype, phenotypeCache } from './api';
-import { BrainRenderer } from '../render/brainRenderer';
+import { BrainRenderer } from './render/brainRenderer';
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
@@ -212,7 +212,7 @@ function updateNeuronMeta(neuronId: number | null) {
     mathFormula = "f(x) = Identity (Bounded [0, 1])";
     
     // Read the perfect, pre-compiled friendly label straight from the Rust SSOT!
-    const neuron = brain.neurons.find(n => n.id === neuronId);
+    const neuron = brain.neurons.find((n: any) => n.id === neuronId);
     if (neuron) {
       baseDesc = neuron.label;
     } else {
@@ -223,7 +223,7 @@ function updateNeuronMeta(neuronId: number | null) {
       }
     }
   } else {
-    const neuron = brain.neurons.find(n => n.id === neuronId);
+    const neuron = brain.neurons.find((n: any) => n.id === neuronId);
     const actType = (neuron && neuron.activationType) || "tanh";
     if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
     else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
@@ -367,12 +367,12 @@ async function rebuildSandboxGrid() {
         const fullPheno = phenotypeCache.get(lastTele.genome);
         if (fullPheno) {
           brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length * 5);
-          drawDiagnosticsPreview(fullPheno, lastTele);
+          setFocusedPhenotype(fullPheno);
         } else {
           getPhenotype(lastTele.genome).then((p) => {
             if (p) {
               brainRenderer.compile(p.brain, p.organelles.length * 5);
-              drawDiagnosticsPreview(p, lastTele);
+              setFocusedPhenotype(p);
             }
           });
         }
@@ -764,8 +764,8 @@ async function setupTauriListeners() {
                   `;
                 }
               } else if (hoveredSynapse !== null) {
-                const fromLabel = brain.neurons.find(n => n.id === hoveredSynapse!.from)?.label || `Node ${hoveredSynapse!.from}`;
-                const toLabel = brain.neurons.find(n => n.id === hoveredSynapse!.to)?.label || `Node ${hoveredSynapse!.to}`;
+                const fromLabel = brain.neurons.find((n: any) => n.id === hoveredSynapse!.from)?.label || `Node ${hoveredSynapse!.from}`;
+                const toLabel = brain.neurons.find((n: any) => n.id === hoveredSynapse!.to)?.label || `Node ${hoveredSynapse!.to}`;
                 const isExcitatory = hoveredSynapse!.weight > 0;
                 const synType = isExcitatory ? "Excitatory (+)" : "Inhibitory (-)";
                 const synColor = isExcitatory ? "var(--primary-cyan)" : "#ef4444";
