@@ -21,7 +21,13 @@ fn main() {
             api::save_trainer_generation,
             api::clear_trainer_history,
             api::apply_champion,
-            api::get_fossil_phenotype
+            api::get_fossil_phenotype,
+            api::get_catalogue_creatures,
+            api::save_to_catalogue,
+            api::delete_from_catalogue,
+            api::rename_catalogue_creature,
+            api::spawn_catalogue_creature_to_ocean,
+            api::add_catalogue_creature_to_training
         ])
         .setup(|app| {
             let window = app.get_webview_window("main").expect("Failed to locate main window");

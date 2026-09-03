@@ -85,13 +85,48 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
             genome TEXT NOT NULL,
             fitness REAL NOT NULL,
             active INTEGER DEFAULT 1,
-            created_at INTEGER NOT NULL
+            created_at INTEGER NOT NULL,
+            methylations TEXT NOT NULL DEFAULT '[]',
+            synapse_weights TEXT NOT NULL DEFAULT '[]'
         );",
         [],
     )?;
 
+    // Auto-migrate if columns are missing in older databases
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(trainer_genomes);")?;
+        let mut columns = Vec::new();
+        let mut rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        while let Some(Ok(col_name)) = rows.next() {
+            columns.push(col_name);
+        }
+
+        if !columns.contains(&"methylations".to_string()) {
+            let _ = conn.execute("ALTER TABLE trainer_genomes ADD COLUMN methylations TEXT NOT NULL DEFAULT '[]';", []);
+        }
+        if !columns.contains(&"synapse_weights".to_string()) {
+            let _ = conn.execute("ALTER TABLE trainer_genomes ADD COLUMN synapse_weights TEXT NOT NULL DEFAULT '[]';", []);
+        }
+    }
+
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_trainer_run ON trainer_genomes(run_id);",
+        [],
+    )?;
+
+    // 6. Create creature_catalogue table (Persistent cross-simulation library)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS creature_catalogue (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            genome TEXT NOT NULL,
+            source TEXT NOT NULL,
+            fitness REAL NOT NULL DEFAULT 0.0,
+            carnivory REAL NOT NULL DEFAULT 0.0,
+            methylations TEXT NOT NULL,
+            synapse_weights TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );",
         [],
     )?;
 
@@ -101,6 +136,7 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::params;
 
     #[test]
     fn test_db_initialization_in_memory() {
@@ -124,5 +160,54 @@ mod tests {
             &["test-session-123", "1", "12.5", "45.0", "150"],
         );
         assert!(history_inserted.is_ok());
+    }
+
+    #[test]
+    fn test_creature_catalogue_crud_and_migrations() {
+        let conn = init_db(":memory:").expect("Failed to initialize memory DB");
+
+        // Test insertion of a complete cryo-clone
+        let insert_res = conn.execute(
+            "INSERT INTO creature_catalogue (id, name, genome, source, fitness, carnivory, methylations, synapse_weights)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                "cryo-123",
+                "Aqueus pulsa",
+                "COLOOOEN",
+                "Trainer FastRun",
+                1250.5,
+                0.25,
+                "[0.5,0.0,0.9]",
+                "[1.5,-2.0,0.4]"
+            ],
+        );
+        assert_eq!(insert_res.unwrap(), 1);
+
+        // Test querying and deserialization check
+        let mut stmt = conn.prepare("SELECT name, fitness, methylations, synapse_weights FROM creature_catalogue WHERE id = 'cryo-123'").unwrap();
+        let mut rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, f64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?
+            ))
+        }).unwrap();
+
+        let (name, fitness, methylations_str, synapse_weights_str) = rows.next().unwrap().unwrap();
+        assert_eq!(name, "Aqueus pulsa");
+        assert_eq!(fitness, 1250.5);
+        assert_eq!(methylations_str, "[0.5,0.0,0.9]");
+        assert_eq!(synapse_weights_str, "[1.5,-2.0,0.4]");
+
+        // Test renaming
+        conn.execute("UPDATE creature_catalogue SET name = 'Super Predator' WHERE id = 'cryo-123'", []).unwrap();
+        let new_name: String = conn.query_row("SELECT name FROM creature_catalogue WHERE id = 'cryo-123'", [], |r| r.get(0)).unwrap();
+        assert_eq!(new_name, "Super Predator");
+
+        // Test deletion
+        conn.execute("DELETE FROM creature_catalogue WHERE id = 'cryo-123'", []).unwrap();
+        let count: i32 = conn.query_row("SELECT COUNT(*) FROM creature_catalogue", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
     }
 }

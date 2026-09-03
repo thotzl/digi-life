@@ -213,3 +213,190 @@ pub fn get_fossil_phenotype(genome: String) -> Result<serde_json::Value, String>
     let pheno = parse_genome(&genome, None, None);
     serde_json::to_value(&pheno).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn get_catalogue_creatures() -> Result<serde_json::Value, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT id, name, genome, source, fitness, carnivory, methylations, synapse_weights, created_at FROM creature_catalogue ORDER BY created_at DESC")
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt.query_map([], |row| {
+        let id: String = row.get(0)?;
+        let name: String = row.get(1)?;
+        let genome: String = row.get(2)?;
+        let source: String = row.get(3)?;
+        let fitness: f64 = row.get(4)?;
+        let carnivory: f64 = row.get(5)?;
+        let methylations_str: String = row.get(6)?;
+        let synapse_weights_str: String = row.get(7)?;
+        let created_at: String = row.get(8)?;
+
+        let methylations: serde_json::Value = serde_json::from_str(&methylations_str).unwrap_or(json!([]));
+        let synapse_weights: serde_json::Value = serde_json::from_str(&synapse_weights_str).unwrap_or(json!([]));
+
+        Ok(json!({
+            "id": id,
+            "name": name,
+            "genome": genome,
+            "source": source,
+            "fitness": fitness,
+            "carnivory": carnivory,
+            "methylations": methylations,
+            "synapseWeights": synapse_weights,
+            "createdAt": created_at
+        }))
+    }).map_err(|e| e.to_string())?;
+
+    let mut list = Vec::new();
+    for row in rows {
+        if let Ok(item) = row {
+            list.push(item);
+        }
+    }
+
+    Ok(json!(list))
+}
+
+#[tauri::command]
+pub fn save_to_catalogue(
+    id: String,
+    name: String,
+    genome: String,
+    source: String,
+    fitness: f64,
+    methylations: Vec<f32>,
+    synapse_weights: Vec<f32>,
+) -> Result<bool, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let pheno = parse_genome(&genome, None, None);
+    let carnivory = pheno.carnivory as f64;
+
+    let methylations_json = serde_json::to_string(&methylations).map_err(|e| e.to_string())?;
+    let synapse_weights_json = serde_json::to_string(&synapse_weights).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT OR REPLACE INTO creature_catalogue (id, name, genome, source, fitness, carnivory, methylations, synapse_weights, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)",
+        params![id, name, genome, source, fitness, carnivory, methylations_json, synapse_weights_json],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn delete_from_catalogue(id: String) -> Result<bool, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    conn.execute("DELETE FROM creature_catalogue WHERE id = ?1", params![id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn rename_catalogue_creature(id: String, new_name: String) -> Result<bool, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    conn.execute("UPDATE creature_catalogue SET name = ?1 WHERE id = ?2", params![new_name, id])
+        .map_err(|e| e.to_string())?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn spawn_catalogue_creature_to_ocean(
+    id: String,
+    load_learned_synapses: bool,
+    app_handle: AppHandle,
+) -> Result<bool, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT genome, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+
+    let mut rows = stmt.query_map(params![id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+    }).map_err(|e| e.to_string())?;
+
+    if let Some(Ok((genome, methylations_str, synapse_weights_str))) = rows.next() {
+        let methylations: serde_json::Value = serde_json::from_str(&methylations_str).unwrap_or(json!([]));
+        let synapse_weights: serde_json::Value = serde_json::from_str(&synapse_weights_str).unwrap_or(json!([]));
+
+        let action = json!({
+            "type": "SPAWN_CLONE",
+            "genome": genome,
+            "methylations": methylations,
+            "synapse_weights": synapse_weights,
+            "load_learned_synapses": load_learned_synapses
+        });
+
+        let tx: State<Sender<String>> = app_handle.state();
+        if let Err(e) = tx.send(action.to_string()) {
+            return Err(format!("Failed to send spawn action to simulation thread: {}", e));
+        }
+        Ok(true)
+    } else {
+        Err("Creature not found in catalogue".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn add_catalogue_creature_to_training(
+    creature_id: String,
+    run_id: String,
+    generation: i32,
+) -> Result<bool, String> {
+    let db_path = crate::database::DB_PATH;
+    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+
+    let mut stmt = conn
+        .prepare("SELECT name, genome, fitness, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+
+    let mut rows = stmt.query_map(params![creature_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, f64>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?
+        ))
+    }).map_err(|e| e.to_string())?;
+
+    if let Some(Ok((name, genome, fitness, methylations, synapse_weights))) = rows.next() {
+        let now_millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        let unique_id = format!("{}-{}-added-{}", run_id, generation, now_millis);
+
+        conn.execute(
+            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
+            params![
+                unique_id,
+                run_id,
+                generation,
+                name,
+                genome,
+                fitness,
+                (now_millis / 1000) as i64,
+                methylations,
+                synapse_weights
+            ],
+        ).map_err(|e| e.to_string())?;
+
+        Ok(true)
+    } else {
+        Err("Creature not found in catalogue".to_string())
+    }
+}

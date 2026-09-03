@@ -518,7 +518,7 @@ fn derive_ecological_metrics(
     ];
     scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    if carnivory >= 0.65 {
+    if carnivory >= 0.60 {
         diet = String::from("Sabertooth Hunter (Carnivore)");
     } else if carnivory >= 0.40 {
         diet = String::from("Omnivore (Omnivorous)");
@@ -921,7 +921,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // 12. Carnivory
     let carnivory = h_carnivory;
-    let is_predator = carnivory >= 0.55;
+    let is_predator = carnivory >= 0.50;
 
     // 13. Reproduction Metrics
     let mature_age = (300.0 + h_mature * 2400.0).round() as u32;

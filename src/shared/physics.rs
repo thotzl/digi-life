@@ -1,4 +1,94 @@
-use crate::shared::types::CreatureAgent;
+use crate::shared::types::{CreatureAgent, FoodSpore, AppConfig};
+
+pub fn step_food_spore_physics(
+    pellet: &mut FoodSpore,
+    nearby_creatures: &[CreatureAgent],
+    world_width: f32,
+    world_height: f32,
+) {
+    let spore_radius = 8.0;
+
+    // 1. Spore physical displacement impulse pushes from nearby creatures (Impulse bounce)
+    for agent in nearby_creatures {
+        let mean_radius = agent.phenotype.spinal_harmonics.mean_radius;
+        let push_radius = mean_radius + spore_radius;
+        let pdx = pellet.x - agent.px;
+        let pdy = pellet.y - agent.py;
+        let pd = (pdx * pdx + pdy * pdy).sqrt();
+
+        if pd < push_radius && pd > 0.1 {
+            let overlap = push_radius - pd;
+            let nx = pdx / pd;
+            let ny = pdy / pd;
+
+            pellet.x += nx * overlap;
+            pellet.y += ny * overlap;
+
+            pellet.x = pellet.x.clamp(8.0, world_width - 8.0);
+            pellet.y = pellet.y.clamp(8.0, world_height - 8.0);
+
+            pellet.vx = agent.vx + nx * 2.0;
+            pellet.vy = agent.vy + ny * 2.0;
+        }
+    }
+
+    // 2. Drift, friction and boundary bounces
+    pellet.x += pellet.vx;
+    pellet.y += pellet.vy;
+    pellet.vx *= 0.92;
+    pellet.vy *= 0.92;
+
+    if pellet.x < 8.0 { pellet.x = 8.0; pellet.vx = pellet.vx.abs(); }
+    else if pellet.x > world_width - 8.0 { pellet.x = world_width - 8.0; pellet.vx = -pellet.vx.abs(); }
+
+    if pellet.y < 8.0 { pellet.y = 8.0; pellet.vy = pellet.vy.abs(); }
+    else if pellet.y > world_height - 8.0 { pellet.y = world_height - 8.0; pellet.vy = -pellet.vy.abs(); }
+}
+
+pub fn step_creature_kinematics(
+    agent: &mut CreatureAgent,
+    out_thrust: f32,
+    out_left: f32,
+    app_config: &AppConfig,
+    world_width: f32,
+    world_height: f32,
+) -> bool {
+    let stiffness = agent.phenotype.stiffness;
+    let pulse = agent.phenotype.pulse_speed;
+    let mean_radius = agent.phenotype.spinal_harmonics.mean_radius;
+    let base_length = agent.phenotype.spinal_harmonics.base_length;
+
+    // 1. Calculate physical thrust scaled by biological characteristics (pulse speed, stiffness)
+    let mut thrust_mag = stiffness * (pulse * 1000.0 * pulse * 1000.0) * app_config.rules.thrust_base_multiplier;
+    let wave_phase = agent.phenotype.wave_phase;
+    let eta_swim = ((base_length / (mean_radius * 3.5)) * wave_phase.sin().max(0.01) * stiffness).clamp(0.1, 3.2);
+    thrust_mag *= eta_swim;
+
+    let limbs_count = agent.phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count() as f32;
+    thrust_mag *= 1.0 + limbs_count * 0.12;
+    thrust_mag *= 1.0 + agent.phenotype.spinal_harmonics.parapodia_amp * 1.0;
+
+    let net_thrust_force = out_thrust * thrust_mag;
+
+    // 2. Mass & Ballast
+    let mass = mean_radius.powf(1.5) * (base_length / 25.0);
+    let receptor_ballast = agent.phenotype.organelles.len() as f32 * app_config.rules.receptor_ballast_scale;
+    let drag_forward = (mean_radius * app_config.rules.drag_forward_coefficient + receptor_ballast) 
+        * (1.0 - stiffness * app_config.rules.drag_forward_stiffness_decay);
+
+    // 3. Apply native boundary reflections and physics kinematics
+    apply_creature_physics(
+        agent,
+        net_thrust_force,
+        out_left,
+        mass,
+        drag_forward,
+        0.0,
+        0.0,
+        world_width,
+        world_height,
+    )
+}
 
 pub fn apply_creature_physics(
     agent: &mut CreatureAgent,

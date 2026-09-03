@@ -6,6 +6,9 @@ use ts_rs::TS;
 #[ts(export)]
 pub struct FoodSpore {
     pub id: u32,
+    #[serde(rename = "typeId")]
+    #[ts(rename = "typeId")]
+    pub type_id: u32, // 1 = Plant/Algae, 2 = Meat/Carcass
     pub x: f32,
     pub y: f32,
     pub amount: f32,
