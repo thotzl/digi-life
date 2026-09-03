@@ -1,70 +1,62 @@
-# 🧬 Handoff: Pixel DNA Life - Parallel Tauri/Rust Ocean Prototype
+# 🧬 Handoff: Pixel DNA Life - Dynamic Species Catalogue & Unified Diagnostics
 
 ---
 
-## 1. Current State (Milestones Achieved)
+## 1. Current State (Complete Feature Deliverables)
 
-In this session, a fully parallel, functional desktop development stack was established. The original TypeScript/browser game remains 100% untouched and undamaged, and is fully playable.
+We have successfully established a highly integrated, visually polished, and fully persistent artificial life environment inside our Tauri desktop shell.
 
-### A. The Native Simulation Core (Rust - `src-tauri/`)
-*   **Initialization & Multithreading:** Tauri v2 was integrated into the project. Upon startup, a parallel simulation background thread is automatically spun up in `src-tauri/src/main.rs`.
-*   **Full Ocean Simulation:** The physical world movement (`physics.rs`), the grid for fast collision queries (`spatial_grid.rs`), the BMR metabolism controls, feeding, asexual reproduction (mitosis), mutation logic, and CTRNN-Euler brain couplings have been fully implemented in native Rust.
-*   **Local SQLite Data Persistence:** Species lineage trees and new discoveries are transactionally persisted directly into the local file `pixel_life_local.db`.
-*   **Isolated CLI Trainer:** The unthrottled console trainer has been moved to a standalone Cargo binary. It still runs independently of Tauri and without GTK system packages directly via:
-    ```bash
-    cargo run --bin cli_trainer
-    ```
+### A. The Persistency Layer & Catalogs (SQLite Integration)
+*   **Auto-Migrations:** Verified safe, non-destructive SQLite migrations for `creature_catalogue` and `trainer_genomes` in `src/database.rs`.
+*   **Corrected Case-Deserialization:** Restored 100% stable database saving by aligning the JS properties with Tauri's camelCase conversion requirements (changing `synapse_weights` to `synapseWeights` inside `UnifiedDiagnosticsPanel.ts`). Saved specimens now persist across app restarts and appear instantly in the Catalogue list.
 
-### B. The Frameless Frontend (Tauri Webview)
-*   **Custom HTML View (`tauri_ocean.html`):** An untouched, isolated entry point for the desktop window.
-*   **Reactive Tauri Fork (`src/tauri_ocean.ts`):** 
-    *   All WebSockets and HTTP-POST interfaces have been completely replaced with native Tauri interfaces (`listen` for data streams, `invoke` for control commands).
-    *   An **asynchronous handshake procedure (`"CLIENT_READY"`)** with a 200 ms delay was established to completely eliminate race conditions when loading the event listener.
-    *   The helper function `safeInvoke` with a robust ESM try-catch wrapper completely intercepts module resolution errors in the normal web browser, preventing the diagnostic page in the browser from crashing.
-    *   The left sidebar was connected directly to the local Rust database via the Tauri command `get_registered_species`.
+### B. The Unified Diagnostics HUD Sidebar
+*   The `UnifiedDiagnosticsPanel.ts` is fully modularized and integrated across all three primary SPA screens:
+    1.  **Ocean View:** Displays real-time vitals, chromatin grid, and directed CTRNN firing graphs of the selected free-swimming creature.
+    2.  **Trainer View:** Displays the focused sandbox chamber details.
+    3.  **Catalogue View:** Displays details of cryo-preserved ledger entries.
 
----
+### C. Seamless "Pick and Add" Sim Integrations
+*   **Ocean - "Load from Catalogue":** Built a gorgeous, scrollable card deck modal inside the Ocean view that replaces the basic select dropdown. It runs a local 60Hz requestAnimationFrame rendering loop inside a circular bullseye preview window, displaying the wiggling organism before it is cloned.
+*   **Trainer - "Assign from Catalogue":** Clicking on any paused sandbox card (1 to 16) displays a blue `Assign from Catalogue` button in the HUD. It opens an identical circular preview selection modal, mutating that specific sandbox's body and mind in-place in-memory (and persisting the assignment in `trainer_genomes` via `"ASSIGN_SANDBOX_CREATURE"`).
 
-## 2. Diagnosis of the Current Point of Failure
-
-### The Symptoms:
-*   The left and right sidebars (HUD) update dynamically.
-*   The generations increment, organisms change their counts in the HUD (e.g., from `5/20` to `9/20`), and new species are added live to the left sidebar.
-*   **But:** The canvas in the background remains blank (no green spores, no cells visible).
-
-### The Technical Cause:
-*   **Asynchronous Decoupling:** The HUD values (sidebars) are received via the asynchronous Tauri event listener (`listen("simulation-state")`) and bound directly to the HTML DOM via reactive Preact Signals. This works flawlessly (so the data stream flows error-free in the RAM IPC channel!).
-*   **Break in the Render Loop:** The actual drawing on the canvas runs in a separate, continuous browser animation thread (`drawBetaSimulationFrame`). 
-*   If this loop fails even once at startup (e.g., during camera zoom initialization or within the `CreatureRenderer`) due to an undefined value (e.g., `dpr`, `canvas.getContext`, or mismatching transformation matrix values), the rendering loop silently terminates. The canvas remains black, while the HTML HUD continues to update actively in the foreground.
+### D. UI Refinements & Starvation Tuning
+*   **Pre-training default:** Unchecked by default (`checked = false`) across all 3 views.
+*   **Unconditional closing:** All modal selection boxes close instantly and unconditionally upon confirmation.
+*   **Ocean Starvation:** Reduced the Ocean basal metabolic rate (`bmr_decay`) by 55% (`* 0.45` coefficient in `src/server/engine.rs`), granting organisms extensive organic lifespans to swim, adapt, and graze.
+*   **Ocean Loop-Death Fix:** Integrated a Preact Signal `effect` route observer to auto-start/resume `drawBetaSimulationFrame` on entry into `"ocean"` view.
 
 ---
 
-## 3. Exact Next Steps (For the Next Vibe Coding)
+## 2. Diagnosis of the Current Point of Failure (Motionless Ocean)
 
-To bring the canvas to life in the Tauri window, the following points must be investigated in the frontend fork `src/tauri_ocean.ts`:
+### The Symptom:
+*   The Ocean canvas, biomes, and food spores render perfectly.
+*   The route-restarts work and loopRunning operates cleanly.
+*   **But:** Spelled specimens and restocked/spawned creatures in the Ocean appear mostly motionless or frozen (visually), even though the exact same specimens are highly agile and wiggle intensely inside the circular Catalogue preview modal.
 
-1.  **Verify Canvas Transformations in the Viewport:**
-    Check whether the camera matrix in `drawBetaSimulationFrame` (line 640) receives correct values for `camZoom`, `camX`, and `camY` when the Tauri window boots in the default HD format ($1280 \times 720$), or whether the mathematical transformation positions the creatures off-screen.
-2.  **Debug the `CreatureRenderer` in the Tauri Inspector:**
-    In the open Tauri window, **right-click ➔ Inspect** and switch to the **Console** tab. Read the exact stack trace thrown when executing the canvas frame (e.g., whether `renderer.render` is looking for an unexpected field in the decompiled `CreaturePhenotype` that Rust has serialized slightly differently).
-
-The entire communication and calculation flow is solid and runs with immense stability. We have successfully broken through the technological barrier for a native desktop distribution!
+### The Technical Leads for the Next Session:
+*   **The Time Locus discrepancy:** 
+    *   In the Catalogue preview, `time` is passed relative to `animTime += 0.045`.
+    *   In the main Ocean renderer (`drawBetaSimulationFrame`), `time` is passed as `timestamp * 0.015`.
+    *   If `timestamp` passed from `requestAnimationFrame` represents elapsed milliseconds (e.g. `20000.0` for 20 seconds), then `timestamp * 0.015` becomes `300.0`. We must verify if the multiplier is scaling the sway too fast or slow compared to the stable `animTime`!
+*   **The Brain activations vector:**
+    *   In the Ocean, the brain output drives movement: `let net_thrust = out_thrust * thrust_mag;`
+    *   If `out_thrust` (the brain's thrust output) is `0.0`, the creature doesn't move forward, so `v_forward` is `0.0`. Since `v_forward` is zero, the spinal waving/wiggling inside `creatureRenderer.ts` is heavily suppressed or static because wiggling is kinematically coupled to speed!
+    *   *Why is the brain output zero?* 
+        1.  In `execute_brain_with_learning`, check if `neuron_states` and `neuron_activations` are properly resizing to `total_nodes`.
+        2.  Check if the inputs fed into the brain (`inputs`) in the Ocean actually contain the oscillating clock. In this session, we added:
+            ```rust
+            let clock_val = (agent.age as f32 * 0.05).sin();
+            inputs[k] = clock_val;
+            ```
+            Verify if this clock value is successfully driving the CPG engine.
 
 ---
 
-## 4. Concepts for AI-Assisted Remote Debugging (Direct AI Connection)
+## 3. Structured Checklist (For the Next Session)
 
-In order for me (the AI) to autonomously inspect and analyze errors in the Tauri window and on the canvas in the future, we can set up one of the following asynchronous diagnostic interfaces:
-
-### Concept A: The "Error Mirroring" Channel (Highly Recommended)
-*   **How it works:** We register a global error listener (`window.onerror` and `window.onunhandledrejection`) in the frontend (`src/tauri_ocean.ts`). 
-*   If a render or JavaScript error occurs in the Tauri window, the frontend immediately sends this stack trace to Rust via `safeInvoke`.
-*   Rust continuously writes these error messages to a local file `src-tauri/client_debug.log`.
-*   *The advantage:* I can read this log file live in the terminal using my `read_file` tool. I see every crash on your screen instantly without you needing to copy anything.
-
-### Concept B: Tauri stdout Mirroring (Console Redirection)
-*   We integrate the official Tauri plugin `tauri-plugin-log`. This redirects all standard outputs from `console.log` and `console.error` of the webview directly to the system terminal (stdout) of Tauri. I can then see your web logs directly in the CLI processes.
-
-### Concept C: The "Debug Snapshot" (F8 Trigger)
-*   We set up a hotkey in the frontend (e.g., key `F8`). 
-*   Upon pressing the key, the frontend saves all current variables (camera zoom, loaded entities, last 15 console outputs) into a temporary file `client_snapshot.json`. I can read this file and obtain a complete mathematical representation of the current render state.
+1.  [ ] **Open the Tauri Inspector:** Right-click inside the Ocean window ➔ Inspect ➔ Console. Verify if there are any silent exceptions during the render frame loop.
+2.  [ ] **Test Wiggle in Catalogue:** Save a highly active specimen from a successful Trainer run. Confirm that it wiggles intensely inside the persistent Catalogue and inside the `Load from Catalogue` preview circle.
+3.  [ ] **Verify Ocean Time scale:** In `frontend/ocean.ts`, temporarily replace `timestamp * 0.015` inside `renderer.render` with `Date.now() * 0.001` or a manual accumulator `localAnimTime += 0.045` on each frame. See if the body instantly starts wiggling independently of its speed.
+4.  [ ] **Print Brain outputs:** In `src/server/engine.rs` line 935, log the outputs `out_thrust` and `out_left` for a spawned catalogue clone. Confirm if they are non-zero.

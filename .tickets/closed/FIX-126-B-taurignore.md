@@ -1,9 +1,10 @@
 ---
 id: FIX-126-B
 title: Fix Tauri v2 Watch Error (.taurignore)
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-08-31
+closed_at: 2026-09-03
 ---
 
 # FIX-126-B: Fix Tauri v2 Watch Error (.taurignore)

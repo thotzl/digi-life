@@ -1,9 +1,10 @@
 ---
 id: FIX-127
 title: SPOT-Compliant Rust Procedural Map Generation
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-08-31
+closed_at: 2026-09-03
 ---
 
 # FIX-127: SPOT-Compliant Rust Procedural Map Generation
