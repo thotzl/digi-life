@@ -5,7 +5,7 @@
   "maxCreatures": 45,
   "basalMetabolicRateMultiplier": 1.0,
   "rules": {
-    "creatureMaxAgeTicks": 5400,
+    "creatureMaxAgeTicks": 36000,
     "creatureMatureAgeFloor": 600,
     "lamarckianAssimilationAgeFloor": 1200,
     "lamarckianAssimilationChance": 0.25,
@@ -31,7 +31,7 @@
     "reproductionStomachThresholdFloor": 0.60,
     "reproductionSplitLossRatio": 0.4,
     "reproductionRecoilVelocityScale": 15.0,
-    "thrustBaseMultiplier": 6.8,
+    "thrustBaseMultiplier": 3.4,
     "steerTorqueBaseMultiplier": 5.8,
     "predatorSavageThrustThreshold": 0.55,
     "predatorSavageThrustMultiplier": 1.45,

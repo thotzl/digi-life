@@ -121,6 +121,7 @@ export interface CreatureAgent {
 
 export interface FoodSpore {
   id: number;
+  typeId: number;
   x: number;
   y: number;
   vx: number;
