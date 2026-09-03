@@ -14,6 +14,7 @@ export const selectedAge = signal(0);
 export const selectedGenome = signal("");
 export const selectedMethylations = signal<number[]>([]);
 export const selectedPhenotype = signal<any>(null);
+export const selectedBrainActivations = signal<number[]>([]);
 
 export const speciesRosterSignal = signal<SpeciesRecord[]>([]);
 

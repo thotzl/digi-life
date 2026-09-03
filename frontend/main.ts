@@ -1,99 +1,61 @@
-import "./ocean";
-import "./trainer";
-import { safeInvoke } from "./api";
+import "./styles.css";
+import { effect } from "@preact/signals-core";
+import { currentView } from "./core/router";
+import { createMainMenu } from "./views/MainMenu";
+import { createOceanView } from "./views/OceanView";
+import { createTrainerView } from "./views/TrainerView";
+import { createCatalogueView } from "./views/CatalogueView";
 
-const tabOcean = document.getElementById("tab-ocean") as HTMLButtonElement;
-const tabTrainer = document.getElementById("tab-trainer") as HTMLButtonElement;
-
-const oceanView = document.getElementById("ocean-view-container") as HTMLDivElement;
-const trainerView = document.getElementById("trainer-view-container") as HTMLDivElement;
-
-const navIndicator = document.getElementById("nav-indicator") as HTMLSpanElement;
-const navBadge = document.getElementById("nav-badge") as HTMLSpanElement;
-const navSubtitle = document.getElementById("nav-subtitle") as HTMLParagraphElement;
-const navHelp = document.getElementById("nav-help") as HTMLDivElement;
-
-function pauseAllSimulations() {
-  // Fundamentally suspend all background simulations (Ocean and Trainer) upon tab/view changes
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "TOGGLE_SIMULATION", running: false }) }).catch(() => {});
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "PAUSE_TRAINING" }) }).catch(() => {});
-}
-
-function switchToOcean() {
-  pauseAllSimulations();
-
-  if (oceanView) oceanView.style.display = "block";
-  if (trainerView) trainerView.style.display = "none";
-
-  if (tabOcean) {
-    tabOcean.style.color = "#00f2fe";
-    tabOcean.style.borderBottom = "2px solid #00f2fe";
-    tabOcean.style.fontWeight = "bold";
-    tabOcean.style.textShadow = "0 0 8px rgba(0, 242, 254, 0.4)";
+async function bootstrap() {
+  const app = document.getElementById("app");
+  if (!app) {
+    console.error("[Boot] Fatal error: Mount element '#app' not found.");
+    return;
   }
 
-  if (tabTrainer) {
-    tabTrainer.style.color = "#94a3b8";
-    tabTrainer.style.borderBottom = "";
-    tabTrainer.style.fontWeight = "normal";
-    tabTrainer.style.textShadow = "";
-  }
+  // 1. Compile and mount all core SPA views once on startup
+  const mainMenuEl = createMainMenu();
+  const oceanEl = createOceanView();
+  const trainerEl = createTrainerView();
+  const catalogueEl = createCatalogueView();
 
-  if (navIndicator) navIndicator.style.background = "";
-  if (navBadge) {
-    navBadge.innerText = "TAURI SPA";
-    navBadge.style.background = "var(--blue-glow)";
-  }
-  if (navSubtitle) navSubtitle.innerText = "Highly Reactive Cybernetic Substrate";
-  if (navHelp) navHelp.innerHTML = "<span>🔍 Scroll: Zoom | 🖱️ Drag: Move Camera | ⌨️ R: Reset View</span>";
+  app.appendChild(mainMenuEl);
+  app.appendChild(oceanEl);
+  app.appendChild(trainerEl);
+  app.appendChild(catalogueEl);
 
-  // Set mode to ocean
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "ocean" }) }).catch(() => {});
-}
+  // 2. Dynamically import simulation logics AFTER DOM is fully initialized
+  // This guarantees that all document.getElementById queries succeed with zero null errors!
+  await import("./ocean");
+  await import("./trainer");
 
-function switchToTrainer() {
-  pauseAllSimulations();
+  // 3. Reactively manage the visible SPA container (safeguarding GPU canvas contexts)
+  effect(() => {
+    const activeView = currentView.value;
+    
+    mainMenuEl.style.display = activeView === "main-menu" ? "flex" : "none";
+    oceanEl.style.display = activeView === "ocean" ? "block" : "none";
+    trainerEl.style.display = activeView === "trainer" ? "block" : "none";
+    catalogueEl.style.display = activeView === "catalogue" ? "block" : "none";
 
-  if (oceanView) oceanView.style.display = "none";
-  if (trainerView) trainerView.style.display = "block";
-
-  if (tabTrainer) {
-    tabTrainer.style.color = "#00f2fe";
-    tabTrainer.style.borderBottom = "2px solid #00f2fe";
-    tabTrainer.style.fontWeight = "bold";
-    tabTrainer.style.textShadow = "0 0 8px rgba(0, 242, 254, 0.4)";
-  }
-
-  if (tabOcean) {
-    tabOcean.style.color = "#94a3b8";
-    tabOcean.style.borderBottom = "";
-    tabOcean.style.fontWeight = "normal";
-    tabOcean.style.textShadow = "";
-  }
-
-  if (navIndicator) navIndicator.style.background = "var(--primary-cyan)";
-  if (navBadge) {
-    navBadge.innerText = "RL TRAINER";
-    navBadge.style.background = "";
-  }
-  if (navSubtitle) navSubtitle.innerText = "Evolutionary Reinforcement Learning Playground";
-  if (navHelp) navHelp.innerHTML = "<span>🎯 Click a sandbox to inspect brain live | ⌨️ WASD controls active on selected</span>";
-
-  // Set mode to trainer
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "trainer" }) }).catch(() => {});
-}
-
-if (tabOcean) {
-  tabOcean.addEventListener("click", () => {
-    switchToOcean();
+    // Set page tab titles matching the active state
+    if (activeView === "main-menu") {
+      document.title = "Pixel DNA - Laboratory Main Hub";
+    } else if (activeView === "ocean") {
+      document.title = "Ozean-Labor Substrate Simulation";
+    } else if (activeView === "trainer") {
+      document.title = "RL Evolutionary Training Chamber";
+    } else if (activeView === "catalogue") {
+      document.title = "Persistent Cryo-Frozen Species Library";
+    }
   });
+
+  console.log("[Boot] Pure TypeScript SPA bootstrapped successfully with lazy module initialization.");
 }
 
-if (tabTrainer) {
-  tabTrainer.addEventListener("click", () => {
-    switchToTrainer();
-  });
+// Start booting when DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootstrap);
+} else {
+  bootstrap();
 }
-
-// Default starting view on launch
-switchToOcean();

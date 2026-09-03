@@ -1,6 +1,10 @@
 import { CreatureRenderer } from './render/creatureRenderer';
 import { safeInvoke, getPhenotype, phenotypeCache } from './api';
-import { BrainRenderer } from './render/brainRenderer';
+import {
+  selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
+  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
+  selectedMethylations, selectedPhenotype, selectedBrainActivations
+} from "./signals";
 
 // Dimensions for the mini-canvases
 const canvasWidth = 1000;
@@ -24,6 +28,9 @@ const sliderMutation = document.getElementById("slider-mutation-rate") as HTMLIn
 const sliderInflow = document.getElementById("slider-inflow-rate") as HTMLInputElement;
 const sliderHof = document.getElementById("slider-hof-rate") as HTMLInputElement;
 const chkMultiTrial = document.getElementById("chk-multi-trial") as HTMLInputElement;
+const chkLamarck = document.getElementById("chk-lamarck-syn") as HTMLInputElement;
+const selectTrainerMode = document.getElementById("select-trainer-mode") as HTMLSelectElement;
+const sliderZoomTiles = document.getElementById("slider-zoom-tiles") as HTMLInputElement;
 
 const lblGridSize = document.getElementById("lbl-grid-size") as HTMLSpanElement;
 const lblSpeedup = document.getElementById("lbl-speedup") as HTMLSpanElement;
@@ -31,64 +38,10 @@ const lblEliteRatio = document.getElementById("lbl-elite-ratio") as HTMLSpanElem
 const lblMutation = document.getElementById("lbl-mutation-rate") as HTMLSpanElement;
 const lblInflow = document.getElementById("lbl-inflow-rate") as HTMLSpanElement;
 const lblHof = document.getElementById("lbl-hof-rate") as HTMLSpanElement;
+const lblTrainerMode = document.getElementById("lbl-trainer-mode") as HTMLSpanElement;
+const lblZoomTiles = document.getElementById("lbl-zoom-tiles") as HTMLSpanElement;
 
 const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
-
-// Diagnostics inspector DOM targets
-const focusMeta = document.getElementById("focus-meta") as HTMLParagraphElement;
-const focusGenome = document.getElementById("focus-genome") as HTMLInputElement | HTMLTextAreaElement;
-const neuronMeta = document.getElementById("neuron-meta") as HTMLDivElement;
-const inspectBrainContainer = document.getElementById("inspect-brain-container-trainer") as HTMLDivElement;
-
-const diagCanvas = document.getElementById("diagnostics-preview-canvas") as HTMLCanvasElement;
-const diagCtx = diagCanvas?.getContext('2d');
-let diagRenderer: CreatureRenderer | null = null;
-if (diagCanvas) {
-  diagRenderer = new CreatureRenderer(diagCanvas);
-}
-
-// Module-level animation state for butter-smooth diagnostics preview at 60Hz/120Hz
-let lastFocusedPheno: any | null = null;
-let animFrameId: number | null = null;
-let animTime: number = 0;
-
-function startPreviewAnimation() {
-  function loop() {
-    animTime += 0.045; // Uniform time increments per frame
-    if (diagCtx && diagRenderer && lastFocusedPheno) {
-      diagCtx.fillStyle = '#020617';
-      diagCtx.fillRect(0, 0, 100, 100);
-
-      const baseLength = lastFocusedPheno.spinalHarmonics?.baseLength || 130;
-      const dynamicScale = 75.0 / (baseLength * 0.5);
-
-      diagCtx.save();
-      diagCtx.translate(50, 50);
-      diagCtx.scale(dynamicScale, dynamicScale);
-
-      diagRenderer.render(
-        lastFocusedPheno,
-        animTime, // butter-smooth continuous time variable
-        0,
-        0,
-        -Math.PI / 2, // oriented North
-        0
-      );
-      diagCtx.restore();
-    }
-    animFrameId = requestAnimationFrame(loop);
-  }
-  if (!animFrameId) {
-    loop();
-  }
-}
-
-function setFocusedPhenotype(pheno: any) {
-  lastFocusedPheno = pheno;
-  if (!animFrameId) {
-    startPreviewAnimation();
-  }
-}
 
 // State Management
 interface Sandbox {
@@ -158,6 +111,10 @@ function syncSlidersFromBackend(data: any) {
     isMultiTrial = data.multiTrial;
     chkMultiTrial.checked = isMultiTrial;
   }
+  if (data.lamarckian !== undefined) {
+    isLamarckian = data.lamarckian;
+    chkLamarck.checked = isLamarckian;
+  }
   if (data.runId !== undefined) {
     runId = data.runId;
   }
@@ -170,104 +127,31 @@ let genomeMutationRate = 0.06;
 let inflowRate = 0.15;
 let hofRate = 0.15;
 let isMultiTrial = true;
+let isLamarckian = false;
 let runId = "default_run";
 let currentGeneration = 1;
 
-let hoveredNeuronId: number | null = null;
-let hoveredSynapse: { from: number; to: number; weight: number } | null = null;
-let lastFocusedGenome = "";
-
-function updateNeuronMeta(neuronId: number | null) {
-  if (!neuronMeta) return;
-
-  if (neuronId === null) {
-    neuronMeta.innerHTML = "Hover a neuron node to see live telemetry...";
-    return;
-  }
-
-  const sb = sandboxes[selectedSandboxIdx];
-  if (!sb || !sb.lastTelemetry) {
-    neuronMeta.innerHTML = `Neuron #${neuronId}`;
-    return;
-  }
-
-  const pheno = phenotypeCache.get(sb.lastTelemetry.genome);
-  if (!pheno) {
-    neuronMeta.innerHTML = `Neuron #${neuronId}`;
-    return;
-  }
-
-  const brain = pheno.brain;
-  const K = pheno.organelles.length;
-  const isInput = neuronId <= K;
-  const isOutput = neuronId >= K + 1 && neuronId <= K + 4;
-
-  let baseDesc = `Neuron #${neuronId}`;
-  let mathFormula = "";
-  let liveValues = "";
-
-  if (isInput) {
-    mathFormula = "f(x) = Identity (Bounded [0, 1])";
-    
-    // Read the perfect, pre-compiled friendly label straight from the Rust SSOT!
-    const neuron = brain.neurons.find((n: any) => n.id === neuronId);
-    if (neuron) {
-      baseDesc = neuron.label;
-    } else {
-      if (neuronId === K) {
-        baseDesc = "⌛ Hunger Clock";
-      } else {
-        baseDesc = `Input #${neuronId}: Organelle #${neuronId + 1}`;
-      }
-    }
-  } else {
-    const neuron = brain.neurons.find((n: any) => n.id === neuronId);
-    const actType = (neuron && neuron.activationType) || "tanh";
-    if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
-    else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
-    else if (actType === "sin") mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
-    else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
-
-    if (neuron) {
-      liveValues += `<br/><b>Decay (tau):</b> ${neuron.tau.toFixed(1)}f | <b>Bias:</b> ${neuron.bias.toFixed(2)}`;
-    }
-
-    if (isOutput) {
-      const outputIndex = neuronId - (K + 1);
-      if (outputIndex === 0) baseDesc = `Output #${neuronId}: Thrust`;
-      else if (outputIndex === 1) baseDesc = `Output #${neuronId}: Flexion Steering`;
-      else if (outputIndex === 2) baseDesc = `Output #${neuronId}: Biolum Flash`;
-      else baseDesc = `Output #${neuronId}: Reserved Motor`;
-    } else {
-      baseDesc = `Neuron #${neuronId} (Interneuron #${neuronId - K - 4})`;
-    }
-  }
-
-  neuronMeta.innerHTML = `
-    <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
-    <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
-    ${liveValues}
-  `;
+function getSandboxTaxaString(id: number, gen: number, pheno: any): string {
+  const carn = pheno.carnivory;
+  const dietLabel = carn >= 0.60 ? "Predator" : (carn < 0.40 ? "Herbivore" : "Omnivore");
+  return `${pheno.latinName} (${dietLabel}) - Sandbox #${id} (Gen. ${gen})`;
 }
-
-const brainRenderer = new BrainRenderer(inspectBrainContainer, "trainer", (id) => {
-  hoveredNeuronId = id;
-  updateNeuronMeta(id);
-}, (from, to, weight) => {
-  if (weight !== null) {
-    hoveredSynapse = { from, to, weight };
-  } else {
-    hoveredSynapse = null;
-  }
-});
 
 function drawSandbox(sb: Sandbox) {
   const tele = sb.lastTelemetry;
   if (!tele) return;
 
+  const chamberSize = tele.chamberSize || 1000.0;
+  const scale = 1000.0 / chamberSize;
+
   const ctx = sb.ctx;
+  ctx.save();
+  ctx.clearRect(0, 0, canvasWidth, canvasHeight);
   ctx.fillStyle = '#020617';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  // Apply scaling for the current chamber mode size
+  ctx.scale(scale, scale);
 
   if (tele.world && tele.world.obstacles) {
     tele.world.obstacles.forEach((obs: any) => {
@@ -285,9 +169,10 @@ function drawSandbox(sb: Sandbox) {
   tele.foods.forEach((spore: any) => {
     ctx.beginPath();
     ctx.arc(spore.x, spore.y, 8, 0, Math.PI * 2);
-    ctx.fillStyle = spore.id === 9999 ? '#ef4444' : '#10b981';
+    const isMeat = spore.typeId === 2;
+    ctx.fillStyle = isMeat ? '#ef4444' : '#10b981';
     ctx.shadowBlur = 4;
-    ctx.shadowColor = spore.id === 9999 ? '#ef4444' : '#10b981';
+    ctx.shadowColor = isMeat ? '#ef4444' : '#10b981';
     ctx.fill();
     ctx.shadowBlur = 0;
   });
@@ -295,6 +180,7 @@ function drawSandbox(sb: Sandbox) {
   let pheno = phenotypeCache.get(tele.genome);
   if (!pheno) {
     getPhenotype(tele.genome);
+    ctx.restore();
     return;
   }
 
@@ -307,9 +193,7 @@ function drawSandbox(sb: Sandbox) {
     tele.omega_rot
   );
 
-  if (tele.id === (selectedSandboxIdx + 1)) {
-    setFocusedPhenotype(pheno);
-  }
+  ctx.restore();
 }
 
 async function rebuildSandboxGrid() {
@@ -361,13 +245,31 @@ async function rebuildSandboxGrid() {
       if (lastTele) {
         const fullPheno = phenotypeCache.get(lastTele.genome);
         if (fullPheno) {
-          brainRenderer.compile(fullPheno.brain, fullPheno.organelles.length * 5);
-          setFocusedPhenotype(fullPheno);
+          selectedId.value = id;
+          selectedName.value = fullPheno.latinName;
+          selectedTaxa.value = getSandboxTaxaString(id, currentGeneration, fullPheno);
+          selectedStatus.value = lastTele.finished ? "🏁 SUCCESS" : "Active";
+          selectedEnergy.value = lastTele.energy;
+          selectedMaxEnergy.value = fullPheno.stomachCapacity;
+          selectedAdrenaline.value = lastTele.adrenaline || 1.0;
+          selectedAge.value = lastTele.age;
+          selectedGenome.value = lastTele.genome;
+          selectedMethylations.value = fullPheno.methylations;
+          selectedPhenotype.value = fullPheno;
         } else {
           getPhenotype(lastTele.genome).then((p) => {
             if (p) {
-              brainRenderer.compile(p.brain, p.organelles.length * 5);
-              setFocusedPhenotype(p);
+              selectedId.value = id;
+              selectedName.value = p.latinName;
+              selectedTaxa.value = getSandboxTaxaString(id, currentGeneration, p);
+              selectedStatus.value = lastTele.finished ? "🏁 SUCCESS" : "Active";
+              selectedEnergy.value = lastTele.energy;
+              selectedMaxEnergy.value = p.stomachCapacity;
+              selectedAdrenaline.value = lastTele.adrenaline || 1.0;
+              selectedAge.value = lastTele.age;
+              selectedGenome.value = lastTele.genome;
+              selectedMethylations.value = p.methylations;
+              selectedPhenotype.value = p;
             }
           });
         }
@@ -390,7 +292,8 @@ function pushHyperparamsToRust() {
       hofRate,
       multiTrial: isMultiTrial,
       isHeadless: false,
-      runId
+      runId,
+      lamarckian: isLamarckian
     })
   }).catch(() => {});
 }
@@ -619,6 +522,30 @@ chkMultiTrial.addEventListener("change", () => {
   pushHyperparamsToRust();
 });
 
+chkLamarck.addEventListener("change", () => {
+  isLamarckian = chkLamarck.checked;
+  pushHyperparamsToRust();
+});
+
+selectTrainerMode?.addEventListener("change", () => {
+  const m = selectTrainerMode.value;
+  if (lblTrainerMode) {
+    lblTrainerMode.innerText = m === "exploration" ? "Erkundung" : "Standard";
+  }
+  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_TRAINER_MODE", mode: m }) })
+    .catch(err => console.error("Tauri invoke error SET_TRAINER_MODE:", err));
+});
+
+sliderZoomTiles?.addEventListener("input", () => {
+  const size = sliderZoomTiles.value;
+  if (lblZoomTiles) {
+    lblZoomTiles.innerText = `${size}px`;
+  }
+  if (gridContainer) {
+    gridContainer.style.setProperty("--tile-size", `${size}px`);
+  }
+});
+
 async function setupTauriListeners() {
   if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
     const { listen } = await import("@tauri-apps/api/event");
@@ -667,120 +594,26 @@ async function setupTauriListeners() {
           }
         });
 
-        if (data.selectedBrain) {
-          const activations = data.selectedBrain.activations;
-          const states = data.selectedBrain.states;
-          const sb = sandboxes[selectedSandboxIdx];
+        // Select the active sandbox and write its details to the global SSOT signals!
+        const activeSb = sandboxes[selectedSandboxIdx];
+        if (activeSb && activeSb.lastTelemetry) {
+          const tele = activeSb.lastTelemetry;
+          const pheno = phenotypeCache.get(tele.genome);
+          if (pheno) {
+            selectedId.value = activeSb.id;
+            selectedName.value = pheno.latinName;
+            selectedTaxa.value = getSandboxTaxaString(activeSb.id, currentGeneration, pheno);
+            selectedStatus.value = tele.finished ? "🏁 SUCCESS" : "Active";
+            selectedEnergy.value = tele.energy;
+            selectedMaxEnergy.value = pheno.stomachCapacity;
+            selectedAdrenaline.value = tele.adrenaline || 1.0;
+            selectedAge.value = tele.age;
+            selectedGenome.value = tele.genome;
+            selectedMethylations.value = pheno.methylations;
+            selectedPhenotype.value = pheno;
 
-          if (sb && sb.lastTelemetry && activations) {
-            const pheno = phenotypeCache.get(sb.lastTelemetry.genome);
-            if (pheno) {
-              const brain = pheno.brain;
-
-              // Compile the brain SVG if it hasn't been compiled yet, or if the active focused genome has changed!
-              if (sb.lastTelemetry.genome !== lastFocusedGenome || (inspectBrainContainer && (inspectBrainContainer.innerHTML.includes("fallback-state") || inspectBrainContainer.innerHTML.includes("Select a sandbox")))) {
-                brainRenderer.compile(brain, pheno.organelles.length * 5);
-                lastFocusedGenome = sb.lastTelemetry.genome;
-              }
-
-              brainRenderer.updateLiveGlows(activations, brain);
-
-              if (focusGenome) {
-                focusGenome.value = sb.lastTelemetry.genome;
-              }
-
-              const seedStr = `SANDBOX_SEED_${sb.id}_GEN_${currentGeneration}`;
-              focusMeta.innerHTML = `
-                Sandbox: #${sb.id}<br/>
-                Status: ${sb.lastTelemetry.finished ? "🏁 SUCCESS" : "🏃 TRAINING"}<br/>
-                Fitness: ${sb.lastTelemetry.current_fitness.toFixed(1)}<br/>
-                Diet: ${pheno.dietClass}<br/>
-                Seed: <span style="color: var(--primary-cyan); font-size: 0.58rem; word-break: break-all;">${seedStr}</span>
-              `;
-
-              if (hoveredNeuronId !== null) {
-                const K = pheno.organelles.length;
-                const isInput = hoveredNeuronId <= K;
-                const isOutput = hoveredNeuronId >= K + 1 && hoveredNeuronId <= K + 4;
-                
-                let baseDesc = `Neuron #${hoveredNeuronId}`;
-                let mathFormula = "";
-                let liveValues = "";
-
-                if (isInput) {
-                  mathFormula = "f(x) = Identity (Bounded [0, 1])";
-                  const act = activations[hoveredNeuronId] || 0.0;
-                  liveValues = `<b>Activation (a):</b> ${act.toFixed(3)}`;
-                  if (hoveredNeuronId === K) {
-                    baseDesc = `Input #${hoveredNeuronId}: Internal Clock`;
-                  } else {
-                    const patch = pheno.organelles[hoveredNeuronId];
-                    let organLabel = "Vision Eye";
-                    if (patch) {
-                      const aff = patch.spectralAffinity;
-                      if (aff >= 0.8) organLabel = "Thermal (Heat)";
-                      else if (aff >= 0.65) organLabel = "Vibration";
-                      else if (aff >= 0.25) organLabel = "Olfactory (Smell)";
-                    }
-                    baseDesc = `Input #${hoveredNeuronId}: Organelle #${hoveredNeuronId + 1} (${organLabel})`;
-                  }
-                } else {
-                  const neuron = brain.neurons[hoveredNeuronId];
-                  const state = states[hoveredNeuronId] || 0.0;
-                  const act = activations[hoveredNeuronId] || 0.0;
-                  
-                  const actType = (neuron && neuron.activationType) || "tanh";
-                  if (actType === "relu") mathFormula = "f(s) = max(0, s) [ReLU]";
-                  else if (actType === "sigmoid") mathFormula = "f(s) = 1 / (1 + e^-s) [Sigmoid]";
-                  else if (actType === "sin") mathFormula = "f(s) = sin(s) [-1.0 to 1.0] [Oscillatory]";
-                  else mathFormula = "f(s) = tanh(s) [-1.0 to 1.0] [Hyperbolic]";
-
-                  liveValues = `<b>Potential (s):</b> ${state.toFixed(3)}<br/><b>Activation (a):</b> ${act.toFixed(3)}`;
-                  if (neuron) {
-                    liveValues += `<br/><b>Decay (tau):</b> ${neuron.tau.toFixed(1)}f | <b>Bias:</b> ${neuron.bias.toFixed(2)}`;
-                  }
-                  
-                  if (isOutput) {
-                    const outputIndex = hoveredNeuronId - (K + 1);
-                    if (outputIndex === 0) baseDesc = `Output #${hoveredNeuronId}: Thrust`;
-                    else if (outputIndex === 1) baseDesc = `Output #${hoveredNeuronId}: Flexion Steering`;
-                    else if (outputIndex === 2) baseDesc = `Output #${hoveredNeuronId}: Biolum Flash`;
-                    else baseDesc = `Output #${hoveredNeuronId}: Reserved Motor`;
-                  } else {
-                    baseDesc = `Neuron #${hoveredNeuronId} (Interneuron #${hoveredNeuronId - K - 4})`;
-                  }
-                }
-
-                if (neuronMeta) {
-                  neuronMeta.innerHTML = `
-                    <span style="color: #00f2fe; font-weight: bold;">${baseDesc}</span><br/>
-                    <span style="color: var(--text-muted); font-size: 0.53rem;">Formula: ${mathFormula}</span><br/>
-                    ${liveValues}
-                  `;
-                }
-              } else if (hoveredSynapse !== null) {
-                const fromLabel = brain.neurons.find((n: any) => n.id === hoveredSynapse!.from)?.label || `Node ${hoveredSynapse!.from}`;
-                const toLabel = brain.neurons.find((n: any) => n.id === hoveredSynapse!.to)?.label || `Node ${hoveredSynapse!.to}`;
-                const isExcitatory = hoveredSynapse!.weight > 0;
-                const synType = isExcitatory ? "Excitatory (+)" : "Inhibitory (-)";
-                const synColor = isExcitatory ? "var(--primary-cyan)" : "#ef4444";
-                const preVal = Math.max(0.0, Math.min(1.0, Math.abs(activations[hoveredSynapse!.from] || 0.0)));
-                const act = Math.pow(preVal, 4.0);
-
-                if (neuronMeta) {
-                  neuronMeta.innerHTML = `
-                    <span style="color: ${synColor}; font-weight: bold;">⚡ Synaptic Pathway</span><br/>
-                    <span style="color: var(--text-muted); font-size: 0.51rem;">From: ${fromLabel}</span><br/>
-                    <span style="color: var(--text-muted); font-size: 0.51rem;">To: ${toLabel}</span><br/>
-                    <b>Type:</b> ${synType} | <b>Weight:</b> ${hoveredSynapse!.weight.toFixed(3)}<br/>
-                    <b>Signal Flow Strength:</b> ${act.toFixed(3)}
-                  `;
-                }
-              } else {
-                if (neuronMeta) {
-                  neuronMeta.innerHTML = "Hover a neuron node to see live telemetry...";
-                }
-              }
+            if (data.selectedBrain && Number(data.selectedBrain.id) === Number(activeSb.id)) {
+              selectedBrainActivations.value = data.selectedBrain.activations;
             }
           }
         }
