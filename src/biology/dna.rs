@@ -1102,7 +1102,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 bias: 0.0,
                 activation_type: Some(String::from("sigmoid")), // Sigmoid is ideal for summing intensity
                 x: Some(0.5),
-                y: Some(0.15 + (c as f32 / 4.0) * 0.35),
+                y: Some(0.15 + (c as f32 / 4.0) * 0.15), // Symmetrische Ebene 2 (links-mitte)
             });
         }
 
@@ -1117,7 +1117,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 bias: 0.0,
                 activation_type: Some(String::from("tanh")), // Tanh is ideal for signed direction [-1.0 .. 1.0]
                 x: Some(0.5),
-                y: Some(0.5 + (c as f32 / 4.0) * 0.35),
+                y: Some(0.35 + (c as f32 / 4.0) * 0.15), // Symmetrische Ebene 2 (links-mitte)
             });
         }
     }
@@ -1151,7 +1151,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 3 => String::from("sin"),
                 _ => String::from("tanh"),
             };
-            let depth = 0.15 + depth_hash * 0.7; // maps depth between 0.15 and 0.85
+            let depth = 0.55 + depth_hash * 0.30; // Standard-Hiddens auf Ebene 3 (rechts-mitte) verschieben
             (bias, tau, activation_type, depth)
         } else {
             // Fallback default values
@@ -1167,7 +1167,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 3 => String::from("sin"),
                 _ => String::from("tanh"),
             };
-            let depth = 0.15 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.7;
+            let depth = 0.55 + (i as f32 / (h_count.saturating_sub(1)) as f32) * 0.30; // Fallback-Hiddens auf Ebene 3 verschieben
             (bias, tau, activation_type, depth)
         };
 
@@ -1216,19 +1216,43 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         explicit_synapses.push((from_node, to_node, weight));
     }
 
-    // Build a fully-connected graph for standard nodes only (excluding fusion interneurons - Phase 3 Optimization)
+    // Build a fully-connected graph based on the hierarchical Deep Brain Layout (Phase 3 Optimization)
     let mut exuberant_sources = Vec::new();
-    for s in 0..get_input_neurons_count(organelles.len()) { exuberant_sources.push(s); }
-    for h in 0..h_count {
-        exuberant_sources.push(get_hidden_neurons_start_id(organelles.len()) + fusions_count + h);
-    }
-
     let mut exuberant_destinations = Vec::new();
+
+    // A. Output motor nodes are always part of destinations
     for o in 0..OUTPUT_MOTOR_NODES_COUNT {
         exuberant_destinations.push(get_input_neurons_count(organelles.len()) + o);
     }
-    for h in 0..h_count {
-        exuberant_destinations.push(get_hidden_neurons_start_id(organelles.len()) + fusions_count + h);
+
+    // B. Systemic base inputs are always part of sources (proprioceptive feedback)
+    for c in 0..SYSTEMIC_BASE_INPUTS_COUNT {
+        exuberant_sources.push(k_count + c);
+    }
+
+    if has_hox && num_pairs > 0 {
+        // HOX Active: Symmetrical Fusion Interneurons act as the primary, processed sensory inputs!
+        // This isolates raw L/R inputs from the rest of the brain and halves the genetic search space!
+        for f in 0..fusions_count {
+            exuberant_sources.push(get_hidden_neurons_start_id(organelles.len()) + f);
+        }
+        // Standard hidden neurons are part of both sources and destinations
+        for h in 0..h_count {
+            let id = get_hidden_neurons_start_id(organelles.len()) + fusions_count + h;
+            exuberant_sources.push(id);
+            exuberant_destinations.push(id);
+        }
+    } else {
+        // HOX Inactive (Asymmetric): Raw organelle inputs act as raw sensory inputs
+        for s in 0..k_count {
+            exuberant_sources.push(s);
+        }
+        // Standard hidden neurons are part of both sources and destinations
+        for h in 0..h_count {
+            let id = get_hidden_neurons_start_id(organelles.len()) + h;
+            exuberant_sources.push(id);
+            exuberant_destinations.push(id);
+        }
     }
 
     for &from_node in &exuberant_sources {

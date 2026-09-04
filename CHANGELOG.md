@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.1] - 2026-09-04
+
+### Added
+- **Hierarchische Deep-Brain-Sensorfusion (Kaskadiertes Brain Layout):** Isoliert physische Roh-Eingänge bei HOX-Symmetrie vollständig aus dem exuberant vollvernetzten Graphen, sodass die standardmäßigen Hiddens und Motoren sich ausschließlich über die bereits vorverarbeiteten Summen- und Differenz-Interneurone speisen. Dies halbiert den evolutionären Suchraum für komplexe Verhaltensweisen.
+- **Ästhetisches Upgrade der Cyberpunk-Icon-Bibliothek:** Vollständiger Ersatz aller verbliebenen, klobigen Standard-Emojis durch rasiermesserscharfe Svg-Vektorgrafiken im einheitlichen Stil des Hauptmenüs (IconRocket für Klon-Release, IconWeights für Trainer-Injektion, IconDna für Chromatin, IconBrain für Brain-Waves, sowie IconSuccess und IconActive für die Sandbox-Schilder).
+
+### Fixed
+- **Präzise 4-Säulen-Signalfluss-Staffelung im UI:** Korrektur und Staffelung der Tiefenkoordinaten (`y`-Werte) im Gehirn-Compiler (`dna.rs`), sodass Symmetrieknoten (Ebene 2) links-mittig und DNA-Hiddens (Ebene 3) rechts-mittig gerendert werden. Der gezeichnete Signalfluss verläuft nun visuell exakt und geradlinig von links nach rechts.
+- **Beseitigung des Kachel-Springens (Vermeidung von Jumping-Effekten):** Einführung von No-Wrap- und Inline-Flex-Ausrichtungen für `.sandbox-meta span` in `styles.css` zur Verhinderung von Zeilenumbrüchen bei neu eingespielten Vektor-Icons im Trainingsgitter.
+
 ## [1.11.0] - 2026-09-04
 
 ### Added

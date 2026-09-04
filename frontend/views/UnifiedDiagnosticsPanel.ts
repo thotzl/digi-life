@@ -8,7 +8,7 @@ import {
   selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype, selectedBrainActivations, computeActiveGeneSpans, getLocusDescription
 } from "../signals";
-import { IconPlus } from "../components/Icons";
+import { IconPlus, IconDna, IconBrain } from "../components/Icons";
 
 // --- STYLED COMPONENTS ---
 
@@ -421,13 +421,13 @@ export class UnifiedDiagnosticsPanel {
         }),
         SubSectionContainer({
           children: [
-            styled("h4")``({ children: "🧬 Expressed Chromatin DNA" }),
+            styled("h4")``({ children: [IconDna, " Expressed Chromatin DNA"] }),
             GenomeWrapper({ children: this.genomeGridEl })
           ]
         }),
         SubSectionContainer({
           children: [
-            styled("h4")``({ children: "🧠 CTRNN Brain Waves" }),
+            styled("h4")``({ children: [IconBrain, " CTRNN Brain Waves"] }),
             this.brainContainerEl
           ]
         }),

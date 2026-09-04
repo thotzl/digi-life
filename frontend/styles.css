@@ -762,6 +762,14 @@ body {
   margin-top: 4px;
 }
 
+/* Sichert, dass Icons und Text auf derselben Zeile stehen und zentriert sind (Vermeidet Kachel-Jumping) */
+.sandbox-meta span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  gap: 4px;
+}
+
 .badge-elite {
   background: rgba(16, 185, 129, 0.15);
   color: #10b981;

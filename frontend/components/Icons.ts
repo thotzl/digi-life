@@ -32,3 +32,9 @@ export const IconTrophy = `<svg width="11" height="11" viewBox="0 0 24 24" fill=
 export const IconMutant = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; margin-right:6px; vertical-align:middle; margin-top:-1px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>`;
 
 export const IconPlant = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; margin-right:6px; vertical-align:middle; margin-top:-1px;"><path d="M12 22V10M12 10a5 5 0 0 1 5-5h2M12 14a5 5 0 0 0-5-5H5"/></svg>`;
+
+export const IconSuccess = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; margin-right:6px; vertical-align:middle; margin-top:-1px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+
+export const IconActive = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; margin-right:6px; vertical-align:middle; margin-top:-1px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
+
+export const IconRocket = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin-right:6px; margin-top:-2px;"><path d="M4.5 16.5c-1.5 1.25-2.5 3.5-2.5 3.5s2.25-1 3.5-2.5M12 2C6 2 2 10 2 12c1.5 0 3-1.5 3-3s1.5-3 3-3c2 0 10-4 10-4"/><path d="M14 15l-4-4M9 9l5 5M12 22s4-4 10-10c0-6-10-10-10-10"/></svg>`;

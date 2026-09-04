@@ -2,7 +2,7 @@ import { styled } from "../core/styled";
 import { navigateTo, currentView } from "../core/router";
 import { effect } from "@preact/signals-core";
 import { safeInvoke } from "../api";
-import { IconCatalogue, IconBack } from "../components/Icons";
+import { IconCatalogue, IconBack, IconRocket, IconWeights } from "../components/Icons";
 import { UnifiedDiagnosticsPanel } from "./UnifiedDiagnosticsPanel";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
@@ -570,7 +570,7 @@ export class CatalogueView {
 
     const modalBox = CyberModalBox({
       children: [
-        styled("h3")``({ children: "🚀 Release Clone" }),
+        styled("h3")``({ children: [IconRocket, " Release Clone"] }),
         styled("p")``({ children: `Should "${creature.name}" be released into the active ocean as an exact clone (including learned brain reflexes) or as a new genetic seed?` }),
         labelRow,
         buttonsRow
@@ -678,7 +678,7 @@ export class CatalogueView {
 
       const modalBox = CyberModalBox({
         children: [
-          styled("h3")``({ children: "🏋️ Inject into Training" }),
+          styled("h3")``({ children: [IconWeights, " Inject into Training"] }),
           styled("p")``({ style: { marginBottom: "12px" }, children: `Select which of your persistent training runs you want to inject "${creature.name}" into:` }),
           runSelect,
           buttonsRow

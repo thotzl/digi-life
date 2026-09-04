@@ -1,5 +1,6 @@
 import { CreatureRenderer } from './render/creatureRenderer';
 import { safeInvoke, getPhenotype, phenotypeCache } from './api';
+import { IconElite, IconTrophy, IconMutant, IconPlant, IconSuccess, IconActive } from './components/Icons';
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
   selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
@@ -217,7 +218,7 @@ async function rebuildSandboxGrid() {
 
     const label = document.createElement("div");
     label.className = "sandbox-meta";
-    label.innerHTML = `<span>#${id}</span> <span id="sb-origin-lbl-${id}">🌱 Random</span>`;
+    label.innerHTML = `<span>#${id}</span> <span id="sb-origin-lbl-${id}">${IconPlant} Random</span>`;
 
     const canvas = document.createElement("canvas");
     canvas.width = canvasWidth;
@@ -576,16 +577,16 @@ async function setupTauriListeners() {
             const labelOrigin = document.getElementById(`sb-origin-lbl-${tele.id}`);
             if (labelOrigin) {
               if (tele.origin_type === "elite") {
-                labelOrigin.innerHTML = "👑 Elite Parent";
+                labelOrigin.innerHTML = `${IconElite} Elite Parent`;
                 labelOrigin.style.color = "#fbbf24";
               } else if (tele.origin_type === "hof") {
-                labelOrigin.innerHTML = "🏆 Hall of Fame";
+                labelOrigin.innerHTML = `${IconTrophy} Hall of Fame`;
                 labelOrigin.style.color = "#60a5fa";
               } else if (tele.origin_type === "mutant") {
-                labelOrigin.innerHTML = "🧬 Mutant Clone";
+                labelOrigin.innerHTML = `${IconMutant} Mutant Clone`;
                 labelOrigin.style.color = "#c084fc";
               } else {
-                labelOrigin.innerHTML = "🌱 Fresh Random";
+                labelOrigin.innerHTML = `${IconPlant} Fresh Random`;
                 labelOrigin.style.color = "#34d399";
               }
             }
@@ -597,7 +598,7 @@ async function setupTauriListeners() {
 
             const labelStatus = document.getElementById(`sb-status-lbl-${tele.id}`);
             if (labelStatus) {
-              labelStatus.innerText = tele.finished ? "🏁 SUCCESS" : `🏃 Active`;
+              labelStatus.innerHTML = tele.finished ? `${IconSuccess} SUCCESS` : `${IconActive} Active`;
               labelStatus.style.color = tele.finished ? "#10b981" : "var(--text-muted)";
             }
           }
