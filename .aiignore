@@ -19,3 +19,4 @@ digilife.db-shm
 .idea/
 .DS_Store
 *.log
+!/target
