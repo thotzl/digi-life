@@ -4,6 +4,27 @@ use ts_rs::TS;
 
 pub const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+pub const CHANNELS_PER_ORGANELLE: usize = 5;
+pub const SYSTEMIC_BASE_INPUTS_COUNT: usize = 6;
+pub const OUTPUT_MOTOR_NODES_COUNT: usize = 4;
+
+// Semantic Helper utilities for brain neurons index calculations
+pub fn get_input_neurons_count(organelles_len: usize) -> usize {
+    organelles_len * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT
+}
+
+pub fn get_motor_thrust_id(organelles_len: usize) -> usize {
+    get_input_neurons_count(organelles_len) + 0
+}
+
+pub fn get_motor_bending_id(organelles_len: usize) -> usize {
+    get_input_neurons_count(organelles_len) + 1
+}
+
+pub fn get_hidden_neurons_start_id(organelles_len: usize) -> usize {
+    get_input_neurons_count(organelles_len) + OUTPUT_MOTOR_NODES_COUNT
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct HSLColor {
@@ -887,11 +908,11 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         let angle_offset = get_payload_linear_value_offset(payload, 16);
         let hue_shift = (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round();
 
-        // Left side is always forward-facing (10.0 to 170.0 degrees) relative to the body
-        let base_angle = 10.0 + angle_offset * 160.0;
+        // Symmetrical Angle Space: 0.0 is straight ahead, Left is negative [-170 .. 0], Right is positive [0 .. 170]
+        let base_angle = -170.0 + angle_offset * 340.0;
 
         if has_hox {
-            if (base_angle - 90.0).abs() <= 5.0 {
+            if base_angle.abs() <= 7.5 {
                 // Midline coalescence/fusion to a single unpaired central organelle
                 organelles.push(SensoryPatch {
                     spectral_affinity,
@@ -899,39 +920,41 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                     expression_style,
                     scale,
                     spinal_pos,
-                    angle: 90.0,
+                    angle: 0.0, // 0.0 is straight ahead!
                     hue_shift,
                     gene_start_index: 0,
                     gene_end_index: 0,
                 });
             } else {
-                // Symmetrical Left side
+                // Symmetrical Left side (always negative angle)
+                let left_angle = -base_angle.abs();
                 organelles.push(SensoryPatch {
                     spectral_affinity,
                     bandwidth,
                     expression_style,
                     scale,
                     spinal_pos,
-                    angle: base_angle,
+                    angle: left_angle,
                     hue_shift,
                     gene_start_index: 0,
                     gene_end_index: 0,
                 });
-                // Symmetrical Right side (mirrored left-to-right across the 90.0 spine line)
+                // Symmetrical Right side (always positive angle)
+                let right_angle = base_angle.abs();
                 organelles.push(SensoryPatch {
                     spectral_affinity,
                     bandwidth,
                     expression_style,
                     scale,
                     spinal_pos,
-                    angle: 180.0 - base_angle,
+                    angle: right_angle,
                     hue_shift,
                     gene_start_index: 0,
                     gene_end_index: 0,
                 });
             }
         } else {
-            // Primitive asymmetric distribution: forward-facing but restricted to the left side
+            // Primitive asymmetric distribution: anywhere in the range
             organelles.push(SensoryPatch {
                 spectral_affinity,
                 bandwidth,
@@ -961,11 +984,15 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let repair_fidelity = 0.15 + h_fidelity * 0.8;
 
     // 15. CTRNN Brain (TCK-122: 5-Channel Multispectral Sensory Inputs)
-    let k_count = organelles.len() * 5;
+    let k_count = organelles.len() * CHANNELS_PER_ORGANELLE;
+
+    // Symmetrical Fusions Neurons (Phase 3 of TCK-133)
+    let num_pairs = if has_hox { organelles.len() / 2 } else { 0 };
+    let fusions_count = num_pairs * (CHANNELS_PER_ORGANELLE * 2); // 5 Sum, 5 Diff per pair
 
     // Hidden neurons (Always exactly 4 hidden neurons for rich baseline wiring depth!)
     let h_count = 4;
-    let total_nodes = k_count + 1 + 4 + h_count;
+    let total_nodes = k_count + SYSTEMIC_BASE_INPUTS_COUNT + OUTPUT_MOTOR_NODES_COUNT + fusions_count + h_count;
 
     let mut neurons = Vec::with_capacity(total_nodes);
 
@@ -1001,8 +1028,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             ]
         };
 
-        for c in 0..5 {
-            let id = i * 5 + c;
+        for c in 0..CHANNELS_PER_ORGANELLE {
+            let id = i * CHANNELS_PER_ORGANELLE + c;
             neurons.push(CTRNNNeuron {
                 id,
                 neuron_type: NeuronType::Input,
@@ -1016,20 +1043,31 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         }
     }
 
-    neurons.push(CTRNNNeuron {
-        id: k_count,
-        neuron_type: NeuronType::Input,
-        label: String::from("⌛ Hunger Clock"),
-        tau: 1.0,
-        bias: 0.0,
-        activation_type: None,
-        x: Some(0.1),
-        y: Some(0.9),
-    });
+    // Systemic Base Inputs (Feste propriozeptive Kern-Sensorik)
+    let base_labels = [
+        "⌛ Hunger Clock",
+        "🌊 Linear Speed",
+        "🔄 Rotational Speed",
+        "🔋 Internal Energy",
+        "⚡ Adrenaline Level",
+        "💥 Pain Signal",
+    ];
+    for c in 0..SYSTEMIC_BASE_INPUTS_COUNT {
+        neurons.push(CTRNNNeuron {
+            id: k_count + c,
+            neuron_type: NeuronType::Input,
+            label: String::from(base_labels[c]),
+            tau: 1.0,
+            bias: 0.0,
+            activation_type: None,
+            x: Some(0.1),
+            y: Some(0.85 + (c as f32 / 5.0) * 0.1),
+        });
+    }
 
     // B. Outputs (Thrust, Bending, Biolum, Reserved)
     let out_labels = ["Thrust (Fwd/Bwd)", "Bending (Left/Right)", "Biolum Flash", "Reserved"];
-    for i in 0..4 {
+    for i in 0..OUTPUT_MOTOR_NODES_COUNT {
         // Derive biases and taus dynamically from the brain params active_dna hashes linearly
         let bias_hash = get_payload_linear_value_offset(&active_dna, i + 1);
         let tau_hash = get_payload_linear_value_offset(&active_dna, i + 10);
@@ -1037,7 +1075,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         let tau = (0.2 + tau_hash * 1.8).clamp(0.1, 2.5);
 
         neurons.push(CTRNNNeuron {
-            id: k_count + 1 + i,
+            id: get_input_neurons_count(organelles.len()) + i,
             neuron_type: NeuronType::Output,
             label: String::from(out_labels[i]),
             tau,
@@ -1048,7 +1086,43 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // C. Hidden Neurons (dynamically compiled from "NEU" payloads or fallbacks!)
+    // C1. Symmetrical Fusions Neurons (Sum & Difference Interneurons)
+    for p in 0..num_pairs {
+        let left_deg = organelles[2 * p].angle.round() as i32;
+        let right_deg = organelles[2 * p + 1].angle.round() as i32;
+
+        // Sum Interneurons (ZNS Integration)
+        for c in 0..CHANNELS_PER_ORGANELLE {
+            let id = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + c;
+            neurons.push(CTRNNNeuron {
+                id,
+                neuron_type: NeuronType::Hidden,
+                label: format!("Σ Sum Organelle-Pair #{} (Ch {}, {}°/{}°)", p + 1, c + 1, left_deg, right_deg),
+                tau: 1.0,
+                bias: 0.0,
+                activation_type: Some(String::from("sigmoid")), // Sigmoid is ideal for summing intensity
+                x: Some(0.5),
+                y: Some(0.15 + (c as f32 / 4.0) * 0.35),
+            });
+        }
+
+        // Difference Interneurons (ZNS Integration)
+        for c in 0..CHANNELS_PER_ORGANELLE {
+            let id = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE + c;
+            neurons.push(CTRNNNeuron {
+                id,
+                neuron_type: NeuronType::Hidden,
+                label: format!("Δ Diff Organelle-Pair #{} (Ch {}, {}°/{}°)", p + 1, c + 1, left_deg, right_deg),
+                tau: 1.0,
+                bias: 0.0,
+                activation_type: Some(String::from("tanh")), // Tanh is ideal for signed direction [-1.0 .. 1.0]
+                x: Some(0.5),
+                y: Some(0.5 + (c as f32 / 4.0) * 0.35),
+            });
+        }
+    }
+
+    // C2. Hidden Neurons (dynamically compiled from "NEU" payloads or fallbacks!)
     let neu_payloads = extract_raw_gene_payloads(&clean_genome, "NEU", "EN");
     let mut h_count = neu_payloads.len();
     
@@ -1098,7 +1172,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         };
 
         neurons.push(CTRNNNeuron {
-            id: k_count + 5 + i,
+            id: get_hidden_neurons_start_id(organelles.len()) + fusions_count + i,
             neuron_type: NeuronType::Hidden,
             label: format!("Hidden #{}", i + 1),
             tau,
@@ -1115,12 +1189,18 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // Establish valid sources and destinations arrays for robust wiring!
     let mut sources = Vec::new();
-    for s in 0..=k_count { sources.push(s); }
-    for h in 0..h_count { sources.push(k_count + 5 + h); }
+    for s in 0..get_input_neurons_count(organelles.len()) { sources.push(s); }
+    for h in 0..(fusions_count + h_count) {
+        sources.push(get_hidden_neurons_start_id(organelles.len()) + h);
+    }
 
     let mut destinations = Vec::new();
-    for o in 0..4 { destinations.push(k_count + 1 + o); }
-    for h in 0..h_count { destinations.push(k_count + 5 + h); }
+    for o in 0..OUTPUT_MOTOR_NODES_COUNT {
+        destinations.push(get_input_neurons_count(organelles.len()) + o);
+    }
+    for h in 0..(fusions_count + h_count) {
+        destinations.push(get_hidden_neurons_start_id(organelles.len()) + h);
+    }
 
     // Parse all explicit "SY" promoter genes into a lookup list
     let mut explicit_synapses = Vec::new();
@@ -1136,28 +1216,28 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         explicit_synapses.push((from_node, to_node, weight));
     }
 
-    // Build a fully-connected graph (Exuberance at birth)
-    for &from_node in &sources {
-        for &to_node in &destinations {
-            // Avoid direct self-loops to prevent trivial infinite positive feedback loops
+    // Build a fully-connected graph for standard nodes only (excluding fusion interneurons - Phase 3 Optimization)
+    let mut exuberant_sources = Vec::new();
+    for s in 0..get_input_neurons_count(organelles.len()) { exuberant_sources.push(s); }
+    for h in 0..h_count {
+        exuberant_sources.push(get_hidden_neurons_start_id(organelles.len()) + fusions_count + h);
+    }
+
+    let mut exuberant_destinations = Vec::new();
+    for o in 0..OUTPUT_MOTOR_NODES_COUNT {
+        exuberant_destinations.push(get_input_neurons_count(organelles.len()) + o);
+    }
+    for h in 0..h_count {
+        exuberant_destinations.push(get_hidden_neurons_start_id(organelles.len()) + fusions_count + h);
+    }
+
+    for &from_node in &exuberant_sources {
+        for &to_node in &exuberant_destinations {
             if from_node == to_node {
                 continue;
             }
 
-            // Check if there is an explicit, strong "SY" gene for this connection
-            let weight = if has_hox && from_node < k_count && (from_node / 5) % 2 == 1 {
-                // Symmetrical neural mirroring: copy weights exactly from the homologous left organelle (from_node - 5)
-                let left_node = from_node - 5;
-                let left_weight = synapses.iter()
-                    .find(|s| s.from_node == left_node && s.to_node == to_node)
-                    .map(|s| s.weight)
-                    .unwrap_or(0.0);
-                if to_node == k_count + 2 {
-                    -left_weight // Symmetrical contralateral steering: invert sign ONLY for Bending output during initial transfer!
-                } else {
-                    left_weight // Same sign for thrust, hidden neurons, etc.
-                }
-            } else if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
+            let final_weight = if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
                 explicit.2 // use strong, genetically specialized weight!
             } else {
                 // Initialize as a weak, random exploratory synapse with enough active power to drive Hebbian learning
@@ -1168,8 +1248,38 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             synapses.push(CTRNNSynapse {
                 from_node,
                 to_node,
-                weight,
+                weight: final_weight,
             });
+        }
+    }
+
+    // Append ONLY the dedicated, isolated Symmetrical Fusion reflex synapses directly (Phase 3 Optimization)
+    if has_hox {
+        for p in 0..num_pairs {
+            let left_start = (2 * p) * CHANNELS_PER_ORGANELLE;
+            let right_start = (2 * p + 1) * CHANNELS_PER_ORGANELLE;
+            let sum_start = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2);
+            let diff_start = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
+
+            let motor_thrust_id = get_motor_thrust_id(organelles.len());
+            let motor_bending_id = get_motor_bending_id(organelles.len());
+
+            for c in 0..CHANNELS_PER_ORGANELLE {
+                let l_node = left_start + c;
+                let r_node = right_start + c;
+                let s_node = sum_start + c;
+                let d_node = diff_start + c;
+
+                // Symmetrical Sum reflex pathways:
+                synapses.push(CTRNNSynapse { from_node: l_node, to_node: s_node, weight: 1.0 });
+                synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
+                synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
+
+                // Symmetrical Difference reflex pathways:
+                synapses.push(CTRNNSynapse { from_node: l_node, to_node: d_node, weight: 1.0 });
+                synapses.push(CTRNNSynapse { from_node: r_node, to_node: d_node, weight: -1.0 });
+                synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
+            }
         }
     }
 
@@ -1463,9 +1573,9 @@ mod tests {
         let output_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Output).count();
         let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
 
-        assert_eq!(input_count, phenotype.organelles.len() * 5 + 1); // 5 Channels per Organelle + Hunger clock
-        assert_eq!(output_count, 4); // Thrust, Bending, Biolum Flash, Reserved
-        assert!(hidden_count >= 1 && hidden_count <= 10);
+        assert_eq!(input_count, get_input_neurons_count(phenotype.organelles.len()));
+        assert_eq!(output_count, OUTPUT_MOTOR_NODES_COUNT);
+        assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our new HOX sum/diff fusion interneurons!
 
         // Verify that BMR scaling values are deterministic and finite
         assert!(phenotype.basal_metabolic_rate.is_finite());
@@ -1529,10 +1639,10 @@ mod tests {
         let phenotype = parse_genome(dna, None, None);
         let brain = phenotype.brain;
 
-        // Verify Exuberance: 1 input (0 organelles + 1 clock), 3 hiddens, 4 outputs
-        // Sources: 4. Destinations: 7.
-        // Total synapses (excluding direct self-loops): 4 * 7 - 3 = 25!
-        assert_eq!(brain.synapses.len(), 25);
+        // Verify Exuberance: 6 inputs (0 organelles + 6 base inputs), 3 hiddens, 4 outputs
+        // Sources: 9. Destinations: 7.
+        // Total synapses (excluding direct self-loops): 9 * 7 - 3 = 60!
+        assert_eq!(brain.synapses.len(), 60);
 
         // Verify that exploratory synapses start very weak, while explicit "SY" start strong
         let mut exploratory_count = 0;
@@ -1627,8 +1737,8 @@ mod tests {
             let mut activations = vec![0.0; brain.neurons.len()];
             let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
 
-            let k_count = brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Input).count() - 1;
-            let inputs = vec![0.5; k_count + 1];
+            let input_count = brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Input).count();
+            let inputs = vec![0.5; input_count];
 
             for _tick in 0..10 {
                 let outputs = execute_brain_with_learning(
@@ -1668,37 +1778,37 @@ mod tests {
         // It must compile exactly 1 organelle asymmetrically.
         assert_eq!(pheno_no_hox.organelles.len(), 1);
         let angle = pheno_no_hox.organelles[0].angle;
-        // Verify angle range is primitive (wider scale: 10 to 350 deg)
-        assert!(angle >= 10.0 && angle <= 350.0);
+        // Verify angle range is primitive [-170 to 170 deg]
+        assert!(angle >= -170.0 && angle <= 170.0);
 
         // B. With HOX gene - Lateral Organelle (Paired/Mirrored)
         // Let's craft a genome with both HOX and EYE promoters.
-        // We set index 0 of the eye payload to 'K' to yield 10.0 deg exactly.
+        // We set index 0 of the eye payload to 'K' to yield -170.0 deg exactly.
         let hox_paired_dna = "HOXABCDEZENEYEKAAAAAAAEN"; 
         let pheno_paired = parse_genome(hox_paired_dna, None, None);
         // It should contain exactly 2 organelles due to bilateral symmetry (Left + Right mirror)
         assert_eq!(pheno_paired.organelles.len(), 2);
-        assert_eq!(pheno_paired.organelles[0].angle, 10.0);
-        assert_eq!(pheno_paired.organelles[1].angle, 170.0); // 180.0 - 10.0 = 170.0 mirrored across the spine!
+        assert_eq!(pheno_paired.organelles[0].angle, -170.0);
+        assert_eq!(pheno_paired.organelles[1].angle, 170.0); // mirrored to +170.0 degrees!
 
         // C. With HOX gene - Midline Coalescence (Unpaired/Snapped)
         // Let's craft a genome with both HOX and EYE promoters.
-        // We place 'X' at index 16 of the eye payload to yield 93.2 deg, snapping to 90.0 deg.
+        // We place 'X' at index 16 of the eye payload to yield 6.8 deg, snapping to 0.0 deg.
         let hox_midline_dna = "HOXABCDEZENEYEAAAAAAAAAAAAAAAAXAEN"; 
         let pheno_midline = parse_genome(hox_midline_dna, None, None);
-        // Coalescence/Fusion check: It must snap to exactly 90.0 degrees and NOT duplicate!
+        // Coalescence/Fusion check: It must snap to exactly 0.0 degrees (straight ahead) and NOT duplicate!
         assert_eq!(pheno_midline.organelles.len(), 1);
-        assert_eq!(pheno_midline.organelles[0].angle, 90.0);
+        assert_eq!(pheno_midline.organelles[0].angle, 0.0);
 
         // D. Open-end fallback test case (No trailing "EN" terminator for EYE promoter)
         // This genome has HOX active, and an EYE promoter but no trailing "EN" terminator.
         // It must fall back to reading exactly 15 characters of payload ("AKAAAAAAAAAAAAA").
-        // Index 16 % 15 = 1. Since index 1 of the payload is 'K', the angle evaluates to 10.0 deg.
+        // Index 16 % 15 = 1. Since index 1 of the payload is 'K', the angle evaluates to -170.0 deg.
         let hox_open_dna = "HOXABCDEZENEYEAKAAAAAAAAAAAAA"; // No trailing "EN"!
         let pheno_open = parse_genome(hox_open_dna, None, None);
         // Bilateral symmetry must still work on the 15-char fallback payload!
         assert_eq!(pheno_open.organelles.len(), 2);
-        assert_eq!(pheno_open.organelles[0].angle, 10.0);
-        assert_eq!(pheno_open.organelles[1].angle, 170.0); // mirrored to 170.0 deg!
+        assert_eq!(pheno_open.organelles[0].angle, -170.0);
+        assert_eq!(pheno_open.organelles[1].angle, 170.0); // mirrored to +170.0 deg!
     }
 }

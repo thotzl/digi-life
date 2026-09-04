@@ -69,7 +69,7 @@ export class CreatureRenderer {
     // 4. Continuous Gaussian Membrane Deformations (Unbounded Sprouting Buds)
     // ==========================================================================
     phenotype.organelles.forEach(patch => {
-      const targetAngle = (patch.angle * Math.PI) / 180;
+      const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
       
       const style = patch.expressionStyle;
       const aff = patch.spectralAffinity;
@@ -402,7 +402,7 @@ export class CreatureRenderer {
     // ==========================================================================
     phenotype.organelles.forEach(patch => {
       if (patch.expressionStyle >= 0.72) {
-        const targetAngle = (patch.angle * Math.PI) / 180;
+        const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
         
         const wigglePhase = patch.spinalPos * 4.0 + targetAngle * 0.03;
         const waveFreq = patch.spectralAffinity > 0.7 ? 0.005 : 0.0035;
@@ -452,7 +452,7 @@ export class CreatureRenderer {
     // 9. DRAW GLOSSY SPECTRAL HIGHLIGHTS ON ENVELOPE
     // ==========================================
     phenotype.organelles.forEach(patch => {
-      const targetAngle = (patch.angle * Math.PI) / 180;
+      const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
       
       const wigglePhase = patch.spinalPos * 4.0 + targetAngle * 0.03;
       const waveFreq = patch.spectralAffinity > 0.7 ? 0.005 : 0.0035;

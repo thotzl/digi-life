@@ -1,4 +1,7 @@
-use crate::biology::dna::BrainTopology;
+use crate::biology::dna::{
+    BrainTopology, CHANNELS_PER_ORGANELLE, SYSTEMIC_BASE_INPUTS_COUNT, OUTPUT_MOTOR_NODES_COUNT,
+    get_input_neurons_count,
+};
 use crate::shared::types::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
 
@@ -38,6 +41,33 @@ pub fn execute_brain_with_learning(
     for i in 0..=k_count {
         if i < inputs.len() {
             neuron_activations[i] = inputs[i];
+        }
+    }
+
+    // 1b. Motion Vision / Phasic Sensory Delta (Phase 5 of TCK-133)
+    let total_inputs_count = inputs.len();
+    let organelles_len = if total_inputs_count >= SYSTEMIC_BASE_INPUTS_COUNT {
+        (total_inputs_count - SYSTEMIC_BASE_INPUTS_COUNT) / CHANNELS_PER_ORGANELLE
+    } else {
+        0
+    };
+    for idx in 0..organelles_len {
+        let base_idx = idx * CHANNELS_PER_ORGANELLE;
+        let label = &brain.neurons[base_idx].label;
+        if label.contains("👁️") || label.contains("👃") {
+            let ch0 = inputs[base_idx];
+            let ch1 = inputs[base_idx + 1];
+            let ch2 = inputs[base_idx + 2];
+            let ch3 = inputs[base_idx + 3];
+            let current_intensity = ch0 + ch1 + ch2 + ch3;
+
+            let prev_intensity = neuron_states[base_idx + (CHANNELS_PER_ORGANELLE - 1)];
+            let delta_i = (current_intensity - prev_intensity).abs() * 2.5;
+
+            // Speise das Bewegungssehen in Kanal 5 (letzter Organelle-Kanal) ein
+            neuron_activations[base_idx + (CHANNELS_PER_ORGANELLE - 1)] = delta_i.min(1.0);
+            // Nutze den unbenutzten Zustand des Input-Neurons als temporalen Intensitäts-Speicher
+            neuron_states[base_idx + (CHANNELS_PER_ORGANELLE - 1)] = current_intensity;
         }
     }
 
@@ -101,11 +131,11 @@ pub fn execute_brain_with_learning(
         }
     }
 
-    // 4. Map output node activations directly to the 4 motor directions
-    // Outputs are mapped at indices K+1 to K+4
-    let mut outputs = vec![0.0; 4];
-    for i in 0..4 {
-        let idx = k_count + 1 + i;
+    // 4. Map output node activations directly to the motor directions
+    let mut outputs = vec![0.0; OUTPUT_MOTOR_NODES_COUNT];
+    let outputs_start_id = get_input_neurons_count(organelles_len);
+    for i in 0..OUTPUT_MOTOR_NODES_COUNT {
+        let idx = outputs_start_id + i;
         if idx < total_nodes {
             outputs[i] = neuron_activations[idx];
         }
@@ -124,15 +154,34 @@ pub fn compute_sensory_inputs(
     canvas_height: f32,
 ) -> Vec<f32> {
     let k = agent.phenotype.organelles.len();
-    let mut inputs = vec![0.0; k * 5 + 1];
-    inputs[k * 5] = clock_val;
+    let mut inputs = vec![0.0; k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT];
+
+    // Systemic Base Inputs (Feste propriozeptive Kern-Sensorik)
+    let speed = (agent.vx.powi(2) + agent.vy.powi(2)).sqrt();
+    let linear_speed = speed * 0.4;
+    let rotational_speed = agent.omega_rot.abs() * 0.8;
+    let internal_energy = agent.energy / 100.0;
+    let adrenaline_level = (agent.adrenaline - 1.0).max(0.0);
+    let pain_signal = if agent.omega_rot.abs() > 2.0 || speed > 4.5 {
+        (speed * 0.3).min(1.0)
+    } else {
+        0.0
+    };
+
+    let base_inputs_start = k * CHANNELS_PER_ORGANELLE;
+    inputs[base_inputs_start + 0] = clock_val;
+    inputs[base_inputs_start + 1] = linear_speed;
+    inputs[base_inputs_start + 2] = rotational_speed;
+    inputs[base_inputs_start + 3] = internal_energy;
+    inputs[base_inputs_start + 4] = adrenaline_level;
+    inputs[base_inputs_start + 5] = pain_signal;
 
     // Fixed center frequencies for the 5 receptive channels (Cones)
     let channel_frequencies = [0.10, 0.30, 0.50, 0.70, 0.90];
 
     for (idx, patch) in agent.phenotype.organelles.iter().enumerate() {
         let range = patch.scale * 550.0;
-        let alpha = (patch.angle - 90.0) * (std::f32::consts::PI / 180.0);
+        let alpha = patch.angle * (std::f32::consts::PI / 180.0);
         let half_cone = (patch.bandwidth * 1.5).max(0.1);
         let aff = patch.spectral_affinity;
         let organ_power = patch.scale * (1.1 - patch.bandwidth);
@@ -226,9 +275,10 @@ pub fn compute_sensory_inputs(
                 boundary_pressure = boundary_pressure.max(1.0 - (canvas_height - agent.py) / wall_warning_zone);
             }
 
+            let mut tactile_pressure: f32 = 0.0;
             if boundary_pressure > 0.0 {
-                // Channel 1 receives wall hardness (1.0)
-                channel_stimuli[0] = channel_stimuli[0].max(boundary_pressure * organ_power * 1.0);
+                // Wall hardness (1.0)
+                tactile_pressure = tactile_pressure.max(boundary_pressure * organ_power * 1.0);
             }
 
             // Spore tactile proximity (spores foods[0] and foods[1] emit soft tactile feedback of 0.3)
@@ -238,8 +288,8 @@ pub fn compute_sensory_inputs(
                 let d = (dx*dx + dy*dy).sqrt();
                 if d <= range {
                     let proximity = (1.0 - d / range).clamp(0.0, 1.0);
-                    // Channel 1 receives soft food texture (0.3)
-                    channel_stimuli[0] = channel_stimuli[0].max(proximity * organ_power * 0.3);
+                    // Soft food texture (0.3)
+                    tactile_pressure = tactile_pressure.max(proximity * organ_power * 0.3);
                 }
             }
 
@@ -251,38 +301,66 @@ pub fn compute_sensory_inputs(
                 let hard_radius = obs.radius + range;
                 if dist <= hard_radius {
                     let pressure = (1.0 - (dist - obs.radius).max(0.0) / range).clamp(0.0, 1.0);
-                    // Channel 1 receives reef hardness (1.0)
-                    channel_stimuli[0] = channel_stimuli[0].max(pressure * organ_power * 1.0);
+                    // Reef hardness (1.0)
+                    tactile_pressure = tactile_pressure.max(pressure * organ_power * 1.0);
                 }
             }
 
-            // B. Fluid Drag & Flow (Channel 2, Center 0.30)
-            let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
-            let flow_reception = (speed * 0.4).min(1.0);
-            channel_stimuli[1] = channel_stimuli[1].max(flow_reception * organ_power);
-
-            // C. Water Temperature (Channel 3, Center 0.50)
-            // Mock temperature gradient: center is warm (0.5), outer bounds are colder
+            // C. Water Temperature
             let dist_from_center = ((agent.px - canvas_width / 2.0).powi(2) + (agent.py - canvas_height / 2.0).powi(2)).sqrt();
-            let temp = (1.0 - dist_from_center / (canvas_width * 0.7)).clamp(0.15, 0.95);
-            channel_stimuli[2] = channel_stimuli[2].max(temp * organ_power);
+            let temp_gradient = (1.0 - dist_from_center / (canvas_width * 0.7)).clamp(0.15, 0.95) * organ_power;
 
-            // D. Proprioceptive Strain & Rotation (Channel 4, Center 0.70)
-            let rot_speed = agent.omega_rot.abs();
-            let strain = (rot_speed * 0.8).min(1.0);
-            channel_stimuli[3] = channel_stimuli[3].max(strain * organ_power);
+            // D. Genomic Splay via expression_style (Phase 4 of TCK-133)
+            let style = patch.expression_style;
+            let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
 
-            // E. Physical Pain / Impact Damage (Channel 5, Center 0.90)
-            // High-speed wall impact pain triggers a response!
-            if speed > 1.5 && boundary_pressure > 0.3 {
-                let pain = (speed * 0.3).min(1.0);
-                channel_stimuli[4] = channel_stimuli[4].max(pain * organ_power);
+            if style < 0.35 {
+                // 1. Taktile Borsten (Reine Oberflächen-Härte & lokaler Schmerz)
+                channel_stimuli[0] = tactile_pressure;
+                channel_stimuli[1] = 0.0;
+                channel_stimuli[2] = 0.0;
+                channel_stimuli[3] = 0.0;
+                if speed > 1.5 && boundary_pressure > 0.3 {
+                    channel_stimuli[4] = (speed * 0.3).min(1.0);
+                } else {
+                    channel_stimuli[4] = 0.0;
+                }
+            } else if style < 0.70 {
+                // 2. Seitenlinien-Poren (Vektorielle Strömung & lokaler Schmerz - Rheotaxis/Gyrodämpfung)
+                let organ_heading = agent.heading_angle + patch.angle * (std::f32::consts::PI / 180.0);
+                let flow_x = -agent.vx;
+                let flow_y = -agent.vy;
+                let flow_proj = flow_x * organ_heading.cos() + flow_y * organ_heading.sin();
+
+                let organ_rad = patch.angle * (std::f32::consts::PI / 180.0);
+                let rot_flow = -agent.omega_rot * 12.0 * organ_rad.sin() * 0.4;
+
+                let local_drag = (flow_proj + rot_flow).clamp(-1.0, 1.0);
+
+                channel_stimuli[0] = 0.0;
+                channel_stimuli[1] = local_drag;
+                channel_stimuli[2] = 0.0;
+                channel_stimuli[3] = 0.0;
+                if speed > 1.5 && boundary_pressure > 0.3 {
+                    channel_stimuli[4] = (speed * 0.3).min(1.0);
+                } else {
+                    channel_stimuli[4] = 0.0;
+                }
+            } else {
+                // 3. Thermo-Propriozeptoren (Wirbelsäulen-Biegung & Temperatur)
+                channel_stimuli[0] = 0.0;
+                channel_stimuli[1] = 0.0;
+                channel_stimuli[2] = temp_gradient;
+                // Normalisierte interne Biegung [-1.0 .. 1.0] (max_flexion = 1.2)
+                let flexion = (agent.bend_angle / 1.2).clamp(-1.0, 1.0);
+                channel_stimuli[3] = flexion;
+                channel_stimuli[4] = 0.0;
             }
         }
 
-        // Write the 5 compiled channel signals into their respective input neurons!
-        for c in 0..5 {
-            inputs[idx * 5 + c] = channel_stimuli[c].clamp(0.0, 1.0);
+        // Write the compiled channel signals into their respective input neurons!
+        for c in 0..CHANNELS_PER_ORGANELLE {
+            inputs[idx * CHANNELS_PER_ORGANELLE + c] = channel_stimuli[c].clamp(0.0, 1.0);
         }
     }
 
@@ -366,9 +444,9 @@ mod tests {
 
         let inputs = compute_sensory_inputs(&agent, 0.5, &foods, &[], 1000.0, 1000.0);
         
-        // Input size must be exactly (organelles.len() * 5 + 1)
+        // Input size must be exactly (organelles.len() * 5 + 6)
         let k = phenotype.organelles.len();
-        assert_eq!(inputs.len(), k * 5 + 1);
+        assert_eq!(inputs.len(), k * 5 + 6);
         
         // Last element is the clock
         assert_eq!(inputs[k * 5], 0.5);

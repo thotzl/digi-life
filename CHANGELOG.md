@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-09-04
+
+### Added
+- **Symmetrische Sensor-Fusion via HOX-Interneurone (TCK-133 Phase 3 & 100% Performance-Optimierung):** Vollständige Abschaffung der fehleranfälligen Geburts-Synapsenspiegelung. Das Gehirn generiert bei bilateraler Symmetrie nun automatisch Summen- ($S_c = L_c + R_c$) und Differenz-Interneurone ($D_c = L_c - R_c$). Durch die vollständige Abkoppelung dieser Fusionsreize aus dem vollvernetzten Exuberanz-Graphen hin zu dedizierten, isolierten Schaltkreisen (je 3 Synapsen pro Fusionsknoten) konnte die Synapsenanzahl bei 2 Organen um **65%** und bei 4 Organen um **78%** drastisch gesenkt werden – die Warp-Performance ist zu 100% stabilisiert.
+- **Dezentralisierung der Propriozeption (TCK-133 Phase 2):** Einführung eines permanenten Zentralnervensystem-Moduls aus 6 unzerstörbaren Basis-Inputs (Hunger Clock, lineare Geschwindigkeit, Drehgeschwindigkeit, Energie/Mageninhalt, Adrenalin-Pegel, Kollisionsschmerz). Periphere Organellen sind nun vollständig von propriozeptiven Signalen isoliert und fokussieren sich zu 100% auf die Außenwelt (Exterozeption).
+- **Haptische Spezialisierung & Direktionale Strömung (TCK-133 Phase 4):** Aufteilung haptischer Organellen via `expression_style` in drei biologische Ausprägungen: Taktile Borsten (Oberflächenkontakt & lokaler Schmerz), Seitenlinien-Poren (richtungsabhängiger, vektorieller Wasserdruck `local_drag` $[-1.0, 1.0]$ für Rheotaxis & Gyrodämpfung) sowie Thermo-Propriozeptoren (Wassertemperatur & normierte Wirbelsäulen-Biegung `bend_angle` $[-1.0, 1.0]$).
+- **Phasische Sehkanäle & Bewegungserkennung (TCK-133 Phase 5):** Ergänzung visueller/olfaktorischer Organe um temporale Differenzialsensoren ($\Delta I$), welche Bewegungen durch Helligkeitsänderungen über Zeit erfassen. Die ansonsten ungenutzten Zustandspotenziale der Input-Neurone werden als flüchtige frameübergreifende Speicherzellen genutzt.
+- **Standardisierter Symmetrischer Winkelraum (TCK-133 Phase 1):** Vereinheitlichung aller Richtungsberechnungen auf den Bereich von $[-170^{\circ}, 170^{\circ}]$ mit $0^{\circ}$ geradeaus, links negativ, rechts positiv. Der TypeScript `BrainRenderer` im Frontend wurde so generalisiert, dass er alle Knotenkoordinaten (Säulen links/mitte/rechts) vollkommen dynamisch und ohne Magic Numbers anordnet.
+
 ## [1.10.1] - 2026-09-04
 
 ### Fixed

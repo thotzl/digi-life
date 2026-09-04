@@ -1,6 +1,17 @@
 import { BrainTopology, CTRNNNeuron, CTRNNSynapse } from "../shared/types";
 
 export class BrainRenderer {
+  public static readonly SYSTEMIC_BASE_INPUTS_COUNT = 6;
+  public static readonly MOTOR_OUTPUT_NODES_COUNT = 4;
+
+  public static readonly LEFT_MARGIN = 25;
+  public static readonly RIGHT_MARGIN = 285;
+  public static readonly AREA_WIDTH = BrainRenderer.RIGHT_MARGIN - BrainRenderer.LEFT_MARGIN;
+  public static readonly CENTER_X = BrainRenderer.LEFT_MARGIN + BrainRenderer.AREA_WIDTH / 2;
+
+  public static readonly TOP_MARGIN = 20;
+  public static readonly AREA_HEIGHT = 200;
+
   private elementCache = new Map<string, SVGElement>();
 
   constructor(
@@ -11,28 +22,39 @@ export class BrainRenderer {
   ) {}
 
   public getNeuronX(id: number, K: number, depth?: number | null): number {
-    if (id <= K) return 25; // Left Column: Sensors
-    if (id >= K + 1 && id <= K + 4) return 280; // Right Column: Motors
-    if (depth !== undefined && depth !== null) {
-      return 25 + depth * 255; // Scale horizontal coordinate dynamically based on compiled depth!
+    if (id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT) {
+      return BrainRenderer.LEFT_MARGIN; // Left Column: Sensors (K organelles * 5 + 6 base inputs)
     }
-    return 150; // Center Column: Interneurons
+    if (
+      id >= K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT && 
+      id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT
+    ) {
+      return BrainRenderer.RIGHT_MARGIN; // Right Column: Motors (4 Output nodes)
+    }
+    if (depth !== undefined && depth !== null) {
+      return BrainRenderer.LEFT_MARGIN + depth * BrainRenderer.AREA_WIDTH; // Scale horizontal coordinate dynamically based on compiled depth!
+    }
+    return BrainRenderer.CENTER_X; // Center Column: Interneurons
   }
 
   public getNeuronY(id: number, K: number, totalNeurons: number): number {
-    if (id <= K) {
-      const step = 200 / (K + 1);
-      return 20 + (id + 1) * step;
+    if (id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT) {
+      const step = BrainRenderer.AREA_HEIGHT / (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
+      return BrainRenderer.TOP_MARGIN + (id + 1) * step;
     }
-    if (id >= K + 1 && id <= K + 4) {
-      const motorIdx = id - (K + 1);
-      const step = 200 / 5;
-      return 20 + (motorIdx + 1) * step;
+    if (
+      id >= K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT && 
+      id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT
+    ) {
+      const motorIdx = id - (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
+      const step = BrainRenderer.AREA_HEIGHT / (BrainRenderer.MOTOR_OUTPUT_NODES_COUNT + 1);
+      return BrainRenderer.TOP_MARGIN + (motorIdx + 1) * step;
     }
-    const interIdx = id - K - 5;
-    const numInter = totalNeurons - K - 5;
-    const step = 200 / (numInter + 1);
-    return 20 + (interIdx + 1) * step;
+    const totalInputsAndOutputs = K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT;
+    const interIdx = id - totalInputsAndOutputs;
+    const numInter = totalNeurons - totalInputsAndOutputs;
+    const step = BrainRenderer.AREA_HEIGHT / (numInter + 1);
+    return BrainRenderer.TOP_MARGIN + (interIdx + 1) * step;
   }
 
   public compile(brain: BrainTopology, K: number): void {

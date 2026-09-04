@@ -1,7 +1,7 @@
 ---
 id: TCK-133
 title: Biophysical Sensing Upgrades, Symmetrical Sensor Fusion, and Standardized Angle Space
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-09-04
 ---
