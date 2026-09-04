@@ -767,7 +767,7 @@ body {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  gap: 4px;
+  gap: 0.3em; /* Exakt eine Zeichenbreite Abstand relativ zur Schriftgröße */
 }
 
 .badge-elite {
