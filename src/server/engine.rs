@@ -11,7 +11,7 @@ use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
 use crate::biology::trainer_engine::{
-    init_rust_sandbox, step_trainer_sandbox_physics, calculate_sandbox_fitness,
+    init_rust_sandbox, step_trainer_sandbox_physics,
     TrainerSandbox, TrainerTelemetrySandbox,
 };
 use crate::database::init_db;
@@ -29,6 +29,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
         let logical_width = 19200.0;
         let logical_height = 10800.0;
+        let ocean_world = generate_world("ocean-tauri-seed-77", logical_width, logical_height);
         
         let app_config = crate::shared::types::AppConfig::global();
         
@@ -123,6 +124,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             let hof_count = ((n as f32) * hof_rate).round() as usize;
             let inflow_count = ((n as f32) * inflow_rate).round() as usize;
 
+            let scenario_name = if chamber_size >= 2000.0 { "exploration" } else { "standard" };
+
             for idx in 0..n {
                 let id = (idx + 1) as u32;
 
@@ -136,6 +139,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         "random", // ALL are fresh random wildtypes on Gen 1!
                         chamber_size,
                         chamber_size,
+                        scenario_name,
                     );
                     sandboxes.push(sb);
                 } else {
@@ -168,6 +172,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         origin,
                         chamber_size,
                         chamber_size,
+                        scenario_name,
                     );
 
                     if lamarckian && !parent_genomes.is_empty() {
@@ -347,7 +352,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "CLIENT_READY" => {
                                 is_trainer_active = false; // Safely force switch back to Ocean mode!
                                 println!("[SIMULATION] Client Handshake successful! Synchronizing {} creatures and {} spores...", creatures.len(), food_pellets.len());
-                                let world = generate_world("ocean-tauri-seed-77", 19200.0, 10800.0);
+                                let world = ocean_world.clone();
                                 let init_json = json!({
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
@@ -696,7 +701,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 emit_state(json!({ "type": "DATABASE_CHANGED" }));
 
                                 // Emit full fresh INIT_STATE so client successfully overwrites its local lists
-                                let world = generate_world("ocean-tauri-seed-77", 19200.0, 10800.0);
+                                let world = ocean_world.clone();
                                 let init_json = json!({
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
@@ -731,6 +736,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                     if old_size != trainer_chamber_size {
                                         for sb in &mut trainer_sandboxes {
+                                            sb.scenario = m.to_string();
                                             sb.finished = false;
                                             sb.finish_tick = None;
 
@@ -741,45 +747,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             sb.agent.py = center_y;
                                             sb.agent.vx = 0.0;
                                             sb.agent.vy = 0.0;
-
-                                            let mut rng = rand::thread_rng();
-                                            let min_dist = if m == "exploration" { 1200.0 } else { 200.0 };
-
-                                            // Relocate Plant spore (foods[0]) - uniform with min_dist constraint!
-                                            let mut valid_p = false;
-                                            while !valid_p {
-                                                sb.foods[0].x = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                sb.foods[0].y = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                let dx = sb.foods[0].x - center_x;
-                                                let dy = sb.foods[0].y - center_y;
-                                                if (dx*dx + dy*dy).sqrt() >= min_dist {
-                                                    valid_p = true;
-                                                }
-                                            }
-                                            sb.foods[0].vx = 0.0;
-                                            sb.foods[0].vy = 0.0;
-
-                                            // Relocate Meat spore (foods[1]) - uniform with min_dist constraint!
-                                            let mut valid_m = false;
-                                            while !valid_m {
-                                                sb.foods[1].x = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                sb.foods[1].y = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                let dx = sb.foods[1].x - center_x;
-                                                let dy = sb.foods[1].y - center_y;
-                                                if (dx*dx + dy*dy).sqrt() >= min_dist {
-                                                    valid_m = true;
-                                                }
-                                            }
-                                            sb.foods[1].vx = 0.0;
-                                            sb.foods[1].vy = 0.0;
-
-                                            let dist_p = ((sb.foods[0].x - center_x).powi(2) + (sb.foods[0].y - center_y).powi(2)).sqrt();
-                                            let dist_m = ((sb.foods[1].x - center_x).powi(2) + (sb.foods[1].y - center_y).powi(2)).sqrt();
-
-                                            sb.start_distance = dist_p.min(dist_m);
-                                            sb.min_distance = sb.start_distance;
                                             sb.distance_traveled = 0.0;
                                             sb.epoch_ticks = 0;
+                                            sb.wall_collisions = 0;
+                                            sb.wall_collision_cooldown = 0;
+                                            sb.consumed_count = 0;
+                                            sb.accumulated_yield = 0.0;
+                                            sb.coverage_mask = 0;
+
+                                            // Dynamically re-initialize foods and conditions using the plugin
+                                            let plugin = crate::biology::scenarios::get_scenario_plugin(m);
+                                            plugin.initialize(sb, trainer_chamber_size, trainer_chamber_size);
                                         }
                                         println!("[TRAINER] Switched training mode to '{}' (Chamber size: {}x{})", m, trainer_chamber_size, trainer_chamber_size);
                                     }
@@ -1051,7 +1029,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 .filter(|c| nearby_ids.contains(&c.id))
                                 .cloned()
                                 .collect();
-                            step_food_spore_physics(pellet, &nearby_creatures, logical_width, logical_height);
+                            step_food_spore_physics(pellet, &nearby_creatures, &ocean_world.obstacles, logical_width, logical_height);
                         }
 
                         let alive_clones = creatures.clone();
@@ -1167,6 +1145,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             &agent,
                             clock_val,
                             &virtual_foods,
+                            &ocean_world.obstacles,
                             logical_width,
                             logical_height,
                         );
@@ -1235,7 +1214,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         } else {
                             // Apply unified biological and physical kinetics
                             use crate::shared::physics::step_creature_kinematics;
-                            step_creature_kinematics(&mut agent, out_thrust, out_left, &app_config, logical_width, logical_height);
+                            step_creature_kinematics(&mut agent, out_thrust, out_left, &app_config, &ocean_world.obstacles, logical_width, logical_height);
 
                             agent.age += 1;
 
@@ -1709,7 +1688,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             // B. NATIVE PARALLEL TRAINER EVOLUTION TICK
             if is_trainer_active {
                 if trainer_is_running {
-                    let trainer_epoch_duration = if trainer_chamber_size >= 2000.0 { 900 } else { 300 };
+                    let trainer_epoch_duration = if trainer_chamber_size >= 2000.0 { 1800 } else { 300 };
 
                     // Run trainer_warp_speed physics steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding)
                     let steps_this_frame = if trainer_warp_speed > 35 { 35 } else { trainer_warp_speed };
@@ -1722,17 +1701,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         // Step all sandbox physical loops in Rust!
                         for sb in &mut trainer_sandboxes {
-                            sb.current_fitness = calculate_sandbox_fitness(
-                                sb.accumulated_yield,
-                                sb.finish_tick,
-                                trainer_epoch_duration,
-                                sb.start_distance,
-                                sb.distance_traveled,
-                                sb.wall_collisions,
-                                sb.min_distance,
-                                sb.agent.px,
-                                sb.agent.py,
-                            );
+                            let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
+                            sb.current_fitness = plugin.calculate_fitness(sb, trainer_epoch_duration, trainer_chamber_size, trainer_chamber_size);
 
                             // Run 1 tick of continuous physics, neural nets, and collisions in Rust for full 300 ticks!
                             step_trainer_sandbox_physics(sb, trainer_chamber_size, trainer_chamber_size);
@@ -1742,17 +1712,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         if trainer_epoch_ticks >= trainer_epoch_duration {
                             // 1. Calculate fitness for all sandboxes
                             for sb in &mut trainer_sandboxes {
-                                sb.current_fitness = calculate_sandbox_fitness(
-                                    sb.accumulated_yield,
-                                    sb.finish_tick,
-                                    trainer_epoch_duration,
-                                    sb.start_distance,
-                                    sb.distance_traveled,
-                                    sb.wall_collisions,
-                                    sb.min_distance,
-                                    sb.agent.px,
-                                    sb.agent.py,
-                                );
+                                let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
+                                sb.current_fitness = plugin.calculate_fitness(sb, trainer_epoch_duration, trainer_chamber_size, trainer_chamber_size);
                             }
 
                             // If Multi-Trial is active, manage trial runs
@@ -1806,6 +1767,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         sb.epoch_ticks = 0;
                                         sb.accumulated_yield = 0.0;
                                         sb.consumed_count = 0;
+                                        sb.cumulative_rotation = 0.0;
+                                        sb.coverage_mask = 0;
                                         
                                         // Randomize spores respecting min_dist and chamber bounds!
                                         for spore in &mut sb.foods {
@@ -1825,17 +1788,33 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         }
                                         
                                         let carnivory = sb.agent.phenotype.carnivory;
-                                        let target_food = if carnivory >= 0.60 {
-                                            &sb.foods[1] // Strict Carnivore targets meat
-                                        } else if carnivory >= 0.40 {
-                                            // Omnivore targets whichever is closer on reset!
-                                            let dist_plant = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
-                                            let dist_meat = ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt();
-                                            if dist_meat <= dist_plant { &sb.foods[1] } else { &sb.foods[0] }
+                                        let target_dist = if sb.foods.len() >= 6 {
+                                            // Großer Raum (Exploration): 3 Pflanzen (0,1,2), 3 Fleisch (3,4,5)
+                                            let dist_p = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt()
+                                                .min(((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt())
+                                                .min(((sb.foods[2].x - sb.agent.px).powi(2) + (sb.foods[2].y - sb.agent.py).powi(2)).sqrt());
+
+                                            let dist_m = ((sb.foods[3].x - sb.agent.px).powi(2) + (sb.foods[3].y - sb.agent.py).powi(2)).sqrt()
+                                                .min(((sb.foods[4].x - sb.agent.px).powi(2) + (sb.foods[4].y - sb.agent.py).powi(2)).sqrt())
+                                                .min(((sb.foods[5].x - sb.agent.px).powi(2) + (sb.foods[5].y - sb.agent.py).powi(2)).sqrt());
+
+                                            if carnivory >= 0.60 { dist_m }
+                                            else if carnivory >= 0.40 { dist_m.min(dist_p) }
+                                            else { dist_p }
                                         } else {
-                                            &sb.foods[0] // Strict Herbivore targets plant
+                                            // Kleiner Raum (Standard): 1 Pflanze (0), 1 Fleisch (1)
+                                            let dist_p = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
+                                            let dist_m = if sb.foods.len() > 1 {
+                                                ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt()
+                                            } else {
+                                                f32::MAX
+                                            };
+
+                                            if carnivory >= 0.60 { dist_m }
+                                            else if carnivory >= 0.40 { dist_m.min(dist_p) }
+                                            else { dist_p }
                                         };
-                                        sb.start_distance = ((target_food.x - sb.agent.px).powi(2) + (target_food.y - sb.agent.py).powi(2)).sqrt();
+                                        sb.start_distance = target_dist;
                                         sb.min_distance = sb.start_distance;
                                         sb.current_fitness = 0.0;
                                     }
@@ -1962,11 +1941,14 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 age: sb.agent.age,
                                 generation: sb.agent.generation,
                                 genome: sb.agent.genome.clone(),
+                                scenario: sb.scenario.clone(),
+                                cumulative_rotation: sb.cumulative_rotation,
+                                coverage_mask: sb.coverage_mask,
                             }
                         })
                         .collect();
 
-                    let trainer_epoch_duration_f = if trainer_chamber_size >= 2000.0 { 900.0 } else { 300.0 };
+                    let trainer_epoch_duration_f = if trainer_chamber_size >= 2000.0 { 1800.0 } else { 300.0 };
                     let time_str = format!("{:.1}s", ((trainer_epoch_duration_f - trainer_epoch_ticks as f32) / 60.0).max(0.0));
 
                     // Compute selected sandbox live neural activations for real-time brain rendering

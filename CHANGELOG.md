@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.1] - 2026-09-04
+
+### Fixed
+- **Beseitigung der Fitness-Klippe im großen Raum (ExplorationScenario):** Einordnung der Explorationsleistung (Displacement + Sektorenabdeckung) als stetige Fitness-Basis, ergänzt durch einen rein additiven Homing-Bonus bei Unterschreitung der 550px-Sensorgrenze der Nahrung.
+- **Korrektur der Multi-Trial-Distanzeichung (engine.rs):** Behebung des Indexierungsfehlers für Nahrungselemente im Rundenreset 2 & 3 des großen Raums, sodass Carnivoren, Herbivoren und Omnivoren exakt auf ihre biologischen Nahrungstypen (Pflanze/Fleisch) referenziert werden.
+- **Wiederherstellung des kleinen Trainingsraums (StandardScenario):** Vollständiger Rollback der geänderten Fitnessregeln im kleinen Raum zur verlässlichen Reaktivierung des bewährten, hochstabilen evolutionären Verhaltens und Beseitigung künstlicher Loop-Strafen.
+- **Kompilierungsbereinigung:** Ergänzung unbenutzter Variablen in der Methodensignatur von `StandardScenario::calculate_fitness` mit Unterstrichen zur Gewährleistung eines 100% warnungsfreien Cargo-Builds.
+
 ## [1.10.0-BETA] - 2026-09-03 (STABLE PRODUCTION-READY RELEASE)
 
 ### Added

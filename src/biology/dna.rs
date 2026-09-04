@@ -859,64 +859,91 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // 11. Organelles (Sensory Patches via robust dynamic promoter scanning)
     let mut organelles = Vec::new();
 
-    let eye_payloads = extract_raw_gene_payloads(&clean_genome, "EYE", "EN");
-    for payload in &eye_payloads {
-        organelles.push(SensoryPatch {
-            spectral_affinity: get_payload_linear_value_offset(payload, 1),
-            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
-            expression_style: get_payload_linear_value_offset(payload, 7),
-            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
-            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
-            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
-            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
-            gene_start_index: 0,
-            gene_end_index: 0,
-        });
+    let hox_payloads = extract_raw_gene_payloads(&clean_genome, "HOX", "EN");
+    let has_hox = !hox_payloads.is_empty();
+
+    let mut raw_organelle_payloads = Vec::new();
+    
+    // Gathers and processes all active organelle payloads
+    for payload in extract_raw_gene_payloads(&clean_genome, "EYE", "EN") {
+        raw_organelle_payloads.push(payload);
+    }
+    for payload in extract_raw_gene_payloads(&clean_genome, "NOS", "EN") {
+        raw_organelle_payloads.push(payload);
+    }
+    for payload in extract_raw_gene_payloads(&clean_genome, "TAC", "EN") {
+        raw_organelle_payloads.push(payload);
+    }
+    for payload in extract_raw_gene_payloads(&clean_genome, "LUM", "EN") {
+        raw_organelle_payloads.push(payload);
     }
 
-    let nos_payloads = extract_raw_gene_payloads(&clean_genome, "NOS", "EN");
-    for payload in &nos_payloads {
-        organelles.push(SensoryPatch {
-            spectral_affinity: get_payload_linear_value_offset(payload, 1),
-            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
-            expression_style: get_payload_linear_value_offset(payload, 7),
-            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
-            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
-            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
-            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
-            gene_start_index: 0,
-            gene_end_index: 0,
-        });
-    }
+    for payload in &raw_organelle_payloads {
+        let spectral_affinity = get_payload_linear_value_offset(payload, 1);
+        let bandwidth = 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85;
+        let expression_style = get_payload_linear_value_offset(payload, 7);
+        let scale = 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45;
+        let spinal_pos = 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9;
+        let angle_offset = get_payload_linear_value_offset(payload, 16);
+        let hue_shift = (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round();
 
-    let tac_payloads = extract_raw_gene_payloads(&clean_genome, "TAC", "EN");
-    for payload in &tac_payloads {
-        organelles.push(SensoryPatch {
-            spectral_affinity: get_payload_linear_value_offset(payload, 1),
-            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
-            expression_style: get_payload_linear_value_offset(payload, 7),
-            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
-            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
-            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
-            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
-            gene_start_index: 0,
-            gene_end_index: 0,
-        });
-    }
+        // Left side is always forward-facing (10.0 to 170.0 degrees) relative to the body
+        let base_angle = 10.0 + angle_offset * 160.0;
 
-    let lum_payloads = extract_raw_gene_payloads(&clean_genome, "LUM", "EN");
-    for payload in &lum_payloads {
-        organelles.push(SensoryPatch {
-            spectral_affinity: get_payload_linear_value_offset(payload, 1),
-            bandwidth: 0.05 + get_payload_linear_value_offset(payload, 4) * 0.85,
-            expression_style: get_payload_linear_value_offset(payload, 7),
-            scale: 0.35 + get_payload_linear_value_offset(payload, 10) * 1.45,
-            spinal_pos: 0.05 + get_payload_linear_value_offset(payload, 13) * 0.9,
-            angle: 10.0 + get_payload_linear_value_offset(payload, 16) * 160.0,
-            hue_shift: (get_payload_linear_value_offset(payload, 19) * 360.0 - 180.0).round(),
-            gene_start_index: 0,
-            gene_end_index: 0,
-        });
+        if has_hox {
+            if (base_angle - 90.0).abs() <= 5.0 {
+                // Midline coalescence/fusion to a single unpaired central organelle
+                organelles.push(SensoryPatch {
+                    spectral_affinity,
+                    bandwidth,
+                    expression_style,
+                    scale,
+                    spinal_pos,
+                    angle: 90.0,
+                    hue_shift,
+                    gene_start_index: 0,
+                    gene_end_index: 0,
+                });
+            } else {
+                // Symmetrical Left side
+                organelles.push(SensoryPatch {
+                    spectral_affinity,
+                    bandwidth,
+                    expression_style,
+                    scale,
+                    spinal_pos,
+                    angle: base_angle,
+                    hue_shift,
+                    gene_start_index: 0,
+                    gene_end_index: 0,
+                });
+                // Symmetrical Right side (mirrored left-to-right across the 90.0 spine line)
+                organelles.push(SensoryPatch {
+                    spectral_affinity,
+                    bandwidth,
+                    expression_style,
+                    scale,
+                    spinal_pos,
+                    angle: 180.0 - base_angle,
+                    hue_shift,
+                    gene_start_index: 0,
+                    gene_end_index: 0,
+                });
+            }
+        } else {
+            // Primitive asymmetric distribution: forward-facing but restricted to the left side
+            organelles.push(SensoryPatch {
+                spectral_affinity,
+                bandwidth,
+                expression_style,
+                scale,
+                spinal_pos,
+                angle: base_angle,
+                hue_shift,
+                gene_start_index: 0,
+                gene_end_index: 0,
+            });
+        }
     }
 
     // 12. Carnivory
@@ -1083,7 +1110,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     }
 
     // D. Synapses (Exuberant Fully-Connected Brain!)
-    let mut synapses = Vec::with_capacity(120);
+    let mut synapses: Vec<CTRNNSynapse> = Vec::with_capacity(120);
     let syn_payloads = extract_raw_gene_payloads(&clean_genome, "SY", "EN");
 
     // Establish valid sources and destinations arrays for robust wiring!
@@ -1118,7 +1145,19 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             }
 
             // Check if there is an explicit, strong "SY" gene for this connection
-            let weight = if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
+            let weight = if has_hox && from_node < k_count && (from_node / 5) % 2 == 1 {
+                // Symmetrical neural mirroring: copy weights exactly from the homologous left organelle (from_node - 5)
+                let left_node = from_node - 5;
+                let left_weight = synapses.iter()
+                    .find(|s| s.from_node == left_node && s.to_node == to_node)
+                    .map(|s| s.weight)
+                    .unwrap_or(0.0);
+                if to_node == k_count + 2 {
+                    -left_weight // Symmetrical contralateral steering: invert sign ONLY for Bending output during initial transfer!
+                } else {
+                    left_weight // Same sign for thrust, hidden neurons, etc.
+                }
+            } else if let Some(explicit) = explicit_synapses.iter().find(|s| s.0 == from_node && s.1 == to_node) {
                 explicit.2 // use strong, genetically specialized weight!
             } else {
                 // Initialize as a weak, random exploratory synapse with enough active power to drive Hebbian learning
@@ -1618,5 +1657,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_hox_bilateral_symmetry() {
+        // A. Without HOX gene (Asymmetric primitive)
+        // This genome contains exactly one EYE promoter and no HOX promoter.
+        let no_hox_dna = "EYEABCDEFEN";
+        let pheno_no_hox = parse_genome(no_hox_dna, None, None);
+        // It must compile exactly 1 organelle asymmetrically.
+        assert_eq!(pheno_no_hox.organelles.len(), 1);
+        let angle = pheno_no_hox.organelles[0].angle;
+        // Verify angle range is primitive (wider scale: 10 to 350 deg)
+        assert!(angle >= 10.0 && angle <= 350.0);
+
+        // B. With HOX gene - Lateral Organelle (Paired/Mirrored)
+        // Let's craft a genome with both HOX and EYE promoters.
+        // We set index 0 of the eye payload to 'K' to yield 10.0 deg exactly.
+        let hox_paired_dna = "HOXABCDEZENEYEKAAAAAAAEN"; 
+        let pheno_paired = parse_genome(hox_paired_dna, None, None);
+        // It should contain exactly 2 organelles due to bilateral symmetry (Left + Right mirror)
+        assert_eq!(pheno_paired.organelles.len(), 2);
+        assert_eq!(pheno_paired.organelles[0].angle, 10.0);
+        assert_eq!(pheno_paired.organelles[1].angle, 170.0); // 180.0 - 10.0 = 170.0 mirrored across the spine!
+
+        // C. With HOX gene - Midline Coalescence (Unpaired/Snapped)
+        // Let's craft a genome with both HOX and EYE promoters.
+        // We place 'X' at index 16 of the eye payload to yield 93.2 deg, snapping to 90.0 deg.
+        let hox_midline_dna = "HOXABCDEZENEYEAAAAAAAAAAAAAAAAXAEN"; 
+        let pheno_midline = parse_genome(hox_midline_dna, None, None);
+        // Coalescence/Fusion check: It must snap to exactly 90.0 degrees and NOT duplicate!
+        assert_eq!(pheno_midline.organelles.len(), 1);
+        assert_eq!(pheno_midline.organelles[0].angle, 90.0);
+
+        // D. Open-end fallback test case (No trailing "EN" terminator for EYE promoter)
+        // This genome has HOX active, and an EYE promoter but no trailing "EN" terminator.
+        // It must fall back to reading exactly 15 characters of payload ("AKAAAAAAAAAAAAA").
+        // Index 16 % 15 = 1. Since index 1 of the payload is 'K', the angle evaluates to 10.0 deg.
+        let hox_open_dna = "HOXABCDEZENEYEAKAAAAAAAAAAAAA"; // No trailing "EN"!
+        let pheno_open = parse_genome(hox_open_dna, None, None);
+        // Bilateral symmetry must still work on the 15-char fallback payload!
+        assert_eq!(pheno_open.organelles.len(), 2);
+        assert_eq!(pheno_open.organelles[0].angle, 10.0);
+        assert_eq!(pheno_open.organelles[1].angle, 170.0); // mirrored to 170.0 deg!
     }
 }

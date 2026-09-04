@@ -25,6 +25,9 @@ pub struct TrainerSandbox {
     pub min_distance: f32,
     pub accumulated_yield: f32,
     pub consumed_count: u32,
+    pub scenario: String,
+    pub cumulative_rotation: f32,
+    pub coverage_mask: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -54,56 +57,9 @@ pub struct TrainerTelemetrySandbox {
     pub age: u32,
     pub generation: u32,
     pub genome: String,
-}
-
-pub fn calculate_sandbox_fitness(
-    accumulated_yield: f32,
-    finish_tick: Option<u32>,
-    epoch_duration_ticks: u32,
-    start_distance: f32,
-    distance_traveled: f32,
-    wall_collisions: u32,
-    min_dist: f32,
-    end_x: f32,
-    end_y: f32,
-) -> f32 {
-    let wall_penalty = (1.0 - (wall_collisions as f32) * 0.10).max(0.1);
-    let fit;
-
-    if accumulated_yield > 0.0 {
-        // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
-        let path_efficiency = start_distance / (start_distance.max(distance_traveled)).max(0.1);
-        let speed_bonus = (epoch_duration_ticks - finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.2;
-        fit = (accumulated_yield * 1000.0 + 1000.0 * path_efficiency + speed_bonus) * wall_penalty;
-    } else {
-        // Unsuccessful: proximity reward with standstill, circular & aimless traveling penalties!
-        // We use scaling multipliers instead of harsh 0.0 cuts to keep a smooth fitness landscape!
-        let mut penalty_multiplier = 1.0;
-
-        // 1. Standstill penalty (applied if candidate barely moved and is still far from target)
-        if distance_traveled < 120.0 && min_dist >= 40.0 {
-            penalty_multiplier *= 0.3; // 70% penalty
-        }
-
-        // 2. Circular movement detection
-        let displacement = ((end_x - 500.0).powi(2) + (end_y - 500.0).powi(2)).sqrt();
-        if distance_traveled > 150.0 && displacement < 80.0 {
-            penalty_multiplier *= 0.2; // 80% penalty
-        }
-
-        let base_fit = if min_dist < start_distance {
-            1000.0 * (1.0 - min_dist / start_distance)
-        } else {
-            0.0
-        };
-        let kinetic_waste = distance_traveled * 0.05; // 50% reduced kinetic penalty to encourage early swimming
-        fit = ((base_fit - kinetic_waste).max(0.0) * penalty_multiplier * wall_penalty).max(0.0);
-    }
-
-    if fit.is_nan() || fit.is_infinite() {
-        return 0.0;
-    }
-    fit
+    pub scenario: String,
+    pub cumulative_rotation: f32,
+    pub coverage_mask: u64,
 }
 
 pub fn init_rust_sandbox(
@@ -114,6 +70,7 @@ pub fn init_rust_sandbox(
     origin_type: &str,
     canvas_width: f32,
     canvas_height: f32,
+    scenario_name: &str,
 ) -> TrainerSandbox {
     let mut rng = rand::thread_rng();
 
@@ -155,55 +112,16 @@ pub fn init_rust_sandbox(
         synapse_weights: pheno.brain.synapses.iter().map(|s| s.weight).collect(),
     };
 
-    // Setup exactly two food spores (1 plant green [type_id: 1], 1 meat red [type_id: 2])
-    let mut foods = vec![
-        FoodSpore { id: 1, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // plant
-        FoodSpore { id: 2, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meatball
-    ];
-
-    let is_exploration = canvas_width >= 2000.0;
-    let min_dist = if is_exploration { 1200.0 } else { 200.0 };
-
-    // Spawn foods[0] (Plant) - uniform distribution across the entire canvas with min_dist limit!
-    let mut valid_spawn_0 = false;
-    while !valid_spawn_0 {
-        foods[0].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-        foods[0].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-        let dx = foods[0].x - agent.px;
-        let dy = foods[0].y - agent.py;
-        let dist = (dx*dx + dy*dy).sqrt();
-        if dist >= min_dist {
-            valid_spawn_0 = true;
-        }
-    }
-
-    // Spawn foods[1] (Meat) - uniform distribution across the entire canvas with min_dist limit!
-    let mut valid_spawn_1 = false;
-    while !valid_spawn_1 {
-        foods[1].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-        foods[1].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-        let dx = foods[1].x - agent.px;
-        let dy = foods[1].y - agent.py;
-        let dist = (dx*dx + dy*dy).sqrt();
-        if dist >= min_dist {
-            valid_spawn_1 = true;
-        }
-    }
-
-    let dist_plant = ((foods[0].x - agent.px).powi(2) + (foods[0].y - agent.py).powi(2)).sqrt();
-    let dist_meat = ((foods[1].x - agent.px).powi(2) + (foods[1].y - agent.py).powi(2)).sqrt();
-    let start_distance = dist_plant.min(dist_meat);
-
     let world = generate_trainer_world(&format!("SANDBOX_SEED_{}_GEN_{}", id, current_generation), 19200.0, 10800.0);
 
-    TrainerSandbox {
+    let mut sb = TrainerSandbox {
         id,
         agent,
-        foods,
+        foods: Vec::new(),
         world,
         finished: false,
         finish_tick: None,
-        start_distance,
+        start_distance: 0.0,
         current_fitness: 0.0,
         distance_traveled: 0.0,
         wall_collisions: 0,
@@ -211,44 +129,30 @@ pub fn init_rust_sandbox(
         consumed_spore_type: None,
         origin_type: origin_type.to_string(),
         epoch_ticks: 0,
-        min_distance: start_distance,
+        min_distance: 0.0,
         accumulated_yield: 0.0,
         consumed_count: 0,
-    }
+        scenario: scenario_name.to_string(),
+        cumulative_rotation: 0.0,
+        coverage_mask: 0,
+    };
+
+    let plugin = crate::biology::scenarios::get_scenario_plugin(scenario_name);
+    plugin.initialize(&mut sb, canvas_width, canvas_height);
+
+    sb
 }
 
 pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32) {
-    let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
-    sb.agent.age += 1;
-    sb.epoch_ticks += 1;
-
-    // 1. Compute sensory chemoreception inputs
-    let clock_val = 0.5 + 0.5 * ((sb.agent.age as f32) * 0.1).sin();
-    let inputs = crate::shared::brain::compute_sensory_inputs(&sb.agent, clock_val, &sb.foods, canvas_width, canvas_height);
-
-    // 2. Execute Recurrent CTRNN Brain Euler Integration with live Hebbian learning
+    let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
     let app_config = crate::shared::types::AppConfig::global();
-    use crate::shared::brain::execute_brain_with_learning;
-    let outputs = execute_brain_with_learning(
-        &sb.agent.phenotype.brain,
-        &inputs,
-        &mut sb.agent.neuron_states,
-        &mut sb.agent.neuron_activations,
-        &mut sb.agent.synapse_weights,
-        app_config.rules.hebbian_learning_rate_base,
-        app_config.rules.hebbian_learning_stiffness_decay,
-        app_config.rules.hebbian_forgetting_decay,
-    );
-    let out_thrust = outputs[0];
-    let out_left = outputs[1];
+    let hit_wall = plugin.step_physics(sb, canvas_width, canvas_height, &app_config);
 
-    // 3. Locomotion Physical Kinematics (decoupled from hardcodes, matching config rules!)
-    use crate::shared::physics::step_creature_kinematics;
-    let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, &app_config, canvas_width, canvas_height);
-
-    // Track cumulative distance traveled
-    let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
-    sb.distance_traveled += movement;
+    // Track visited 8x8 grid sectors for unique canvas coverage
+    let sec_x = ((sb.agent.px / canvas_width) * 8.0).floor().clamp(0.0, 7.0) as u32;
+    let sec_y = ((sb.agent.py / canvas_height) * 8.0).floor().clamp(0.0, 7.0) as u32;
+    let sector_idx = sec_y * 8 + sec_x;
+    sb.coverage_mask |= 1 << sector_idx;
 
     if hit_wall {
         if sb.wall_collision_cooldown == 0 {
@@ -261,26 +165,27 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
         sb.wall_collision_cooldown -= 1;
     }
 
-    // 4. Collision and Spore Consumption Checks (TCK-122: 100% Continuous Foraging without any Eat Blocks!)
-    let carnivory = sb.agent.phenotype.carnivory;
-
-    let dx_plant = sb.foods[0].x - sb.agent.px;
-    let dy_plant = sb.foods[0].y - sb.agent.py;
-    let dist_plant = (dx_plant*dx_plant + dy_plant*dy_plant).sqrt();
-
-    let dx_meat = sb.foods[1].x - sb.agent.px;
-    let dy_meat = sb.foods[1].y - sb.agent.py;
-    let dist_meat = (dx_meat*dx_meat + dy_meat*dy_meat).sqrt();
-
-    // Update minimum distance to ANY spore reached during this trial run
-    let min_dist = dist_plant.min(dist_meat);
+    // 4. Update minimum distance to any spore reached during this trial run
+    let mut min_dist = f32::MAX;
+    for f in &sb.foods {
+        let dx = f.x - sb.agent.px;
+        let dy = f.y - sb.agent.py;
+        let dist = (dx*dx + dy*dy).sqrt();
+        min_dist = min_dist.min(dist);
+    }
     sb.min_distance = sb.min_distance.min(min_dist);
 
-    // Separately check collisions and consumption for BOTH plant (index 0) and meat (index 1) spores!
-    for target_idx in 0..2 {
-        let dist = if target_idx == 0 { dist_plant } else { dist_meat };
+    // Separately check collisions and consumption for ALL spores in sb.foods
+    let num_foods = sb.foods.len();
+    for target_idx in 0..num_foods {
+        let f = &sb.foods[target_idx];
+        let dx = f.x - sb.agent.px;
+        let dy = f.y - sb.agent.py;
+        let dist = (dx*dx + dy*dy).sqrt();
 
-        let base_eat_dist = if target_idx == 1 {
+        let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
+        let is_meat = sb.foods[target_idx].type_id == 2;
+        let base_eat_dist = if is_meat {
             mean_radius * 1.6 * 0.5 + 5.0
         } else {
             mean_radius * 1.5 * 0.5 + 8.0
@@ -288,8 +193,8 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
         let eat_dist = (mean_radius + 10.0).max(base_eat_dist);
 
         if dist <= eat_dist {
-            // Calculate metabolic yield based on what spore was consumed
-            let yield_val = if target_idx == 1 {
+            let carnivory = sb.agent.phenotype.carnivory;
+            let yield_val = if is_meat {
                 carnivory // Meat gives C
             } else {
                 1.0 - carnivory // Plant gives 1 - C
@@ -301,34 +206,29 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
             if !sb.finished {
                 sb.finished = true; // Still mark finished as true for green SUCCESS label!
                 sb.finish_tick = Some(sb.epoch_ticks);
-                sb.consumed_spore_type = Some(if target_idx == 1 { "meat" } else { "plant" }.to_string());
+                sb.consumed_spore_type = Some(if is_meat { "meat" } else { "plant" }.to_string());
                 sb.agent.has_eaten = true;
             }
 
-            // Instant Spore Respawn!
+            // Spore Respawn respecting the scenario bounds
             let mut rng = rand::thread_rng();
             let mut valid_spawn = false;
-            let is_exploration = canvas_width >= 2000.0;
-            let min_dist = if is_exploration { 1200.0 } else { 200.0 };
+            let is_exploration = sb.scenario == "exploration";
+            // Out-of-sight spawn limit: 550.0 pixels away from the creature's current position!
+            let min_dist_limit = if is_exploration { 550.0 } else { 200.0 };
+
             while !valid_spawn {
                 sb.foods[target_idx].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
                 sb.foods[target_idx].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
                 let rdx = sb.foods[target_idx].x - sb.agent.px;
                 let rdy = sb.foods[target_idx].y - sb.agent.py;
                 let rdist = (rdx*rdx + rdy*rdy).sqrt();
-                if rdist >= min_dist {
+                if rdist >= min_dist_limit {
                     valid_spawn = true;
                 }
             }
             sb.foods[target_idx].vx = 0.0;
             sb.foods[target_idx].vy = 0.0;
         }
-    }
-
-    // 5. Spore physical displacement impulse pushes and drift physics (unified!)
-    use crate::shared::physics::step_food_spore_physics;
-    let temp_creatures = vec![sb.agent.clone()];
-    for pellet in &mut sb.foods {
-        step_food_spore_physics(pellet, &temp_creatures, canvas_width, canvas_height);
     }
 }

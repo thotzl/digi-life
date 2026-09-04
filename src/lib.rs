@@ -3,6 +3,7 @@ pub mod server;
 pub mod biology {
     pub mod dna;
     pub mod trainer_engine;
+    pub mod scenarios;
 }
 pub mod shared {
     pub mod types;

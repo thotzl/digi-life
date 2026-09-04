@@ -1,8 +1,10 @@
 use crate::shared::types::{CreatureAgent, FoodSpore, AppConfig};
+use crate::shared::map_generator::ProceduralObstacle;
 
 pub fn step_food_spore_physics(
     pellet: &mut FoodSpore,
     nearby_creatures: &[CreatureAgent],
+    obstacles: &[ProceduralObstacle],
     world_width: f32,
     world_height: f32,
 ) {
@@ -43,6 +45,32 @@ pub fn step_food_spore_physics(
 
     if pellet.y < 8.0 { pellet.y = 8.0; pellet.vy = pellet.vy.abs(); }
     else if pellet.y > world_height - 8.0 { pellet.y = world_height - 8.0; pellet.vy = -pellet.vy.abs(); }
+
+    // 3. Collision with circular obstacles (reefs)
+    for obs in obstacles {
+        let dx = pellet.x - obs.x;
+        let dy = pellet.y - obs.y;
+        let dist = (dx*dx + dy*dy).sqrt();
+        let min_dist = spore_radius + obs.radius;
+        if dist < min_dist {
+            let overlap = min_dist - dist;
+            let push_x = if dist > 0.1 { (dx / dist) * overlap } else { overlap };
+            let push_y = if dist > 0.1 { (dy / dist) * overlap } else { 0.0 };
+            
+            pellet.x = (pellet.x + push_x).clamp(8.0, world_width - 8.0);
+            pellet.y = (pellet.y + push_y).clamp(8.0, world_height - 8.0);
+            
+            // Simple velocity reversal deflection
+            let norm_x = if dist > 0.1 { dx / dist } else { 1.0 };
+            let norm_y = if dist > 0.1 { dy / dist } else { 0.0 };
+            let vel_dot_norm = pellet.vx * norm_x + pellet.vy * norm_y;
+            if vel_dot_norm < 0.0 {
+                let bounce_impulse = -vel_dot_norm * 1.5;
+                pellet.vx += bounce_impulse * norm_x;
+                pellet.vy += bounce_impulse * norm_y;
+            }
+        }
+    }
 }
 
 pub fn step_creature_kinematics(
@@ -50,6 +78,7 @@ pub fn step_creature_kinematics(
     out_thrust: f32,
     out_left: f32,
     app_config: &AppConfig,
+    obstacles: &[ProceduralObstacle],
     world_width: f32,
     world_height: f32,
 ) -> bool {
@@ -85,6 +114,7 @@ pub fn step_creature_kinematics(
         drag_forward,
         0.0,
         0.0,
+        obstacles,
         world_width,
         world_height,
     )
@@ -98,6 +128,7 @@ pub fn apply_creature_physics(
     drag_forward: f32,
     external_force_x: f32,
     external_force_y: f32,
+    obstacles: &[ProceduralObstacle],
     world_width: f32,
     world_height: f32,
 ) -> bool {
@@ -172,6 +203,33 @@ pub fn apply_creature_physics(
         agent.py = world_height - mean_radius;
         agent.vy = -agent.vy.abs() * restitution;
         hit_wall = true;
+    }
+
+    // Circular obstacle (reef) collisions
+    for obs in obstacles {
+        let dx = agent.px - obs.x;
+        let dy = agent.py - obs.y;
+        let dist = (dx*dx + dy*dy).sqrt();
+        let min_dist = mean_radius + obs.radius;
+        if dist < min_dist {
+            let overlap = min_dist - dist;
+            let push_x = if dist > 0.1 { (dx / dist) * overlap } else { overlap };
+            let push_y = if dist > 0.1 { (dy / dist) * overlap } else { 0.0 };
+            
+            agent.px = (agent.px + push_x).clamp(mean_radius, world_width - mean_radius);
+            agent.py = (agent.py + push_y).clamp(mean_radius, world_height - mean_radius);
+            
+            // Deflect/bounce velocity with restitution
+            let norm_x = if dist > 0.1 { dx / dist } else { 1.0 };
+            let norm_y = if dist > 0.1 { dy / dist } else { 0.0 };
+            let vel_dot_norm = agent.vx * norm_x + agent.vy * norm_y;
+            if vel_dot_norm < 0.0 {
+                let bounce_impulse = -vel_dot_norm * (1.0 + restitution);
+                agent.vx += bounce_impulse * norm_x;
+                agent.vy += bounce_impulse * norm_y;
+            }
+            hit_wall = true; // Treats reef collisions as a wall collision for cooldown/penalties!
+        }
     }
 
     hit_wall

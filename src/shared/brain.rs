@@ -1,5 +1,6 @@
 use crate::biology::dna::BrainTopology;
 use crate::shared::types::{CreatureAgent, FoodSpore};
+use crate::shared::map_generator::ProceduralObstacle;
 
 /// Dynamic Deep CTRNN Recurrent Brain signal execution with Hebbian Learning (Euler integration + Plasticity)
 pub fn execute_brain_with_learning(
@@ -118,6 +119,7 @@ pub fn compute_sensory_inputs(
     agent: &CreatureAgent,
     clock_val: f32,
     foods: &[FoodSpore],
+    obstacles: &[ProceduralObstacle],
     canvas_width: f32,
     canvas_height: f32,
 ) -> Vec<f32> {
@@ -241,6 +243,19 @@ pub fn compute_sensory_inputs(
                 }
             }
 
+            // Obstacle tactile proximity (Treat reefs as circular walls with hardness 1.0)
+            for obs in obstacles {
+                let dx = obs.x - agent.px;
+                let dy = obs.y - agent.py;
+                let dist = (dx*dx + dy*dy).sqrt();
+                let hard_radius = obs.radius + range;
+                if dist <= hard_radius {
+                    let pressure = (1.0 - (dist - obs.radius).max(0.0) / range).clamp(0.0, 1.0);
+                    // Channel 1 receives reef hardness (1.0)
+                    channel_stimuli[0] = channel_stimuli[0].max(pressure * organ_power * 1.0);
+                }
+            }
+
             // B. Fluid Drag & Flow (Channel 2, Center 0.30)
             let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
             let flow_reception = (speed * 0.4).min(1.0);
@@ -349,7 +364,7 @@ mod tests {
             FoodSpore { id: 9999, type_id: 2, x: -99999.0, y: -99999.0, amount: 0.0, vx: 0.0, vy: 0.0 }, // far meat Spore
         ];
 
-        let inputs = compute_sensory_inputs(&agent, 0.5, &foods, 1000.0, 1000.0);
+        let inputs = compute_sensory_inputs(&agent, 0.5, &foods, &[], 1000.0, 1000.0);
         
         // Input size must be exactly (organelles.len() * 5 + 1)
         let k = phenotype.organelles.len();

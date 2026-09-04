@@ -147,24 +147,33 @@ function drawSandbox(sb: Sandbox) {
   const ctx = sb.ctx;
   ctx.save();
   ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-  ctx.fillStyle = '#020617';
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   // Apply scaling for the current chamber mode size
   ctx.scale(scale, scale);
 
-  if (tele.world && tele.world.obstacles) {
-    tele.world.obstacles.forEach((obs: any) => {
-      ctx.beginPath();
-      const sx = (obs.x / 19200.0) * canvasWidth;
-      const sy = (obs.y / 10800.0) * canvasHeight;
-      const sr = (obs.radius / 19200.0) * canvasWidth * 1.5;
+  // 1. Draw beautiful radial gradient background (matching MainMenu aesthetic)
+  const cx = chamberSize / 2.0;
+  const cy = chamberSize / 2.0;
+  const radGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, chamberSize * 0.7);
+  radGrad.addColorStop(0, '#0b1329'); // Subtle center glow
+  radGrad.addColorStop(1, '#020617'); // Dark slate edge
+  ctx.fillStyle = radGrad;
+  ctx.fillRect(0, 0, chamberSize, chamberSize);
 
-      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-      ctx.fillStyle = "#1e293b"; // Clean Slate-800 grey for obstacles
-      ctx.fill();
-    });
+  // 2. Draw beautifully scaling digital grid matching MainMenu
+  ctx.strokeStyle = 'rgba(0, 242, 254, 0.025)'; // Subtle cyber cyan lines
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  const step = 100;
+  for (let x = 0; x <= chamberSize; x += step) {
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, chamberSize);
   }
+  for (let y = 0; y <= chamberSize; y += step) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(chamberSize, y);
+  }
+  ctx.stroke();
 
   tele.foods.forEach((spore: any) => {
     ctx.beginPath();

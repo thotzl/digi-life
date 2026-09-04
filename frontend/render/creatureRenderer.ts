@@ -105,9 +105,9 @@ export class CreatureRenderer {
         const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
         r += length * Math.exp(-distSquared);
       } else {
-        // C. CILIATED PROTRUSION (Cilia / Feeler)
-        const height = 24 * scale * style;
-        const wAngular = 0.05 + patch.bandwidth * 0.08; // highly focused needle
+        // C. CILIATED PROTRUSION (Cilia / Feeler / Sensory Hillock)
+        const height = 18 * scale * style;
+        const wAngular = 0.18 + patch.bandwidth * 0.22; // wider angular root for smooth, organic hillocks
         const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
         r += height * Math.exp(-distSquared);
       }
@@ -518,9 +518,8 @@ export class CreatureRenderer {
         }
       } else if (style < 0.72) {
         if (patch.bandwidth < 0.35) {
-          const length = 22 * scale;
           const endX = 0;
-          const endY = -length;
+          const endY = -3.5 * scale; // Draw directly on the surface, tangent to the skin hillock
 
           this.ctx.beginPath();
           this.ctx.arc(endX, endY, 3.5 * scale, 0, Math.PI * 2);
