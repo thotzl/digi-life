@@ -986,13 +986,14 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // 15. CTRNN Brain (TCK-122: 5-Channel Multispectral Sensory Inputs)
     let k_count = organelles.len() * CHANNELS_PER_ORGANELLE;
 
-    // Symmetrical Fusions Neurons (Phase 3 of TCK-133)
+    // Symmetrical & Asymmetrical Thalamus blocks (Unified subcortical preprocessing bottleneck)
     let num_pairs = if has_hox { organelles.len() / 2 } else { 0 };
-    let fusions_count = num_pairs * (CHANNELS_PER_ORGANELLE * 2); // 5 Sum, 5 Diff per pair
+    let thalamus_blocks = if has_hox { num_pairs + (organelles.len() % 2) } else { organelles.len() };
+    let thalamus_count = thalamus_blocks * (CHANNELS_PER_ORGANELLE * 2); // 10 Thalamus nodes per block
 
     // Hidden neurons (Always exactly 4 hidden neurons for rich baseline wiring depth!)
     let h_count = 4;
-    let total_nodes = k_count + SYSTEMIC_BASE_INPUTS_COUNT + OUTPUT_MOTOR_NODES_COUNT + fusions_count + h_count;
+    let total_nodes = k_count + SYSTEMIC_BASE_INPUTS_COUNT + OUTPUT_MOTOR_NODES_COUNT + thalamus_count + h_count;
 
     let mut neurons = Vec::with_capacity(total_nodes);
 
@@ -1086,38 +1087,47 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         });
     }
 
-    // C1. Symmetrical Fusions Neurons (Sum & Difference Interneurons)
-    for p in 0..num_pairs {
-        let left_deg = organelles[2 * p].angle.round() as i32;
-        let right_deg = organelles[2 * p + 1].angle.round() as i32;
+    // C1. Generic subcortical "Thalamus" Interneurons (Unified Symmetrical & Asymmetrical Pre-Processing)
+    for b in 0..thalamus_blocks {
+        let is_paired = has_hox && b < num_pairs;
+        
+        let label_prefix = if is_paired {
+            let left_deg = organelles[2 * b].angle.round() as i32;
+            let right_deg = organelles[2 * b + 1].angle.round() as i32;
+            format!("Pair #{} ({}°/{}°)", b + 1, left_deg, right_deg)
+        } else {
+            let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
+            let deg = organelles[idx].angle.round() as i32;
+            format!("Organelle #{} ({}°)", idx + 1, deg)
+        };
 
-        // Sum Interneurons (ZNS Integration)
+        // 5 Thalamus Sum Interneurons (Sigmoid activated - ZNS Integration)
         for c in 0..CHANNELS_PER_ORGANELLE {
-            let id = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + c;
+            let id = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + c;
             neurons.push(CTRNNNeuron {
                 id,
                 neuron_type: NeuronType::Hidden,
-                label: format!("Σ Sum Organelle-Pair #{} (Ch {}, {}°/{}°)", p + 1, c + 1, left_deg, right_deg),
+                label: format!("🧠 Thalamus Sum {} (Ch {})", label_prefix, c + 1),
                 tau: 1.0,
                 bias: 0.0,
-                activation_type: Some(String::from("sigmoid")), // Sigmoid is ideal for summing intensity
+                activation_type: Some(String::from("sigmoid")),
                 x: Some(0.5),
-                y: Some(0.15 + (c as f32 / 4.0) * 0.15), // Symmetrische Ebene 2 (links-mitte)
+                y: Some(0.15 + (c as f32 / 4.0) * 0.15), // Ebene 2 (links-mitte)
             });
         }
 
-        // Difference Interneurons (ZNS Integration)
+        // 5 Thalamus Difference Interneurons (Tanh activated - ZNS Integration)
         for c in 0..CHANNELS_PER_ORGANELLE {
-            let id = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE + c;
+            let id = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE + c;
             neurons.push(CTRNNNeuron {
                 id,
                 neuron_type: NeuronType::Hidden,
-                label: format!("Δ Diff Organelle-Pair #{} (Ch {}, {}°/{}°)", p + 1, c + 1, left_deg, right_deg),
+                label: format!("🧠 Thalamus Diff {} (Ch {})", label_prefix, c + 1),
                 tau: 1.0,
                 bias: 0.0,
-                activation_type: Some(String::from("tanh")), // Tanh is ideal for signed direction [-1.0 .. 1.0]
+                activation_type: Some(String::from("tanh")),
                 x: Some(0.5),
-                y: Some(0.35 + (c as f32 / 4.0) * 0.15), // Symmetrische Ebene 2 (links-mitte)
+                y: Some(0.35 + (c as f32 / 4.0) * 0.15), // Ebene 2 (links-mitte)
             });
         }
     }
@@ -1172,7 +1182,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         };
 
         neurons.push(CTRNNNeuron {
-            id: get_hidden_neurons_start_id(organelles.len()) + fusions_count + i,
+            id: get_hidden_neurons_start_id(organelles.len()) + thalamus_count + i,
             neuron_type: NeuronType::Hidden,
             label: format!("Hidden #{}", i + 1),
             tau,
@@ -1190,7 +1200,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     // Establish valid sources and destinations arrays for robust wiring!
     let mut sources = Vec::new();
     for s in 0..get_input_neurons_count(organelles.len()) { sources.push(s); }
-    for h in 0..(fusions_count + h_count) {
+    for h in 0..(thalamus_count + h_count) {
         sources.push(get_hidden_neurons_start_id(organelles.len()) + h);
     }
 
@@ -1198,7 +1208,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     for o in 0..OUTPUT_MOTOR_NODES_COUNT {
         destinations.push(get_input_neurons_count(organelles.len()) + o);
     }
-    for h in 0..(fusions_count + h_count) {
+    for h in 0..(thalamus_count + h_count) {
         destinations.push(get_hidden_neurons_start_id(organelles.len()) + h);
     }
 
@@ -1216,7 +1226,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         explicit_synapses.push((from_node, to_node, weight));
     }
 
-    // Build a fully-connected graph based on the hierarchical Deep Brain Layout (Phase 3 Optimization)
+    // Build a fully-connected graph based on the hierarchical Deep Brain Layout (Phase 3 Symmetrisierungs-Härtung)
     let mut exuberant_sources = Vec::new();
     let mut exuberant_destinations = Vec::new();
 
@@ -1230,34 +1240,69 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         exuberant_sources.push(k_count + c);
     }
 
-    if has_hox && num_pairs > 0 {
-        // HOX Active: Symmetrical Fusion Interneurons act as the primary, processed sensory inputs!
-        // This isolates raw L/R inputs from the rest of the brain and halves the genetic search space!
-        for f in 0..fusions_count {
-            exuberant_sources.push(get_hidden_neurons_start_id(organelles.len()) + f);
-        }
-        // Standard hidden neurons are part of both sources and destinations
-        for h in 0..h_count {
-            let id = get_hidden_neurons_start_id(organelles.len()) + fusions_count + h;
-            exuberant_sources.push(id);
-            exuberant_destinations.push(id);
-        }
-    } else {
-        // HOX Inactive (Asymmetric): Raw organelle inputs act as raw sensory inputs
-        for s in 0..k_count {
-            exuberant_sources.push(s);
-        }
-        // Standard hidden neurons are part of both sources and destinations
-        for h in 0..h_count {
-            let id = get_hidden_neurons_start_id(organelles.len()) + h;
-            exuberant_sources.push(id);
-            exuberant_destinations.push(id);
-        }
+    // C. Symmetrical & Asymmetrical Thalamus Interneurons act as the primary, processed sensory inputs!
+    for f in 0..thalamus_count {
+        exuberant_sources.push(get_hidden_neurons_start_id(organelles.len()) + f);
+    }
+
+    // D. Standard hidden neurons are part of both sources and destinations
+    for h in 0..h_count {
+        let id = get_hidden_neurons_start_id(organelles.len()) + thalamus_count + h;
+        exuberant_sources.push(id);
+        exuberant_destinations.push(id);
     }
 
     for &from_node in &exuberant_sources {
         for &to_node in &exuberant_destinations {
             if from_node == to_node {
+                continue;
+            }
+
+            // Skip pre-wired Thalamus reflex pathways in the exuberant loop
+            let mut is_reflex = false;
+            for b in 0..thalamus_blocks {
+                let is_paired = has_hox && b < num_pairs;
+                let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
+                let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
+                let motor_thrust = get_input_neurons_count(organelles.len());
+                let motor_bending = get_input_neurons_count(organelles.len()) + 1;
+
+                if is_paired {
+                    let left_start = (2 * b) * CHANNELS_PER_ORGANELLE;
+                    let right_start = (2 * b + 1) * CHANNELS_PER_ORGANELLE;
+                    for c in 0..CHANNELS_PER_ORGANELLE {
+                        let l_node = left_start + c;
+                        let r_node = right_start + c;
+                        let s_node = sum_start + c;
+                        let d_node = diff_start + c;
+
+                        if (from_node == l_node && to_node == s_node) ||
+                           (from_node == r_node && to_node == s_node) ||
+                           (from_node == s_node && to_node == motor_thrust) ||
+                           (from_node == l_node && to_node == d_node) ||
+                           (from_node == r_node && to_node == d_node) ||
+                           (from_node == d_node && to_node == motor_bending) {
+                            is_reflex = true;
+                        }
+                    }
+                } else {
+                    let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
+                    let raw_start = idx * CHANNELS_PER_ORGANELLE;
+                    for c in 0..CHANNELS_PER_ORGANELLE {
+                        let r_node = raw_start + c;
+                        let s_node = sum_start + c;
+                        let d_node = diff_start + c;
+
+                        if (from_node == r_node && to_node == s_node) ||
+                           (from_node == s_node && to_node == motor_thrust) ||
+                           (from_node == r_node && to_node == d_node) ||
+                           (from_node == d_node && to_node == motor_bending) {
+                            is_reflex = true;
+                        }
+                    }
+                }
+            }
+            if is_reflex {
                 continue;
             }
 
@@ -1277,16 +1322,20 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         }
     }
 
-    // Append ONLY the dedicated, isolated Symmetrical Fusion reflex synapses directly (Phase 3 Optimization)
-    if has_hox {
-        for p in 0..num_pairs {
-            let left_start = (2 * p) * CHANNELS_PER_ORGANELLE;
-            let right_start = (2 * p + 1) * CHANNELS_PER_ORGANELLE;
-            let sum_start = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2);
-            let diff_start = get_hidden_neurons_start_id(organelles.len()) + p * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
+    // Append ONLY the dedicated, isolated Thalamus reflex synapses directly (Phase 3 Unified Pre-Processing)
+    for b in 0..thalamus_blocks {
+        let is_paired = has_hox && b < num_pairs;
+        
+        let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
+        let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
+        
+        let motor_thrust_id = get_input_neurons_count(organelles.len());
+        let motor_bending_id = get_input_neurons_count(organelles.len()) + 1;
 
-            let motor_thrust_id = get_motor_thrust_id(organelles.len());
-            let motor_bending_id = get_motor_bending_id(organelles.len());
+        if is_paired {
+            // Symmetrical Pair: left inputs and right inputs connect to Sum and Diff
+            let left_start = (2 * b) * CHANNELS_PER_ORGANELLE;
+            let right_start = (2 * b + 1) * CHANNELS_PER_ORGANELLE;
 
             for c in 0..CHANNELS_PER_ORGANELLE {
                 let l_node = left_start + c;
@@ -1294,14 +1343,32 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 let s_node = sum_start + c;
                 let d_node = diff_start + c;
 
-                // Symmetrical Sum reflex pathways:
+                // Sum (L_c + R_c):
                 synapses.push(CTRNNSynapse { from_node: l_node, to_node: s_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
 
-                // Symmetrical Difference reflex pathways:
+                // Diff (L_c - R_c):
                 synapses.push(CTRNNSynapse { from_node: l_node, to_node: d_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: d_node, weight: -1.0 });
+                synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
+            }
+        } else {
+            // Asymmetrical Single Organ: raw inputs connect to Sum and Diff
+            let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
+            let raw_start = idx * CHANNELS_PER_ORGANELLE;
+
+            for c in 0..CHANNELS_PER_ORGANELLE {
+                let r_node = raw_start + c;
+                let s_node = sum_start + c;
+                let d_node = diff_start + c;
+
+                // Sum (L_c + 0 = L_c):
+                synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
+                synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
+
+                // Diff (L_c - 0 = L_c):
+                synapses.push(CTRNNSynapse { from_node: r_node, to_node: d_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
             }
         }
@@ -1599,7 +1666,7 @@ mod tests {
 
         assert_eq!(input_count, get_input_neurons_count(phenotype.organelles.len()));
         assert_eq!(output_count, OUTPUT_MOTOR_NODES_COUNT);
-        assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our new HOX sum/diff fusion interneurons!
+        assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our generic thalamus sum/diff pre-processor interneurons!
 
         // Verify that BMR scaling values are deterministic and finite
         assert!(phenotype.basal_metabolic_rate.is_finite());

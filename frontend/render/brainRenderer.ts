@@ -21,40 +21,59 @@ export class BrainRenderer {
     private onSynapseHover?: (from: number, to: number, weight: number | null) => void
   ) {}
 
-  public getNeuronX(id: number, K: number, depth?: number | null): number {
-    if (id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT) {
-      return BrainRenderer.LEFT_MARGIN; // Left Column: Sensors (K organelles * 5 + 6 base inputs)
+  public getNeuronX(id: number, _K: number, brain: BrainTopology): number {
+    const n = brain.neurons.find(node => node.id === id);
+    if (!n) return BrainRenderer.CENTER_X;
+
+    if (n.type === "input") {
+      return BrainRenderer.LEFT_MARGIN; // 25px (Ganz links)
     }
-    if (
-      id >= K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT && 
-      id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT
-    ) {
-      return BrainRenderer.RIGHT_MARGIN; // Right Column: Motors (4 Output nodes)
+    if (n.type === "output") {
+      return BrainRenderer.RIGHT_MARGIN; // 285px (Ganz rechts)
     }
-    if (depth !== undefined && depth !== null) {
-      return BrainRenderer.LEFT_MARGIN + depth * BrainRenderer.AREA_WIDTH; // Scale horizontal coordinate dynamically based on compiled depth!
+    
+    // Now we are in Hidden Neurons (Interneurons)
+    const label = n.label || "";
+    if (label.includes("Σ Sum") || label.includes("Δ Diff") || label.includes("Thalamus")) {
+      return BrainRenderer.LEFT_MARGIN + 55; // Symmetrieknoten parallel auf Säule 2 (80px)
     }
-    return BrainRenderer.CENTER_X; // Center Column: Interneurons
+    
+    // Standard DNA Hiddens: scaled dynamically (staggered depth) as before!
+    if (n.y !== undefined && n.y !== null) {
+      return BrainRenderer.LEFT_MARGIN + n.y * BrainRenderer.AREA_WIDTH;
+    }
+    return BrainRenderer.CENTER_X;
   }
 
-  public getNeuronY(id: number, K: number, totalNeurons: number): number {
-    if (id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT) {
-      const step = BrainRenderer.AREA_HEIGHT / (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
-      return BrainRenderer.TOP_MARGIN + (id + 1) * step;
+  public getNeuronY(id: number, K: number, brain: BrainTopology): number {
+    const n = brain.neurons.find(node => node.id === id);
+    if (!n) return BrainRenderer.TOP_MARGIN;
+
+    if (n.type === "input") {
+      const step = BrainRenderer.AREA_HEIGHT / (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + 1);
+      return BrainRenderer.TOP_MARGIN + (n.id + 1) * step;
     }
-    if (
-      id >= K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT && 
-      id < K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT
-    ) {
-      const motorIdx = id - (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
+    if (n.type === "output") {
+      const motorIdx = n.id - (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
       const step = BrainRenderer.AREA_HEIGHT / (BrainRenderer.MOTOR_OUTPUT_NODES_COUNT + 1);
       return BrainRenderer.TOP_MARGIN + (motorIdx + 1) * step;
     }
-    const totalInputsAndOutputs = K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + BrainRenderer.MOTOR_OUTPUT_NODES_COUNT;
-    const interIdx = id - totalInputsAndOutputs;
-    const numInter = totalNeurons - totalInputsAndOutputs;
-    const step = BrainRenderer.AREA_HEIGHT / (numInter + 1);
-    return BrainRenderer.TOP_MARGIN + (interIdx + 1) * step;
+    
+    // Now we are in Hidden Neurons
+    const label = n.label || "";
+    if (label.includes("Σ Sum") || label.includes("Δ Diff") || label.includes("Thalamus")) {
+      // Space HOX fusions beautifully and parallelly in their own vertical column!
+      const fusions = brain.neurons.filter(node => node.type === "hidden" && (node.label.includes("Σ Sum") || node.label.includes("Δ Diff") || node.label.includes("Thalamus")));
+      const idx = fusions.findIndex(node => node.id === n.id);
+      const step = BrainRenderer.AREA_HEIGHT / (fusions.length + 1);
+      return BrainRenderer.TOP_MARGIN + (idx + 1) * step;
+    } else {
+      // Space standard DNA hidden neurons beautifully in their own vertical column!
+      const dnaHiddens = brain.neurons.filter(node => node.type === "hidden" && !(node.label.includes("Σ Sum") || node.label.includes("Δ Diff") || node.label.includes("Thalamus")));
+      const idx = dnaHiddens.findIndex(node => node.id === n.id);
+      const step = BrainRenderer.AREA_HEIGHT / (dnaHiddens.length + 1);
+      return BrainRenderer.TOP_MARGIN + (idx + 1) * step;
+    }
   }
 
   public compile(brain: BrainTopology, K: number): void {
@@ -71,15 +90,10 @@ export class BrainRenderer {
       const fromId = syn.fromNode;
       const toId = syn.toNode;
 
-      const fromNeuron = brain.neurons.find(n => n.id === fromId);
-      const toNeuron = brain.neurons.find(n => n.id === toId);
-      const fromDepth = fromNeuron ? fromNeuron.y : null;
-      const toDepth = toNeuron ? toNeuron.y : null;
-
-      const fromX = this.getNeuronX(fromId, K, fromDepth);
-      const fromY = this.getNeuronY(fromId, K, brain.neurons.length);
-      const toX = this.getNeuronX(toId, K, toDepth);
-      const toY = this.getNeuronY(toId, K, brain.neurons.length);
+      const fromX = this.getNeuronX(fromId, K, brain);
+      const fromY = this.getNeuronY(fromId, K, brain);
+      const toX = this.getNeuronX(toId, K, brain);
+      const toY = this.getNeuronY(toId, K, brain);
 
       const isExcitatory = syn.weight > 0;
       const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.85)" : "rgba(239, 68, 68, 0.85)";
@@ -97,8 +111,8 @@ export class BrainRenderer {
 
     // Draw neurons (always 3-column layout!)
     brain.neurons.forEach((n: CTRNNNeuron) => {
-      const nx = this.getNeuronX(n.id, K, n.y);
-      const ny = this.getNeuronY(n.id, K, brain.neurons.length);
+      const nx = this.getNeuronX(n.id, K, brain);
+      const ny = this.getNeuronY(n.id, K, brain);
 
       const isInput = n.type === "input";
       const isOutput = n.type === "output";

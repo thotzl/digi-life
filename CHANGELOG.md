@@ -5,37 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-09-04
+
+### Added
+- **Generic Subcortical Thalamus Layer:** Standardized sensory processing for all exteroceptors (both paired under HOX symmetry and asymmetric single organs). Every organelle compiles exactly 10 Thalamus interneurons inside the hidden layer (5 Sum nodes, 5 Difference nodes), bottlenecking exteroceptive pathways through subcortical preprocessing. This unifies the genetic search space across all species and diet classes, fully preserving the brain's temporal dynamics ($\tau$), physiological signal filtering, and adaptive recurrent feedback loops.
+- **Unified 4-Column Parallel Layout (`||`):** Aligned all subcortical Thalamus interneurons on a perfectly straight vertical column parallel to the exteroceptive inputs (`||` at `x = 80px`), creating a beautifully ordered, cybernetic graph visualization.
+
+## [1.11.3] - 2026-09-04
+
+### Added
+- **Elegant Visual Parallel Layout (Parallel Column Structure):** Fully realigned the symmetry fusions (Sum and Difference) inside `brainRenderer.ts`. They are now drawn on a perfectly straight vertical column parallel to the inputs (`||` at `x = 80px`). This provides an excellent, error-free visual graph analysis of brains in the client.
+- **Preserved Fanning DNA Hiddens:** Standard adaptive hidden nodes retain their individual inherited fanning-depth (Level 3 at `x = 160px..240px`), preserving the visual uniqueness of each brain.
+
 ## [1.11.2] - 2026-09-04
 
 ### Fixed
-- **Dynamisches Spacing für Kachel-Icons:** Anpassung des Abstands (`gap`) der Svg-Vektor-Icons zum Text in den Sandbox-Kacheln auf `0.3em` (exakt eine relative Zeichenbreite der Schriftart), was ein perfektes, fließendes Schriftbild erzeugt.
+- **Dynamic Spacing for Sandbox Icons:** Adjusted the spacing (`gap`) of the new SVG vector icons to the text in sandbox tiles to `0.3em` (exactly one relative character width of the current font), creating a perfect, fluid typography layout.
 
 ## [1.11.1] - 2026-09-04
 
 ### Added
-- **Hierarchische Deep-Brain-Sensorfusion (Kaskadiertes Brain Layout):** Isoliert physische Roh-Eingänge bei HOX-Symmetrie vollständig aus dem exuberant vollvernetzten Graphen, sodass die standardmäßigen Hiddens und Motoren sich ausschließlich über die bereits vorverarbeiteten Summen- und Differenz-Interneurone speisen. Dies halbiert den evolutionären Suchraum für komplexe Verhaltensweisen.
-- **Ästhetisches Upgrade der Cyberpunk-Icon-Bibliothek:** Vollständiger Ersatz aller verbliebenen, klobigen Standard-Emojis durch rasiermesserscharfe Svg-Vektorgrafiken im einheitlichen Stil des Hauptmenüs (IconRocket für Klon-Release, IconWeights für Trainer-Injektion, IconDna für Chromatin, IconBrain für Brain-Waves, sowie IconSuccess und IconActive für die Sandbox-Schilder).
+- **Hierarchical Deep-Brain Sensory Fusion (Cascaded Brain Layout):** Isolated raw exteroceptive inputs under HOX symmetry completely from the exuberant fully-connected graph, forcing standard hidden neurons and motor outputs to feed exclusively from the pre-processed Sum and Difference interneurons. This halves the genetic search space for complex navigation behaviors.
+- **Cyberpunk SVG Vector Icons Library:** Replaced all remaining clunky standard emojis inside the sandbox tiles and diagnostics panels with sharp, custom SVG vector elements matching the main menu's style (IconRocket for clone releases, IconWeights for trainer injections, IconDna for chromatin, IconBrain for brain waves, and IconSuccess/IconActive for sandbox states).
 
 ### Fixed
-- **Präzise 4-Säulen-Signalfluss-Staffelung im UI:** Korrektur und Staffelung der Tiefenkoordinaten (`y`-Werte) im Gehirn-Compiler (`dna.rs`), sodass Symmetrieknoten (Ebene 2) links-mittig und DNA-Hiddens (Ebene 3) rechts-mittig gerendert werden. Der gezeichnete Signalfluss verläuft nun visuell exakt und geradlinig von links nach rechts.
-- **Beseitigung des Kachel-Springens (Vermeidung von Jumping-Effekten):** Einführung von No-Wrap- und Inline-Flex-Ausrichtungen für `.sandbox-meta span` in `styles.css` zur Verhinderung von Zeilenumbrüchen bei neu eingespielten Vektor-Icons im Trainingsgitter.
+- **Precise 4-Column Signal Flow Layout in UI:** Corrected and tiered the horizontal coordinates (`y`-values) inside the brain compiler (`dna.rs`), positioning symmetry interneurons (Level 2) left-center and DNA hiddens (Level 3) right-center. The drawn signal flow now runs perfectly straight from left to right.
+- **Eradication of Sandbox Card Jumping (Typographical Layout Fix):** Introduced no-wrap and inline-flex alignments for `.sandbox-meta span` inside `styles.css` to prevent line breaks and card height "popping" upon active icon injection.
 
 ## [1.11.0] - 2026-09-04
 
 ### Added
-- **Symmetrische Sensor-Fusion via HOX-Interneurone (TCK-133 Phase 3 & 100% Performance-Optimierung):** Vollständige Abschaffung der fehleranfälligen Geburts-Synapsenspiegelung. Das Gehirn generiert bei bilateraler Symmetrie nun automatisch Summen- ($S_c = L_c + R_c$) und Differenz-Interneurone ($D_c = L_c - R_c$). Durch die vollständige Abkoppelung dieser Fusionsreize aus dem vollvernetzten Exuberanz-Graphen hin zu dedizierten, isolierten Schaltkreisen (je 3 Synapsen pro Fusionsknoten) konnte die Synapsenanzahl bei 2 Organen um **65%** und bei 4 Organen um **78%** drastisch gesenkt werden – die Warp-Performance ist zu 100% stabilisiert.
-- **Dezentralisierung der Propriozeption (TCK-133 Phase 2):** Einführung eines permanenten Zentralnervensystem-Moduls aus 6 unzerstörbaren Basis-Inputs (Hunger Clock, lineare Geschwindigkeit, Drehgeschwindigkeit, Energie/Mageninhalt, Adrenalin-Pegel, Kollisionsschmerz). Periphere Organellen sind nun vollständig von propriozeptiven Signalen isoliert und fokussieren sich zu 100% auf die Außenwelt (Exterozeption).
-- **Haptische Spezialisierung & Direktionale Strömung (TCK-133 Phase 4):** Aufteilung haptischer Organellen via `expression_style` in drei biologische Ausprägungen: Taktile Borsten (Oberflächenkontakt & lokaler Schmerz), Seitenlinien-Poren (richtungsabhängiger, vektorieller Wasserdruck `local_drag` $[-1.0, 1.0]$ für Rheotaxis & Gyrodämpfung) sowie Thermo-Propriozeptoren (Wassertemperatur & normierte Wirbelsäulen-Biegung `bend_angle` $[-1.0, 1.0]$).
-- **Phasische Sehkanäle & Bewegungserkennung (TCK-133 Phase 5):** Ergänzung visueller/olfaktorischer Organe um temporale Differenzialsensoren ($\Delta I$), welche Bewegungen durch Helligkeitsänderungen über Zeit erfassen. Die ansonsten ungenutzten Zustandspotenziale der Input-Neurone werden als flüchtige frameübergreifende Speicherzellen genutzt.
-- **Standardisierter Symmetrischer Winkelraum (TCK-133 Phase 1):** Vereinheitlichung aller Richtungsberechnungen auf den Bereich von $[-170^{\circ}, 170^{\circ}]$ mit $0^{\circ}$ geradeaus, links negativ, rechts positiv. Der TypeScript `BrainRenderer` im Frontend wurde so generalisiert, dass er alle Knotenkoordinaten (Säulen links/mitte/rechts) vollkommen dynamisch und ohne Magic Numbers anordnet.
+- **Symmetrical Sensor Fusion via HOX Interneurons (TCK-133 Phase 3 & 100% Performance Optimization):** Eliminated the error-prone birth-time synaptic mirroring. Under bilateral symmetry, the brain now automatically generates Sum ($S_c = L_c + R_c$) and Difference ($D_c = L_c - R_c$) interneurons. Isolating these fusion stimuli from the exuberant fully-connected graph into dedicated circuits (3 synapses per fusion node) dramatically reduced the synapses count by **65%** (2 organs) and **78%** (4 organs) respectively, fully stabilizing Warp performance.
+- **Decoupled Proprioception & State Inputs Block (TCK-133 Phase 2):** Introduced a permanent systemic brain block of 6 exteroceptively isolated state inputs (Hunger Clock, Linear Speed, Rotational Speed, Internal Energy, Adrenaline, Pain). Peripheral organs are now fully exteroceptive, focusing 100% on the external world.
+- **Haptic Specialization & Rheotaxis (TCK-133 Phase 4):** Branched haptic organelles via `expression_style` into three distinct phenotypes: Tactile Borsten (surface hardness and pain), Seitenlinien-Poren (directional water flow drag $[-1.0, 1.0]$ for rheotaxis and gyro-damping), and Thermo-Proprioceptors (hydrothermal vent temperature and spinal bend strain $[-1.0, 1.0]$).
+- **Phasische Sehkanäle & Bewegungserkennung (TCK-133 Phase 5):** Appended visual/olfactory exteroceptors with temporal differential sensors ($\Delta I$), capturing motion through intensity changes over time. Unused input neuron states are recycled as volatile cross-frame memory registers.
+- **Standardized Symmetrical Angle Space (TCK-133 Phase 1):** Unified all directional calculations to $[-170^{\circ}, 170^{\circ}]$ with $0^{\circ}$ straight ahead, left negative, and right positive. The TypeScript `BrainRenderer` was generalized to align all nodes coordinate layers dynamically without magic numbers.
 
 ## [1.10.1] - 2026-09-04
 
 ### Fixed
-- **Beseitigung der Fitness-Klippe im großen Raum (ExplorationScenario):** Einordnung der Explorationsleistung (Displacement + Sektorenabdeckung) als stetige Fitness-Basis, ergänzt durch einen rein additiven Homing-Bonus bei Unterschreitung der 550px-Sensorgrenze der Nahrung.
-- **Korrektur der Multi-Trial-Distanzeichung (engine.rs):** Behebung des Indexierungsfehlers für Nahrungselemente im Rundenreset 2 & 3 des großen Raums, sodass Carnivoren, Herbivoren und Omnivoren exakt auf ihre biologischen Nahrungstypen (Pflanze/Fleisch) referenziert werden.
-- **Wiederherstellung des kleinen Trainingsraums (StandardScenario):** Vollständiger Rollback der geänderten Fitnessregeln im kleinen Raum zur verlässlichen Reaktivierung des bewährten, hochstabilen evolutionären Verhaltens und Beseitigung künstlicher Loop-Strafen.
-- **Kompilierungsbereinigung:** Ergänzung unbenutzter Variablen in der Methodensignatur von `StandardScenario::calculate_fitness` mit Unterstrichen zur Gewährleistung eines 100% warnungsfreien Cargo-Builds.
+- **Eradication of the Exploration Scenario Fitness Cliff:** Defined exploration performance (displacement + sector coverage) as a continuous fitness baseline, supplemented by an additive homing bonus once the creature enters the 550px food sensory radius.
+- **Correction of Multi-Trial Food Distances (`engine.rs`):** Resolved target-matching indexing mismatches during resets in trials 2 & 3 of the exploration chamber, ensuring correct diet matching (plants/meat) across resets.
+- **Restoration of Standard Training Chamber (StandardScenario):** Fully rolled back the modified fitness rules in the standard small room to reliably re-activate the highly stable evolutionary homing behaviors, removing artificial loop penalties.
+- **Cargo Warnings Cleanup:** Appended unused variables inside `StandardScenario::calculate_fitness` signature with underscores to guarantee a 100% warning-free Cargo build.
 
 ## [1.10.0-BETA] - 2026-09-03 (STABLE PRODUCTION-READY RELEASE)
 
