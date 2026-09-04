@@ -1354,22 +1354,17 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
             }
         } else {
-            // Asymmetrical Single Organ: raw inputs connect to Sum and Diff
+            // Asymmetrical Single Organ: raw inputs connect to Sum ONLY (Diff remains quiet/stumm!)
             let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
             let raw_start = idx * CHANNELS_PER_ORGANELLE;
 
             for c in 0..CHANNELS_PER_ORGANELLE {
                 let r_node = raw_start + c;
                 let s_node = sum_start + c;
-                let d_node = diff_start + c;
 
                 // Sum (L_c + 0 = L_c):
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
-
-                // Diff (L_c - 0 = L_c):
-                synapses.push(CTRNNSynapse { from_node: r_node, to_node: d_node, weight: 1.0 });
-                synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
             }
         }
     }
