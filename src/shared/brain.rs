@@ -71,18 +71,23 @@ pub fn execute_brain_with_learning(
         }
     }
 
+    let mut syn_idx = 0;
+    // Move syn_idx to the first synapse that has to_node >= k_count + 1
+    while syn_idx < total_synapses && brain.synapses[syn_idx].to_node < k_count + 1 {
+        syn_idx += 1;
+    }
+
     // 2. Continuous Euler Integration: Integrate hidden and output potentials
     for i in (k_count + 1)..total_nodes {
         let neuron = &brain.neurons[i];
         let tau = if neuron.tau > 0.1 { neuron.tau } else { 1.0 };
         let bias = neuron.bias;
 
-        // Sum synaptic weights from all active connections using dynamic synapse_weights
+        // Sum synaptic weights from all active connections in a single linear O(S) pass!
         let mut sum = 0.0;
-        for (syn_idx, syn) in brain.synapses.iter().enumerate() {
-            if syn.to_node == i {
-                sum += neuron_activations[syn.from_node] * synapse_weights[syn_idx];
-            }
+        while syn_idx < total_synapses && brain.synapses[syn_idx].to_node == i {
+            sum += neuron_activations[brain.synapses[syn_idx].from_node] * synapse_weights[syn_idx];
+            syn_idx += 1;
         }
 
         // Euler Integration Step (dt = 1.0, tau represents local temporal inertia)
@@ -155,26 +160,6 @@ pub fn compute_sensory_inputs(
 ) -> Vec<f32> {
     let k = agent.phenotype.organelles.len();
     let mut inputs = vec![0.0; k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT];
-
-    // Systemic Base Inputs (Feste propriozeptive Kern-Sensorik)
-    let speed = (agent.vx.powi(2) + agent.vy.powi(2)).sqrt();
-    let linear_speed = speed * 0.4;
-    let rotational_speed = agent.omega_rot.abs() * 0.8;
-    let internal_energy = agent.energy / 100.0;
-    let adrenaline_level = (agent.adrenaline - 1.0).max(0.0);
-    let pain_signal = if agent.omega_rot.abs() > 2.0 || speed > 4.5 {
-        (speed * 0.3).min(1.0)
-    } else {
-        0.0
-    };
-
-    let base_inputs_start = k * CHANNELS_PER_ORGANELLE;
-    inputs[base_inputs_start + 0] = clock_val;
-    inputs[base_inputs_start + 1] = linear_speed;
-    inputs[base_inputs_start + 2] = rotational_speed;
-    inputs[base_inputs_start + 3] = internal_energy;
-    inputs[base_inputs_start + 4] = adrenaline_level;
-    inputs[base_inputs_start + 5] = pain_signal;
 
     // Fixed center frequencies for the 5 receptive channels (Cones)
     let channel_frequencies = [0.10, 0.30, 0.50, 0.70, 0.90];
@@ -364,6 +349,35 @@ pub fn compute_sensory_inputs(
         }
     }
 
+    // Systemic Base Inputs (Feste propriozeptive Kern-Sensorik)
+    let speed = (agent.vx.powi(2) + agent.vy.powi(2)).sqrt();
+    let linear_speed = speed * 0.4;
+    let rotational_speed = agent.omega_rot.abs() * 0.8;
+    let internal_energy = agent.energy / 100.0;
+    let adrenaline_level = (agent.adrenaline - 1.0).max(0.0);
+    let pain_signal = if agent.omega_rot.abs() > 2.0 || speed > 4.5 {
+        (speed * 0.3).min(1.0)
+    } else {
+        0.0
+    };
+
+    // Calculate Search Arousal based on cumulative exteroceptive stimuli!
+    let mut total_exteroceptive = 0.0;
+    for s in 0..(k * CHANNELS_PER_ORGANELLE) {
+        total_exteroceptive += inputs[s].abs();
+    }
+    // Arousal is 1.0 if the creature registers no external exteroceptive stimulus at all, allowing it to trigger blind search behaviors
+    let search_arousal = if total_exteroceptive < 0.05 { 1.0 } else { 0.0 };
+
+    let base_inputs_start = k * CHANNELS_PER_ORGANELLE;
+    inputs[base_inputs_start + 0] = clock_val;
+    inputs[base_inputs_start + 1] = linear_speed;
+    inputs[base_inputs_start + 2] = rotational_speed;
+    inputs[base_inputs_start + 3] = internal_energy;
+    inputs[base_inputs_start + 4] = adrenaline_level;
+    inputs[base_inputs_start + 5] = pain_signal;
+    inputs[base_inputs_start + 6] = search_arousal;
+
     inputs
 }
 
@@ -444,9 +458,9 @@ mod tests {
 
         let inputs = compute_sensory_inputs(&agent, 0.5, &foods, &[], 1000.0, 1000.0);
         
-        // Input size must be exactly (organelles.len() * 5 + 6)
+        // Input size must be exactly (organelles.len() * 5 + 7)
         let k = phenotype.organelles.len();
-        assert_eq!(inputs.len(), k * 5 + 6);
+        assert_eq!(inputs.len(), k * 5 + 7);
         
         // Last element is the clock
         assert_eq!(inputs[k * 5], 0.5);

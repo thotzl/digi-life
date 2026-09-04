@@ -5,7 +5,7 @@ use ts_rs::TS;
 pub const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 pub const CHANNELS_PER_ORGANELLE: usize = 5;
-pub const SYSTEMIC_BASE_INPUTS_COUNT: usize = 6;
+pub const SYSTEMIC_BASE_INPUTS_COUNT: usize = 7; // Erhöht auf 7 Kanäle (Inklusive Such-Arousal)
 pub const OUTPUT_MOTOR_NODES_COUNT: usize = 4;
 
 // Semantic Helper utilities for brain neurons index calculations
@@ -1052,6 +1052,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         "🔋 Internal Energy",
         "⚡ Adrenaline Level",
         "💥 Pain Signal",
+        "📡 Search Arousal", // Neuer 7. propriozeptiver Such-Zustands-Indikator
     ];
     for c in 0..SYSTEMIC_BASE_INPUTS_COUNT {
         neurons.push(CTRNNNeuron {
@@ -1368,6 +1369,9 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             }
         }
     }
+
+    // Sort synapses by to_node to enable high-speed linear-pass O(S) updates in execute_brain_with_learning!
+    synapses.sort_by_key(|s| s.to_node);
 
     let brain = BrainTopology { neurons, synapses };
 
@@ -1725,10 +1729,10 @@ mod tests {
         let phenotype = parse_genome(dna, None, None);
         let brain = phenotype.brain;
 
-        // Verify Exuberance: 6 inputs (0 organelles + 6 base inputs), 3 hiddens, 4 outputs
-        // Sources: 9. Destinations: 7.
-        // Total synapses (excluding direct self-loops): 9 * 7 - 3 = 60!
-        assert_eq!(brain.synapses.len(), 60);
+        // Verify Exuberance: 7 inputs (0 organelles + 7 base inputs), 3 hiddens, 4 outputs
+        // Sources: 10. Destinations: 7.
+        // Total synapses (excluding direct self-loops): 10 * 7 - 3 = 67!
+        assert_eq!(brain.synapses.len(), 67);
 
         // Verify that exploratory synapses start very weak, while explicit "SY" start strong
         let mut exploratory_count = 0;

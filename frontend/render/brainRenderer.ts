@@ -1,7 +1,7 @@
 import { BrainTopology, CTRNNNeuron, CTRNNSynapse } from "../shared/types";
 
 export class BrainRenderer {
-  public static readonly SYSTEMIC_BASE_INPUTS_COUNT = 6;
+  public static readonly SYSTEMIC_BASE_INPUTS_COUNT = 7; // Synchronisiert mit dem Backend (Inklusive Such-Arousal)
   public static readonly MOTOR_OUTPUT_NODES_COUNT = 4;
 
   public static readonly LEFT_MARGIN = 25;

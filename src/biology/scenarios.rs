@@ -192,7 +192,7 @@ impl TrainingScenarioPlugin for ExplorationScenario {
             FoodSpore { id: 6, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meat 3
         ];
 
-        let min_dist = 1200.0; // Out-of-sight startup limit (1200px blind search)!
+        let min_dist = 650.0; // Dynamic curriculum blind search limit
 
         for target_idx in 0..6 {
             let mut valid_spawn = false;
