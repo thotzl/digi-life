@@ -13,6 +13,7 @@ export class BrainRenderer {
   public static readonly AREA_HEIGHT = 200;
 
   private elementCache = new Map<string, SVGElement>();
+  private compiledCoords = new Map<number, { x: number, y: number }>();
 
   constructor(
     private container: HTMLDivElement, 
@@ -25,117 +26,117 @@ export class BrainRenderer {
     const n = brain.neurons.find(node => node.id === id);
     if (!n) return BrainRenderer.CENTER_X;
 
-    if (n.type === "input") {
-      return BrainRenderer.LEFT_MARGIN; // 25px (Ganz links)
-    }
-    if (n.type === "output") {
-      return BrainRenderer.RIGHT_MARGIN; // 285px (Ganz rechts)
-    }
-    
-    // Now we are in Hidden Neurons (Interneurons)
-    const label = n.label || "";
-    if (label.includes("Σ Sum") || label.includes("Δ Diff") || label.includes("Thalamus")) {
-      return BrainRenderer.LEFT_MARGIN + 55; // Symmetrieknoten parallel auf Säule 2 (80px)
-    }
-    
-    // Standard DNA Hiddens: scaled dynamically (staggered depth) as before!
-    if (n.y !== undefined && n.y !== null) {
-      return BrainRenderer.LEFT_MARGIN + n.y * BrainRenderer.AREA_WIDTH;
-    }
-    return BrainRenderer.CENTER_X;
+    const x = n.x !== undefined && n.x !== null ? n.x : 0.5;
+    return BrainRenderer.LEFT_MARGIN + x * BrainRenderer.AREA_WIDTH;
   }
 
-  public getNeuronY(id: number, K: number, brain: BrainTopology): number {
+  public getNeuronY(id: number, _K: number, brain: BrainTopology): number {
     const n = brain.neurons.find(node => node.id === id);
     if (!n) return BrainRenderer.TOP_MARGIN;
 
-    if (n.type === "input") {
-      const step = BrainRenderer.AREA_HEIGHT / (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT + 1);
-      return BrainRenderer.TOP_MARGIN + (n.id + 1) * step;
-    }
-    if (n.type === "output") {
-      const motorIdx = n.id - (K + BrainRenderer.SYSTEMIC_BASE_INPUTS_COUNT);
-      const step = BrainRenderer.AREA_HEIGHT / (BrainRenderer.MOTOR_OUTPUT_NODES_COUNT + 1);
-      return BrainRenderer.TOP_MARGIN + (motorIdx + 1) * step;
-    }
-    
-    // Now we are in Hidden Neurons
-    const label = n.label || "";
-    if (label.includes("Σ Sum") || label.includes("Δ Diff") || label.includes("Thalamus")) {
-      // Space HOX fusions beautifully and parallelly in their own vertical column!
-      const fusions = brain.neurons.filter(node => node.type === "hidden" && (node.label.includes("Σ Sum") || node.label.includes("Δ Diff") || node.label.includes("Thalamus")));
-      const idx = fusions.findIndex(node => node.id === n.id);
-      const step = BrainRenderer.AREA_HEIGHT / (fusions.length + 1);
-      return BrainRenderer.TOP_MARGIN + (idx + 1) * step;
-    } else {
-      // Space standard DNA hidden neurons beautifully in their own vertical column!
-      const dnaHiddens = brain.neurons.filter(node => node.type === "hidden" && !(node.label.includes("Σ Sum") || node.label.includes("Δ Diff") || node.label.includes("Thalamus")));
-      const idx = dnaHiddens.findIndex(node => node.id === n.id);
-      const step = BrainRenderer.AREA_HEIGHT / (dnaHiddens.length + 1);
-      return BrainRenderer.TOP_MARGIN + (idx + 1) * step;
-    }
+    const y = n.y !== undefined && n.y !== null ? n.y : 0.5;
+    return BrainRenderer.TOP_MARGIN + y * BrainRenderer.AREA_HEIGHT;
   }
 
   public compile(brain: BrainTopology, K: number): void {
+    // Lazy Initialization zur Absicherung gegen Vite Hot-Module-Replacement (HMR) State Preservation Bugs!
+    if (!this.elementCache) this.elementCache = new Map<string, SVGElement>();
+    if (!this.compiledCoords) this.compiledCoords = new Map<number, { x: number, y: number }>();
+
     this.elementCache.clear();
+    this.compiledCoords.clear();
     if (!brain || brain.neurons.length === 0) {
       this.container.innerHTML = `<div class="fallback-state">No genetically encoded CTRNN brain found.</div>`;
       return;
     }
 
-    let svgContent = `<svg width="100%" height="100%" viewBox="0 0 310 240" style="background:#020617;">`;
+    // Thalamus-First Parsing: Hide raw exteroceptive inputs (ID < K)
+    const visibleNeurons = brain.neurons.filter(n => !(n.type === "input" && n.id < K));
+    const visibleSynapses = brain.synapses.filter(syn => syn.fromNode >= K);
 
-    // Draw synapses (always 3-column layout, no arrow markers!)
-    brain.synapses.forEach((syn: CTRNNSynapse) => {
-      const fromId = syn.fromNode;
-      const toId = syn.toNode;
+    // Group neurons into their respective 3 vertical columns for clean spatial distribution
+    const col1Nodes = visibleNeurons.filter(n => n.type === "input" || n.label.includes("Thalamus") || n.label.includes("Σ Sum") || n.label.includes("Δ Diff"));
+    const col2Nodes = visibleNeurons.filter(n => n.type === "hidden" && !(n.label.includes("Thalamus") || n.label.includes("Σ Sum") || n.label.includes("Δ Diff")));
+    const col3Nodes = visibleNeurons.filter(n => n.type === "output");
 
-      const fromX = this.getNeuronX(fromId, K, brain);
-      const fromY = this.getNeuronY(fromId, K, brain);
-      const toX = this.getNeuronX(toId, K, brain);
-      const toY = this.getNeuronY(toId, K, brain);
-
-      const isExcitatory = syn.weight > 0;
-      const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.85)" : "rgba(239, 68, 68, 0.85)";
-
-      const absWeight = Math.abs(syn.weight);
-      const displayStyle = absWeight === 0.0 ? "display: none;" : "";
-      const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
-      const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0);
-
-      svgContent += `
-        <line id="${this.elementIdPrefix}-syn-${fromId}-${toId}" x1="${fromX}" y1="${fromY}" x2="${toX}" y2="${toY}"
-              stroke="${strokeColor}" stroke-width="${strokeWidth}" style="opacity: ${weightFactor}; ${displayStyle}" />
-      `;
+    col1Nodes.forEach((n, idx) => {
+      const x = 0.0; // Left Column
+      const y = (idx + 1) / (col1Nodes.length + 1);
+      this.compiledCoords.set(n.id, {
+        x: BrainRenderer.LEFT_MARGIN + x * BrainRenderer.AREA_WIDTH,
+        y: BrainRenderer.TOP_MARGIN + y * BrainRenderer.AREA_HEIGHT
+      });
     });
 
-    // Draw neurons (always 3-column layout!)
-    brain.neurons.forEach((n: CTRNNNeuron) => {
-      const nx = this.getNeuronX(n.id, K, brain);
-      const ny = this.getNeuronY(n.id, K, brain);
+    col2Nodes.forEach((n, idx) => {
+      const rawY = n.y !== undefined && n.y !== null ? n.y : 0.5;
+      const x = rawY; // Dynamic depth fanning
+      const y = (idx + 1) / (col2Nodes.length + 1);
+      this.compiledCoords.set(n.id, {
+        x: BrainRenderer.LEFT_MARGIN + x * BrainRenderer.AREA_WIDTH,
+        y: BrainRenderer.TOP_MARGIN + y * BrainRenderer.AREA_HEIGHT
+      });
+    });
 
-      const isInput = n.type === "input";
-      const isOutput = n.type === "output";
-      const fill = isInput ? "#0ea5e9" : (isOutput ? "#c084fc" : "#94a3b8");
-      const radius = isInput || isOutput ? 4.5 : 3.2;
+    col3Nodes.forEach((n, idx) => {
+      const x = 1.0; // Right Column
+      const y = (idx + 1) / (col3Nodes.length + 1);
+      this.compiledCoords.set(n.id, {
+        x: BrainRenderer.LEFT_MARGIN + x * BrainRenderer.AREA_WIDTH,
+        y: BrainRenderer.TOP_MARGIN + y * BrainRenderer.AREA_HEIGHT
+      });
+    });
 
-      svgContent += `
-        <circle id="${this.elementIdPrefix}-node-${n.id}" cx="${nx}" cy="${ny}" r="${radius}" fill="${fill}"
-                style="cursor:pointer; filter:drop-shadow(0 0 2px ${fill}); opacity: 0.25;" />
-      `;
+    let svgContent = `<svg width="100%" height="100%" viewBox="0 0 310 240" style="background:#020617;">`;
+
+    // Draw visible synapses
+    visibleSynapses.forEach((syn: CTRNNSynapse) => {
+      const from = this.compiledCoords.get(syn.fromNode);
+      const to = this.compiledCoords.get(syn.toNode);
+
+      if (from && to) {
+        const isExcitatory = syn.weight > 0;
+        const strokeColor = isExcitatory ? "rgba(16, 185, 129, 0.85)" : "rgba(239, 68, 68, 0.85)";
+
+        const absWeight = Math.abs(syn.weight);
+        const displayStyle = absWeight === 0.0 ? "display: none;" : "";
+        const weightFactor = Math.min(0.08 + (absWeight / 2.0) * 0.77, 0.85);
+        const strokeWidth = Math.min(0.4 + (absWeight / 2.0) * 1.4, 2.0);
+
+        svgContent += `
+          <line id="${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}" x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}"
+                stroke="${strokeColor}" stroke-width="${strokeWidth}" style="opacity: ${weightFactor}; ${displayStyle}" />
+        `;
+      }
+    });
+
+    // Draw visible neurons
+    visibleNeurons.forEach((n: CTRNNNeuron) => {
+      const coord = this.compiledCoords.get(n.id);
+      if (coord) {
+        const isInput = n.type === "input" || n.label.includes("Thalamus") || n.label.includes("Σ Sum") || n.label.includes("Δ Diff");
+        const isOutput = n.type === "output";
+        const fill = isInput ? "#0ea5e9" : (isOutput ? "#c084fc" : "#94a3b8");
+        const radius = isInput || isOutput ? 4.5 : 3.2;
+
+        svgContent += `
+          <circle id="${this.elementIdPrefix}-node-${n.id}" cx="${coord.x}" cy="${coord.y}" r="${radius}" fill="${fill}"
+                  style="cursor:pointer; filter:drop-shadow(0 0 2px ${fill}); opacity: 0.25;" />
+        `;
+      }
     });
 
     svgContent += `</svg>`;
     this.container.innerHTML = svgContent;
 
-    // Cache elements references
-    brain.neurons.forEach((n: CTRNNNeuron) => {
+    // Cache elements references for high-performance glows
+    visibleNeurons.forEach((n: CTRNNNeuron) => {
       const id = `${this.elementIdPrefix}-node-${n.id}`;
       const el = document.getElementById(id) as SVGElement | null;
       if (el) this.elementCache.set(id, el);
     });
 
-    brain.synapses.forEach((syn: CTRNNSynapse) => {
+    visibleSynapses.forEach((syn: CTRNNSynapse) => {
       const id = `${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}`;
       const el = document.getElementById(id) as SVGElement | null;
       if (el) this.elementCache.set(id, el);
@@ -143,7 +144,7 @@ export class BrainRenderer {
 
     // Add event listeners for hover tooltips on neuron nodes
     if (this.onNeuronHover) {
-      brain.neurons.forEach((n: CTRNNNeuron) => {
+      visibleNeurons.forEach((n: CTRNNNeuron) => {
         const id = `${this.elementIdPrefix}-node-${n.id}`;
         const el = this.elementCache.get(id);
         if (el) {
@@ -164,7 +165,7 @@ export class BrainRenderer {
 
     // Add event listeners for hover tooltips on synapses (lines)
     if (this.onSynapseHover) {
-      brain.synapses.forEach((syn: CTRNNSynapse) => {
+      visibleSynapses.forEach((syn: CTRNNSynapse) => {
         const id = `${this.elementIdPrefix}-syn-${syn.fromNode}-${syn.toNode}`;
         const el = this.elementCache.get(id);
         if (el) {

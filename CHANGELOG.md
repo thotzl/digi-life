@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.2] - 2026-09-04
+
+### Added
+- **100% Generic Frontend Brain Coordinate Parser:** Purged all hardcoded column-math, index step functions, filter-by-label loops, and type-branching offsets from `brainRenderer.ts`. The client is now a passive coordinate scaler, reading millimeter-precise normal coordinates `x` and `y` directly from the backend JSON, establishing the Rust core as the Single Source of Truth (SSOT).
+- **Millimeter-Perfect Parallel 4-Column Layout:** Hardcoded exact normal-coordinate layer grids inside the brain compiler (`dna.rs`), structuring brains strictly into 4 pristine, perfectly vertical columns (Raw inputs, Thalamus, DNA hiddens, Motor outputs).
+
+### Fixed
+- **Absolute Exteroceptive Sensory Isolation (True Thalamus Bottleneck):** Purged raw physical inputs (`0..k_count`) from `sources` array for `"SY"` mutations. Genetically mutational synapses can now only target the Thalamus layer, proprioceptive base inputs, or standard hiddens, completely erasing any direct sensor-to-motor reflex bypass lines and vastly speeding up the evolution's selection curve.
+
 ## [1.12.1] - 2026-09-04
 
 ### Fixed

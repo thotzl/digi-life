@@ -1038,8 +1038,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 tau: 1.0,
                 bias: 0.0,
                 activation_type: None,
-                x: Some(0.1),
-                y: Some(0.1 + (id as f32 / k_count.max(1) as f32) * 0.8),
+                x: Some(0.0), // Säule 1 ganz links (0px)
+                y: Some((id as f32 + 1.0) / (get_input_neurons_count(organelles.len()) as f32 + 1.0)), // Perfekt gleichmäßig verteilt
             });
         }
     }
@@ -1055,15 +1055,16 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         "📡 Search Arousal", // Neuer 7. propriozeptiver Such-Zustands-Indikator
     ];
     for c in 0..SYSTEMIC_BASE_INPUTS_COUNT {
+        let id = k_count + c;
         neurons.push(CTRNNNeuron {
-            id: k_count + c,
+            id,
             neuron_type: NeuronType::Input,
             label: String::from(base_labels[c]),
             tau: 1.0,
             bias: 0.0,
             activation_type: None,
-            x: Some(0.1),
-            y: Some(0.85 + (c as f32 / 5.0) * 0.1),
+            x: Some(0.0), // Säule 1 ganz links (0px)
+            y: Some((id as f32 + 1.0) / (get_input_neurons_count(organelles.len()) as f32 + 1.0)), // Nahtlos angehängt
         });
     }
 
@@ -1083,8 +1084,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             tau,
             bias,
             activation_type: None,
-            x: Some(0.9),
-            y: Some(0.2 + (i as f32 / 3.0) * 0.6),
+            x: Some(1.0), // Säule 4 ganz rechts (285px)
+            y: Some((i as f32 + 1.0) / 5.0), // Gleichmäßig verteilt
         });
     }
 
@@ -1104,7 +1105,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
         // 5 Thalamus Sum Interneurons (Sigmoid activated - ZNS Integration)
         for c in 0..CHANNELS_PER_ORGANELLE {
-            let id = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + c;
+            let idx = b * (CHANNELS_PER_ORGANELLE * 2) + c;
+            let id = get_hidden_neurons_start_id(organelles.len()) + idx;
             neurons.push(CTRNNNeuron {
                 id,
                 neuron_type: NeuronType::Hidden,
@@ -1112,14 +1114,15 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 tau: 1.0,
                 bias: 0.0,
                 activation_type: Some(String::from("sigmoid")),
-                x: Some(0.5),
-                y: Some(0.15 + (c as f32 / 4.0) * 0.15), // Ebene 2 (links-mitte)
+                x: Some(0.20), // Säule 2 parallel links-mitte (80px)
+                y: Some((idx as f32 + 1.0) / (thalamus_count as f32 + 1.0)), // Gleichmäßig in Spalte 2 verteilt
             });
         }
 
         // 5 Thalamus Difference Interneurons (Tanh activated - ZNS Integration)
         for c in 0..CHANNELS_PER_ORGANELLE {
-            let id = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE + c;
+            let idx = b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE + c;
+            let id = get_hidden_neurons_start_id(organelles.len()) + idx;
             neurons.push(CTRNNNeuron {
                 id,
                 neuron_type: NeuronType::Hidden,
@@ -1127,8 +1130,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 tau: 1.0,
                 bias: 0.0,
                 activation_type: Some(String::from("tanh")),
-                x: Some(0.5),
-                y: Some(0.35 + (c as f32 / 4.0) * 0.15), // Ebene 2 (links-mitte)
+                x: Some(0.20), // Säule 2 parallel links-mitte (80px)
+                y: Some((idx as f32 + 1.0) / (thalamus_count as f32 + 1.0)), // Gleichmäßig in Spalte 2 verteilt
             });
         }
     }
@@ -1200,7 +1203,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
     // Establish valid sources and destinations arrays for robust wiring!
     let mut sources = Vec::new();
-    for s in 0..get_input_neurons_count(organelles.len()) { sources.push(s); }
+    // Only proprioceptive state base inputs can serve as synapse sources (isolates exteroceptive raw inputs 0..k_count)
+    for s in 0..SYSTEMIC_BASE_INPUTS_COUNT { sources.push(k_count + s); }
     for h in 0..(thalamus_count + h_count) {
         sources.push(get_hidden_neurons_start_id(organelles.len()) + h);
     }
@@ -1265,8 +1269,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 let is_paired = has_hox && b < num_pairs;
                 let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
                 let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
-                let motor_thrust = get_input_neurons_count(organelles.len());
-                let motor_bending = get_input_neurons_count(organelles.len()) + 1;
 
                 if is_paired {
                     let left_start = (2 * b) * CHANNELS_PER_ORGANELLE;
@@ -1279,10 +1281,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
                         if (from_node == l_node && to_node == s_node) ||
                            (from_node == r_node && to_node == s_node) ||
-                           (from_node == s_node && to_node == motor_thrust) ||
                            (from_node == l_node && to_node == d_node) ||
-                           (from_node == r_node && to_node == d_node) ||
-                           (from_node == d_node && to_node == motor_bending) {
+                           (from_node == r_node && to_node == d_node) {
                             is_reflex = true;
                         }
                     }
@@ -1292,12 +1292,8 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                     for c in 0..CHANNELS_PER_ORGANELLE {
                         let r_node = raw_start + c;
                         let s_node = sum_start + c;
-                        let d_node = diff_start + c;
 
-                        if (from_node == r_node && to_node == s_node) ||
-                           (from_node == s_node && to_node == motor_thrust) ||
-                           (from_node == r_node && to_node == d_node) ||
-                           (from_node == d_node && to_node == motor_bending) {
+                        if from_node == r_node && to_node == s_node {
                             is_reflex = true;
                         }
                     }
@@ -1329,9 +1325,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         
         let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
         let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
-        
-        let motor_thrust_id = get_input_neurons_count(organelles.len());
-        let motor_bending_id = get_input_neurons_count(organelles.len()) + 1;
 
         if is_paired {
             // Symmetrical Pair: left inputs and right inputs connect to Sum and Diff
@@ -1347,12 +1340,10 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                 // Sum (L_c + R_c):
                 synapses.push(CTRNNSynapse { from_node: l_node, to_node: s_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
-                synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
 
                 // Diff (L_c - R_c):
                 synapses.push(CTRNNSynapse { from_node: l_node, to_node: d_node, weight: 1.0 });
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: d_node, weight: -1.0 });
-                synapses.push(CTRNNSynapse { from_node: d_node, to_node: motor_bending_id, weight: 1.5 });
             }
         } else {
             // Asymmetrical Single Organ: raw inputs connect to Sum ONLY (Diff remains quiet/stumm!)
@@ -1365,7 +1356,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
 
                 // Sum (L_c + 0 = L_c):
                 synapses.push(CTRNNSynapse { from_node: r_node, to_node: s_node, weight: 1.0 });
-                synapses.push(CTRNNSynapse { from_node: s_node, to_node: motor_thrust_id, weight: 1.5 });
             }
         }
     }
