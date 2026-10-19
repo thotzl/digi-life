@@ -1,0 +1,3 @@
+# Generated files are written with LF by ts-rs and tauri-build; keep them LF on every platform
+bindings/** text eol=lf
+gen/** text eol=lf
