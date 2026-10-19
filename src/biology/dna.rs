@@ -569,7 +569,9 @@ fn derive_ecological_metrics(
     if is_predator {
         suffix = String::from("raptor");
     } else if !organelles.is_empty() {
-        let mut dominant_type = std::collections::HashMap::new();
+        // Fixed type order breaks ties deterministically (first type in this order wins)
+        let type_order = ["light", "chem", "kinetic", "thermal"];
+        let mut type_counts = [0usize; 4];
         for patch in organelles {
             let aff = patch.spectral_affinity;
             let key = if aff >= 0.8 {
@@ -581,19 +583,23 @@ fn derive_ecological_metrics(
             } else {
                 "kinetic"
             };
-            *dominant_type.entry(key).or_insert(0) += 1;
+            if let Some(i) = type_order.iter().position(|t| *t == key) {
+                type_counts[i] += 1;
+            }
         }
-        let mut sorted_types: Vec<_> = dominant_type.into_iter().collect();
-        sorted_types.sort_by(|a, b| b.1.cmp(&a.1));
-        if !sorted_types.is_empty() {
-            suffix = match sorted_types[0].0 {
-                "light" => String::from("ocularium"),
-                "chem" => String::from("ciliatum"),
-                "kinetic" => String::from("vibrans"),
-                "thermal" => String::from("thermum"),
-                _ => String::from("lēvis"),
-            };
+        let mut dominant = 0;
+        for i in 1..type_order.len() {
+            if type_counts[i] > type_counts[dominant] {
+                dominant = i;
+            }
         }
+        suffix = match type_order[dominant] {
+            "light" => String::from("ocularium"),
+            "chem" => String::from("ciliatum"),
+            "kinetic" => String::from("vibrans"),
+            "thermal" => String::from("thermum"),
+            _ => String::from("lēvis"),
+        };
     }
 
     // Generate unique Strain ID
@@ -1957,6 +1963,16 @@ mod tests {
         for g in golden_genomes() {
             let pheno = parse_genome(&g, None, None);
             assert_eq!(read_evolution_rates(&g), (pheno.insertion_rate, pheno.deletion_rate));
+        }
+    }
+
+    #[test]
+    fn test_latin_name_is_deterministic() {
+        for g in golden_genomes() {
+            let first = parse_genome(&g, None, None).latin_name;
+            for _ in 0..4 {
+                assert_eq!(parse_genome(&g, None, None).latin_name, first, "genome {}", g);
+            }
         }
     }
 

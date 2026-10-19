@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.11] - 2026-10-19
+
+### Fixed
+- The latin name suffix of genomes with equally many organs of different types depended on random hash-map ordering, so the same genome could be named differently on each parse or app start. Ties now resolve in a fixed order (ref TCK-162).
+
 ## [1.12.10] - 2026-10-19
 
 ### Performance
