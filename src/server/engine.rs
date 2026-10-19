@@ -14,12 +14,12 @@ use crate::biology::trainer_engine::{
     init_rust_sandbox, step_trainer_sandbox_physics,
     TrainerSandbox, TrainerTelemetrySandbox,
 };
-use crate::database::init_db;
+use crate::database::{init_db, LogDbError};
 
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
     thread::spawn(move || {
-        let db_path = crate::database::DB_PATH;
-        let conn = init_db(db_path).expect("Failed to initialize local DB");
+        let db_path = crate::database::db_path();
+        let conn = init_db(&db_path).expect("Failed to initialize local DB");
 
         let emit_state = |payload: serde_json::Value| {
             if let Err(e) = window.emit("simulation-state", payload) {
@@ -204,10 +204,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         };
 
         // Ensure the default desktop session exists to satisfy foreign key constraints
-        let _ = conn.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO sessions (id, name, config_json) VALUES (?1, ?2, ?3)",
             params!["desktop-session-001", "Tauri Desktop Laboratory Studio", "{}"],
-        );
+        ).log_db_err("INSERT OR IGNORE INTO sessions");
 
         // Try restoring previous simulation state on startup (session persistence!)
         let mut loaded_state_success = false;
@@ -286,10 +286,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs() as i64;
-                let _ = conn.execute(
+                conn.execute(
                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                     params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
-                );
+                ).log_db_err("INSERT OR IGNORE INTO species_records");
 
                 next_creature_id += 1;
             }
@@ -418,10 +418,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
                                     .as_secs() as i64;
-                                let _ = conn.execute(
+                                conn.execute(
                                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                     params![&random_dna, &random_pheno.latin_name, &random_dna, None::<String>, now_millis, random_pheno.carnivory],
-                                );
+                                ).log_db_err("INSERT OR IGNORE INTO species_records");
 
                                 emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                 emit_state(json!({
@@ -486,10 +486,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
                                         .as_secs() as i64;
-                                    let _ = conn.execute(
+                                    conn.execute(
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                         params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
-                                    );
+                                    ).log_db_err("INSERT OR IGNORE INTO species_records");
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                     emit_state(json!({
@@ -504,9 +504,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 println!("[SIMULATION] Performing complete environmental restoration reset...");
                                 
                                 // Wipe old species records, histories, and state caches from SQLite database
-                                let _ = conn.execute("DELETE FROM species_records", []);
-                                let _ = conn.execute("DELETE FROM simulation_history", []);
-                                let _ = conn.execute("DELETE FROM simulation_state", []);
+                                conn.execute("DELETE FROM species_records", []).log_db_err("DELETE FROM species_records");
+                                conn.execute("DELETE FROM simulation_history", []).log_db_err("DELETE FROM simulation_history");
+                                conn.execute("DELETE FROM simulation_state", []).log_db_err("DELETE FROM simulation_state");
 
                                 creatures.clear();
                                 food_pellets.clear();
@@ -585,10 +585,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             .duration_since(std::time::UNIX_EPOCH)
                                             .unwrap_or_default()
                                             .as_secs() as i64;
-                                        let _ = conn.execute(
+                                        conn.execute(
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                             params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
-                                        );
+                                        ).log_db_err("INSERT OR IGNORE INTO species_records");
                                         next_creature_id += 1;
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -649,10 +649,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             .duration_since(std::time::UNIX_EPOCH)
                                             .unwrap_or_default()
                                             .as_secs() as i64;
-                                        let _ = conn.execute(
+                                        conn.execute(
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                             params![mutated_dna, &random_pheno.latin_name, mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
-                                        );
+                                        ).log_db_err("INSERT OR IGNORE INTO species_records");
                                         next_creature_id += 1;
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -837,7 +837,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 trainer_epoch_ticks = 0;
                                 
                                 // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
-                                let _ = conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]);
+                                conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]).log_db_err("DELETE FROM trainer_genomes");
 
                                 let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, 1, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate, trainer_lamarckian, trainer_chamber_size);
                                 trainer_sandboxes = sbs;
@@ -908,7 +908,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
                                             let now_millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
                                             
-                                            let _ = conn.execute(
+                                            conn.execute(
                                                 "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
                                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
                                                 params![
@@ -922,7 +922,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                                     methylations_json,
                                                     synapse_weights_json
                                                 ],
-                                            );
+                                            ).log_db_err("INSERT OR REPLACE INTO trainer_genomes");
                                         }
                                     }
                                 }
@@ -1373,10 +1373,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
                                         .as_secs() as i64;
-                                    let _ = conn.execute(
+                                    conn.execute(
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
                                         params![&child.genome, &child.phenotype.latin_name, &child.genome, Some(agent.phenotype.latin_name.clone()), now_millis, child.generation, child.phenotype.carnivory],
-                                    );
+                                    ).log_db_err("INSERT OR IGNORE INTO species_records");
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                     emit_state(json!({
@@ -1466,7 +1466,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             if status == "extinct" {
                                 // Re-sprout resurrected species
-                                let _ = conn.execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id]);
+                                conn.execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id]).log_db_err("UPDATE species_records");
                                 db_changed = true;
                             }
                         } else {
@@ -1477,7 +1477,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     }
 
                     for (id, peak) in peak_updates {
-                        let _ = conn.execute("UPDATE species_records SET peak_population = ?1 WHERE id = ?2", params![peak, id]);
+                        conn.execute("UPDATE species_records SET peak_population = ?1 WHERE id = ?2", params![peak, id]).log_db_err("UPDATE species_records");
                         db_changed = true;
                     }
 
@@ -1486,7 +1486,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs() as i64;
-                        let _ = conn.execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![now_millis, id]);
+                        conn.execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![now_millis, id]).log_db_err("UPDATE species_records");
                         db_changed = true;
 
                         // Fetch name for logging
@@ -1587,10 +1587,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             .duration_since(std::time::UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_secs() as i64;
-                        let _ = conn.execute(
+                        conn.execute(
                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
                             params![&g, &random_pheno.latin_name, &g, None::<String>, now_millis, generation_val, random_pheno.carnivory],
-                        );
+                        ).log_db_err("INSERT OR IGNORE INTO species_records");
 
                         emit_state(json!({ "type": "DATABASE_CHANGED" }));
                         emit_state(json!({
@@ -1653,7 +1653,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let avg_energy: f32 = creatures.iter().map(|c| c.energy).sum::<f32>() / pop_count as f32;
                         let max_energy: f32 = creatures.iter().map(|c| c.energy).fold(0.0, |a, b| a.max(b));
 
-                        let _ = conn.execute(
+                        conn.execute(
                             "INSERT INTO simulation_history (session_id, generation, average_fitness, max_fitness, population_count) VALUES (?1, ?2, ?3, ?4, ?5)",
                             params![
                                 "desktop-session-001",
@@ -1662,7 +1662,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 max_energy,
                                 pop_count
                             ],
-                        );
+                        ).log_db_err("INSERT INTO simulation_history");
 
                         // Save current simulation state JSON to the database (session persistence!)
                         let state_val = json!({
@@ -1677,10 +1677,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
                                 .as_millis() as i64;
-                            let _ = conn.execute(
+                            conn.execute(
                                 "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('current_state', ?1, ?2)",
                                 params![state_str, now_millis],
-                            );
+                            ).log_db_err("INSERT OR REPLACE INTO simulation_state");
                         }
                     }
                     last_history_log_time = Instant::now();
@@ -1864,7 +1864,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 let elite_count = (((trainer_N as f32) * trainer_elite_ratio).round() as usize).clamp(1, trainer_N);
                                 
                                 // Mark previous active genomes as inactive
-                                let _ = conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]);
+                                conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]).log_db_err("UPDATE trainer_genomes");
 
                                 let now_millis = std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
@@ -1877,7 +1877,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
                                     let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
 
-                                    let _ = conn.execute(
+                                    conn.execute(
                                         "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
                                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
                                         params![
@@ -1891,7 +1891,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             methylations_json,
                                             synapse_weights_json
                                         ],
-                                    );
+                                    ).log_db_err("INSERT INTO trainer_genomes");
                                 }
 
                                 // Re-trigger species selection / listing refreshes

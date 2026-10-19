@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager, State};
 use serde_json::json;
 use std::sync::mpsc::Sender;
 use rusqlite::params;
-use crate::database::init_db;
+use crate::database::DbState;
 use crate::biology::dna::parse_genome;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -22,9 +22,8 @@ pub fn handle_client_action(action: String, app_handle: AppHandle) -> Result<(),
 }
 
 #[tauri::command]
-pub fn get_registered_species() -> Result<serde_json::Value, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn get_registered_species(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
     
     let mut stmt = conn
         .prepare("SELECT id, latin_name, genome_string, parent_name, status, peak_population, birth_time, extinction_time, generation, carnivory FROM species_records")
@@ -50,8 +49,9 @@ pub fn get_registered_species() -> Result<serde_json::Value, String> {
 
     let mut list = Vec::new();
     for row in rows {
-        if let Ok(item) = row {
-            list.push(item);
+        match row {
+            Ok(item) => list.push(item),
+            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
         }
     }
     
@@ -59,9 +59,8 @@ pub fn get_registered_species() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn get_trainer_runs() -> Result<serde_json::Value, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn get_trainer_runs(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT run_id, MAX(generation) as max_gen, MAX(fitness) as max_fit FROM trainer_genomes GROUP BY run_id")
@@ -77,8 +76,9 @@ pub fn get_trainer_runs() -> Result<serde_json::Value, String> {
 
     let mut list = Vec::new();
     for row in rows {
-        if let Ok(item) = row {
-            list.push(item);
+        match row {
+            Ok(item) => list.push(item),
+            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
         }
     }
 
@@ -86,9 +86,8 @@ pub fn get_trainer_runs() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn get_trainer_population(db: State<'_, DbState>, run_id: String, limit: i32) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2")
@@ -104,8 +103,9 @@ pub fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::
 
     let mut list = Vec::new();
     for row in rows {
-        if let Ok(item) = row {
-            list.push(item);
+        match row {
+            Ok(item) => list.push(item),
+            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
         }
     }
 
@@ -113,9 +113,8 @@ pub fn get_trainer_population(run_id: String, limit: i32) -> Result<serde_json::
 }
 
 #[tauri::command]
-pub fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn get_trainer_hof(db: State<'_, DbState>, run_id: String, limit: i32) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2")
@@ -131,8 +130,9 @@ pub fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, 
 
     let mut list = Vec::new();
     for row in rows {
-        if let Ok(item) = row {
-            list.push(item);
+        match row {
+            Ok(item) => list.push(item),
+            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
         }
     }
 
@@ -140,9 +140,8 @@ pub fn get_trainer_hof(run_id: String, limit: i32) -> Result<serde_json::Value, 
 }
 
 #[tauri::command]
-pub fn save_trainer_generation(run_id: String, generation: i32, population: Vec<TrainerGenomeInput>) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let mut conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn save_trainer_generation(db: State<'_, DbState>, run_id: String, generation: i32, population: Vec<TrainerGenomeInput>) -> Result<bool, String> {
+    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -178,9 +177,8 @@ pub fn save_trainer_generation(run_id: String, generation: i32, population: Vec<
 }
 
 #[tauri::command]
-pub fn clear_trainer_history(run_id: String) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn clear_trainer_history(db: State<'_, DbState>, run_id: String) -> Result<bool, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     conn.execute(
         "DELETE FROM trainer_genomes WHERE run_id = ?1",
@@ -191,9 +189,8 @@ pub fn clear_trainer_history(run_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn apply_champion(genome: String) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn apply_champion(db: State<'_, DbState>, genome: String) -> Result<bool, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let now_millis = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -215,9 +212,8 @@ pub fn get_fossil_phenotype(genome: String) -> Result<serde_json::Value, String>
 }
 
 #[tauri::command]
-pub fn get_catalogue_creatures() -> Result<serde_json::Value, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn get_catalogue_creatures(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT id, name, genome, source, fitness, carnivory, methylations, synapse_weights, created_at FROM creature_catalogue ORDER BY created_at DESC")
@@ -252,8 +248,9 @@ pub fn get_catalogue_creatures() -> Result<serde_json::Value, String> {
 
     let mut list = Vec::new();
     for row in rows {
-        if let Ok(item) = row {
-            list.push(item);
+        match row {
+            Ok(item) => list.push(item),
+            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
         }
     }
 
@@ -262,6 +259,7 @@ pub fn get_catalogue_creatures() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 pub fn save_to_catalogue(
+    db: State<'_, DbState>,
     id: String,
     name: String,
     genome: String,
@@ -270,8 +268,7 @@ pub fn save_to_catalogue(
     methylations: Vec<f32>,
     synapse_weights: Vec<f32>,
 ) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let pheno = parse_genome(&genome, None, None);
     let carnivory = pheno.carnivory as f64;
@@ -289,9 +286,8 @@ pub fn save_to_catalogue(
 }
 
 #[tauri::command]
-pub fn delete_from_catalogue(id: String) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn delete_from_catalogue(db: State<'_, DbState>, id: String) -> Result<bool, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     conn.execute("DELETE FROM creature_catalogue WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -300,9 +296,8 @@ pub fn delete_from_catalogue(id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub fn rename_catalogue_creature(id: String, new_name: String) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+pub fn rename_catalogue_creature(db: State<'_, DbState>, id: String, new_name: String) -> Result<bool, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     conn.execute("UPDATE creature_catalogue SET name = ?1 WHERE id = ?2", params![new_name, id])
         .map_err(|e| e.to_string())?;
@@ -312,12 +307,12 @@ pub fn rename_catalogue_creature(id: String, new_name: String) -> Result<bool, S
 
 #[tauri::command]
 pub fn spawn_catalogue_creature_to_ocean(
+    db: State<'_, DbState>,
     id: String,
     load_learned_synapses: bool,
     app_handle: AppHandle,
 ) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT genome, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")
@@ -351,12 +346,12 @@ pub fn spawn_catalogue_creature_to_ocean(
 
 #[tauri::command]
 pub fn add_catalogue_creature_to_training(
+    db: State<'_, DbState>,
     creature_id: String,
     run_id: String,
     generation: i32,
 ) -> Result<bool, String> {
-    let db_path = crate::database::DB_PATH;
-    let conn = init_db(db_path).map_err(|e| e.to_string())?;
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare("SELECT name, genome, fitness, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")

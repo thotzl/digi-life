@@ -1,7 +1,53 @@
 use rusqlite::{Connection, Result};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
-pub const DB_PATH: &str = "target/pixel_life_local.db";
+/// Pre-1.12.8 location (relative to the working directory). Still the default for the CLI
+/// trainer and the one-time migration source for the desktop app.
+pub const LEGACY_DB_PATH: &str = "target/pixel_life_local.db";
+pub const DB_FILE_NAME: &str = "pixel_life_local.db";
+
+static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Sets the database location once at startup (the desktop app passes its app data dir).
+pub fn set_db_path(path: PathBuf) {
+    if DB_PATH.set(path).is_err() {
+        eprintln!("[DB] Database path was already set; ignoring second assignment.");
+    }
+}
+
+pub fn db_path() -> PathBuf {
+    DB_PATH.get().cloned().unwrap_or_else(|| PathBuf::from(LEGACY_DB_PATH))
+}
+
+/// Shared connection for Tauri commands, initialized once at startup.
+pub struct DbState(pub Mutex<Connection>);
+
+/// Copies a legacy database to the new location if the new one does not exist yet.
+/// Never overwrites an existing target. Returns whether a copy happened.
+pub fn migrate_legacy_db(legacy: &Path, target: &Path) -> std::io::Result<bool> {
+    if target.exists() || !legacy.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(legacy, target)?;
+    Ok(true)
+}
+
+/// Logs a failed database operation instead of silently discarding it.
+pub trait LogDbError {
+    fn log_db_err(self, context: &str);
+}
+
+impl<T> LogDbError for Result<T> {
+    fn log_db_err(self, context: &str) {
+        if let Err(e) = self {
+            eprintln!("[DB] {} failed: {}", context, e);
+        }
+    }
+}
 
 /// Initializes the local SQLite database and creates all necessary schemas if they do not exist.
 pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
@@ -11,6 +57,10 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
     }
 
     let conn = Connection::open(path)?;
+
+    // WAL lets the simulation thread write while commands read; busy timeout instead of SQLITE_BUSY errors
+    conn.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get::<_, String>(0))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
 
     // Enable foreign keys for data integrity
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
@@ -209,5 +259,45 @@ mod tests {
         conn.execute("DELETE FROM creature_catalogue WHERE id = 'cryo-123'", []).unwrap();
         let count: i32 = conn.query_row("SELECT COUNT(*) FROM creature_catalogue", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("digi-life-test-{}-{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn test_file_db_uses_wal_journal() {
+        let dir = temp_dir("wal");
+        let conn = init_db(dir.join("test.db")).unwrap();
+        let mode: String = conn.query_row("PRAGMA journal_mode", [], |r| r.get(0)).unwrap();
+        assert_eq!(mode, "wal");
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_legacy_db_is_copied_once_and_never_overwrites() {
+        let dir = temp_dir("migrate");
+        let legacy = dir.join("legacy.db");
+        let target = dir.join("appdata").join("pixel_life_local.db");
+
+        // No legacy DB: nothing happens
+        assert!(!migrate_legacy_db(&legacy, &target).unwrap());
+        assert!(!target.exists());
+
+        // Legacy DB present, target missing: copied
+        std::fs::write(&legacy, b"legacy-content").unwrap();
+        assert!(migrate_legacy_db(&legacy, &target).unwrap());
+        assert_eq!(std::fs::read(&target).unwrap(), b"legacy-content");
+
+        // Target already present: never overwritten
+        std::fs::write(&legacy, b"newer-legacy").unwrap();
+        assert!(!migrate_legacy_db(&legacy, &target).unwrap());
+        assert_eq!(std::fs::read(&target).unwrap(), b"legacy-content");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

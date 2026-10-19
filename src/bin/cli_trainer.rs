@@ -1,6 +1,6 @@
 use src_tauri::biology::dna::{parse_genome, mutate_genome, generate_random_genome, CreaturePhenotype};
 use src_tauri::shared::brain::execute_brain;
-use src_tauri::database::{init_db, DB_PATH};
+use src_tauri::database::{init_db, db_path};
 use std::time::Instant;
 
 fn main() {
@@ -9,9 +9,9 @@ fn main() {
     println!("==================================================================");
 
     // 1. Initialize safe local SQLite database
-    let db_path = DB_PATH;
-    println!("[DB] Connecting to local database: {}", db_path);
-    let conn = match init_db(db_path) {
+    let db_path = db_path();
+    println!("[DB] Connecting to local database: {}", db_path.display());
+    let conn = match init_db(&db_path) {
         Ok(c) => {
             println!("[DB] Connection successfully secured.");
             c
@@ -155,6 +155,6 @@ fn main() {
         "[TRAINER] Evolution training completed in {:.2?} (5000 individual organism trials).",
         elapsed
     );
-    println!("[TRAINER] All run data successfully persisted inside: {}", db_path);
+    println!("[TRAINER] All run data successfully persisted inside: {}", db_path.display());
     println!("==================================================================");
 }

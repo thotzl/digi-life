@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.8] - 2026-10-19
+
+### Fixed
+- The database lived in `target/pixel_life_local.db` relative to the working directory, so `cargo clean` deleted the catalogue and installed builds could not write it. It now lives in the per-user app data directory; an existing legacy database is copied over once (ref TCK-137).
+
+### Changed
+- Tauri commands share one database connection initialized at startup instead of re-opening the database and re-running the schema setup on every call; SQLite runs in WAL mode with a busy timeout (ref TCK-137).
+- Failed database writes and unreadable rows are logged instead of silently discarded (ref TCK-137).
+
 ## [1.12.7] - 2026-10-19
 
 ### Fixed
