@@ -1995,7 +1995,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 origin_type: sb.origin_type.clone(),
                                 consumed_spore_type: sb.consumed_spore_type.clone(),
                                 foods: sb.foods.clone(),
-                                world: sb.world.clone(),
                                 latin_name: sb.agent.phenotype.latin_name.clone(),
                                 primary_color_h: sb.agent.phenotype.primary_color.h,
                                 primary_color_s: sb.agent.phenotype.primary_color.s,

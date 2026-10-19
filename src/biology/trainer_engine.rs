@@ -48,7 +48,6 @@ pub struct TrainerTelemetrySandbox {
     pub origin_type: String,
     pub consumed_spore_type: Option<String>,
     pub foods: Vec<FoodSpore>,
-    pub world: ProceduralWorld,
     pub latin_name: String,
     pub primary_color_h: f32,
     pub primary_color_s: f32,

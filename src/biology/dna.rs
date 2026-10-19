@@ -425,10 +425,8 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
         }
     }
 
-    // Parse current genome to fetch dynamic insertion/deletion rates determined by phenotype
-    let pheno = parse_genome(genome, None, None);
-    let insertion_rate = pheno.insertion_rate; // 0.0 .. 0.12
-    let deletion_rate = pheno.deletion_rate;   // 0.0 .. 0.12
+    // Dynamic insertion/deletion rates (0.0 .. 0.12) determined by the EVO gene
+    let (insertion_rate, deletion_rate) = read_evolution_rates(genome);
 
     let roll = rng.gen_range(0.0..1.0);
 
@@ -681,35 +679,21 @@ pub fn get_payload_linear_value_offset(payload: &str, shift: usize) -> f32 {
     val as f32 / 25.0
 }
 
-/// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
-pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
+/// Uppercases and pads/truncates a genome to the compiled length range [128, 512].
+fn normalize_genome(genome: &str) -> String {
     let current_length = genome.len().clamp(128, 512);
     let mut clean_genome = genome.to_ascii_uppercase().chars().take(current_length).collect::<String>();
     while clean_genome.len() < current_length {
         clean_genome.push('A');
     }
+    clean_genome
+}
 
-    let mut antisense_strand = match antisense_input {
-        Some(anti) => anti.to_ascii_uppercase().chars().take(current_length).collect::<String>(),
-        None => get_complementary_string(&clean_genome),
-    };
-    while antisense_strand.len() < current_length {
-        antisense_strand.push('Z');
-    }
-
-    // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning for specialized organs - TCK-116)
+/// Marks open chromatin (promoter..terminator spans of known genes); returns the state and transcription logs.
+fn scan_chromatin(clean_genome: &str) -> (Vec<bool>, Vec<String>) {
+    let current_length = clean_genome.len();
     let mut chromatin_state = vec![false; current_length];
-    let mut epigenetic_logs = Vec::new();
-    
-    if let Some(m) = parent_methylations {
-        if m.len() == current_length {
-            epigenetic_logs.push(String::from("Transgenerational epigenetic inheritance: Learned brain methylation pattern of the parent cell successfully assimilated."));
-        }
-    }
-    let methylations = match parent_methylations {
-        Some(m) if m.len() == current_length => m.to_vec(),
-        _ => vec![0.0; current_length],
-    };
+    let mut logs = Vec::new();
 
     // Scan for active specialized organ and trait promoters to highlight active gene spans on the DNA Helix
     let active_promoters = [
@@ -737,7 +721,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
                             chromatin_state[s] = true;
                         }
                     }
-                    epigenetic_logs.push(format!("Active Gene Found: Transcribing \"{}\" promoter block at locus {}..{} successfully completed.", promoter, idx, end_idx + 2));
+                    logs.push(format!("Active Gene Found: Transcribing \"{}\" promoter block at locus {}..{} successfully completed.", promoter, idx, end_idx + 2));
                     idx = end_idx + 2;
                 } else {
                     idx += 1;
@@ -747,17 +731,58 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
             }
         }
     }
+    (chromatin_state, logs)
+}
 
-    // Create the active_dna string by filtering clean_genome to keep ONLY open chromatin positions
-    let mut active_dna = clean_genome.chars().enumerate()
+/// Keeps only open chromatin positions; falls back to a minimal "A" genome.
+fn active_dna_of(clean_genome: &str, chromatin_state: &[bool]) -> String {
+    let active_dna = clean_genome.chars().enumerate()
         .filter(|(i, _)| chromatin_state[*i])
         .map(|(_, c)| c)
         .collect::<String>();
-    
-    // Fallback if active_dna is empty, keeping a minimal active genome
-    if active_dna.is_empty() {
-        active_dna = String::from("A");
+    if active_dna.is_empty() { String::from("A") } else { active_dna }
+}
+
+/// Insertion/deletion rates exactly as `parse_genome` derives them, without compiling the full phenotype.
+pub fn read_evolution_rates(genome: &str) -> (f32, f32) {
+    let clean_genome = normalize_genome(genome);
+    let (chromatin_state, _) = scan_chromatin(&clean_genome);
+    let evo_payloads = extract_raw_gene_payloads(&clean_genome, "EVO", "EN");
+    let evo_source = evo_payloads.get(0).cloned().unwrap_or_else(|| active_dna_of(&clean_genome, &chromatin_state));
+    let h_insert = get_payload_linear_value_offset(&evo_source, 0);
+    let h_delete = get_payload_linear_value_offset(&evo_source, 5);
+    (h_insert * 0.12, h_delete * 0.12)
+}
+
+/// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
+pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
+    let clean_genome = normalize_genome(genome);
+    let current_length = clean_genome.len();
+
+    let mut antisense_strand = match antisense_input {
+        Some(anti) => anti.to_ascii_uppercase().chars().take(current_length).collect::<String>(),
+        None => get_complementary_string(&clean_genome),
+    };
+    while antisense_strand.len() < current_length {
+        antisense_strand.push('Z');
     }
+
+    // 1. Epigenetic chromatin mapping (Dynamic Active Gene Scanning for specialized organs - TCK-116)
+    let mut epigenetic_logs = Vec::new();
+    
+    if let Some(m) = parent_methylations {
+        if m.len() == current_length {
+            epigenetic_logs.push(String::from("Transgenerational epigenetic inheritance: Learned brain methylation pattern of the parent cell successfully assimilated."));
+        }
+    }
+    let methylations = match parent_methylations {
+        Some(m) if m.len() == current_length => m.to_vec(),
+        _ => vec![0.0; current_length],
+    };
+
+    let (chromatin_state, gene_logs) = scan_chromatin(&clean_genome);
+    epigenetic_logs.extend(gene_logs);
+    let active_dna = active_dna_of(&clean_genome, &chromatin_state);
 
     // --- MODULAR GENOME LOCI LINEAR COMPILER ---
     // Every basic trait is determined locally by parsing and linearly scaling its specific gene payload,
@@ -1257,49 +1282,36 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         exuberant_destinations.push(id);
     }
 
+    // Pre-wired Thalamus reflex pathways, skipped in the exuberant loop (appended separately below)
+    let mut reflex_pairs = std::collections::HashSet::new();
+    for b in 0..thalamus_blocks {
+        let is_paired = has_hox && b < num_pairs;
+        let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
+        let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
+
+        if is_paired {
+            let left_start = (2 * b) * CHANNELS_PER_ORGANELLE;
+            let right_start = (2 * b + 1) * CHANNELS_PER_ORGANELLE;
+            for c in 0..CHANNELS_PER_ORGANELLE {
+                let l_node = left_start + c;
+                let r_node = right_start + c;
+                reflex_pairs.insert((l_node, sum_start + c));
+                reflex_pairs.insert((r_node, sum_start + c));
+                reflex_pairs.insert((l_node, diff_start + c));
+                reflex_pairs.insert((r_node, diff_start + c));
+            }
+        } else {
+            let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
+            let raw_start = idx * CHANNELS_PER_ORGANELLE;
+            for c in 0..CHANNELS_PER_ORGANELLE {
+                reflex_pairs.insert((raw_start + c, sum_start + c));
+            }
+        }
+    }
+
     for &from_node in &exuberant_sources {
         for &to_node in &exuberant_destinations {
-            if from_node == to_node {
-                continue;
-            }
-
-            // Skip pre-wired Thalamus reflex pathways in the exuberant loop
-            let mut is_reflex = false;
-            for b in 0..thalamus_blocks {
-                let is_paired = has_hox && b < num_pairs;
-                let sum_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2);
-                let diff_start = get_hidden_neurons_start_id(organelles.len()) + b * (CHANNELS_PER_ORGANELLE * 2) + CHANNELS_PER_ORGANELLE;
-
-                if is_paired {
-                    let left_start = (2 * b) * CHANNELS_PER_ORGANELLE;
-                    let right_start = (2 * b + 1) * CHANNELS_PER_ORGANELLE;
-                    for c in 0..CHANNELS_PER_ORGANELLE {
-                        let l_node = left_start + c;
-                        let r_node = right_start + c;
-                        let s_node = sum_start + c;
-                        let d_node = diff_start + c;
-
-                        if (from_node == l_node && to_node == s_node) ||
-                           (from_node == r_node && to_node == s_node) ||
-                           (from_node == l_node && to_node == d_node) ||
-                           (from_node == r_node && to_node == d_node) {
-                            is_reflex = true;
-                        }
-                    }
-                } else {
-                    let idx = if has_hox { num_pairs * 2 + (b - num_pairs) } else { b };
-                    let raw_start = idx * CHANNELS_PER_ORGANELLE;
-                    for c in 0..CHANNELS_PER_ORGANELLE {
-                        let r_node = raw_start + c;
-                        let s_node = sum_start + c;
-
-                        if from_node == r_node && to_node == s_node {
-                            is_reflex = true;
-                        }
-                    }
-                }
-            }
-            if is_reflex {
+            if from_node == to_node || reflex_pairs.contains(&(from_node, to_node)) {
                 continue;
             }
 
@@ -1891,4 +1903,64 @@ mod tests {
         assert_eq!(pheno_open.organelles[0].angle, -170.0);
         assert_eq!(pheno_open.organelles[1].angle, 170.0); // mirrored to +170.0 deg!
     }
+
+    /// Deterministic genome set (no rand) covering random strands plus organ/HOX/brain promoters.
+    fn golden_genomes() -> Vec<String> {
+        let mut state: u64 = 0x2545F4914F6CDD1D;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let motifs = ["EYE", "NOS", "TAC", "LUM", "HOX", "NEU", "SY", "EN", "SP", "COL", "STF", "PUL", "SIZ", "WAV", "REP", "EVO", "CAR"];
+        (0..300)
+            .map(|_| {
+                let len = 128 + (next() % 300) as usize;
+                let mut g = String::with_capacity(len + 64);
+                while g.len() < len {
+                    if next() % 4 == 0 {
+                        g.push_str(motifs[(next() % motifs.len() as u64) as usize]);
+                    } else {
+                        g.push(ALPHABET[(next() % 26) as usize] as char);
+                    }
+                }
+                g
+            })
+            .collect()
+    }
+
+    fn fnv1a(bytes: &[u8]) -> u64 {
+        let mut hash: u64 = 0xcbf29ce484222325;
+        for b in bytes {
+            hash ^= *b as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash
+    }
+
+    #[test]
+    fn test_parse_genome_golden_master() {
+        let mut combined = String::new();
+        for g in golden_genomes() {
+            let mut pheno = parse_genome(&g, None, None);
+            pheno.latin_name.clear(); // covered by test_latin_name_is_deterministic
+            combined.push_str(&serde_json::to_string(&pheno).unwrap());
+        }
+        let fingerprint = fnv1a(combined.as_bytes());
+        println!("GOLDEN_FINGERPRINT={:#018x}", fingerprint);
+        assert_eq!(fingerprint, GOLDEN_FINGERPRINT);
+    }
+
+    #[test]
+    fn test_read_evolution_rates_matches_parse_genome() {
+        for g in golden_genomes() {
+            let pheno = parse_genome(&g, None, None);
+            assert_eq!(read_evolution_rates(&g), (pheno.insertion_rate, pheno.deletion_rate));
+        }
+    }
+
+    // Fingerprint of parse_genome output over golden_genomes(), recorded before the TCK-140 refactor
+    const GOLDEN_FINGERPRINT: u64 = 0xa7b82dc4fe552ac8;
+
 }

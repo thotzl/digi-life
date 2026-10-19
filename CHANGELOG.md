@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.10] - 2026-10-19
+
+### Performance
+- Genome mutation reads the insertion/deletion rates directly instead of compiling a full phenotype and brain for every single mutation (ref TCK-140).
+- Brain compilation looks up pre-wired thalamus reflex pathways in a set instead of re-scanning all thalamus blocks per candidate synapse (ref TCK-140).
+- Trainer telemetry no longer sends each sandbox's procedural world at 25 Hz; the frontend never used it (ref TCK-140).
+
+### Added
+- Golden-master test pinning `parse_genome` output over 300 deterministic genomes (ref TCK-140).
+
 ## [1.12.9] - 2026-10-19
 
 ### Performance
