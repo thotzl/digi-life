@@ -170,75 +170,46 @@ pub struct AppConfig {
 
 use std::sync::OnceLock;
 static GLOBAL_CONFIG: OnceLock<AppConfig> = OnceLock::new();
+const EMBEDDED_CONFIG: &str = include_str!("../../config.json");
 
 impl AppConfig {
     pub fn global() -> &'static Self {
         GLOBAL_CONFIG.get_or_init(|| Self::load())
     }
 
+    /// Loads the config compiled into the binary. A `config.json` in the working directory
+    /// overrides it for development; an invalid override is reported and ignored.
     pub fn load() -> Self {
-        let paths = ["config.json", "../config.json", "src-tauri/config.json"];
-        for path in &paths {
-            if let Ok(file_content) = std::fs::read_to_string(path) {
-                if let Ok(parsed) = serde_json::from_str::<Self>(&file_content) {
-                    println!("[CONFIG] Successfully loaded application config from '{}'!", path);
+        if let Ok(file_content) = std::fs::read_to_string("config.json") {
+            match serde_json::from_str::<Self>(&file_content) {
+                Ok(parsed) => {
+                    println!("[CONFIG] Loaded config override from working directory config.json.");
                     return parsed;
                 }
+                Err(e) => eprintln!("[CONFIG] ERROR: working directory config.json is invalid ({}). Using embedded config.", e),
             }
         }
-        
-        println!("[CONFIG] Warning: Failed to load config.json, using compiled fallback defaults!");
-        Self {
-            seed: "ALIFE_BASIN_77A".to_string(),
-            target_population: 25,
-            food_spore_count: 600,
-            max_creatures: 45,
-            basal_metabolic_rate_multiplier: 1.0,
-            rules: SimulationRules {
-                creature_max_age_ticks: 5400,
-                creature_mature_age_floor: 600,
-                lamarckian_assimilation_age_floor: 1200,
-                lamarckian_assimilation_chance: 0.25,
-                bmr_base_scale: 0.002,
-                adrenaline_max_multiplier: 1.8,
-                adrenaline_increase_rate: 0.06,
-                adrenaline_decay_rate: 0.015,
-                adrenaline_metabolic_surcharge_scale: 1.5,
-                thermal_stress_penalty_scale: 0.0012,
-                bioluminescence_flash_cost: 0.05,
-                photosynthesis_energy_gain: 0.20,
-                biome_hazard_damage_scale: 0.40,
-                biome_algae_spore_spawn_threshold: 1.0,
-                grazing_radius_multiplier: 1.5,
-                grazing_radius_offset: 4.0,
-                grazing_efficiency_herbivore_scale: 1.50,
-                biting_carnivory_threshold: 0.35,
-                biting_radius_multiplier: 1.6,
-                biting_radius_offset: 5.0,
-                biting_energy_damage: 35.0,
-                biting_base_energy_gain: 35.0,
-                biting_efficiency_carnivore_scale: 1.25,
-                reproduction_stomach_threshold_floor: 0.60,
-                reproduction_split_loss_ratio: 0.4,
-                reproduction_recoil_velocity_scale: 15.0,
-                thrust_base_multiplier: 6.8,
-                steer_torque_base_multiplier: 5.8,
-                predator_savage_thrust_threshold: 0.55,
-                predator_savage_thrust_multiplier: 1.45,
-                drag_forward_coefficient: 0.015,
-                drag_forward_stiffness_decay: 0.3,
-                drag_lateral_coefficient: 0.045,
-                receptor_ballast_scale: 0.18,
-                elastic_wall_restitution: 0.5,
-                hebbian_learning_rate_base: 0.00015,
-                hebbian_learning_stiffness_decay: 0.85,
-                hebbian_forgetting_decay: 0.0000032,
-                decomposition_spore_min: 1,
-                decomposition_spore_max: 5,
-                decomposition_size_ratio: 1200.0,
-                restock_founder_gene_inherit_chance: 0.60,
-                restock_initial_stomach_ratio: 0.60,
-            }
-        }
+        println!("[CONFIG] Using embedded config.json.");
+        Self::embedded()
+    }
+
+    pub fn embedded() -> Self {
+        serde_json::from_str(EMBEDDED_CONFIG).expect("embedded config.json must match AppConfig")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_embedded_config_matches_config_json() {
+        let embedded = AppConfig::embedded();
+        let on_disk: serde_json::Value = serde_json::from_str(include_str!("../../config.json")).unwrap();
+
+        assert_eq!(embedded.food_spore_count as u64, on_disk["foodSporeCount"].as_u64().unwrap());
+        assert_eq!(embedded.target_population as u64, on_disk["targetPopulation"].as_u64().unwrap());
+        assert_eq!(embedded.rules.creature_max_age_ticks as u64, on_disk["rules"]["creatureMaxAgeTicks"].as_u64().unwrap());
+        assert!((embedded.rules.thrust_base_multiplier as f64 - on_disk["rules"]["thrustBaseMultiplier"].as_f64().unwrap()).abs() < 1e-6);
     }
 }

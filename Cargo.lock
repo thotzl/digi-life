@@ -2991,7 +2991,7 @@ dependencies = [
 
 [[package]]
 name = "src-tauri"
-version = "1.12.6"
+version = "1.12.7"
 dependencies = [
  "rand",
  "rusqlite",

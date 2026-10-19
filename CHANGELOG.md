@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.7] - 2026-10-19
+
+### Fixed
+- Release builds did not ship `config.json` and silently fell back to divergent hard-coded values (e.g. 600 instead of 300 food spores, thrust 6.8 instead of 3.4). The config is now compiled into the binary; a `config.json` in the working directory still overrides it for development, and an invalid override is reported instead of silently ignored (ref TCK-138).
+
 ## [1.12.6] - 2026-10-19
 
 ### Fixed
