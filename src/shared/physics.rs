@@ -185,7 +185,7 @@ pub fn apply_creature_physics(
     agent.px += agent.vx;
     if agent.px < mean_radius {
         agent.px = mean_radius;
-        agent.vx = -agent.vx.abs() * restitution;
+        agent.vx = agent.vx.abs() * restitution;
         hit_wall = true;
     } else if agent.px > world_width - mean_radius {
         agent.px = world_width - mean_radius;
@@ -197,7 +197,7 @@ pub fn apply_creature_physics(
     agent.py += agent.vy;
     if agent.py < mean_radius {
         agent.py = mean_radius;
-        agent.vy = -agent.vy.abs() * restitution;
+        agent.vy = agent.vy.abs() * restitution;
         hit_wall = true;
     } else if agent.py > world_height - mean_radius {
         agent.py = world_height - mean_radius;
@@ -233,4 +233,71 @@ pub fn apply_creature_physics(
     }
 
     hit_wall
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::biology::dna::parse_genome;
+
+    fn agent_moving(px: f32, py: f32, heading_angle: f32, speed: f32) -> CreatureAgent {
+        let phenotype = parse_genome("EYEABCDEFEN", None, None);
+        CreatureAgent {
+            id: 1,
+            species_id: "test".to_string(),
+            px,
+            py,
+            vx: speed * heading_angle.cos(),
+            vy: speed * heading_angle.sin(),
+            heading_angle,
+            bend_angle: 0.0,
+            omega_rot: 0.0,
+            energy: 100.0,
+            adrenaline: 1.0,
+            age: 0,
+            generation: 1,
+            has_eaten: false,
+            genome: String::new(),
+            antisense: String::new(),
+            synapse_weights: Vec::new(),
+            neuron_states: Vec::new(),
+            neuron_activations: Vec::new(),
+            phenotype,
+        }
+    }
+
+    fn step_without_forces(agent: &mut CreatureAgent, size: f32) -> bool {
+        apply_creature_physics(agent, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, &[], size, size)
+    }
+
+    #[test]
+    fn test_wall_contact_reflects_velocity_away_from_every_wall() {
+        let size = 1000.0;
+        let r = agent_moving(0.0, 0.0, 0.0, 0.0).phenotype.spinal_harmonics.mean_radius;
+        let pi = std::f32::consts::PI;
+
+        // Left wall: moving towards -x
+        let mut left = agent_moving(r + 1.0, size / 2.0, pi, 5.0);
+        assert!(step_without_forces(&mut left, size));
+        assert!(left.vx > 0.0, "left wall must reflect to +x, got vx = {}", left.vx);
+        assert!(left.px >= r);
+
+        // Top wall: moving towards -y
+        let mut top = agent_moving(size / 2.0, r + 1.0, -pi / 2.0, 5.0);
+        assert!(step_without_forces(&mut top, size));
+        assert!(top.vy > 0.0, "top wall must reflect to +y, got vy = {}", top.vy);
+        assert!(top.py >= r);
+
+        // Right wall: moving towards +x
+        let mut right = agent_moving(size - r - 1.0, size / 2.0, 0.0, 5.0);
+        assert!(step_without_forces(&mut right, size));
+        assert!(right.vx < 0.0, "right wall must reflect to -x, got vx = {}", right.vx);
+        assert!(right.px <= size - r);
+
+        // Bottom wall: moving towards +y
+        let mut bottom = agent_moving(size / 2.0, size - r - 1.0, pi / 2.0, 5.0);
+        assert!(step_without_forces(&mut bottom, size));
+        assert!(bottom.vy < 0.0, "bottom wall must reflect to -y, got vy = {}", bottom.vy);
+        assert!(bottom.py <= size - r);
+    }
 }
