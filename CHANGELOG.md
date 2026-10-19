@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.9] - 2026-10-19
+
+### Performance
+- Ocean step no longer queries the full `species_records` table every physics step; the species list is cached and only re-read after inserts or resets (ref TCK-139).
+- The spatial grid is reused across steps, and spore pushes, prey search and bite checks use lightweight snapshots instead of cloning whole creatures (incl. genome and brain) every step (ref TCK-139).
+- Simulation events are flushed once per frame with duplicate `DATABASE_CHANGED` notifications coalesced, reducing roster refetches in the UI (ref TCK-139).
+- Restocking loads the catalogue once per pass instead of once per spawned creature (ref TCK-139).
+
 ## [1.12.8] - 2026-10-19
 
 ### Fixed

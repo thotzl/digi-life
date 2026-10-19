@@ -16,21 +16,57 @@ use crate::biology::trainer_engine::{
 };
 use crate::database::{init_db, LogDbError};
 
+/// Per-step snapshot of the fields other creatures read (prey search, bite targets).
+struct PeerSnapshot {
+    id: u32,
+    species_id: String,
+    px: f32,
+    py: f32,
+    vx: f32,
+    vy: f32,
+}
+
+impl From<&CreatureAgent> for PeerSnapshot {
+    fn from(c: &CreatureAgent) -> Self {
+        Self { id: c.id, species_id: c.species_id.clone(), px: c.px, py: c.py, vx: c.vx, vy: c.vy }
+    }
+}
+
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
     thread::spawn(move || {
         let db_path = crate::database::db_path();
         let conn = init_db(&db_path).expect("Failed to initialize local DB");
 
+        // Events are buffered and flushed once per frame (in order); repeated DATABASE_CHANGED
+        // notifications within one frame are coalesced since the UI only refetches the roster.
+        let pending_events = std::cell::RefCell::new(Vec::<serde_json::Value>::new());
         let emit_state = |payload: serde_json::Value| {
-            if let Err(e) = window.emit("simulation-state", payload) {
-                eprintln!("[SIMULATION] Error emitting 'simulation-state' event: {}", e);
+            pending_events.borrow_mut().push(payload);
+        };
+        let flush_events = || {
+            let mut database_changed_sent = false;
+            for payload in pending_events.borrow_mut().drain(..) {
+                if payload["type"] == "DATABASE_CHANGED" {
+                    if database_changed_sent {
+                        continue;
+                    }
+                    database_changed_sent = true;
+                }
+                if let Err(e) = window.emit("simulation-state", payload) {
+                    eprintln!("[SIMULATION] Error emitting 'simulation-state' event: {}", e);
+                }
             }
         };
 
         let logical_width = 19200.0;
         let logical_height = 10800.0;
         let ocean_world = generate_world("ocean-tauri-seed-77", logical_width, logical_height);
-        
+        let mut grid = SpatialGrid::new(logical_width, logical_height, 80.0);
+
+        // Mirror of species_records (id, status, peak) in SELECT order; reloaded only after inserts/resets
+        let mut species_cache: Vec<(String, String, i32)> = Vec::new();
+        let mut species_cache_dirty = true;
+
         let app_config = crate::shared::types::AppConfig::global();
         
         let mut is_running = false;
@@ -290,6 +326,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                     params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
                 ).log_db_err("INSERT OR IGNORE INTO species_records");
+                species_cache_dirty = true;
 
                 next_creature_id += 1;
             }
@@ -422,6 +459,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                     params![&random_dna, &random_pheno.latin_name, &random_dna, None::<String>, now_millis, random_pheno.carnivory],
                                 ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                species_cache_dirty = true;
 
                                 emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                 emit_state(json!({
@@ -490,6 +528,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                         params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
                                     ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                    species_cache_dirty = true;
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                     emit_state(json!({
@@ -505,6 +544,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 
                                 // Wipe old species records, histories, and state caches from SQLite database
                                 conn.execute("DELETE FROM species_records", []).log_db_err("DELETE FROM species_records");
+                                species_cache_dirty = true;
                                 conn.execute("DELETE FROM simulation_history", []).log_db_err("DELETE FROM simulation_history");
                                 conn.execute("DELETE FROM simulation_state", []).log_db_err("DELETE FROM simulation_state");
 
@@ -589,6 +629,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                             params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
                                         ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                        species_cache_dirty = true;
                                         next_creature_id += 1;
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -653,6 +694,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
                                             params![mutated_dna, &random_pheno.latin_name, mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
                                         ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                        species_cache_dirty = true;
                                         next_creature_id += 1;
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -1014,27 +1056,29 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     // Cap warp steps per tick to prevent thread starvation/IPC locking!
                     let steps_this_frame = if ocean_warp_factor > 35 { 35 } else { ocean_warp_factor };
                     for _ in 0..steps_this_frame {
-                        // Populate Spatial Grid for collisions and physical pushes
-                        let mut grid = SpatialGrid::new(logical_width, logical_height, 80.0);
-                        for pellet in &food_pellets {
-                            grid.insert_food(pellet.id, pellet.x, pellet.y);
+                        // Populate Spatial Grid for collisions and physical pushes (buckets hold vector indices)
+                        grid.clear();
+                        for (idx, pellet) in food_pellets.iter().enumerate() {
+                            grid.insert_food(idx as u32, pellet.x, pellet.y);
                         }
-                        for agent in &creatures {
-                            grid.insert_creature(agent.id, agent.px, agent.py);
+                        for (idx, agent) in creatures.iter().enumerate() {
+                            grid.insert_creature(idx as u32, agent.px, agent.py);
                         }
 
                         // 1. Move, drift, and physically push food spores (using SpatialGrid for O(1) performance!)
-                        use crate::shared::physics::step_food_spore_physics;
+                        use crate::shared::physics::{step_food_spore_physics, SporePusher};
                         for pellet in &mut food_pellets {
-                            let nearby_ids = grid.get_nearby_creatures(pellet.x, pellet.y, 80.0);
-                            let nearby_creatures: Vec<CreatureAgent> = creatures.iter()
-                                .filter(|c| nearby_ids.contains(&c.id))
-                                .cloned()
+                            // Sorted indices keep the original creature order of the push sequence
+                            let mut nearby_idx = grid.get_nearby_creatures(pellet.x, pellet.y, 80.0);
+                            nearby_idx.sort_unstable();
+                            let nearby_creatures: Vec<SporePusher> = nearby_idx.iter()
+                                .map(|&i| SporePusher::from(&creatures[i as usize]))
                                 .collect();
                             step_food_spore_physics(pellet, &nearby_creatures, &ocean_world.obstacles, logical_width, logical_height);
                         }
 
-                        let alive_clones = creatures.clone();
+                        // Lightweight snapshot of all creatures before this step (prey search and bite targets)
+                        let alive_clones: Vec<PeerSnapshot> = creatures.iter().map(PeerSnapshot::from).collect();
                         let mut damage_map = std::collections::HashMap::<u32, f32>::new();
 
                     let mut next_creatures = Vec::new();
@@ -1078,7 +1122,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                         }
 
-                        let mut nearest_prey_peer: Option<&CreatureAgent> = None;
+                        let mut nearest_prey_peer: Option<&PeerSnapshot> = None;
                         let mut min_prey_peer_dist = f32::MAX;
 
                         for peer in &alive_clones {
@@ -1223,8 +1267,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             // Grazing (Eat Food)
                             let eat_radius = mean_radius * app_config.rules.grazing_radius_multiplier + app_config.rules.grazing_radius_offset;
                             let nearby_foods = grid.get_nearby_food(agent.px, agent.py, eat_radius);
-                            for f_id in nearby_foods {
-                                if let Some(idx) = food_pellets.iter().position(|x| x.id == f_id) {
+                            for f_idx in nearby_foods {
+                                if let Some(idx) = Some(f_idx as usize).filter(|&i| i < food_pellets.len()) {
                                     let f = &food_pellets[idx];
                                     let dx = f.x - agent.px;
                                     let dy = f.y - agent.py;
@@ -1293,9 +1337,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             if agent.phenotype.carnivory >= app_config.rules.biting_carnivory_threshold {
                                 let bite_range = mean_radius * app_config.rules.biting_radius_multiplier + app_config.rules.biting_radius_offset;
                                 let nearby_peers = grid.get_nearby_creatures(agent.px, agent.py, bite_range);
-                                for v_id in nearby_peers {
-                                    if v_id == agent.id { continue; }
-                                    if let Some(victim) = alive_clones.iter().find(|c| c.id == v_id) {
+                                for v_idx in nearby_peers {
+                                    if alive_clones.get(v_idx as usize).map_or(true, |c| c.id == agent.id) { continue; }
+                                    if let Some(victim) = alive_clones.get(v_idx as usize) {
                                         if victim.species_id != agent.species_id {
                                             let dx = victim.px - agent.px;
                                             let dy = victim.py - agent.py;
@@ -1377,6 +1421,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
                                         params![&child.genome, &child.phenotype.latin_name, &child.genome, Some(agent.phenotype.latin_name.clone()), now_millis, child.generation, child.phenotype.carnivory],
                                     ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                    species_cache_dirty = true;
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                     emit_state(json!({
@@ -1444,34 +1489,46 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     // Extinction and Peak Population Tracking (matches TS index.ts!)
                     let mut db_changed = false;
 
-                    let mut registered_species = Vec::new();
-                    if let Ok(mut stmt) = conn.prepare("SELECT id, status, peak_population FROM species_records") {
-                        if let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i32>(2)?))) {
-                            for row in rows {
-                                if let Ok(item) = row {
-                                    registered_species.push(item);
+                    // The engine is the only writer of species_records, so the table is only re-read after inserts/resets
+                    if species_cache_dirty {
+                        species_cache.clear();
+                        if let Ok(mut stmt) = conn.prepare("SELECT id, status, peak_population FROM species_records") {
+                            if let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i32>(2)?))) {
+                                for row in rows {
+                                    if let Ok(item) = row {
+                                        species_cache.push(item);
+                                    }
                                 }
                             }
                         }
+                        species_cache_dirty = false;
+                    }
+
+                    let mut species_counts = std::collections::HashMap::<&str, i32>::new();
+                    for c in &creatures {
+                        *species_counts.entry(c.species_id.as_str()).or_insert(0) += 1;
                     }
 
                     let mut peak_updates = Vec::new();
                     let mut extinction_updates = Vec::new();
 
-                    for (id, status, peak_pop) in registered_species {
-                        let active_count = creatures.iter().filter(|c| c.species_id == id).count() as i32;
+                    for (id, status, peak_pop) in species_cache.iter_mut() {
+                        let active_count = species_counts.get(id.as_str()).copied().unwrap_or(0);
                         if active_count > 0 {
-                            if active_count > peak_pop {
+                            if active_count > *peak_pop {
                                 peak_updates.push((id.clone(), active_count));
+                                *peak_pop = active_count;
                             }
                             if status == "extinct" {
                                 // Re-sprout resurrected species
-                                conn.execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id]).log_db_err("UPDATE species_records");
+                                conn.execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id.as_str()]).log_db_err("UPDATE species_records");
+                                *status = "alive".to_string();
                                 db_changed = true;
                             }
                         } else {
                             if status == "alive" {
                                 extinction_updates.push(id.clone());
+                                *status = "extinct".to_string();
                             }
                         }
                     }
@@ -1507,11 +1564,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                     // Maintain population (restocking founder cells up to config, matches TS index.ts!)
                     let target_population = app_config.target_population;
-                    while creatures.len() < target_population {
-                        let mut rng = rand::thread_rng();
 
-                        // Query all saved catalogue creatures
-                        let mut catalogue_creatures = Vec::new();
+                    // Query all saved catalogue creatures once per restock pass
+                    let mut catalogue_creatures = Vec::new();
+                    if creatures.len() < target_population {
                         if let Ok(mut stmt) = conn.prepare("SELECT genome, name, methylations, synapse_weights FROM creature_catalogue") {
                             if let Ok(rows) = stmt.query_map([], |row| {
                                 Ok((
@@ -1528,6 +1584,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
                             }
                         }
+                    }
+
+                    while creatures.len() < target_population {
+                        let mut rng = rand::thread_rng();
 
                         let (g, random_pheno, _m_vec, s_vec, source_tag, generation_val) = if !catalogue_creatures.is_empty() {
                             let idx = rng.gen_range(0..catalogue_creatures.len());
@@ -1591,6 +1651,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
                             params![&g, &random_pheno.latin_name, &g, None::<String>, now_millis, generation_val, random_pheno.carnivory],
                         ).log_db_err("INSERT OR IGNORE INTO species_records");
+                        species_cache_dirty = true;
 
                         emit_state(json!({ "type": "DATABASE_CHANGED" }));
                         emit_state(json!({
@@ -1979,6 +2040,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     last_emit_time = Instant::now();
                 }
             }
+
+            flush_events();
 
             // Cap the physical thread at ~60Hz to prevent thread starvation and keep learning rates stable
             let elapsed = loop_start.elapsed();

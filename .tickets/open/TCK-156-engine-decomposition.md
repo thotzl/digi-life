@@ -17,4 +17,4 @@ revisit: RV-A01, RV-A05
 `spawn_simulation_thread` is a ~2000-line closure; creature construction duplicated 6x; world size literals in Rust and TS.
 
 ## Proposed Scope
-Structs with `step()` + event sink, `CreatureFactory`, constants from one source.
+Structs with `step()` + event sink, `CreatureFactory`, constants from one source. Include nearest-food lookup via the spatial grid (RV-P04, deferred from TCK-139 because a ring search can change tie-breaking).

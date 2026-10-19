@@ -123,8 +123,8 @@ impl TrainingScenarioPlugin for StandardScenario {
         let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
         sb.distance_traveled += movement;
 
-        use crate::shared::physics::step_food_spore_physics;
-        let temp_creatures = vec![sb.agent.clone()];
+        use crate::shared::physics::{step_food_spore_physics, SporePusher};
+        let temp_creatures = [SporePusher::from(&sb.agent)];
         for pellet in &mut sb.foods {
             step_food_spore_physics(pellet, &temp_creatures, &[], canvas_width, canvas_height);
         }
@@ -307,8 +307,8 @@ impl TrainingScenarioPlugin for ExplorationScenario {
         let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
         sb.distance_traveled += movement;
 
-        use crate::shared::physics::step_food_spore_physics;
-        let temp_creatures = vec![sb.agent.clone()];
+        use crate::shared::physics::{step_food_spore_physics, SporePusher};
+        let temp_creatures = [SporePusher::from(&sb.agent)];
         for pellet in &mut sb.foods {
             step_food_spore_physics(pellet, &temp_creatures, &[], canvas_width, canvas_height);
         }

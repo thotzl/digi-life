@@ -1,9 +1,31 @@
 use crate::shared::types::{CreatureAgent, FoodSpore, AppConfig};
 use crate::shared::map_generator::ProceduralObstacle;
 
+/// Kinematic snapshot of a creature that can push food spores (avoids cloning whole agents).
+#[derive(Debug, Clone, Copy)]
+pub struct SporePusher {
+    pub px: f32,
+    pub py: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub mean_radius: f32,
+}
+
+impl From<&CreatureAgent> for SporePusher {
+    fn from(agent: &CreatureAgent) -> Self {
+        Self {
+            px: agent.px,
+            py: agent.py,
+            vx: agent.vx,
+            vy: agent.vy,
+            mean_radius: agent.phenotype.spinal_harmonics.mean_radius,
+        }
+    }
+}
+
 pub fn step_food_spore_physics(
     pellet: &mut FoodSpore,
-    nearby_creatures: &[CreatureAgent],
+    nearby_creatures: &[SporePusher],
     obstacles: &[ProceduralObstacle],
     world_width: f32,
     world_height: f32,
@@ -12,7 +34,7 @@ pub fn step_food_spore_physics(
 
     // 1. Spore physical displacement impulse pushes from nearby creatures (Impulse bounce)
     for agent in nearby_creatures {
-        let mean_radius = agent.phenotype.spinal_harmonics.mean_radius;
+        let mean_radius = agent.mean_radius;
         let push_radius = mean_radius + spore_radius;
         let pdx = pellet.x - agent.px;
         let pdy = pellet.y - agent.py;
@@ -268,6 +290,33 @@ mod tests {
 
     fn step_without_forces(agent: &mut CreatureAgent, size: f32) -> bool {
         apply_creature_physics(agent, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, &[], size, size)
+    }
+
+    #[test]
+    fn test_spore_push_from_snapshot_matches_full_agent() {
+        let agent = agent_moving(500.0, 500.0, 0.3, 2.0);
+        let start = FoodSpore { id: 1, type_id: 1, x: 505.0, y: 503.0, amount: 15.0, vx: 0.0, vy: 0.0 };
+
+        let mut expected = start.clone();
+        // Reference values computed with the pre-snapshot implementation (agent at (500,500), v=(2cos0.3, 2sin0.3))
+        let r = agent.phenotype.spinal_harmonics.mean_radius;
+        let (dx, dy) = (5.0f32, 3.0f32);
+        let d = (dx * dx + dy * dy).sqrt();
+        let overlap = r + 8.0 - d;
+        expected.x += dx / d * overlap;
+        expected.y += dy / d * overlap;
+        expected.vx = agent.vx + dx / d * 2.0;
+        expected.vy = agent.vy + dy / d * 2.0;
+        expected.x += expected.vx;
+        expected.y += expected.vy;
+        expected.vx *= 0.92;
+        expected.vy *= 0.92;
+
+        let mut pellet = start.clone();
+        step_food_spore_physics(&mut pellet, &[SporePusher::from(&agent)], &[], 1000.0, 1000.0);
+
+        assert!((pellet.x - expected.x).abs() < 1e-4 && (pellet.y - expected.y).abs() < 1e-4);
+        assert!((pellet.vx - expected.vx).abs() < 1e-4 && (pellet.vy - expected.vy).abs() < 1e-4);
     }
 
     #[test]
