@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.3] - 2026-10-19
+
+### Security
+- Escaped database- and user-derived values (species/catalogue names, sources, genome loci, DB error text) before inserting them into `innerHTML` templates (ref TCK-141).
+
+### Changed
+- The simulation engine now logs unknown client action types instead of silently ignoring them (ref TCK-141).
+
+### Removed
+- Unused `zustand` dependency (ref TCK-141).
+
 ## [1.12.2] - 2026-09-04
 
 ### Added

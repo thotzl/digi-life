@@ -1,4 +1,5 @@
 import { styled } from "../core/styled";
+import { escapeHtml } from "../core/escape";
 import { navigateTo, currentView } from "../core/router";
 import { effect } from "@preact/signals-core";
 import { safeInvoke } from "../api";
@@ -454,7 +455,7 @@ export class CatalogueView {
       });
     } catch (e) {
       console.error("[Catalogue] Failed to load ledger list:", e);
-      this.listEl.innerHTML = `<div class="fallback-state" style="color:#ef4444;">Failed to read SQLite database: ${e}</div>`;
+      this.listEl.innerHTML = `<div class="fallback-state" style="color:#ef4444;">Failed to read SQLite database: ${escapeHtml(e)}</div>`;
     }
   }
 

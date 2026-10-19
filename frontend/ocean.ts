@@ -14,6 +14,7 @@ import {
   isAliveExpanded, isExtinctExpanded
 } from "./signals";
 import { InteractiveCamera } from "./core/camera";
+import { escapeHtml } from "./core/escape";
 
 let world: ProceduralWorld | null = null;
 let offscreenCanvas: HTMLCanvasElement | null = null;
@@ -73,10 +74,10 @@ function renderRosterCardHTML(rec: SpeciesRecord, isSelected: boolean): string {
   return `
     <div class="roster-card ${statusClass} ${isSelected ? 'selected' : ''}" 
          style="${colorStyle}"
-         data-id="${rec.id}"
-         id="roster-card-${rec.id}">
+         data-id="${escapeHtml(rec.id)}"
+         id="roster-card-${escapeHtml(rec.id)}">
       <div class="roster-title-row">
-        <span class="roster-name" style="color: ${rec.status === 'alive' ? 'var(--secondary-green)' : 'var(--text-muted)'}">${rec.name}</span>
+        <span class="roster-name" style="color: ${rec.status === 'alive' ? 'var(--secondary-green)' : 'var(--text-muted)'}">${escapeHtml(rec.name)}</span>
         <span class="badge-fossil ${statusClass}">${statusText}</span>
       </div>
       <div class="roster-meta-row">
@@ -239,7 +240,7 @@ function openOceanCatalogueDialog() {
       let dietLabel = "Omnivore";
       if (creature.carnivory >= 0.55) dietLabel = "Predator";
       else if (creature.carnivory < 0.3) dietLabel = "Herbivore";
-      pDetails.innerHTML = `Diet Class: <span style="color:#f59e0b;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(0)}<br/>Origin: ${creature.source}`;
+      pDetails.innerHTML = `Diet Class: <span style="color:#f59e0b;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(0)}<br/>Origin: ${escapeHtml(creature.source)}`;
       
       try {
         const pheno = await safeInvoke("get_fossil_phenotype", { genome: creature.genome });
@@ -269,7 +270,7 @@ function openOceanCatalogueDialog() {
         card.innerHTML = `
           <div style="display:flex; align-items:center; gap:8px;">
             <div style="width:6px; height:6px; border-radius:50%; background:hsla(${colorH},85%,55%,1); box-shadow:0 0 6px hsla(${colorH},85%,55%,0.8);"></div>
-            <b style="color:#fff;">${c.name}</b>
+            <b style="color:#fff;">${escapeHtml(c.name)}</b>
           </div>
           <span style="color:#64748b; font-size:0.58rem; text-transform:uppercase;">${dietLabel} // F: ${c.fitness.toFixed(0)}</span>
         `;

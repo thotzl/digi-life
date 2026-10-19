@@ -1000,7 +1000,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     "lamarckian": trainer_lamarckian
                                 }));
                             }
-                            _ => {}
+                            other => {
+                                eprintln!("[SIMULATION] Ignoring unknown client action type '{}'", other);
+                            }
                         }
                     }
                 }
