@@ -144,6 +144,7 @@ pub fn init_rust_sandbox(
 }
 
 pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32) {
+    sb.epoch_ticks += 1;
     let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
     let app_config = crate::shared::types::AppConfig::global();
     let hit_wall = plugin.step_physics(sb, canvas_width, canvas_height, &app_config);
@@ -230,5 +231,35 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, canvas_width: f32, 
             sb.foods[target_idx].vx = 0.0;
             sb.foods[target_idx].vy = 0.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_finish_tick_records_the_tick_of_first_consumption() {
+        let genome = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
+        let size = 1000.0;
+        let mut sb = init_rust_sandbox(1, genome, 1, 0.0, "elite", size, size, "standard");
+
+        // Park all food in the far corner so nothing can be eaten during the first ticks
+        for f in &mut sb.foods {
+            f.x = size - 10.0;
+            f.y = size - 10.0;
+        }
+        for _ in 0..5 {
+            step_trainer_sandbox_physics(&mut sb, size, size);
+        }
+        assert!(!sb.finished);
+
+        // Drop the plant onto the creature: it is consumed on the 6th tick
+        sb.foods[0].x = sb.agent.px;
+        sb.foods[0].y = sb.agent.py;
+        step_trainer_sandbox_physics(&mut sb, size, size);
+
+        assert!(sb.finished);
+        assert_eq!(sb.finish_tick, Some(6));
     }
 }

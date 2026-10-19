@@ -147,7 +147,7 @@ impl TrainingScenarioPlugin for StandardScenario {
             let path_efficiency = sb.start_distance / (sb.start_distance.max(sb.distance_traveled)).max(0.1);
             // Quadratic penalty on path efficiency completely annihilates spiral/curving paths!
             let path_efficiency_score = 1000.0 * path_efficiency.powi(2);
-            let speed_bonus = (epoch_duration_ticks - sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.2;
+            let speed_bonus = epoch_duration_ticks.saturating_sub(sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.2;
             fit = (sb.accumulated_yield * 1000.0 + path_efficiency_score + speed_bonus) * wall_penalty;
         } else {
             let mut penalty_multiplier = 1.0;
@@ -331,7 +331,7 @@ impl TrainingScenarioPlugin for ExplorationScenario {
         if sb.accumulated_yield > 0.0 {
             // Zone 3: Sated / Consumed Target Spore successfully (add minor coverage bonus)
             let path_efficiency = sb.start_distance / (sb.start_distance.max(sb.distance_traveled)).max(0.1);
-            let speed_bonus = (epoch_duration_ticks - sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.5;
+            let speed_bonus = epoch_duration_ticks.saturating_sub(sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.5;
             let coverage_bonus = sectors_visited * 10.0;
             fit = (sb.accumulated_yield * 3000.0 + 1000.0 * path_efficiency + speed_bonus + coverage_bonus) * wall_penalty;
         } else {
