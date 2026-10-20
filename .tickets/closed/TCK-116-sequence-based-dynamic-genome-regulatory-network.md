@@ -1,3 +1,11 @@
+---
+id: TCK-116
+title: Sequence-Based Dynamic Genome & Gene Regulatory Network (GRN)
+status: closed
+created_at: 2026-08-22
+closed_at: 2026-08-22
+---
+
 # TCK-116: Sequence-Based Dynamic Genome & Gene Regulatory Network (GRN)
 
 ## 🎯 Goal

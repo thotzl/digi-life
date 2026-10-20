@@ -1,3 +1,11 @@
+---
+id: TCK-115
+title: Master Architectural Refactoring & Type Generation
+status: closed
+created_at: 2026-08-22
+closed_at: 2026-08-22
+---
+
 # TCK-115: Master Architectural Refactoring & Type Generation
 
 ## 🎯 Goal

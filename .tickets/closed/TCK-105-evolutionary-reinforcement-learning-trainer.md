@@ -1,4 +1,4 @@
-Frontmatter:
+---
 id: TCK-105
 title: Evolutionary Reinforcement Learning Trainer für fitte Progenitor-Zellen
 status: closed

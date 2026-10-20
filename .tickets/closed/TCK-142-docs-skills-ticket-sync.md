@@ -1,7 +1,7 @@
 ---
 id: TCK-142
 title: Sync Docs, Agent Skills and Ticket Status with Actual Architecture
-status: open
+status: closed
 assigned: Claude Code
 created_at: 2026-10-19
 closed_at: 2026-10-19
