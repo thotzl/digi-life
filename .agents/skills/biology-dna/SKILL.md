@@ -4,24 +4,22 @@ description: Decodes the biological mechanics, genome parsing, Continuous-Time R
 ---
 # biology-dna: Biology, Genetics & CTRNN Brain Simulation
 
-## I. Genomic Foundation
-- **Sense String (DNA):** Standard uppercase alphabetical characters `A-Z`.
-- **Antisense String:** Complementary base pairing of DNA strands to simulate true biological redundancy.
-- **Phenotypic De-compilation:** The genome encodes HSL colors, spinal geometry, sensory organs (photoreceptors, chemoreceptors, mechanoreceptors), behavioral predispositions (e.g., carnivory Index), and r/K reproduction strategies.
+## I. Genome Compiler (`src/biology/dna.rs`)
+- **Sense strand:** uppercase `A-Z` string. **Antisense:** `get_complementary_string`; passed to `parse_genome` as optional second strand.
+- **Entry point:** `parse_genome(genome, antisense_input, parent_methylations) -> CreaturePhenotype` — pure and deterministic. Exposed to the frontend via the `get_fossil_phenotype` command.
+- **Promoter/terminator genes:** `extract_raw_gene_payloads` scans for promoter motifs (with degenerate biochemical-class matching, `matches_degenerate`) and terminators; payloads are hashed into normalized values (`get_payload_linear_value_offset`). Organelles (eyes, noses, tactile, photophores) and `NEU`/`SYN` brain genes are compiled this way.
+- **Chromatin:** `chromatin_state` marks positions covered by recognized promoter..terminator blocks (`COL`, `STF`, `PUL`, `SIZ`, `WAV`, `EYE`, `NOS`, `TAC`, `LUM`, `NEU`, ...; terminators `EN`/`SP`). `active_dna` is the concatenation of those positions and feeds brain-parameter hashing. Trait payloads (`COL`, `SIZ`, `STF`, ...) are extracted from the full cleaned genome.
+- **Epigenetics:** parent methylations are an input to `parse_genome` and are persisted with genomes (`methylations` columns).
+- **Mutation:** `mutate_genome` (point mutations); in the Ocean, mitosis mutates the child genome with 35% probability (`engine.rs`).
 
-## II. Neural Architecture (CTRNN Brain)
-- **Model:** Continuous-Time Recurrent Neural Network (CTRNN) mapped directly from the genome topology.
-- **Nodes & Synapses:**
-  - **Inputs:** Environmental sensors (food direction, prey proximity, light gradients, internal energy/adrenaline).
-  - **Outputs:** Physical effectors (propulsion speed, rotatory steering angle, mitotic splitting, attacking, and feeding).
-  - **Hidden layers:** Recurrent structures permitting memory and oscillation.
-- **Mathematical Integration:** Solved via Euler numerical integration on the server during each frame step:
-  $$\tau_i \frac{dy_i}{dt} = -y_i + \sum w_{ji} \sigma(y_j + \theta_j) + I_i$$
-  Where:
-  - $\tau_i$ is the node's time constant (decay).
-  - $\theta_j$ is the bias of the presynaptic node.
-  - $\sigma(x)$ is the standard sigmoid activation function.
+## II. CTRNN Brain (`src/shared/brain.rs`)
+- `execute_brain_with_learning` integrates node states with Euler steps; `compute_sensory_inputs` builds the input vector from organelles, environment and internal state. A Thalamus layer sits between sensors and hidden nodes.
+- **Activations are mixed per neuron:** `tanh` (default), `relu`, `sigmoid`, `sin`.
+- **Time constants:** `tau = (0.2 + hash * 1.8).clamp(0.1, 2.5)`.
+- **Neuron index layout** depends on organelle count: see `get_input_neurons_count`, `get_motor_thrust_id`, `get_motor_bending_id`, `get_hidden_neurons_start_id` in `dna.rs`.
+- **Learning:** Hebbian weight updates with forgetting (`hebbianLearning*` / `hebbianForgettingDecay` in `config.json`); learned weights are stored as `synapse_weights`.
 
 ## III. Evolutionary Dynamics
-- **Speciation:** Logged in the virtual `SpeciesRecord` database (`species_db.json`). When species drift genetically beyond a threshold, they are bifurcated into a new species with a registered Latin binomial name (lineage tracker).
-- **Reproduction Heuristics:** Organisms reproduce via Mitosis (splitting) if they cross their age of maturation (`matureAge`), accumulate sufficient stomach energy threshold (`reproThreshold`), and satisfy the mandatory physiological feeding guarantee (`hasEaten === true`).
+- **Species identity:** `species_id` is the genome string itself; any mutation creates a new species record (`species_records`, keyed by id, with Latin name, parent name, carnivory). There is no distance-based speciation (RV-B10, design decision pending).
+- **Mitosis condition (Ocean):** `age >= phenotype.mature_age && has_eaten && energy >= stomach_capacity * repro_threshold`; parent energy is multiplied by `reproductionSplitLossRatio`.
+- **Known defect (RV-B01, deferred):** mitosis children are only pushed to `newly_spawned_creatures` and never enter the simulated creature list. The Ocean therefore has no surviving offspring; population is maintained by restocking. Do not draw evolutionary conclusions from Ocean generation counters until this is fixed.

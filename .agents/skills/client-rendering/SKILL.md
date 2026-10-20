@@ -2,18 +2,24 @@
 name: client-rendering
 description: Design principles for HTML5 Canvas rendering, interactive camera panning/zooming, Preact Signals telemetry, and HUD styling of Pixel DNA Life.
 ---
-# client-rendering: Interactive Telemetry UI & High-FPS Canvas Rendering
+# client-rendering: Canvas Rendering, Views & Signals HUD
 
-## I. HTML5 Canvas Renderer
-- **Implementation:** `src/render/creatureRenderer.ts`.
-- **Visual Sourcing:** Since physical assets (images/textures) are absent, all rendering is procedural, drawing skeletal spines, vascular structures, organelles, and sensory cones using native Canvas 2D contexts, Bezier curves, and radial gradients.
-- **Visuals Strategy:** Visually rich, "alive", high-tech cybernetic monitor aesthetics. Highlights creature segments, feeding actions, and binary brain operations using neon glowing styles.
+## I. Structure (`frontend/`)
+- `main.ts` mounts all views once (`views/MainMenu.ts`, `OceanView.ts`, `TrainerView.ts`, `CatalogueView.ts`), then dynamically imports `ocean.ts` and `trainer.ts`; visibility follows the `currentView` signal.
+- `core/router.ts` — `navigateTo(view)` pauses loops and sends `SET_MODE` to the backend. Only the router sets the mode; `trainer.ts` must never send `SET_MODE: trainer` on load.
+- `api.ts` — `safeInvoke` wrapper around Tauri `invoke` (returns `null` outside Tauri) and a phenotype cache over `get_fossil_phenotype`.
+- `ocean.ts` / `trainer.ts` — event listeners for `"simulation-state"` and the render loops (`drawBetaSimulationFrame` via `requestAnimationFrame` in Ocean).
+- `views/UnifiedDiagnosticsPanel.ts` — shared inspector sidebar (vitals, chromatin, brain graph) used by Ocean, Trainer, Catalogue.
+- `shared/types.ts` — handwritten types; not yet derived from `bindings/` (RV-A03).
 
-## II. Cameras & Controls
-- **Interactive Camera:** Mouse drag-panning, mouse-wheel zooming, and tactile keyboard shortcuts (e.g., `R` to reset camera, arrow keys for panning).
-- **Transformation Matrix:** Uses coordinate conversion methods (`clientToWorld`, `worldToClient`) to map viewport mouse events to world coordinates.
+## II. Canvas Renderers
+- `render/creatureRenderer.ts` — procedural creature drawing (spine, organelles, sensory cones) with Canvas 2D; no image assets. Body wiggle is coupled to forward speed.
+- `render/brainRenderer.ts` — CTRNN graph with hover tooltips for neurons and synapses.
 
-## III. Preact Signals HUD Architecture
-- **State Core:** `@preact/signals-core`.
-- **Granular Updates:** The UI dashboard avoids heavy React-like virtual DOM re-renders by binding raw canvas-selected creatures to dedicated Signals (`selectedId`, `selectedEnergy`, `selectedGenome`).
-- **Telemetry Display:** High-frequency sidebar updating specimen parameters, live brain neural activation meters, and species extinction statistics.
+## III. Camera (`core/camera.ts`)
+- `InteractiveCamera`: mouse-drag panning, wheel zoom, click selection. No keyboard shortcuts are implemented.
+
+## IV. Signals HUD
+- State core: `@preact/signals-core` (`frontend/signals.ts`): `selectedId`, `selectedEnergy`, `selectedGenome`, `selectedPhenotype`, `selectedBrainActivations`, `speciesRosterSignal`, ...
+- UI is built with plain DOM (`core/styled.ts`) and signal `effect`s; no virtual DOM framework.
+- Untrusted strings (names, genomes) must be written with `textContent`, not `innerHTML` (RV-F02).

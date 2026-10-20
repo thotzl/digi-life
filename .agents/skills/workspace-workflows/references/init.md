@@ -29,7 +29,7 @@ Initialize a new project context by analyzing the codebase and setting up a stan
    - Break down the architecture into specialized skill directories (e.g., `.agents/skills/api-backend/`, `.agents/skills/ecs-engine/`).
    - Create a `SKILL.md` for each with high-level rules.
    - Create a `references/` subdirectory in each skill folder to store detailed documentation.
-   - **Legacy Support:** Scan the repository for existing `AGENTS.md` files (e.g., in subdirectories like `platforms/@abs/api/`). Do NOT delete them. Instead, add a directive in the relevant `SKILL.md` (e.g., `api-backend/SKILL.md`) to explicitly read and respect these local files as "Context Augmentations".
+   - **Legacy Support:** Scan the repository for existing `AGENTS.md` files (e.g., in subdirectories of the source roots). Do NOT delete them. Instead, add a directive in the relevant `SKILL.md` (e.g., `api-backend/SKILL.md`) to explicitly read and respect these local files as "Context Augmentations".
 
 5. **Self-Replication (Portable Workflows):**
 

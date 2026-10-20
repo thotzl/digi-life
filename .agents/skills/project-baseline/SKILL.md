@@ -5,46 +5,38 @@ description: Baseline configuration, developer toolchains, environment scripts, 
 # project-baseline: Core Architecture & Developer Toolchain
 
 ## I. Universal Directives
-- **Single Source of Truth:** All AI operations MUST respect the modular skills in `.agents/skills/` directory, which supersedes general global instructions or local config overrides (e.g., `.cursorrules`, `.gemini/`).
-- **Self-Configuration Mandate:** Register and load the local skills dynamically. Treat this repository as a fully portable AI workspace.
+- **Single Source of Truth:** All AI operations MUST respect the modular skills in `.agents/skills/`, which supersede tool-specific configs (e.g. `.cursorrules`).
+- **Current work plan:** `docs/revisit/roadmap.md` (phased plan, finding IDs `RV-*`). Open tickets live in `.tickets/{open,ongoing,closed}/`.
 
-## II. Tech Stack Discovery
-- **Runtime:** Tauri v2 Desktop Environment.
-- **Frontend Framework:** Vite v5 (TypeScript v5) serving high-fps HTML5 Canvas & Preact Signals client UI.
-- **Backend Framework:** Native, headless Rust 2024 simulation and neuroevolution core running in a parallel background thread.
-- **Persistence Layer:** Local SQLite database (`pixel_life_local.db`) for tracking training runs, HOF lineages, and active/extinct species records.
-- **Core Dependencies:**
-  - `@preact/signals-core`: Fine-grained, reactive state tracking for UI overlays.
-  - `tauri`: Cross-platform desktop application framework.
-  - `@tauri-apps/api`: Type-safe IPC bridge and command invoker.
+## II. Tech Stack
+- **Shell:** Tauri v2 desktop app. `Cargo.toml` (package `src-tauri`, edition 2024) and `package.json` both live at the repository root. There is no `src-tauri/` directory.
+- **Backend:** Rust core in `src/`:
+  - `main.rs` — Tauri builder, registers commands, spawns the simulation thread.
+  - `server/engine.rs` — simulation thread (Ocean + Trainer loop, ~60 Hz, emits `simulation-state`).
+  - `server/api.rs` — Tauri commands (`handle_client_action` + DB/catalogue/trainer queries).
+  - `biology/dna.rs` — genome compiler (`parse_genome`), mutation; `biology/trainer_engine.rs` + `biology/scenarios.rs` — trainer sandboxes and `TrainingScenarioPlugin` trait.
+  - `shared/brain.rs` (CTRNN + sensory inputs), `shared/physics.rs`, `shared/spatial_grid.rs`, `shared/map_generator.rs`, `shared/types.rs` (agent structs, `AppConfig`).
+  - `database.rs` — SQLite schema (`init_db`).
+  - `bin/cli_trainer.rs` — outdated balance CLI (3-input model, writes to the production DB; see RV-S11). Do not trust its output.
+- **Frontend:** `frontend/` — Vite 5 + TypeScript 5 + `@preact/signals-core`, no UI framework. Views in `frontend/views/`, renderers in `frontend/render/`, loop modules `frontend/ocean.ts` / `frontend/trainer.ts`, router `frontend/core/router.ts`.
+- **Persistence:** SQLite file `pixel_life_local.db` in the Tauri app data dir (resolved via `app_data_dir` at startup; a legacy `target/pixel_life_local.db` is copied once). Tables: `sessions`, `species_records`, `simulation_history`, `simulation_state`, `trainer_genomes`, `creature_catalogue`. No JSON database files exist.
+- **IPC:** Frontend -> `invoke("handle_client_action", { action: JSON.stringify({ type, ... }) })` plus the other commands in `api.rs`. Backend -> one Tauri event `"simulation-state"` whose payload `type` is a string (`INIT_STATE`, `SIM_STATE`, `TELEMETRY_TICK`, `FOOD_TICK`, `TRAINER_*`, `DATABASE_CHANGED`, `LOG_EVENT`, ...). There is no WebSocket and no network port.
+- **Types:** `ts-rs` exports Rust types to `bindings/` when `cargo test` runs. The frontend does NOT import them yet; it uses the handwritten `frontend/shared/types.ts` (RV-A03).
 
-## III. Primary Workflows & Developer Commands
-All commands must be executed directly from the **repository root directory**.
-- **Launch Desktop Application:**
-  ```bash
-  npm run tauri:dev
-  ```
-  Launches the main Ozean-Labor substrate and Evolutionary Trainer Tauri windows simultaneously.
-- **Production Frontend Build:**
-  ```bash
-  npm run build
-  ```
-  Runs `tsc` type checking and compiles client assets through Vite into `dist/` for Tauri compilation.
-- **Run Native Backend Tests:**
-  ```bash
-  npm run test:rust
-  ```
-  Executes the automated Rust unit-tests suite (DNA parsing, CTRNN brain determinism, SQLite constraints).
+## III. Developer Commands (run from repository root)
+| Command | Purpose |
+| :--- | :--- |
+| `npm run tauri:dev` | Launch the desktop app (Vite dev server + Rust build). |
+| `npm run build` | `tsc` type check + Vite build into `dist/`. |
+| `cargo test` (= `npm run test:rust`, `npm run types:generate`) | Rust unit tests; also regenerates `bindings/`. |
+| `cargo clippy` | Lint. |
+| `npm run test` | Vitest — currently there are no frontend test files. |
+
+- **Toolchain (Windows):** rustup `stable-msvc`, MSVC Build Tools, WebView2, Node.js.
+- **CI:** `.github/workflows/ci.yml` runs `npm run build`, `cargo test` and a `bindings/` drift check; `release.yml` builds installers only on `v*` tags. `.gitattributes` pins generated `bindings/` and `gen/` files to LF.
+- **Versioning:** one patch bump per closed ticket, synchronized in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, with a `CHANGELOG.md` entry referencing the ticket.
 
 ## IV. Core Mandates
-- **config.json (SSOT):** All physical, biological, and metabolic parameters are loaded dynamically from the central `config.json` file in the root directory. Hardcoding literals in Rust is prohibited.
-- **SQLite Transactions:** DB writes of Elite Champions must be performed asynchronously inside the background loop to prevent thread freezes.
-
-## V. Legacy Simulations Archive (Checkout Guide)
-The legacy, browser-based web assets (Express, standalone WebSockets, and WASD preview sandbox) have been retired in favour of the native desktop app.
-* **Deletion Commit:** `chore: remove legacy browser-based assets and archive configurations` (Commit Hash: **`dd36b90`**).
-* **Retrieval Guide:** Devs and AI agents can temporarily check out the retired web assets at any time using:
-  ```bash
-  git checkout dd36b90^
-  ```
-  Refer to `OLD_SIMS_ARCHIVE.md` in the root directory for full code structures and operational notes on the legacy views.
+- **config.json (SSOT):** Simulation parameters live in root `config.json`, loaded into `AppConfig` (`src/shared/types.rs`). The file is compiled into the binary via `include_str!`; a `config.json` in the working directory overrides it for development. Do not hardcode new tunables in Rust; add them to `config.json` + `SimulationRules`. Note: several existing rules are never read (RV-S01).
+- **No DB work in the hot loop:** Keep SQLite access out of the per-step physics path; batch writes on timers or events (RV-P01).
+- **Bindings:** When changing a `#[derive(TS)]` struct, run `cargo test` and commit the regenerated `bindings/`.

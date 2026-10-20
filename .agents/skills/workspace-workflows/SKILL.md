@@ -4,15 +4,14 @@ description: Standardized workflows for maintaining and syncing this project's A
 ---
 # workspace-workflows: Portable AI Workspace Synchronization
 
-## I. Portable Context Operations
-This workspace is designed to be fully self-contained and portable. Any AI agent entering this repository can automatically discover context and sync its knowledge structures.
+## I. Portable Context
+This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`, `.agents/state/active-task.md`). Any agent can bootstrap from it without global configuration.
 
 ## II. Workflows
-- **Workspace Initialization (`/init`):** Bootstraps the local `.agents/skills/` architecture from baseline patterns, discovers the tech stack, and sets up a customized context layout. (See `/home/torsten/.gemini/skills/core-project-workflows/references/init.md`).
-- **Context Scan & Sync (`/dump`):** Extracts system-wide signatures, indexes active APIs/data models, and verifies structural integrity. Outputs results into `.agents/skills/architecture-overview/REPO_MAP.md`. (See `/home/torsten/.gemini/skills/core-project-workflows/references/dump.md`).
+- **`/init`:** bootstrap or extend the `.agents/skills/` layout from the tech stack. Spec: `.agents/skills/workspace-workflows/references/init.md`.
+- **`/dump`:** scan `src/`, `frontend/`, `bindings/` and root configs for structural changes and sync findings into the skills. Spec: `.agents/skills/workspace-workflows/references/dump.md`.
 
-## III. References
-The original global workflow blueprints are maintained locally inside:
-- `.agents/skills/workspace-workflows/references/init.md`
-- `.agents/skills/workspace-workflows/references/dump.md`
-These local files serve as the immutable specifications for how AI agents should auto-replicate and manage this workspace's context without relying on global system configs.
+## III. Maintenance Rules
+- Skills must describe the current code. Verify every path and claim against `src/` and `frontend/` before writing it.
+- Planned work and known defects are tracked in `docs/revisit/` (IDs `RV-*`) and `.tickets/`; reference IDs instead of duplicating analysis.
+- Update `.agents/state/active-task.md` when the work focus changes.

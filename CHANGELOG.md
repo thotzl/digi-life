@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.12] - 2026-10-19
+
+### Changed
+- Agent skills, README, HANDOFF and WHITEPAPER describe the actual Tauri/Rust/SQLite architecture; revisit docs track the status of every finding (ref TCK-142).
+
 ## [1.12.11] - 2026-10-19
 
 ### Fixed

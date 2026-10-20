@@ -1,7 +1,7 @@
 ---
 id: TCK-124
 title: Radical Workspace Convergence & Legacy TS Backend Eradication
-status: open
+status: closed
 assigned: Gemini-CLI
 created_at: 2026-08-31
 ---

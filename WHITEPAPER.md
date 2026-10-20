@@ -1,6 +1,8 @@
 # Pixel DNA Life: Technical & Conceptual Whitepaper
 ## An Evolutionary Artificial Life & Competitive Multi-Agent Sandbox
 
+> **Status note:** This document describes the product vision. The global multi-agent ecosystem (Section 4), remote servers, and network replication are not implemented. The current implementation is a single-user Tauri desktop app with a Rust simulation thread, Tauri IPC events, and a local SQLite database; see `README.md` and `docs/revisit/`.
+
 ---
 
 ## 1. Executive Summary & Vision
@@ -130,11 +132,11 @@ The pinnacle of Pixel DNA Life. **The World** is a massive, persistent, multipla
 Pixel DNA Life utilizes a modern, decoupled web architecture designed to support heavy physical simulations and real-time multiplayer streaming without client bottlenecking.
 
 ### 5.1 Headless Server Engine
-To ensure that complex physics and neural calculations are not throttled by browser rendering or tab-suspension, the entire simulation engine is designed as a **headless Node.js backend**.
+To ensure that complex physics and neural calculations are not throttled by browser rendering or tab-suspension, the entire simulation engine is designed as a **headless Rust simulation thread** inside the Tauri process.
 - **Physics Core:** Calculated in ungedrosselt (warp-speed) cycles using an optimized Spatial Grid partition for instant collision detection.
 - **Decoupled Main Loop:** The server performs fast physical ticks independent of the visual framerate, persisting structural logs and fitness histories directly into a high-performance database.
 
-### 5.2 Real-time WebSocket Replication & Canvas Client
-- **Sub-millisecond WebSocket Protocol (`ws`):** The server replicates positions, physical coordinates, and neural potential states to connected client frontends.
+### 5.2 Real-time Tauri Event Replication & Canvas Client
+- **Tauri IPC events:** The Rust simulation thread emits positions, physical coordinates, and neural states to the webview through the `simulation-state` event (throttled to 25 Hz); the webview sends user actions via Tauri commands. Network replication to remote clients is part of the vision, not implemented.
 - **Passive Canvas Render Engine:** The web frontend (Vite, TypeScript, HTML5 Canvas, Preact Signals) acts as a passive consumer. It receives the high-frequency state replication from the server and renders it smoothly at high framerates.
-- **Live Diagnostics HUD:** Dynamic UI overlays (Zustand, Preact Signals) allow real-time hover-diagnostics and neural activation visualization, drawing custom brain diagrams directly from the live websocket data stream.
+- **Live Diagnostics HUD:** Dynamic UI overlays (Preact Signals) allow real-time hover-diagnostics and neural activation visualization, drawing custom brain diagrams directly from the live event stream.

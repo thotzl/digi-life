@@ -1,124 +1,120 @@
 # 🧬 Pixel DNA Life - Native Desktop Lab
 
-A high-performance, fully native 2D biomorphic ecosystem and reinforcement learning neuroevolution trainer. Built as a native desktop application using **Tauri v2**, **Rust 2024**, **SQLite**, and **Preact Signals**.
+A native 2D biomorphic ecosystem and neuroevolution trainer, built as a desktop application with **Tauri v2**, **Rust 2024**, **SQLite**, and **Preact Signals**.
+
+Current status and work plan: [`docs/revisit/roadmap.md`](docs/revisit/roadmap.md).
 
 ---
 
 ## 🚀 Execution Commands
 
-All commands are executed directly from the **repository root directory**. There is no need to enter subfolders.
+All commands are executed from the **repository root directory** (`Cargo.toml` and `package.json` both live there).
 
 | Command | Action |
 | :--- | :--- |
-| `npm run tauri:dev` | **Launch Tauri Desktop Application** (Launches the main Ozean-Labor & Evolutionary Trainer) |
-| `npm run build` | **Compile Production Frontend Bundle** (Prepares HTML assets for Tauri compile) |
-| `npm run types:generate` | **Auto-Generate Types from Rust Backend** (Triggers TS-RS compilation to export types) |
-| `npm run test:all` | **Run Unified Verification Test Suite** (Funs Vitest tests, Cargo tests, and balance sim checks) |
-| `cargo test --manifest-path src-tauri/Cargo.toml` | **Run Native Backend Unit Tests** (Tests DNA parsing, CTRNN brain determinism, and database schema) |
+| `npm run tauri:dev` | **Launch the desktop application** (Vite dev server + Rust build) |
+| `npm run build` | **Type-check and build the frontend** (`tsc` + Vite into `dist/`) |
+| `cargo test` | **Run Rust unit tests** (DNA compiler, CTRNN brain, database schema); also regenerates `bindings/` |
+| `npm run types:generate` | Alias for `cargo test` (ts-rs export) |
+| `npm run test` | Vitest (configured; no frontend test files exist yet) |
+
+### Windows developer setup
+1. Install Rust via [rustup](https://rustup.rs) with the `stable-msvc` toolchain.
+2. Install the **Visual Studio C++ Build Tools** (MSVC + Windows SDK).
+3. Ensure **Microsoft Edge WebView2** is present (preinstalled on Windows 10/11).
+4. Install Node.js, then `npm ci` and `npm run tauri:dev`.
 
 ---
 
 ## 📁 Repository Architecture & SSOT
 
-The repository is structured cleanly around a unified configuration model:
-
-*   **`config.json` (Single Source of Truth):** The central configuration file. All biological decay constants, photosynthesis gains, biting damage, mitosis thresholds, and fluid drag multipliers are loaded dynamically from this file at boot by the Rust backend.
-*   **`src-tauri/` (Native Rust Core):**
-    *   `src/main.rs`: High-performance 60Hz physics, collision partitioning, and spatial grid loops.
-    *   `src/biology/trainer_engine.rs`: Parallel sandbox stepper, 60Hz brain integrations, and standstill/circular penalties.
-    *   `src/shared/physics.rs`: Decoupled biomorphic steering equations and boundary reflections.
-    *   `src/database.rs`: SQLite session, species extinction tracking, and champion genome persistence.
-*   **`src/` (Webview HUD UI):**
-    *   `src/tauri_ocean.ts`: Real-time canvas telemetry rendering and inspector panel.
-    *   `src/tauri_trainer.ts`: Lightweight spectator renderer and slider action dispatches.
-*   **`OLD_SIMS_ARCHIVE.md` (Legacy Docs):** Contains documentation and commit history details for the legacy, browser-based web assets that have been successfully retired.
-
----
-
-## 🔄 Automatic TypeScript Type Generation (TS-RS)
-
-To completely eliminate manual API sync errors and enforce 100% stable communication over the Tauri IPC bridge, this workspace integrates **`ts-rs`** inside the Rust core.
-
-### How it works:
-1. **Annotated Rust Structs:** Structures such as `CreatureAgent`, `FoodSpore`, and `CreaturePhenotype` are decorated with the `#[derive(TS)]` and `#[ts(export)]` macros.
-2. **On-Test Compilation:** Whenever backend tests are executed (`npm run types:generate`), the Rust compiler automatically analyzes the fields (including nested structs and enums) and exports bit-perfect TypeScript interfaces into `src-tauri/bindings/`.
-3. **Frontend Type Adapter:** The frontend library at `src/shared/types.ts` is configured as a clean type-adapter that re-exports all 12 auto-generated files from `src-tauri/bindings/` while maintaining purely client-side payload definitions.
-
-To manually trigger a type regeneration cycle, run:
-```bash
-npm run types:generate
-```
+*   **`config.json` (Single Source of Truth):** Simulation parameters (metabolism, photosynthesis, biting, mitosis, drag, world generation). It is compiled into the binary; a `config.json` in the working directory overrides it during development.
+*   **`src/` (Rust core):**
+    *   `main.rs`: Tauri setup, command registration, starts the simulation thread.
+    *   `server/engine.rs`: Ocean and Trainer simulation loop (~60 Hz, warp capped at 35 steps per frame), emits the `simulation-state` event.
+    *   `server/api.rs`: Tauri commands (`handle_client_action`, species, trainer runs, catalogue).
+    *   `biology/dna.rs`: Genome compiler (`parse_genome`) and mutation.
+    *   `biology/trainer_engine.rs`, `biology/scenarios.rs`: Trainer sandboxes and scenario plugins.
+    *   `shared/brain.rs`, `shared/physics.rs`, `shared/spatial_grid.rs`, `shared/map_generator.rs`: CTRNN, kinematics, neighbor grid, world generation.
+    *   `database.rs`: SQLite schema.
+*   **`frontend/` (Webview UI):**
+    *   `main.ts`, `core/router.ts`: View mounting and navigation (Main Menu, Ocean, Trainer, Catalogue).
+    *   `ocean.ts`, `trainer.ts`: Event handling and render loops.
+    *   `render/`: Procedural creature and brain renderers. `views/`: UI panels.
+*   **IPC:** The frontend calls `invoke("handle_client_action", { action })` and other commands; the backend pushes all updates through a single Tauri event, `simulation-state`.
+*   **Database:** `pixel_life_local.db` in the Tauri app data directory (Windows: `%APPDATA%\com.pixeldna.life\`). An older `target/pixel_life_local.db` is copied there once on first start.
 
 ---
 
-## 🧬 Hybrid Sequence Genetics & Epigenetic GRN Compiler
+## 🔄 TypeScript Type Generation (TS-RS)
 
-This application features a highly advanced, biologically authentic genetic compiler inside the native Rust core. Rather than mapping genes to fixed positional indices (coordinates), the engine uses a hybrid sequence-based paradigm:
+Rust structs such as `CreatureAgent`, `FoodSpore`, and `CreaturePhenotype` carry `#[derive(TS)]` / `#[ts(export)]`. Running `cargo test` (or `npm run types:generate`) exports TypeScript interfaces into `bindings/`.
 
-### 1. Epigenetic Basics & CTRNN Brain (Filtered via Euchromatin)
-*   **The Active Chromatin State (`chromatin_state`):** Calculated dynamically via a transgenerational, 3-wave epigenetic Hox cascade wave loop that propagates somatic methylations and opens/closes gene loops on the DNA Helix.
-*   **Basics Filtration:** All physical and metabolic variables (muscle stiffness, colors, base size, wiggling speed) and the entire **20-synapse temporal CTRNN brain** are compiled strictly from the **`active_dna` string** (containing only the character positions where `chromatin_state[idx] == true`).
-*   **Lamarckian Learning:** Epigenetic chromatin opening/closing shifts the active genome, causing the creature's wiggling synapses and body dimensions to shift dynamically and fluidly in real-time.
-
-### 2. Emergent Specialized Organs (Marker-Autonomously)
-*   Specialized sensory organelles (Eyes, Noses, Tactile Fühlers, Biolum Photophores) are transcribed directly from the raw `clean_genome` using a robust, any-length promoter-payload model.
-*   **No Payload Constraints:** If a promoter (e.g. `"EYE"`) and terminator (`"EN"`) are found anywhere on the strand (of any length!), it compiles successfully into a unique organ. Properties like scale, spinal position, and angle are computed deterministically by hashing the extracted payload.
-*   **Pristine Sandboxing:** Pure, starting wildtypes are born completely blind and organless, with specialized sensory organs emerging purely randomly over generations through natural selection and mutation.
+The frontend does **not** consume these bindings yet; it uses the handwritten `frontend/shared/types.ts`. Switching to `bindings/` is planned (roadmap Phase 1, RV-A03).
 
 ---
 
-## 🧪 Testing Standards & Guidelines
+## 🧬 Sequence-Based Genetics & CTRNN Brain
 
-Our native backend is covered by an automated test suite verifying core biological and physical determinism:
+The genome compiler in `src/biology/dna.rs` uses a sequence-based model instead of fixed positional genes:
 
-*   **Execution:** Run `cargo test --manifest-path src-tauri/Cargo.toml` from the repository root.
-*   **Decoded Phenotypic Parity:** Verified via `biology::dna::tests` to prove that the Rust DNA parser decodesgenomes exactly identical to the TS specifications.
-*   **Neuron Determinism:** Verified via `shared::brain::tests::test_execute_brain_determinism` to ensure that CTRNN temporal integrations produce bit-perfect deterministic neural potentials across compiler optimizations.
-*   **Relational Schema Integrity:** Verified via `database::tests` to ensure that cascading foreign key constraints are honored inside SQLite databases.
+### 1. Promoter/terminator genes
+*   Genes are recognized by promoter motifs (e.g. `COL`, `STF`, `EYE`, `NEU`) followed by a payload and a terminator (`EN`/`SP`), with degenerate matching by biochemical character class.
+*   Payloads of any length are hashed into normalized values that drive colors, stiffness, size, wave parameters, sensory organelles, and brain parameters.
+*   Starting wildtypes can be organless; sensory organs (eyes, noses, tactile organs, photophores) emerge through mutation.
+
+### 2. Chromatin and CTRNN brain
+*   Positions covered by recognized genes form the open chromatin (`chromatin_state`); the resulting `active_dna` feeds brain-parameter hashing.
+*   The CTRNN (`src/shared/brain.rs`) mixes `tanh`, `relu`, `sigmoid`, and `sin` neurons, with time constants in `[0.1, 2.5]`, a Thalamus preprocessing layer, and Hebbian weight learning during lifetime.
+
+---
+
+## 🧪 Testing
+
+*   **Execution:** `cargo test` from the repository root.
+*   **Genome compiler:** `biology::dna::tests` cover payload extraction, degenerate matching, mutation robustness, neuro-generation, pruning, and Hox symmetry.
+*   **Neuron determinism:** `shared::brain::tests::test_execute_brain_determinism` checks that identical inputs produce identical neural states.
+*   **Schema:** `database::tests` run against an in-memory SQLite database (schema, catalogue CRUD, column migration).
+*   **CI:** `.github/workflows/ci.yml` runs `cargo test` and `npm run build`; `release.yml` runs only on `v*` tags.
 
 ---
 
 ## 🖥️ End-User Installations & Standalone Binaries
 
-The compiled production installers are compiled automatically in the cloud on every tag push via **GitHub Actions**. End-users do **not** need to install any compilation or developer dependencies (`apt-get`, `cargo`, `node`, etc.) to run the standalone binaries:
+Installers are built by **GitHub Actions** (`release.yml`) when a `v*` tag is pushed. End-users do **not** need any developer dependencies to run them:
 
 ### 🍏 macOS (Apple Silicon & Intel)
 *   **Format:** `.dmg` (Disk Image) / `.app` (App Bundle)
 *   **Launch:** Open the `.dmg`, drag **Pixel DNA Life** to your `Applications` folder, and double-click to launch.
-*   **Webview Engine:** Uses Apple's native Safari-based **WKWebView** pre-installed on all macOS installations. No dependencies required.
+*   **Webview Engine:** Uses the system **WKWebView**.
 
 ### 🪟 Windows (10 & 11)
 *   **Format:** `.exe` (Standalone Installer) / `.msi` (Windows Installer)
 *   **Launch:** Double-click the `.exe` or `.msi` file to install and launch.
-*   **Webview Engine:** Uses Microsoft's native **Edge WebView2**. It is pre-installed on 99% of Windows 10/11 machines. If missing, the installer will automatically download and install it in the background.
+*   **Webview Engine:** Uses Microsoft **Edge WebView2**, preinstalled on current Windows 10/11. If missing, the installer downloads it.
 
 ### 🐧 Linux (Debian, Ubuntu, Mint, etc.)
 *   **Format:** `.deb` (Debian Package) / `.AppImage` (Portable Standalone Binary)
-*   **Launch (Debian/Ubuntu):** Install the `.deb` package via double-click in your software manager or run `sudo apt install ./pixel-life.deb`. This automatically resolves and downloads any runtime system dependencies.
-*   **Launch (AppImage):** Right-click the `.AppImage` file, check **"Allow executing file as program"** (or run `chmod +x pixel-life.AppImage`), and double-click to run!
-*   **Webview Engine:** Uses the system-wide **WebKitGTK** layout engine.
+*   **Launch (Debian/Ubuntu):** Install the `.deb` package via your software manager or `sudo apt install ./pixel-life.deb`.
+*   **Launch (AppImage):** Mark the file as executable (`chmod +x pixel-life.AppImage`) and run it.
+*   **Webview Engine:** Uses the system **WebKitGTK**.
 
 ---
 
 ## 🔧 Developer & User Troubleshooting Guide
 
-### 1. Developer Compilation Missing Dependencies (Linux)
-If compilation or `npm run tauri:dev` fails on your local Linux developer machine with missing C-library headers, install the compilation toolchain:
+### 1. Missing build dependencies (Linux)
+If `npm run tauri:dev` fails with missing C-library headers:
 ```bash
 sudo apt-get update
 sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
-### 2. Live Changes Not Reflecting in Webview (Linux)
-Webview assets are heavily cached by WebKitGTK on Linux under `~/.cache/webkitgtk-4.1`. If your TypeScript edits do not reflect in the app:
-*   Right-click anywhere inside the Tauri application window, select **"Inspect"** (or press `Ctrl+Shift+I` to open DevTools), go to the **Network** tab, and check **"Disable Cache"**.
-*   Alternatively, purge the local WebKitGTK cache folder:
-    ```bash
-    rm -rf ~/.cache/webkitgtk-4.1
-    ```
-
-### 3. Database Schema Mismatch or Startup Freezes
-If you experience a thread freeze on startup after changing structural Rust database models, purge the previous SQLite file to force a clean, migrated database rebuild:
+### 2. Live changes not reflecting in the webview (Linux)
+WebKitGTK caches assets under `~/.cache/webkitgtk-4.1`. Open DevTools (`Ctrl+Shift+I`), enable **Disable Cache** in the Network tab, or purge the cache:
 ```bash
-rm -f pixel_life_local.db
+rm -rf ~/.cache/webkitgtk-4.1
 ```
+
+### 3. Database schema mismatch or startup freezes
+Close the app and delete `pixel_life_local.db` (plus `-wal`/`-shm` files if present) from the Tauri app data directory. The schema is recreated on next start. This deletes all species, trainer runs, and catalogue entries.

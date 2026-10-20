@@ -4,6 +4,7 @@ title: Sync Docs, Agent Skills and Ticket Status with Actual Architecture
 status: open
 assigned: Claude Code
 created_at: 2026-10-19
+closed_at: 2026-10-19
 revisit: RV-X01, RV-X02, RV-X03, RV-X04, RV-X05
 ---
 
@@ -20,3 +21,10 @@ Project skills, README, HANDOFF and active-task describe a retired architecture 
 
 ## Acceptance
 - No reference to non-existent files or architecture in the agent context.
+
+## Verification
+- Skills, README, HANDOFF, WHITEPAPER, active-task rewritten to the actual architecture (subagent, reviewed and updated for TCK-137/139/140/162).
+- Tickets TCK-124/125 closed, TCK-123 ongoing; .gitignore/.aiignore cleaned.
+- docs/revisit: every RV-* finding carries a status (done commit or pool ticket); new finding RV-B11.
+- Smoke test: `npm run tauri:dev` starts, DB in AppData (WAL), config loaded, handshake OK, 0 errors in log.
+- Second app start restored 15 creatures from the AppData database; Trainer grid built (16 chambers); log still free of errors.

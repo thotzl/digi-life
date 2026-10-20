@@ -16,7 +16,7 @@ Tauri main.rs
 
 ---
 
-## RV-A01 · P1 · Engine ist eine einzige God-Closure
+## RV-A01 · P1 · Engine ist eine einzige God-Closure — **Status: → Pool TCK-156**
 
 **Ort:** `src/server/engine.rs:19-1989`
 
@@ -41,7 +41,7 @@ fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri-Windo
 
 ---
 
-## RV-A02 · P1 · Stringly-typed IPC in beide Richtungen
+## RV-A02 · P1 · Stringly-typed IPC in beide Richtungen — **Status: → Pool TCK-157**
 
 **Befund:**
 - Frontend → Rust: `invoke("handle_client_action", { action: JSON.stringify({type: "..."}) })` — doppelt serialisiert, ungeprüft. Unbekannte Typen und fehlende Felder werden still ignoriert (`as_u64()` → `None`).
@@ -55,7 +55,7 @@ fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri-Windo
 
 ---
 
-## RV-A03 · P1 · ts-rs-Bindings werden generiert, aber nicht verwendet
+## RV-A03 · P1 · ts-rs-Bindings werden generiert, aber nicht verwendet — **Status: → Pool TCK-157**
 
 **Ort:** `bindings/*.ts` (17 Dateien) vs. `frontend/shared/types.ts` (210 LOC, handgeschrieben)
 
@@ -65,7 +65,7 @@ fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri-Windo
 
 ---
 
-## RV-A04 · P2 · Keine geteilte Ressourcen-/Pfad-Verwaltung
+## RV-A04 · P2 · Keine geteilte Ressourcen-/Pfad-Verwaltung — **Status: ✔ cad6976 (TCK-137)**
 
 **Befund:** Jeder der 15 Commands ruft `init_db(DB_PATH)` → neue Connection, `PRAGMA`, 6× `CREATE TABLE IF NOT EXISTS`, Migrationscheck. Engine-Thread hält eine eigene Connection. Kein WAL-Modus → Lese-Commands und Engine-Writes können sich blockieren (`SQLITE_BUSY` → als String-Error an UI).
 
@@ -73,7 +73,7 @@ fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri-Windo
 
 ---
 
-## RV-A05 · P2 · Doppelte Wahrheit über Weltgrößen und Konstanten
+## RV-A05 · P2 · Doppelte Wahrheit über Weltgrößen und Konstanten — **Status: → Pool TCK-156**
 
 - `19200 × 10800` hart in Rust (`engine.rs:30`, `trainer_engine.rs:115`) und TS (5 Stellen `[verifiziert]`).
 - `"/ 25"` Populationsanzeige hart in `ocean.ts:586`.
@@ -83,6 +83,6 @@ fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri-Windo
 
 ---
 
-## RV-A06 · P3 · Gemischte Einheiten bei Zeitstempeln
+## RV-A06 · P3 · Gemischte Einheiten bei Zeitstempeln — **Status: → Pool TCK-157**
 
 `now_millis` heißt überall so, ist aber an 9 Stellen Sekunden (`as_secs`), an 2 Stellen Millisekunden; `creature_catalogue.created_at` ist ein SQLite-Text-Timestamp. Siehe RV-D04.

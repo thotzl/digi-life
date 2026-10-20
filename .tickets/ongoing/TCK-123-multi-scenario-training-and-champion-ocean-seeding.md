@@ -1,7 +1,7 @@
 ---
 id: TCK-123
 title: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocean Seeding
-status: active
+status: ongoing
 assigned: Gemini-CLI
 created_at: 2026-08-31
 ---

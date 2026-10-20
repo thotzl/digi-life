@@ -4,7 +4,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B01 · P0 · Mitose-Nachkommen werden nie simuliert `[statisch]`
+## RV-B01 · P0 · Mitose-Nachkommen werden nie simuliert `[statisch]` — **Status: → Pool TCK-143**
 
 **Ort:** `src/server/engine.rs:1337-1402`, Client `frontend/ocean.ts:525-564`
 
@@ -16,7 +16,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B02 · P0 · Wandreflexion links/oben schiebt in die Wand `[statisch]`
+## RV-B02 · P0 · Wandreflexion links/oben schiebt in die Wand `[statisch]` — **Status: ✔ 0afd463 (TCK-135)**
 
 **Ort:** `src/shared/physics.rs:186-189` und `:198-201`
 
@@ -28,7 +28,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B03 · P0 · DB-Pfad relativ zum CWD und unter `target/` `[statisch]`
+## RV-B03 · P0 · DB-Pfad relativ zum CWD und unter `target/` `[statisch]` — **Status: ✔ cad6976 (TCK-137)**
 
 **Ort:** `src/database.rs:4` — `DB_PATH = "target/pixel_life_local.db"`
 
@@ -40,7 +40,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B04 · P0 · `config.json` wird im Release nicht gefunden; Fallback weicht ab `[statisch]`
+## RV-B04 · P0 · `config.json` wird im Release nicht gefunden; Fallback weicht ab `[statisch]` — **Status: ✔ 5afd6d1 (TCK-138)**
 
 **Ort:** `src/shared/types.rs:179-243`, `tauri.conf.json` (keine `bundle.resources`)
 
@@ -52,7 +52,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B05 · P1 · Trainer: `epoch_ticks` pro Sandbox wird nie erhöht → Speed-Bonus konstant `[statisch]`
+## RV-B05 · P1 · Trainer: `epoch_ticks` pro Sandbox wird nie erhöht → Speed-Bonus konstant `[statisch]` — **Status: ✔ 1849bab (TCK-136)**
 
 **Ort:** `src/biology/trainer_engine.rs:208`, Fitness `src/biology/scenarios.rs:150` und `:334`
 
@@ -64,7 +64,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B06 · P1 · Motion-Vision überschreibt den Hauptkanal für Fleisch-Erkennung `[statisch]`
+## RV-B06 · P1 · Motion-Vision überschreibt den Hauptkanal für Fleisch-Erkennung `[statisch]` — **Status: → Pool TCK-144**
 
 **Ort:** `src/shared/brain.rs:54-72` vs. `:217-243`
 
@@ -76,7 +76,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B07 · P1 · Beißen bringt dem Angreifer keine Energie `[verifiziert: Key ungenutzt]`
+## RV-B07 · P1 · Beißen bringt dem Angreifer keine Energie `[verifiziert: Key ungenutzt]` — **Status: → Pool TCK-145**
 
 **Ort:** `src/server/engine.rs:1290-1323`; `bitingBaseEnergyGain` wird nirgends gelesen
 
@@ -86,7 +86,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B08 · P1 · Lebensdauer ignoriert Config `[statisch]`
+## RV-B08 · P1 · Lebensdauer ignoriert Config `[statisch]` — **Status: → Pool TCK-146**
 
 **Ort:** `src/server/engine.rs:1191` — `max_age_ticks = mature_age * 12`
 
@@ -94,7 +94,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B09 · P2 · UI sendet Actions, die die Engine nicht kennt `[statisch]`
+## RV-B09 · P2 · UI sendet Actions, die die Engine nicht kennt `[statisch]` — **Status: teilweise ✔ 625695d (Logging, TCK-141) · Rest → Pool TCK-147**
 
 **Ort:** `frontend/ocean.ts:759` (`SPAWN_FOOD`), `frontend/ocean.ts:535` (`CLIENT_LOG`); Engine-Match `engine.rs:1003` `_ => {}`
 
@@ -104,7 +104,7 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 
 ---
 
-## RV-B10 · P2 · Species-Identität = vollständiger Genom-String; Latin-Name UNIQUE `[statisch]`
+## RV-B10 · P2 · Species-Identität = vollständiger Genom-String; Latin-Name UNIQUE `[statisch]` — **Status: → Pool TCK-148**
 
 **Ort:** `engine.rs` (alle `species_id: genome.clone()`), `database.rs:33` (`latin_name ... UNIQUE`)
 
@@ -113,3 +113,13 @@ Regel für alle Fixes hier: erst Repro-Test (Rust-Unit-Test oder Headless-Step),
 **Folge:** Roster ist weder biologisch sinnvoll noch vollständig; Prädations-Regel "nicht dieselbe Species beißen" greift nur bei exakten Klonen.
 
 **Fix:** Speziation über genetische Distanz zum Gründer (wie in Skill `biology-dna` ursprünglich beschrieben), Species-ID als UUID/Counter, Latin-Name nicht UNIQUE. Design-Entscheidung — gehört in Phase 1.
+
+---
+
+## RV-B11 · P1 · Latin-Name nicht deterministisch `[verifiziert]` — **Status: ✔ beef2fb (TCK-162)**
+
+**Ort:** `src/biology/dna.rs`, `derive_ecological_metrics`
+
+**Befund (gefunden beim Golden-Master in TCK-140):** Organtypen wurden in einer `HashMap` gezählt und nur nach Anzahl sortiert. Bei Gleichstand entschied die zufällige Iterationsreihenfolge — dasselbe Genom hieß bei wiederholtem Parsen z. B. einmal `... ciliatum` und einmal `... thermum`.
+
+**Fix:** Feste Typreihenfolge (light, chem, kinetic, thermal) als Tie-Break. Test `test_latin_name_is_deterministic`.

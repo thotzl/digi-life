@@ -4,15 +4,15 @@ Schema: `src/database.rs` — 6 Tabellen: `sessions`, `species_records`, `simula
 
 ---
 
-## RV-D01 · P0 · DB-Speicherort → siehe RV-B03
+## RV-D01 · P0 · DB-Speicherort → siehe RV-B03 — **Status: ✔ cad6976 (TCK-137)**
 
-## RV-D02 · P1 · Migrationen sind ad hoc und laufen bei jedem Command
+## RV-D02 · P1 · Migrationen sind ad hoc und laufen bei jedem Command — **Status: → Pool TCK-159**
 
 `init_db` wird bei jedem Tauri-Command ausgeführt (RV-A04). Migrationen bestehen aus `CREATE TABLE IF NOT EXISTS` + einem manuellen `PRAGMA table_info`-Check für zwei Spalten; Fehler bei `ALTER TABLE` werden verworfen (`let _ =`). Kein Schema-Versionsfeld.
 
 **Ziel:** `PRAGMA user_version` + nummerierte Migrationen, einmal beim Start in einer Transaktion (Skill `core-database-safety`).
 
-## RV-D03 · P1 · Unbegrenztes Wachstum
+## RV-D03 · P1 · Unbegrenztes Wachstum — **Status: → Pool TCK-159**
 
 - `species_records`: eine Zeile pro einzigartigem Genom (RV-B10). Nach RV-B01-Fix potenziell tausende Zeilen/Stunde, und jede wird pro Step gescannt (RV-P01).
 - `trainer_genomes`: pro Generation `elite_count` Zeilen inkl. JSON-Synapsengewichten (hunderte Floats), nie bereinigt.
@@ -21,7 +21,7 @@ Schema: `src/database.rs` — 6 Tabellen: `sessions`, `species_records`, `simula
 
 **Ziel:** Retention-Regeln (HoF Top-N pro Run behalten, Rest löschen), `simulation_history` entweder nutzen (Charts) oder entfernen.
 
-## RV-D04 · P2 · Inkonsistente Zeitstempel
+## RV-D04 · P2 · Inkonsistente Zeitstempel — **Status: → Pool TCK-159**
 
 | Tabelle/Spalte | Einheit |
 | :--- | :--- |
@@ -32,7 +32,7 @@ Schema: `src/database.rs` — 6 Tabellen: `sessions`, `species_records`, `simula
 
 **Ziel:** Ein Typ (Unix-ms als INTEGER), eine Helper-Funktion.
 
-## RV-D05 · P2 · Fehler werden flächig verschluckt
+## RV-D05 · P2 · Fehler werden flächig verschluckt — **Status: teilweise ✔ cad6976 (DB-Writes/Zeilen geloggt, TCK-137) · JSON-Fallbacks → Pool TCK-159**
 
 - Engine: praktisch alle `conn.execute` mit `let _ =` (≈ 25 Stellen).
 - API: `for row in rows { if let Ok(item) = row ... }` — fehlerhafte Zeilen verschwinden still.
@@ -40,7 +40,7 @@ Schema: `src/database.rs` — 6 Tabellen: `sessions`, `species_records`, `simula
 
 **Ziel:** Fehler loggen (mindestens `eprintln!` mit Kontext), API-Commands geben Fehler zurück.
 
-## RV-D06 · P3 · Toter/irreführender Zustand
+## RV-D06 · P3 · Toter/irreführender Zustand — **Status: → Pool TCK-159**
 
 - `apply_champion` schreibt `progenitor_genome` in `simulation_state` — wird nirgends gelesen.
 - `sessions` existiert nur, um einen Foreign Key zu erfüllen (`desktop-session-001` hart codiert).

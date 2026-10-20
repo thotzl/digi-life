@@ -2,6 +2,8 @@
 
 Stand: 2026-10-19 · Basis-Commit: `998244e` (v1.12.2) · Erstellt durch statische Tiefenanalyse + Frontend-Build-Verifikation.
 
+**Status Phase 0 (2026-10-19, v1.12.3 – v1.12.12):** umgesetzt (TCK-134 – TCK-142, TCK-162). Jeder Befund trägt in seiner Überschrift den Status (`✔ <commit>` oder `→ Pool TCK-…`). Nicht-Scope-Punkte liegen als Pool-Tickets TCK-143 – TCK-161 (`priority: pool`, Entscheidung offen).
+
 Zweck: Sammeln, **was vor der Weiterentwicklung repariert/umgebaut werden muss** und **was danach weiterentwickelt wird**. Kein Overhaul um seiner selbst willen — jeder Punkt muss einen konkreten Defekt, ein Risiko oder einen messbaren Blocker benennen.
 
 ## Index

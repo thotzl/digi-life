@@ -6,11 +6,11 @@ Struktur: `main.ts` mountet 4 Views (DOM per Template-Strings), danach dynamisch
 
 ---
 
-## RV-F01 · P1 · Handgeschriebene Typen statt ts-rs → siehe RV-A03
+## RV-F01 · P1 · Handgeschriebene Typen statt ts-rs → siehe RV-A03 — **Status: → Pool TCK-157**
 
 `any` kommt ~41× vor `[verifiziert]`, überwiegend an der IPC-Grenze (`event: any`, `safeInvoke(): Promise<any>`). Mit typisierten Events (RV-A02) fallen die meisten weg.
 
-## RV-F02 · P1 · `innerHTML` mit Daten aus DB/Nutzereingabe bei deaktivierter CSP
+## RV-F02 · P1 · `innerHTML` mit Daten aus DB/Nutzereingabe bei deaktivierter CSP — **Status: teilweise ✔ 625695d (Escaping, TCK-141) · CSP → Pool TCK-161**
 
 **Ort:** 35 `innerHTML`-Zuweisungen, davon 11 mit Template-Interpolation `[verifiziert]`; `tauri.conf.json` → `"csp": null`.
 
@@ -18,7 +18,7 @@ Latin-Namen, Catalogue-Namen (vom Nutzer umbenennbar via `rename_catalogue_creat
 
 **Fix:** `textContent` für Datenfelder bzw. Escape-Helper; CSP setzen (`default-src 'self'`).
 
-## RV-F03 · P1 · Legacy-Genommodell in der UI
+## RV-F03 · P1 · Legacy-Genommodell in der UI — **Status: → Pool TCK-160**
 
 **Ort:** `frontend/signals.ts` — `getLocusDescription(i)` beschreibt ein **positionsbasiertes** Genom (Locus 0 = Symmetrie, Locus 7 = Radius, ...), `computeActiveGeneSpans` sucht Start-Motive `"ST"`/`"GO"`. Der Rust-Compiler ist seit TCK-116 promoter-basiert (`COL`, `SIZ`, `EYE`, ...).
 
@@ -26,27 +26,27 @@ Latin-Namen, Catalogue-Namen (vom Nutzer umbenennbar via `rename_catalogue_creat
 
 **Fix:** Gene-Spans inkl. Promotor-Name vom Backend liefern (`parse_genome` kennt sie bereits, `epigenetic_logs` enthält sie als Text) — Client nur noch rendern (SSOT).
 
-## RV-F04 · P2 · Fehler werden an der IPC-Grenze verschluckt
+## RV-F04 · P2 · Fehler werden an der IPC-Grenze verschluckt — **Status: → Pool TCK-160**
 
 `safeInvoke` fängt jeden Fehler, loggt `console.warn` und liefert `null`. Gemischt mit direktem `invoke` (ocean.ts). Kein UI-Feedback bei fehlgeschlagenem Speichern/Löschen.
 
-## RV-F05 · P2 · Seiteneffekt-Module und doppelte Event-Listener
+## RV-F05 · P2 · Seiteneffekt-Module und doppelte Event-Listener — **Status: → Pool TCK-160**
 
 `ocean.ts` und `trainer.ts` registrieren beim Import globale `listen("simulation-state")`-Handler, die nie abgemeldet werden, und verarbeiten jeweils alle Event-Typen. Navigation steuert Backend-Modus über 3–4 fire-and-forget-Actions (`router.ts:16-29`) ohne Bestätigung → Race-Fenster zwischen Moduswechsel und Telemetrie.
 
 **Ziel (Phase 1, minimal):** pro View `mount()/unmount()` mit Listener-Lifecycle; Moduswechsel als ein Command mit Rückgabe.
 
-## RV-F06 · P2 · Doppelter Preview-Modal-Code
+## RV-F06 · P2 · Doppelter Preview-Modal-Code — **Status: → Pool TCK-160**
 
 Catalogue-Preview mit eigenem `requestAnimationFrame`-Loop existiert in `ocean.ts:~300` und `UnifiedDiagnosticsPanel.ts:~821` (laut HANDOFF "identisch"). Eine Komponente.
 
-## RV-F07 · P3 · Unbenutzte/fehlplatzierte Abhängigkeiten
+## RV-F07 · P3 · Unbenutzte/fehlplatzierte Abhängigkeiten — **Status: teilweise ✔ 625695d (zustand entfernt, TCK-141) · Rest → Pool TCK-161**
 
 - `zustand` in `dependencies`, nirgends importiert `[verifiziert]`.
 - `concurrently`, `tsx` in devDependencies ohne Script-Nutzung.
 - Stryker-Mutation-Testing konfiguriert ohne Tests (siehe RV-T02).
 - `ActiveView` enthält `"creator"`, ohne View.
 
-## RV-F08 · P3 · Hartkodierte Werte
+## RV-F08 · P3 · Hartkodierte Werte — **Status: → Pool TCK-160**
 
 Weltgröße 19200/10800 (5×), Populationsanzeige `/ 25`, Fallback `selectedAge = 2700` für Fossilien. → aus `INIT_STATE`/Config.
