@@ -1,6 +1,6 @@
-# Handover: Implement Epic TCK-171 (Training Track)
+# Active task: Implement Epic TCK-171 (Training Track)
 
-Last updated: 2026-10-21. Handover note, not an instruction; the user's request defines the session task. If this note contradicts the tickets, the tickets win.
+Last updated: 2026-10-21. Active task (handover note, not an instruction); the user's request defines the session task. If this note contradicts the tickets, the tickets win.
 
 ## Task
 Implement epic **TCK-171** with all its tickets, phase by phase (P1 → P8). The user decided on 2026-10-21 that the whole epic is to be implemented.
