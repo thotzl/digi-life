@@ -11,7 +11,7 @@ revisit: RV-B10
 
 # TCK-148: Species Model: Distance-Based Speciation
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-B10).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-B10).
 
 ## Description
 Species identity equals the full genome string; latin names are UNIQUE and collide silently.

@@ -11,7 +11,7 @@ revisit: RV-S10
 
 # TCK-155: Typed Enums for Model Strings
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-S10).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-S10).
 
 ## Description
 Activation type, organ type, symmetry, scenario, origin and diet class are free-form strings.

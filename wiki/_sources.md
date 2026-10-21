@@ -2,9 +2,9 @@
 
 | Source | Instructions |
 |---|---|
-| docs/revisit/ | all findings incl. RV-IDs and status; to be deleted after integration (TCK-163) |
+| docs/revisit/ | all findings incl. RV-IDs and status; deleted after integration (TCK-163), now maintained in the wiki |
 | README.md | architecture, setup, testing, troubleshooting; README itself gets trimmed afterwards |
-| HANDOFF.md | open diagnosis and runtime verification only; to be deleted after integration |
+| HANDOFF.md | open diagnosis and runtime verification only; deleted after integration (TCK-163) |
 | .agents/state/active-task.md | safety rules (knowledge) only; focus stays in the file |
 | .agents/skills/**/*.md | knowledge only; agent instructions stay in the skills, which link to the wiki |
 | .tickets/closed/ | documentation of what was implemented, one history article per topic; tickets stay |

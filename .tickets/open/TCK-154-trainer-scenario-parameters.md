@@ -11,7 +11,7 @@ revisit: RV-S08, RV-S09
 
 # TCK-154: Trainer Scenario Parameters into Plugins
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-S08, RV-S09).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-S08, RV-S09).
 
 ## Description
 Exploration spawn distances differ (650/1200/550); re-trial logic duplicates `initialize`; rejection sampling has no iteration limit; Gen-1 ignores `base_dna`.

@@ -11,7 +11,7 @@ revisit: RV-B06
 
 # TCK-144: Motion Vision Channel Design
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-B06).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-B06).
 
 ## Description
 Motion vision overwrites channel 5 of eyes/noses, which carries the main meat (IR) signal. Organ type is detected via emoji labels.

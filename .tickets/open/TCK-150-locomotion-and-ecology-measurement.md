@@ -11,7 +11,7 @@ revisit: RV-S02, RV-S07
 
 # TCK-150: Locomotion Thrust Scaling and Ocean Ecology Measurement
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-S02, RV-S07).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-S02, RV-S07).
 
 ## Description
 Hypothesis: thrust scales towards zero for low pulse/stiffness genomes (motionless creatures); food density in the Ocean is very low.

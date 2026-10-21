@@ -11,7 +11,7 @@ revisit: RV-B07
 
 # TCK-145: Predation Energy Gain and Bite Cooldown
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-B07).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-B07).
 
 ## Description
 Biting damages the victim but gives the attacker no energy (`bitingBaseEnergyGain` unused); no bite cooldown.

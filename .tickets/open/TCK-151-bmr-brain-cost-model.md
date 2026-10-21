@@ -11,7 +11,7 @@ revisit: RV-S03
 
 # TCK-151: BMR Brain Cost Model
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-S03).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-S03).
 
 ## Description
 BMR multiplies by synapse count and input count; sensory organs become metabolically prohibitive. Ocean compensates with a `* 0.45` literal.

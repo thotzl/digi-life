@@ -31,4 +31,4 @@ revisit: RV-B03, RV-A04, RV-D05
 - `src/server/engine.rs`: the simulation thread opens `db_path()`; all 20 discarded `conn.execute` results now log failures via `log_db_err`.
 - `src/bin/cli_trainer.rs`: uses `db_path()` (still the legacy location).
 - `cargo test`: 39 passed, 0 failed; `cargo build`: success (only the 3 pre-existing `cli_trainer` warnings).
-- Runtime check of the app data location: done in the final `tauri dev` smoke test (see docs/revisit).
+- Runtime check of the app data location: done in the final `tauri dev` smoke test (see `wiki/quality/runtime-verification.md`).

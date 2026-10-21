@@ -10,6 +10,7 @@ sources: [.tickets/closed/TCK-101-initialize-workspace.md, .tickets/closed/TCK-1
 | TCK-102 | 2026-08-19 | Vitest setup with coverage; TS-era unit tests (DNA, species DB, simulation). These tests were deleted with the TS backend (TCK-115/124); no frontend tests exist today | [[quality/testing]] |
 | TCK-134 | 2026-10-19 | rustup stable-msvc baseline (34 tests, 69 clippy warnings); `ci.yml`; `release.yml` only on tags; `.gitattributes` LF for generated files (RV-T01, RV-T05) | [[quality/ci-and-tooling]] |
 | TCK-142 | 2026-10-19 | Skills, README, HANDOFF, active-task and WHITEPAPER synced to the real architecture; ticket status fixed; every RV finding got a status; smoke tests (RV-X01..X05) | [[quality/review-findings]], [[quality/runtime-verification]] |
+| TCK-163 | 2026-10-21 | Project wiki replaces `docs/revisit/` and `HANDOFF.md`; skills reduced to rules linking the wiki | [[_master-index]] |
 
 ## Key Takeaways
 

@@ -11,7 +11,7 @@ revisit: RV-B09
 
 # TCK-147: SPAWN_FOOD Action: Implement or Remove
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-B09).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-B09).
 
 ## Description
 The UI sends `SPAWN_FOOD` on canvas interaction; the engine ignores it (now logged as unknown action).

@@ -11,7 +11,7 @@ revisit: RV-A01, RV-A05
 
 # TCK-156: Engine Decomposition (OceanSim / TrainerSim)
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-A01, RV-A05).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-A01, RV-A05).
 
 ## Description
 `spawn_simulation_thread` is a ~2000-line closure; creature construction duplicated 6x; world size literals in Rust and TS.

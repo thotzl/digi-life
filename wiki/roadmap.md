@@ -9,7 +9,7 @@ Stabilize → targeted rebuild → feature development. Each phase ends with a h
 ## Current state (2026-10-20)
 
 - **Phase 0 — Stabilize: implemented** (TCK-134..142, TCK-162; v1.12.3–v1.12.12).
-- Next: user decisions on pool tickets TCK-143..161 (`priority: pool`), then `GO PHASE 1`.
+- Next: user decisions on pool tickets TCK-143..161 and TCK-165..168 (`priority: pool`), then `GO PHASE 1`.
 - Open from Phase 0: manual UI flow check (TCK-164); RV-B01 offspring (TCK-143) deliberately deferred.
 
 ## Phase 0 — Stabilize (done)
@@ -53,7 +53,7 @@ Order by dependency:
 2. **TCK-123 curriculum / multi-scenario + champion seeding** (ongoing) — needs TCK-156 and RV-S08 (TCK-154).
 3. **TCK-111 creator / genome editor** — after TCK-157/160; scope: store in the SQLite catalogue, not IndexedDB; live preview via `get_fossil_phenotype`.
 4. **TCK-118 diploid genetics** — deep change in `parse_genome`; needs property tests and headless before/after comparison.
-5. **Ideas from research** — oscillators, hormones (replacing dead adrenaline), color-segment metabolism, relative wiring — as individual tickets with a measurement criterion, see [[research/porting-concepts]].
+5. **Ideas from research** — oscillators, hormones (replacing dead adrenaline), color-segment metabolism, relative wiring — as pool tickets TCK-165..168 with a measurement criterion, see [[research/porting-concepts]].
 6. **TCK-113 mobile** — last; needs stable performance and touch-capable views.
 
 Other pool items without a phase slot: TCK-153 brain evaluation order, TCK-155 typed enums.

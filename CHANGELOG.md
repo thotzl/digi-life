@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.13] - 2026-10-21
+
+### Changed
+- Project knowledge moved into a cross-linked wiki in `wiki/` (architecture, biology, simulation, frontend, quality, project map, research, decisions, roadmap). It replaces `docs/revisit/` and `HANDOFF.md`; every review finding (`RV-*`) stays findable in `wiki/quality/review-findings.md`. `WHITEPAPER.md` moved to `wiki/overview/whitepaper.md`. Agent skills now hold only rules and link to the wiki; README trimmed to setup and a wiki overview (ref TCK-163).
+
+### Added
+- Ticket TCK-164 for the manual UI flow check and pool tickets TCK-165..168 for the research ideas in `ideas.md` (ref TCK-163).
+
 ## [1.12.12] - 2026-10-19
 
 ### Changed

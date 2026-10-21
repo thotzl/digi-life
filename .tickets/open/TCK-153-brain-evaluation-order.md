@@ -11,7 +11,7 @@ revisit: RV-S06
 
 # TCK-153: Brain Evaluation Order
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-S06).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-S06).
 
 ## Description
 Outputs are integrated before thalamus/hidden nodes (id order), giving a 2-tick sensor-to-motor latency.

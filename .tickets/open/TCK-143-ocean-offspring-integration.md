@@ -11,7 +11,7 @@ revisit: RV-B01, RV-D03
 
 # TCK-143: Ocean Offspring Integration
 
-> Pool ticket: requires a user decision before implementation. Details in `docs/revisit/` (RV-B01, RV-D03).
+> Pool ticket: requires a user decision before implementation. Details in `wiki/quality/review-findings.md` (RV-B01, RV-D03).
 
 ## Description
 Mitosis children are only pushed to `newly_spawned_creatures` and never simulated; the client drops them again. The Ocean has no heredity.

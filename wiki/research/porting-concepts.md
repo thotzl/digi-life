@@ -17,7 +17,7 @@ Assessment of the four porting ideas in `ideas.md` (sections II and III, "Epochs
 
 ## Ticket status
 
-- Per [[roadmap]] Phase 2 step 5, each idea becomes an individual ticket with a measurement criterion. Ticket proposals are pending user approval (TCK-163 report).
+- Per [[roadmap]] Phase 2 step 5, each idea is an individual pool ticket with a measurement criterion: TCK-165 hormones, TCK-166 oscillator locomotion, TCK-167 functional chromatophores, TCK-168 relative synapse addressing.
 
 ## Key Takeaways
 
