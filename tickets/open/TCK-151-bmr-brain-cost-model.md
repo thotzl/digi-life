@@ -14,7 +14,19 @@ epic_phase: Training Track
 
 > Pool ticket: requires a user decision before implementation. Findings (RV-S03) below.
 >
-> 2026-10-21: needed by the training track — TCK-178 (energy budget in the trainer) depends on this model; without it an energy budget selects against sense organs. Decision 2026-10-21 (user): direction accepted — linear cost per active (non-pruned) synapse plus a separate cost term per organ; the `* 0.45` Ocean literal goes into config or is removed; constants after measurement (TCK-172/173 reports).
+> 2026-10-21: needed by the training track — TCK-178 (energy budget in the trainer) depends on this model; without it an energy budget selects against sense organs. Decision 2026-10-21 (user, after research): additive, activity-based model instead of the multiplicative formula (`src/biology/dna.rs:1434-1447`):
+>
+> `cost per tick = body + Σ organ(size) + a · neurons + b · Σ |weight · source activation|`
+>
+> - Per-neuron base cost: brain energy scales linearly with neuron number, roughly constant per neuron (Herculano-Houzel 2011).
+> - Activity cost instead of a per-synapse price with a pruning threshold: most signalling energy goes into action potentials (47 %) and synaptic transmission (34 %) and scales with activity (Attwell & Laughlin 2001). Near-zero weights cost almost nothing without a threshold edge; the exuberant start brain is not punished; sparse brains are rewarded. Computed in the existing synapse pass of the brain step.
+> - Organ cost by size (existing `vestigial_organ_tax` shape `scale² · (1.1 − bandwidth)` as a start).
+> - Calibrate by shares, not free constants: brain + senses ≈ 10–20 % of resting cost for a typical creature (vertebrate brain 2–8 %, human 20 %; eyes + optic tectum of young Astyanax 15 %, adult 5 %, Moran et al. 2015). Check with the TCK-172/173 reports.
+> - Risk: activity cost rewards silent brains; eating must clearly outweigh an active brain (part of calibration; thrust costs separately).
+> - The `* 0.45` Ocean literal is removed (or moved to config during transition).
+> - Metabolic pressure is phased in during training (TCK-176); connection cost as a separate selection objective (Clune et al. 2013) is an escalation option in TCK-175.
+>
+> Sources: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3046985/ ; https://discovery-pp.ucl.ac.uk/1340392/1/356.full.pdf ; https://pmc.ncbi.nlm.nih.gov/articles/PMC4643782 ; https://arxiv.org/pdf/1207.2743.pdf
 
 ## Description
 BMR multiplies by synapse count and input count; sensory organs become metabolically prohibitive. Ocean compensates with a `* 0.45` literal.

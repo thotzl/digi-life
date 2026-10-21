@@ -23,6 +23,7 @@ The jump from "food in sight" (small chamber) to "food out of sight" (large cham
 - **Retention across rooms:** a share of the trials always runs in earlier difficulty levels / rooms (rehearsal), so skills learned in an easier room are not lost after switching. Share is a measured calibration value.
 - **Switch only at generation boundaries:** automatic and manual room switches (today `SET_TRAINER_MODE`, `src/server/engine.rs:774-806`) take effect at the next generation; epoch ticks, trial index and accumulated fitness reset with the switch.
 - **Manual mode:** the user can set the difficulty / room by hand during a run (same mechanism as the knob).
+- **Metabolic pressure ramp:** the energy cost scale of TCK-151/TCK-178 ramps from 0 to 1 along the curriculum (or over the first generations), so sense organs can prove useful before their full price applies (bootstrap problem).
 
 ## Acceptance
 - Headless runs reach the large-chamber difficulty and keep a measurable success rate there, compared with direct large-chamber training from the TCK-173 baseline.

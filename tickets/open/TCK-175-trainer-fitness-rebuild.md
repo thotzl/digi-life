@@ -30,5 +30,6 @@ The large chamber suffers from the bootstrap problem: early on all candidates fa
 ## Escalation options (only if this ticket and TCK-176 are insufficient in the large chamber)
 - **Novelty blend:** fitness plus a novelty term (behaviour = end position, visited sectors), normalised weighted sum (Cuccu/Gomez 2011) or minimal-criterion novelty. Pure novelty search is not recommended: it struggles in large behaviour spaces with a fixed goal (Lehman/Stanley 2011 and follow-ups).
 - **Multi-objective (Pareto):** eating, path and energy as separate objectives; ancillary objectives address the bootstrap problem (Mouret/Doncieux).
+- **Connection cost as a selection objective:** selecting for performance and low connection cost yields more modular and more evolvable networks (Clune, Mouret, Lipson 2013, https://arxiv.org/pdf/1207.2743.pdf); a trainer rule on top of the in-world energy cost of TCK-151.
 
 Sources: see epic TCK-171.
