@@ -2,18 +2,22 @@
 id: TCK-144
 title: Motion Vision Channel Design
 status: open
-priority: pool
-decision: pending
+priority: high
+decision: accepted
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-B06
+epic_phase: Training Track
+depends_on: TCK-179
 ---
 
 # TCK-144: Motion Vision Channel Design
 
 > Pool ticket: requires a user decision before implementation. Findings (RV-B06) below.
 >
-> 2026-10-21: candidate steering fix of the training track (TCK-172). A dedicated ΔI channel is a klinotaxis input: C. elegans steers with a single sensor via head swing and temporal comparison, so single organs could steer without a `HOX` pair. Decide after the TCK-172 steering probe.
+> 2026-10-21: candidate steering fix of the training track (TCK-172). A dedicated ΔI channel is a klinotaxis input: C. elegans steers with a single sensor via head swing and temporal comparison, so single organs could steer without a `HOX` pair.
+>
+> Decision 2026-10-21 (default from the session's recommendation, user may veto): dedicated 6th channel per eye/nose for ΔI (meat keeps channel 5); organ type as an enum instead of emoji label matching (TCK-155 subset). Adding a channel shifts neuron ids, so implement after TCK-179 (stable synapse identity) and within the same golden-master change. Option, if the TCK-172 steering probe shows single organs still cannot steer: organ pairs without a `HOX` gene.
 
 ## Description
 Motion vision overwrites channel 5 of eyes/noses, which carries the main meat (IR) signal. Organ type is detected via emoji labels.

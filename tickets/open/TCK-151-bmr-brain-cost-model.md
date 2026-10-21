@@ -2,18 +2,19 @@
 id: TCK-151
 title: BMR Brain Cost Model
 status: open
-priority: pool
-decision: pending
+priority: high
+decision: accepted
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-S03
+epic_phase: Training Track
 ---
 
 # TCK-151: BMR Brain Cost Model
 
 > Pool ticket: requires a user decision before implementation. Findings (RV-S03) below.
 >
-> 2026-10-21: needed by the training track — TCK-178 (energy budget in the trainer) depends on this model; without it an energy budget selects against sense organs.
+> 2026-10-21: needed by the training track — TCK-178 (energy budget in the trainer) depends on this model; without it an energy budget selects against sense organs. Decision 2026-10-21 (user): direction accepted — linear cost per active (non-pruned) synapse plus a separate cost term per organ; the `* 0.45` Ocean literal goes into config or is removed; constants after measurement (TCK-172/173 reports).
 
 ## Description
 BMR multiplies by synapse count and input count; sensory organs become metabolically prohibitive. Ocean compensates with a `* 0.45` literal.

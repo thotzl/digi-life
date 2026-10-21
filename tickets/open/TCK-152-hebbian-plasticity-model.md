@@ -2,16 +2,18 @@
 id: TCK-152
 title: Hebbian Plasticity Normalisation and Fixed Reflexes
 status: open
-priority: pool
-decision: pending
+priority: medium
+decision: accepted
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-S04, RV-S05
+epic_phase: Training Track
+depends_on: TCK-179
 ---
 
 # TCK-152: Hebbian Plasticity Normalisation and Fixed Reflexes
 
-> Pool ticket: requires a user decision before implementation. Findings (RV-S04, RV-S05) below.
+> Decision 2026-10-21 (training track, epic TCK-171; default from the session's recommendation, user may veto): Oja rule (normalised); `plastic: bool` per synapse with thalamus reflexes fixed; `lamarckian_assimilation_chance` as a real probability. Builds on the stable synapse identity of TCK-179 (the flag lives on the synapse). Check the TCK-172 Hebbian probe first. Findings (RV-S04, RV-S05) below.
 
 ## Description
 Unnormalised Hebbian rule drifts to the clamp; thalamus reflex synapses are plastic and can be pruned; Lamarckian chance is used as a scale factor.

@@ -21,6 +21,16 @@ Training changes cannot be compared today: the trainer lives inside the ~2000-li
 - Headless binary: `--seed --generations --scenario --chamber --population` → JSON report per generation: success rate, mean and median time to first catch, best / median / mean fitness, fitness distribution, mean genome length, share of immobile genomes.
 - Baseline measurement: small and large chamber, current settings, several seeds; numbers into this ticket and `wiki/simulation/trainer.md`.
 
+### Refactoring of the trainer path (behaviour-preserving)
+- `StandardScenario::step_physics` and `ExplorationScenario::step_physics` are identical except for the food the creature sees (`src/biology/scenarios.rs:94-133` vs. `235-317`) → one shared step with a hook "visible foods".
+- Spawn rejection loops copied 5× without iteration limit (`scenarios.rs:53-76,197-209`, `src/biology/trainer_engine.rs:215-225`, `src/server/engine.rs:1832-1845`) → one helper `spawn_at_min_distance(rng, bounds, from, min_dist, max_tries)` (distances themselves are unified in TCK-175).
+- "Target distance by diet" copied 3× (`scenarios.rs:78-90,211-229`, `engine.rs:1847-1876`) → one helper.
+- Trial reset in the engine duplicates `init_rust_sandbox` + `plugin.initialize` and misses fields (neuron states kept, heading/energy partly reset) (`engine.rs:1806-1830`) → `TrainerSandbox::reset_trial()`.
+- `TRAINER_STATE_CHANGED` payload built 5× (`engine.rs:827-902,1035-1042`) → one function.
+- Enums with ts-rs export instead of strings (trainer subset of TCK-155): `Scenario` (`"standard"/"exploration"`), `SandboxOrigin` (`"elite"/"hof"/"mutant"/"random"`), `DietClass` (carnivory thresholds 0.4 / 0.6 as named constants).
+- Literals: chamber size / epoch length / scenario detection via `>= 2000.0` (`engine.rs:777,1753,1802`) → from the scenario plugin.
+- Shared helpers go into existing modules (`src/shared/`); search for existing helpers before adding new ones.
+
 ## Acceptance
 - Same seed → bit-identical report.
 - Equivalence: UI trainer behaves as before (existing tests green; golden master unchanged).

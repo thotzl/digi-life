@@ -62,9 +62,12 @@ Own binary or `#[ignore]` tests that write a report to `.agents/artifacts/`; DB 
 ## Acceptance
 - Report with all six probes, committed numbers summarised in this ticket's `## Verification`.
 - Each finding 1–4 marked confirmed / refuted with numbers.
-- Follow-up candidates below decided by the user and ticketed (or dropped).
+- The report serves as the before-baseline for the fix tickets.
 
-## Follow-up candidates (decide after measuring)
+## Follow-up tickets (created 2026-10-21; each re-checks its premise against this report)
+TCK-179 heredity, TCK-181 body/brain decoupling, TCK-150 speed, TCK-144 steering (ΔI / klinotaxis), TCK-180 walls, TCK-152 Hebbian, TCK-153 evaluation order. If a probe refutes a finding, the corresponding ticket is dropped or re-scoped.
+
+Original candidate notes:
 - **Heredity:** stable synapse identity (key per organ index, channel, target, NEAT-style innovation ids) instead of the position hash, or relative addressing (TCK-168); body traits only from their own genes; mutation 1–3 ops per child (TCK-174).
 - **Body-brain coupling:** separate body and brain mutation, or morphological innovation protection (Cheney et al. 2018: reduced selection pressure for recently body-mutated individuals; read the critical 2025 follow-up first).
 - **Speed:** rescale thrust vs. mass/drag to narrow the spread, e.g. linear in pulse (TCK-150, TCK-166).

@@ -41,21 +41,34 @@ A trainer rebuild alone would not fix this foundation.
 Interpretation: in the small chamber food is almost always in sensor range, so approaching pays off directly. In the large chamber there is no signal until food comes into view by chance (the bootstrap problem of evolutionary robotics), and the failure fitness rewards "swim to the wall". With different tasks per sandbox and ~2 parents, the easiest dice roll wins.
 
 ## Child tickets (order)
-| # | Ticket | Content | Depends on |
-| :--- | :--- | :--- | :--- |
-| 1 | TCK-172 | Mechanics diagnosis probes (measurement only) | – |
-| 2 | TCK-173 | `TrainerSim`, seeded RNG, headless trainer runner + baseline | – |
-| 3 | TCK-174 | Fair evaluation and selection | TCK-173 |
-| 4 | TCK-175 | Fitness rebuild (includes TCK-154) | TCK-173, TCK-154 |
-| 5 | TCK-176 | Automatic curriculum with one knob | TCK-175 |
-| 6 | TCK-177 | Trainer UI: success rate, median, curve | TCK-173 |
-| 7 | TCK-178 | Energy budget in the trainer | TCK-173, TCK-151 |
+Scope decision (user, 2026-10-21): all fixes that fundamentally belong to creature mechanics and training are part of this track, even if not yet visible in the first two rooms; new rooms are decided later, once the setup is sound. Refactoring (DRY, typed enums, shared types, helpers) happens on the way in the tickets that touch the code, limited to the trainer path and shared creature code; Ocean refactoring stays in Phase 1.
+
+| Stage | # | Ticket | Content | Depends on |
+| :--- | :--- | :--- | :--- | :--- |
+| A Measure | 1 | TCK-172 | Mechanics diagnosis probes (measurement only; baseline for all fixes) | – |
+| | 2 | TCK-173 | `TrainerSim`, seeded RNG, headless runner + baseline; trainer refactoring | – |
+| B Mechanics | 3 | TCK-179 | Stable synapse identity and trait locality (heredity), property tests | TCK-172, TCK-173 |
+| | 4 | TCK-144 | Dedicated ΔI channel (klinotaxis steering), organ type enum | TCK-179 |
+| | 5 | TCK-153 | Brain evaluation order: keep + document unless the steering probe says otherwise | TCK-172 |
+| | 6 | TCK-150 | Thrust rescaling (narrow the speed spread, turning at low speed) | TCK-172 |
+| | 7 | TCK-180 | Wall contact behaviour | TCK-172 |
+| | 8 | TCK-152 | Hebbian: Oja rule, plastic flag, Lamarck as probability | TCK-179 |
+| C Energy and config | 9 | TCK-149 | Dead config keys (per-key confirmation), `deny_unknown_fields` | – |
+| | 10 | TCK-151 | BMR: linear cost per active synapse + organ term | – |
+| | 11 | TCK-178 | Energy budget in the trainer (shared energy function) | TCK-173, TCK-151 |
+| | 12 | TCK-145 | Predation energy gain and bite cooldown | TCK-178 |
+| D Training | 13 | TCK-174 | Fair evaluation and selection | TCK-173 |
+| | 14 | TCK-181 | Body/brain mutation decoupling | TCK-179, TCK-174 |
+| | 15 | TCK-175 | Fitness rebuild (includes TCK-154), chamber size from plugin, cross-room comparability | TCK-173, TCK-154 |
+| | 16 | TCK-176 | Curriculum small/large, retention across rooms, switch test | TCK-175 |
+| | 17 | TCK-177 | Trainer UI metrics, typed trainer events | TCK-173 |
+
+Golden-master window: TCK-179, TCK-144, (TCK-153 if reordered) and the biolum/reserved output decision of TCK-149 change the fingerprint together, once.
+Stages B–D can interleave after stage A; every ticket is accepted by a before/after measurement (TCK-172 probes and/or TCK-173 report).
 
 Goal (user, 2026-10-21): training that works — creatures that really develop and improve across different rooms, so that they can later survive in the Ocean. A few rooms suffice for now (today two exist in code: small 1000 px `standard`, large 3500 px `exploration`; an arena exists only as a plan in TCK-123); further rooms are defined once the setup is sound.
 
-Related existing tickets: TCK-151 (BMR model, needed by TCK-178), TCK-144 (ΔI channel as klinotaxis steering candidate), TCK-150/TCK-168 (speed and heredity candidates from TCK-172), TCK-152 (only if the Hebbian probe shows harm), TCK-145 (only if carnivores must survive in the Ocean).
-
-Mechanic fixes become tickets only after TCK-172 delivers numbers (candidates listed there): stable synapse identity (most important), thrust rescaling, wall behaviour, body/brain mutation decoupling (optional), steering without a `HOX` pair (optional).
+Related, not part of the track: TCK-168 (relative synapse addressing; research, only if TCK-179 is insufficient), TCK-161 (rest of the test suite; property tests are in TCK-179), TCK-155 / TCK-157 (non-trainer parts).
 
 Later (Ocean phase): Ocean survival benchmark for champions — headless, trained vs. random creatures, lifespan and eating rate; needs TCK-143 and the Ocean part of TCK-156. This is the actual proof of the goal. Every child ticket uses a before/after measurement with the TCK-173 runner as acceptance; results go into `wiki/simulation/trainer.md` (and `wiki/simulation/physics.md` / `wiki/biology/*` for mechanics) on closing.
 
@@ -102,6 +115,6 @@ Sources:
 - Cheney et al. 2018: https://meclab.w3.uvm.edu/papers/2018_RoySoc_Cheney.pdf ; critical follow-up 2025: https://arxiv.org/pdf/2508.17464
 
 ## Definition of Done
-- TCK-172..177 closed or consciously dropped; mechanic fixes from TCK-172 decided and ticketed.
+- All tickets of the stage table closed or consciously dropped (with measurement).
 - Headless report shows a measurable success rate in the large chamber, compared against the TCK-173 baseline.
 - Wiki articles describe the resulting trainer and mechanics.

@@ -19,6 +19,7 @@ The trainer UI only receives best and average fitness per generation (`TRAINER_G
 ## Scope
 - Per generation: success rate, median fitness, time to first catch (same metrics as the TCK-173 report), plus the difficulty level once TCK-176 exists.
 - Curve over generations in the trainer view.
+- Typed trainer events and actions (trainer subset of TCK-157): `#[derive(Serialize, TS)]` event types for trainer telemetry, generation completed and state changed instead of `json!` payloads; trainer actions as a typed enum; the trainer view imports the generated `bindings/` types instead of handwritten ones in `frontend/shared/types.ts`.
 
 ## Acceptance
 - Metrics in the UI match the headless report for the same seed.

@@ -2,16 +2,17 @@
 id: TCK-145
 title: Predation Energy Gain and Bite Cooldown
 status: open
-priority: pool
-decision: pending
+priority: medium
+decision: accepted
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-B07
+epic_phase: Training Track
 ---
 
 # TCK-145: Predation Energy Gain and Bite Cooldown
 
-> Pool ticket: requires a user decision before implementation. Findings (RV-B07) below.
+> Decision 2026-10-21 (training track, epic TCK-171; default from the session's recommendation, user may veto): the attacker gains `biting_base_energy_gain * carnivory * biting_efficiency_carnivore_scale`; bite cooldown per attacker/victim pair from config. Needed for carnivore viability in the Ocean even though the first two trainer rooms have no live prey. Shares the energy function of TCK-178. Findings (RV-B07) below.
 
 ## Description
 Biting damages the victim but gives the attacker no energy (`bitingBaseEnergyGain` unused); no bite cooldown.
