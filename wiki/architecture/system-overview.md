@@ -1,10 +1,10 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, tickets/closed/TCK-109-tauri-desktop-shell.md, tickets/closed/TCK-110-rust-simulation-core.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-107-refactoring-dry-and-shared-modularization.md, tickets/closed/TCK-108-headless-backend-evolutionary-trainer-migration.md]
 ---
 
 # System Overview
 
-Pixel DNA Life is a single-user desktop app: **Tauri v2** shell, **Rust 2024** simulation core, **SQLite** persistence, **Vite + TypeScript + Preact Signals** webview UI. There is no network server, no WebSocket and no port (the WebSocket/Node.js design was retired, see [[architecture/history]]).
+Pixel DNA Life is a single-user desktop app: **Tauri v2** shell, **Rust 2024** simulation core, **SQLite** persistence, **Vite + TypeScript + Preact Signals** webview UI. There is no network server, no WebSocket and no port.
 
 ## Runtime structure
 
@@ -25,38 +25,32 @@ Webview (frontend/)
 ## Layers
 
 - **Shell** — `src/main.rs`: Tauri builder, command registration, DB setup, starts the simulation thread.
-- **Engine** — `src/server/engine.rs`: Ocean and Trainer loop (~60 Hz), see [[architecture/simulation-engine]].
-- **API** — `src/server/api.rs`: Tauri commands, see [[architecture/ipc-protocol]].
-- **Domain** — `src/biology/` (genome compiler, trainer sandboxes, scenarios) and `src/shared/` (brain, physics, spatial grid, world generation, types/config). See [[biology/genome-compiler]], [[biology/ctrnn-brain]], [[simulation/physics]].
-- **Persistence** — `src/database.rs`, see [[architecture/persistence]].
-- **Frontend** — `frontend/`, see [[frontend/structure]].
-- **Config** — root `config.json`, compiled into the binary, see [[architecture/configuration]].
+- **Engine** — `src/server/engine.rs`: Ocean and Trainer loop (~60 Hz), see [[wiki/architecture/simulation-engine]].
+- **API** — `src/server/api.rs`: Tauri commands, see [[wiki/architecture/ipc-protocol]].
+- **Domain** — `src/biology/` (genome compiler, trainer sandboxes, scenarios) and `src/shared/` (brain, physics, spatial grid, world generation, types/config). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
+- **Persistence** — `src/database.rs`, see [[wiki/architecture/persistence]].
+- **Frontend** — `frontend/`, see [[wiki/frontend/structure]].
+- **Config** — root `config.json`, compiled into the binary, see [[wiki/architecture/configuration]].
 
 ## Design principles
 
 - **Rust is the single source of truth** for simulation, world generation and biology; the client only renders and sends actions, it never mutates authoritative positions (FIX-127, TCK-115).
 - **`config.json` is the single source of truth** for tunables (TCK-138).
 - **No DB work in the hot loop** (RV-P01, TCK-139).
+- Structural changes are targeted, without framework switches ([[wiki/decisions/adr-001-non-goals]]).
 
-## Target architecture (pool, not started)
+## Origin
 
-From RV-A01 (TCK-156): split the engine closure into testable structs.
+- The project started as a browser/Node.js prototype with WebSocket replication and isomorphic TS modules (TCK-107, TCK-108). The Rust core (TCK-110) and Tauri shell (TCK-109) replaced it; TCK-115 removed the Express server and duplicate TS parsers. Anything mentioning WebSocket, `src-tauri/` or JSON database files describes the retired design.
 
-```
-struct OceanSim   { creatures, food, world, rng, ids, config } impl { fn step(&mut self) -> Vec<SimEvent> }
-struct TrainerSim { sandboxes, hyperparams, generation, ... }   impl { fn step(&mut self) -> Vec<SimEvent> }
-struct Engine     { ocean, trainer, mode, repo: Box<dyn Repository> }
-fn run_loop(engine, rx: Receiver<Action>, sink: impl EventSink)   // Tauri window only as EventSink impl
-```
+## Known limitations
 
-- `step()` free of IO: headless-testable, basis for a headless runner (TCK-158).
-- One `CreatureFactory::spawn(genome, opts)` replaces 6 duplicated constructions.
-- Non-goal: an ECS framework; `Vec<Creature>` suffices at 25–45 agents ([[roadmap]]).
+- The engine is one ~2,000-line thread closure with all Ocean and Trainer state as local variables; it is not unit-testable because it needs a real `tauri::WebviewWindow` (RV-A01).
 
 ## Key Takeaways
 
 - One process: Tauri shell + one simulation thread + webview; IPC via Tauri commands and one event.
 - Rust owns all simulation state; the frontend is a renderer.
-- The engine is still one large closure; decomposition is pool ticket TCK-156.
+- The engine is a single closure (RV-A01).
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, TCK-107..110, TCK-115.

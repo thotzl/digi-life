@@ -4,7 +4,7 @@
 
 ## 📚 Project Knowledge
 
-Facts about the code, architecture, biology model, findings (`RV-*`) and roadmap live in the wiki: `wiki/_master-index.md`. Skills hold agent rules and link to the wiki. Tickets: `.tickets/`. Release notes: `CHANGELOG.md`.
+Facts about the code, architecture and biology model live in the wiki: `wiki/_master-index.md`. Open work and findings live only in tickets; the roadmap is epic TCK-169. Skills hold agent rules and link to the wiki. Tickets: `tickets/`. Release notes: `CHANGELOG.md`.
 
 ## 📂 Modular AI Skills Index
 

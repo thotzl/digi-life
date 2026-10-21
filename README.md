@@ -2,7 +2,7 @@
 
 A native 2D biomorphic ecosystem and neuroevolution trainer, built as a desktop application with **Tauri v2**, **Rust 2024**, **SQLite**, and **Preact Signals**.
 
-Current status and work plan: [`wiki/roadmap.md`](wiki/roadmap.md).
+Current status and work plan: [roadmap epic TCK-169](tickets/ongoing/TCK-169-roadmap-epic.md).
 
 ---
 
@@ -36,19 +36,18 @@ Installers (`.dmg`, `.exe`/`.msi`, `.deb`/`.AppImage`) are built by GitHub Actio
 
 ## 📚 Documentation
 
-The project wiki in [`wiki/`](wiki/_master-index.md) holds all project knowledge (Obsidian-style links):
+The project wiki in [`wiki/`](wiki/_master-index.md) documents the current state and the results of closed tickets. Open the repo root as an Obsidian vault to browse wiki, README and tickets together (`.obsidian/app.json` hides code folders).
 
 | Topic | Content |
 | :--- | :--- |
-| [Roadmap](wiki/roadmap.md) | phases, current state, ordered tickets, non-goals |
 | [Overview](wiki/overview/_index.md) | product vision (whitepaper), glossary |
 | [Architecture](wiki/architecture/_index.md) | runtime structure, engine, IPC, persistence, config, invariants, performance |
 | [Biology](wiki/biology/_index.md) | genome compiler, CTRNN brain, sensing, metabolism and species |
 | [Simulation](wiki/simulation/_index.md) | Ocean, Trainer, physics, analytics and balancing |
 | [Frontend](wiki/frontend/_index.md) | webview structure and rendering |
-| [Quality](wiki/quality/_index.md) | review findings (`RV-*`), testing, CI and tooling, runtime verification |
+| [Quality](wiki/quality/_index.md) | testing, CI and tooling, runtime verification |
 | [Project Map](wiki/project-map/_index.md) | module-level code map |
 | [Research](wiki/research/_index.md) | Alife references and porting ideas (from [`ideas.md`](ideas.md)) |
 | [Decisions](wiki/decisions/_index.md) | ADRs |
 
-Tickets: [`.tickets/`](.tickets/). Release notes: [`CHANGELOG.md`](CHANGELOG.md). Agent rules: [`AGENTS.md`](AGENTS.md).
+Tickets: [`tickets/`](tickets/). Release notes: [`CHANGELOG.md`](CHANGELOG.md). Agent rules: [`AGENTS.md`](AGENTS.md).

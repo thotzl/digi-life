@@ -14,3 +14,7 @@ dist/
 
 # AI agent artifacts & custom cloned repositories
 .agents/artifacts/
+
+# Obsidian (vault = repo root; only shared settings are tracked)
+.obsidian/*
+!.obsidian/app.json

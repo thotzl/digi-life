@@ -15,5 +15,5 @@ This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`,
 ## III. Maintenance Rules
 - **Separation:** skills hold agent instructions; facts about the code live in `wiki/`; skills link to wiki articles instead of repeating them.
 - Verify every path and claim against `src/` and `frontend/` before writing it.
-- Planned work and known defects are tracked in `.tickets/` and `wiki/quality/review-findings.md` (IDs `RV-*`); reference IDs instead of duplicating analysis.
+- Planned work and open defects are tracked only in `tickets/` (IDs `RV-*` in the `revisit:` frontmatter); the wiki holds the current state and results of closed tickets, never open work. Reference IDs instead of duplicating analysis.
 - Update `.agents/state/active-task.md` when the work focus changes.

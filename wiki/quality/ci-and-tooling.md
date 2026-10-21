@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, .tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, .github/workflows/sync-tickets.yml, package.json]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, package.json]
 ---
 
 # CI, Toolchain and Releases
@@ -8,13 +8,18 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 | Command | Purpose |
 | :--- | :--- |
-| `npm run tauri:dev` | launch the desktop app (Vite dev server on port 8765 + Rust build) |
+| `npm run tauri:dev` | launch the desktop app (Vite dev server + Rust build) |
 | `npm run build` | `tsc` + Vite build into `dist/` |
 | `cargo test` / `npm run test:rust` / `npm run types:generate` | Rust tests, regenerates `bindings/` |
 | `cargo clippy --all-targets` | lint (baseline 69 warnings, TCK-134) |
 | `npm run test` | Vitest (no test files yet) |
 | `npm run test:all` | Vitest + cargo test + `cargo check --bin cli_trainer` |
-| `npm run sim:balance` | outdated `cli_trainer` (RV-S11, do not trust) |
+| `npm run sim:balance` | outdated `cli_trainer` (RV-S11, not usable) |
+
+## Dev server
+
+- Vite on port `8765` with `strictPort: true`; `tauri.conf.json` `devUrl` matches (FIX-126).
+- `.taurignore` (`*.db`, `*.db-shm`, `*.db-wal`, `target/`, `dist/`, `node_modules/`) prevents the rebuild loop caused by the running app writing the DB (FIX-126-B; Tauri v2 has no `watch` key).
 
 ## Windows setup
 
@@ -27,13 +32,13 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 - Missing headers: `sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`.
 - Stale webview assets: WebKitGTK caches under `~/.cache/webkitgtk-4.1`; enable "Disable Cache" in DevTools (`Ctrl+Shift+I`) or delete the cache.
-- DB problems: [[architecture/persistence]].
+- DB problems: [[wiki/architecture/persistence]].
 
 ## Workflows (`.github/workflows/`)
 
 - `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134).
-- `release.yml` — only `v*` tags and manual dispatch; matrix macOS / Windows / Ubuntu 22.04 via `tauri-action`; draft release.
-- `sync-tickets.yml` — on push to master/main: `.github/scripts/sync_github.cjs` mirrors `.tickets/` to GitHub issues (`[TCK-…] title`, labels `priority:*`, `status:*`; closed folder = closed issue). Needs valid ticket frontmatter.
+- `release.yml` — only `v*` tags and manual dispatch; matrix macOS / Windows / Ubuntu 22.04 via `tauri-action`; draft release (TCK-114, TCK-134).
+- `sync-tickets.yml` — on push to master/main: `.github/scripts/sync_github.cjs` mirrors `tickets/` to GitHub issues (`[TCK-…] title`, labels `priority:*`, `status:*`; closed folder = closed issue). Needs valid ticket frontmatter.
 - `.gitattributes` pins `bindings/**` and `gen/**` to LF so the drift check is stable on Windows.
 
 ## Installers (end users)
@@ -42,12 +47,12 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 ## Versioning
 
-- One patch bump per closed ticket, synchronized in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, with a `CHANGELOG.md` entry referencing the ticket. Release notes: `CHANGELOG.md` (kept outside the wiki).
+- One patch bump per closed ticket, synchronized in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, with a `CHANGELOG.md` entry referencing the ticket. `CHANGELOG.md` is the list of finished work.
 
-## Toolchain debt (RV-T05, rest in TCK-161)
+## Toolchain state
 
-- `Cargo.toml` package name `src-tauri`, version mismatch history; `rusqlite 0.29` and `rand 0.8` outdated — update only after a green baseline.
-- `typescript ^5`, `vite ^5`, `vitest ^1.6`; transitive deprecations, no urgent action.
+- `rustc 1.99.1` stable-msvc (TCK-134).
+- `Cargo.toml` package name `src-tauri`; `rusqlite 0.29` and `rand 0.8` are old; `typescript ^5`, `vite ^5`, `vitest ^1.6` with transitive deprecations (RV-T05).
 - `types:generate` depends on all tests passing.
 
 ## Key Takeaways
@@ -56,4 +61,4 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 - Tickets are mirrored to GitHub issues on every push to master.
 - Every closed ticket = patch bump + changelog entry.
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-134, `.github/workflows/`, `package.json`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.

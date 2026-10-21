@@ -1,7 +1,7 @@
 # Pixel DNA Life: Technical & Conceptual Whitepaper
 ## An Evolutionary Artificial Life & Competitive Multi-Agent Sandbox
 
-> **Status note:** This document describes the product vision. The global multi-agent ecosystem (Section 4), remote servers, and network replication are not implemented. The current implementation is a single-user Tauri desktop app with a Rust simulation thread, Tauri IPC events, and a local SQLite database; see [[architecture/system-overview]] and [[roadmap]].
+> **Status note:** This document describes the product vision. The global multi-agent ecosystem (Section 4), remote servers, and network replication are not implemented. The current implementation is a single-user Tauri desktop app with a Rust simulation thread, Tauri IPC events, and a local SQLite database; see [[wiki/architecture/system-overview]].
 
 ---
 

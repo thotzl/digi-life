@@ -7,7 +7,8 @@ description: Baseline rules for working in the Pixel DNA Life repository (Tauri 
 ## I. Universal Directives
 - **Agent rules** live in `.agents/skills/` and supersede tool-specific configs (e.g. `.cursorrules`).
 - **Project knowledge** lives in the wiki: `wiki/_master-index.md`. Read the relevant article before changing a subsystem; do not duplicate wiki content into skills.
-- **Work plan:** `wiki/roadmap.md`. Finding IDs `RV-*`: `wiki/quality/review-findings.md`. Tickets: `.tickets/{open,ongoing,closed}/`.
+- **Work plan:** epic `tickets/ongoing/TCK-169-roadmap-epic.md`. Open findings (`RV-*`) live in their tickets (`revisit:` frontmatter + `## Findings`). Tickets: `tickets/{open,ongoing,closed}/` (no leading dot, so Obsidian shows them).
+- **Wiki vs. tickets:** the wiki documents the current state and the results of closed tickets only; open work never goes into the wiki. When closing a ticket, update the affected wiki articles to the new state (result-oriented, cite the ticket) in the same commit. `CHANGELOG.md` is the list of finished work.
 
 ## II. Where to Look
 | Need | Wiki article |
@@ -23,4 +24,4 @@ description: Baseline rules for working in the Pixel DNA Life repository (Tauri 
 - **Bindings:** after changing a `#[derive(TS)]` struct run `cargo test` and commit the regenerated `bindings/`.
 - **Versioning:** one patch bump per closed ticket in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, plus a `CHANGELOG.md` entry referencing the ticket.
 - **Do not trust `src/bin/cli_trainer.rs` output** (outdated model, RV-S11).
-- **Keep the wiki current:** when a change invalidates a wiki statement, update the article in the same commit.
+- **Keep the wiki current:** when a change invalidates a wiki statement, update the article in the same commit. Wikilinks are vault-root relative (`[[wiki/topic/article]]`; vault = repo root).

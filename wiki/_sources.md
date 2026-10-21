@@ -2,13 +2,14 @@
 
 | Source | Instructions |
 |---|---|
-| docs/revisit/ | all findings incl. RV-IDs and status; deleted after integration (TCK-163), now maintained in the wiki |
-| README.md | architecture, setup, testing, troubleshooting; README itself gets trimmed afterwards |
-| HANDOFF.md | open diagnosis and runtime verification only; deleted after integration (TCK-163) |
+| docs/revisit/ | deleted after integration (TCK-163); known limitations kept as facts with RV-IDs, open findings moved into the pool tickets (TCK-170) |
+| README.md | architecture, setup, testing, troubleshooting |
+| HANDOFF.md | deleted after integration (TCK-163) |
 | .agents/state/active-task.md | safety rules (knowledge) only; focus stays in the file |
-| .agents/skills/**/*.md | knowledge only; agent instructions stay in the skills, which link to the wiki |
-| .tickets/closed/ | documentation of what was implemented, one history article per topic; tickets stay |
-| .tickets/open/, .tickets/ongoing/ | roadmap ordering only, no content copies |
+| .agents/skills/**/*.md | knowledge only; agent rules stay in the skills, which link to the wiki |
+| tickets/closed/ | results only: integrate what a closed ticket changed into the topic articles (current state), cite the ticket; no per-ticket lists (CHANGELOG is that list) |
 | ideas.md | summaries and assessment only, link to ideas.md instead of copying; file stays |
 | src/, frontend/ | code: module-level project map only (responsibility per module), low maintenance |
 | package.json, .github/workflows/ | commands and workflows only |
+
+Not a source: `tickets/open/`, `tickets/ongoing/` — open work is never documented in the wiki.

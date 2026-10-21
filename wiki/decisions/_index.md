@@ -1,6 +1,6 @@
 # Decisions (ADRs)
 
-Architecture decision records. None recorded yet. Decisions made so far are documented as non-goals in [[roadmap]] and as design decisions in the pool tickets (TCK-143..161).
+Architecture decision records: decisions that are taken. Open design questions live in tickets, not here.
 
 ## Convention
 
@@ -23,4 +23,4 @@ Architecture decision records. None recorded yet. Decisions made so far are docu
 
 ## Records
 
-_(none)_
+- [[wiki/decisions/adr-001-non-goals]] — no ECS/frontend framework rewrite, no premature dependency majors, no cosmetic passes, no unmeasured optimization

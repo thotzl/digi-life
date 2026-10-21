@@ -1,15 +1,15 @@
 ---
-sources: [.agents/skills/testing-strategies/SKILL.md, README.md, docs/revisit/07-testing-ci-tooling.md]
+sources: [.agents/skills/testing-strategies/SKILL.md, README.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-102-test-setup.md]
 ---
 
 # Testing
 
-Agent rules for writing tests (reproduction first, pure functions, no production DB) live in `.agents/skills/testing-strategies/SKILL.md`. This article holds the inventory and the validation facts.
+Agent rules for writing tests live in `.agents/skills/testing-strategies/SKILL.md`. This article holds the inventory and validation facts.
 
 ## Running
 
 - `cargo test` from the repo root (= `npm run test:rust`, `npm run types:generate`); also regenerates `bindings/`. 43 tests passing as of TCK-162.
-- `npm run test` — Vitest configured (`frontend/**/*.test.ts`), **no frontend test files exist**. Stryker configured without tests.
+- `npm run test` — Vitest configured (`frontend/**/*.test.ts`), **no frontend test files exist**. The TS-era tests from TCK-102 were deleted with the TS backend (TCK-115/124). Stryker is configured without tests.
 - DB tests use `init_db(":memory:")`.
 
 ## Rust test inventory
@@ -22,7 +22,12 @@ Agent rules for writing tests (reproduction first, pure functions, no production
 - `shared::types::tests` — embedded config equals `config.json`.
 - `shared::brain::tests` — determinism, sensory input correctness.
 - `database::tests` — in-memory schema, catalogue CRUD, WAL on file DBs, one-time legacy DB copy.
-- Not covered: `engine.rs` (needs a Tauri window, RV-A01), `api.rs`, `scenarios.rs` fitness.
+
+## Not covered
+
+- `engine.rs` (needs a Tauri window, RV-A01), `api.rs`, scenario fitness functions, the frontend.
+- No behavioural tests for Ocean mitosis, config completeness, property-based genome parsing or the warp cap (RV-T02).
+- No seeded RNG, so simulation tests can only be statistical (RV-T04).
 
 ## CTRNN validation facts
 
@@ -30,20 +35,9 @@ Agent rules for writing tests (reproduction first, pure functions, no production
 - Output ranges: `tanh`/`sin` `[-1, 1]`, `sigmoid` `[0, 1]`, `relu` `[0, ∞)`.
 - Identical genome + inputs → bit-identical states.
 
-## Gaps (RV-T02, pool TCK-161)
-
-Behavioural tests still to write:
-1. Ocean step: after mitosis `creatures.len()` +1 and the child moves next step (RV-B01).
-2. Brain: two independent runs bit-identical; output range per activation.
-3. Config: every key deserializes, no unknown keys (RV-S01).
-4. Property tests (`proptest`): `parse_genome` never panics on ASCII 0..1024 chars; `mutate_genome` keeps length in `[128, 512]`.
-5. Regression guards: warp cap 35; mitosis children enter the simulated list.
-- Historic weaknesses: `test_execute_brain_determinism` originally fed 4 inputs into a ≥ 7-input brain; DB tests tested SQLite itself. No test would have caught RV-B01/B02/B05.
-- Reproducible tests need a seeded RNG (RV-T04, TCK-158).
-
 ## Key Takeaways
 
-- Rust unit tests + golden master guard the biology model; frontend has zero tests.
-- The engine is untestable until TCK-156; behavioural suite is TCK-161.
+- Rust unit tests + golden master guard the biology model; the frontend has no tests.
+- The engine itself is untested.
 
-Sources: `.agents/skills/testing-strategies/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, `README.md`.
+Sources: `.agents/skills/testing-strategies/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, `README.md`, TCK-102.

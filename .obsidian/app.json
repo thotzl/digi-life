@@ -1,0 +1,13 @@
+{
+  "userIgnoreFilters": [
+    "src/",
+    "frontend/",
+    "bindings/",
+    "gen/",
+    "capabilities/",
+    "icons/",
+    "dist/",
+    "node_modules/",
+    "target/"
+  ]
+}

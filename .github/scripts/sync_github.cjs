@@ -126,7 +126,7 @@ function stringifyTicket(metadata, body) {
 
 // 2. Scan all local tickets across status directories
 function getLocalTickets() {
-    const ticketDir = path.join(process.cwd(), '.tickets');
+    const ticketDir = path.join(process.cwd(), 'tickets');
     const statuses = ['open', 'ongoing', 'closed'];
     const tickets = [];
 
@@ -282,7 +282,7 @@ async function runPush(localTickets, githubIssues) {
 // 5. Main PULL Loop (Remote ──> Local)
 async function runPull(localTickets, githubIssues) {
     console.log(`📥 Starting PULL Synchronization to Local Workspace...`);
-    const ticketDir = path.join(process.cwd(), '.tickets');
+    const ticketDir = path.join(process.cwd(), 'tickets');
 
     // Group local tickets by ID for quick lookup
     const localMap = {};
@@ -403,7 +403,7 @@ async function runPull(localTickets, githubIssues) {
             try {
                 execSync(`git add "${targetPath}"`);
             } catch (e) {}
-            console.log(`   └─ Created local file: .tickets/${folderStatus}/${filename}`);
+            console.log(`   └─ Created local file: tickets/${folderStatus}/${filename}`);
         }
     }
 }
@@ -424,7 +424,7 @@ async function run() {
         console.log(`✅ Loaded ${githubIssues.length} issues from GitHub.`);
 
         const localTickets = getLocalTickets();
-        console.log(`📦 Loaded ${localTickets.length} local tickets from .tickets/.`);
+        console.log(`📦 Loaded ${localTickets.length} local tickets from tickets/.`);
 
         if (isPullMode) {
             await runPull(localTickets, githubIssues);
@@ -462,7 +462,7 @@ async function run() {
                     }).forEach(t => {
                         const m = t.metadata;
                         const statusBadge = `\`${m.status}\``;
-                        const linkStr = `[Link](../.tickets/${m.folder_status}/${m.filename})`;
+                        const linkStr = `[Link](../tickets/${m.folder_status}/${m.filename})`;
                         let resourceStr = '-';
                         if (m.dependencies && m.dependencies.length > 0) {
                             resourceStr = m.dependencies.map(d => `${d}`).join(', ');

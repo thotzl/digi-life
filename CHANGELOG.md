@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.14] - 2026-10-21
+
+### Changed
+- The repo root is an Obsidian vault (`.obsidian/app.json` hides code and build folders); `.tickets/` is renamed to `tickets/` so tickets are visible there, and the GitHub ticket sync reads the new folder (ref TCK-170).
+- The wiki now holds only the current state and the results of closed tickets. Open findings with their fix sketches moved into the pool tickets, the roadmap became epic TCK-169, the non-goals became ADR-001; per-topic history pages and the findings register were removed because this changelog is the list of finished work (ref TCK-170).
+
 ## [1.12.13] - 2026-10-21
 
 ### Changed
