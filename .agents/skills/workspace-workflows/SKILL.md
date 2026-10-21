@@ -5,7 +5,7 @@ description: Standardized workflows for maintaining and syncing this project's A
 # workspace-workflows: Portable AI Workspace Synchronization
 
 ## I. Portable Context
-This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`, `.agents/state/active-task.md`) and its own knowledge base (`wiki/`). Any agent can bootstrap from it without global configuration.
+This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`, `.agents/state/next-tasks.md`) and its own knowledge base (`wiki/`). Any agent can bootstrap from it without global configuration.
 
 ## II. Workflows
 - **`/init`:** bootstrap or extend the `.agents/skills/` layout from the tech stack. Spec: `.agents/skills/workspace-workflows/references/init.md`.
@@ -16,4 +16,4 @@ This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`,
 - **Separation:** skills hold agent instructions; facts about the code live in `wiki/`; skills link to wiki articles instead of repeating them.
 - Verify every path and claim against `src/` and `frontend/` before writing it.
 - Planned work and open defects are tracked only in `tickets/` (IDs `RV-*` in the `revisit:` frontmatter); the wiki holds the current state and results of closed tickets, never open work. Reference IDs instead of duplicating analysis.
-- Update `.agents/state/active-task.md` when the work focus changes.
+- Record findings and candidate tasks that are not yet tickets in `.agents/state/next-tasks.md`; remove them there once they are ticketed.
