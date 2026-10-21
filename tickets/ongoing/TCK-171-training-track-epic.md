@@ -53,17 +53,20 @@ Scope decision (user, 2026-10-21): all fixes that fundamentally belong to creatu
 | | 6 | TCK-150 | Thrust rescaling (narrow the speed spread, turning at low speed) | TCK-172 |
 | | 7 | TCK-180 | Wall contact behaviour | TCK-172 |
 | | 8 | TCK-152 | Hebbian: Oja rule, plastic flag, Lamarck as probability | TCK-179 |
-| C Energy and config | 9 | TCK-149 | Dead config keys (per-key confirmation), `deny_unknown_fields` | – |
-| | 10 | TCK-151 | BMR: linear cost per active synapse + organ term | – |
-| | 11 | TCK-178 | Energy budget in the trainer (shared energy function) | TCK-173, TCK-151 |
-| | 12 | TCK-145 | Predation energy gain and bite cooldown | TCK-178 |
-| D Training | 13 | TCK-174 | Fair evaluation and selection | TCK-173 |
-| | 14 | TCK-181 | Body/brain mutation decoupling | TCK-179, TCK-174 |
-| | 15 | TCK-175 | Fitness rebuild (includes TCK-154), chamber size from plugin, cross-room comparability | TCK-173, TCK-154 |
-| | 16 | TCK-176 | Curriculum small/large, retention across rooms, switch test | TCK-175 |
-| | 17 | TCK-177 | Trainer UI metrics, typed trainer events | TCK-173 |
+| | 9 | TCK-182 | Brain topology compaction (no dead wiring, pair weight sharing, targeted vs. minimal start) | TCK-179, TCK-173 |
+| C Energy and config | 10 | TCK-149 | Dead config keys (per-key confirmation), `deny_unknown_fields` | – |
+| | 11 | TCK-151 | Metabolic cost: per neuron + activity + organ size, calibrated by shares | – |
+| | 12 | TCK-178 | Energy budget in the trainer (shared energy function) | TCK-173, TCK-151 |
+| | 13 | TCK-145 | Predation energy gain and bite cooldown | TCK-178 |
+| D Training | 14 | TCK-174 | Fair evaluation and selection | TCK-173 |
+| | 15 | TCK-181 | Body/brain mutation decoupling | TCK-179, TCK-174 |
+| | 16 | TCK-175 | Fitness rebuild (includes TCK-154), chamber size from plugin, cross-room comparability | TCK-173, TCK-154 |
+| | 17 | TCK-176 | Curriculum small/large, retention across rooms, switch test, metabolic ramp | TCK-175 |
+| | 18 | TCK-177 | Trainer UI metrics, typed trainer events | TCK-173 |
 
-Golden-master window: TCK-179, TCK-144, (TCK-153 if reordered) and the biolum/reserved output decision of TCK-149 change the fingerprint together, once.
+Runtime performance without model change (enums in the hot loop, buffer reuse, pruned-synapse skipping, parallel sandboxes, ticks/s metric) is part of TCK-173.
+
+Golden-master window: TCK-179, TCK-182, TCK-144, (TCK-153 if reordered) and the biolum/reserved output decision of TCK-149 change the fingerprint together, once.
 Stages B–D can interleave after stage A; every ticket is accepted by a before/after measurement (TCK-172 probes and/or TCK-173 report).
 
 Goal (user, 2026-10-21): training that works — creatures that really develop and improve across different rooms, so that they can later survive in the Ocean. A few rooms suffice for now (today two exist in code: small 1000 px `standard`, large 3500 px `exploration`; an arena exists only as a plan in TCK-123); further rooms are defined once the setup is sound.

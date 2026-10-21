@@ -31,6 +31,13 @@ Training changes cannot be compared today: the trainer lives inside the ~2000-li
 - Literals: chamber size / epoch length / scenario detection via `>= 2000.0` (`engine.rs:777,1753,1802`) → from the scenario plugin.
 - Shared helpers go into existing modules (`src/shared/`); search for existing helpers before adding new ones.
 
+### Runtime performance (behaviour-preserving, golden master unchanged)
+- Hot-loop string matching → enums: organ type via emoji label `contains("👁️")` per organ per tick (`src/shared/brain.rs:56`), activation type as `String` match per neuron per tick (`brain.rs:98-104`) (TCK-155 subset).
+- Reuse buffers instead of per-tick allocations: inputs (`brain.rs:162`), outputs (`brain.rs:140`), virtual foods in the large room (`src/biology/scenarios.rs:278`).
+- Skip pruned synapses (weight 0) in the forward pass (`brain.rs:85-88`) via a compact active list, re-compacted periodically.
+- Run sandboxes in parallel in the headless runner (e.g. `rayon`), one RNG stream per sandbox so results stay reproducible.
+- Report metric: ticks per second (per sandbox and total) to track performance; brain topology changes are in TCK-182.
+
 ## Acceptance
 - Same seed → bit-identical report.
 - Equivalence: UI trainer behaves as before (existing tests green; golden master unchanged).
