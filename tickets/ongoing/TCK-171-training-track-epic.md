@@ -49,8 +49,15 @@ Interpretation: in the small chamber food is almost always in sensor range, so a
 | 4 | TCK-175 | Fitness rebuild (includes TCK-154) | TCK-173, TCK-154 |
 | 5 | TCK-176 | Automatic curriculum with one knob | TCK-175 |
 | 6 | TCK-177 | Trainer UI: success rate, median, curve | TCK-173 |
+| 7 | TCK-178 | Energy budget in the trainer | TCK-173, TCK-151 |
 
-Mechanic fixes become tickets only after TCK-172 delivers numbers (candidates listed there). Every child ticket uses a before/after measurement with the TCK-173 runner as acceptance; results go into `wiki/simulation/trainer.md` (and `wiki/simulation/physics.md` / `wiki/biology/*` for mechanics) on closing.
+Goal (user, 2026-10-21): training that works — creatures that really develop and improve across different rooms, so that they can later survive in the Ocean. A few rooms suffice for now (today two exist in code: small 1000 px `standard`, large 3500 px `exploration`; an arena exists only as a plan in TCK-123); further rooms are defined once the setup is sound.
+
+Related existing tickets: TCK-151 (BMR model, needed by TCK-178), TCK-144 (ΔI channel as klinotaxis steering candidate), TCK-150/TCK-168 (speed and heredity candidates from TCK-172), TCK-152 (only if the Hebbian probe shows harm), TCK-145 (only if carnivores must survive in the Ocean).
+
+Mechanic fixes become tickets only after TCK-172 delivers numbers (candidates listed there): stable synapse identity (most important), thrust rescaling, wall behaviour, body/brain mutation decoupling (optional), steering without a `HOX` pair (optional).
+
+Later (Ocean phase): Ocean survival benchmark for champions — headless, trained vs. random creatures, lifespan and eating rate; needs TCK-143 and the Ocean part of TCK-156. This is the actual proof of the goal. Every child ticket uses a before/after measurement with the TCK-173 runner as acceptance; results go into `wiki/simulation/trainer.md` (and `wiki/simulation/physics.md` / `wiki/biology/*` for mechanics) on closing.
 
 ## Research summary (2026-10-21)
 Checked via search results and abstracts, not full texts.

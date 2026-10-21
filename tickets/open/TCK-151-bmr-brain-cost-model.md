@@ -12,6 +12,8 @@ revisit: RV-S03
 # TCK-151: BMR Brain Cost Model
 
 > Pool ticket: requires a user decision before implementation. Findings (RV-S03) below.
+>
+> 2026-10-21: needed by the training track — TCK-178 (energy budget in the trainer) depends on this model; without it an energy budget selects against sense organs.
 
 ## Description
 BMR multiplies by synapse count and input count; sensory organs become metabolically prohibitive. Ocean compensates with a `* 0.45` literal.

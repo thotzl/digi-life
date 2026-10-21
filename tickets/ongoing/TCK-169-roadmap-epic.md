@@ -18,7 +18,7 @@ Phased plan from the review of 2026-10-19 (base commit `998244e`, v1.12.2). Each
 - 2026-10-21: user prioritises training. Phase 1a (training track, epic TCK-171) runs before the rest of Phase 1; see below.
 
 ## Phase 1a — Training track (epic TCK-171)
-Training produced results only in the small chamber. Analysis points to core mechanics (heredity, speed, steering, walls) before trainer scoring. Order: TCK-172 mechanics diagnosis (no refactor) → TCK-173 `TrainerSim` + seeded headless runner (trainer-only slice of TCK-156/TCK-158) → TCK-174 fair evaluation → TCK-175 fitness rebuild (includes TCK-154) → TCK-176 curriculum (core of TCK-123) → TCK-177 UI metrics. Mechanic fixes are ticketed after the TCK-172 numbers. Each ticket is accepted by a before/after headless measurement.
+Training produced results only in the small chamber. Analysis points to core mechanics (heredity, speed, steering, walls) before trainer scoring. Order: TCK-172 mechanics diagnosis (no refactor) → TCK-173 `TrainerSim` + seeded headless runner (trainer-only slice of TCK-156/TCK-158) → TCK-174 fair evaluation → TCK-175 fitness rebuild (includes TCK-154) → TCK-176 curriculum (core of TCK-123) → TCK-177 UI metrics; TCK-178 energy budget in the trainer (needs TCK-151). Mechanic fixes are ticketed after the TCK-172 numbers. Each ticket is accepted by a before/after headless measurement.
 
 ## Phase 0 — Stabilize (correctness + release capability)
 Minimal-invasive; every fix covered by a test.

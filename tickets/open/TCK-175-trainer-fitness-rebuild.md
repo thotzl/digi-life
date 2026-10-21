@@ -19,6 +19,8 @@ The large chamber suffers from the bootstrap problem: early on all candidates fa
 ## Scope
 - Few interpretable terms per scenario: primary = eaten amount / yield; secondary = time to first catch; shaping = approach achieved towards the nearest food that was in sensor range. No distance-from-centre term, no multiplicative cliffs.
 - From TCK-154: spawn distances from the scenario plugin, uniform across trials (today 650 / 1200 / 550); iteration limit for rejection sampling; re-trial calls `plugin.initialize`.
+- Chamber size and epoch length from the plugin (`chamber_size()`, `epoch_ticks()`) instead of engine literals (`engine.rs:777,1753`); the UI shows the plugin value (today the option reads "Exploration (2500x2500)" in `frontend/views/TrainerView.ts:546` while the engine uses 3500).
+- Fitness comparable across rooms: normalise per scenario or keep elites/HoF per scenario; today the HoF query sorts the whole run by raw fitness (`engine.rs:145`) although the large room scores on a different scale.
 - Decide RV-S09 (should generation 1 start blind with random genomes?). Option: minimum equipment or a generation-1 filter discarding immobile/blind genomes (minimal-criterion idea).
 
 ## Acceptance
