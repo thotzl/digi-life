@@ -2,16 +2,17 @@
 id: TCK-154
 title: Trainer Scenario Parameters into Plugins
 status: open
-priority: pool
-decision: pending
+priority: high
+decision: accepted
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-S08, RV-S09
+epic_phase: Training Track
 ---
 
 # TCK-154: Trainer Scenario Parameters into Plugins
 
-> Pool ticket: requires a user decision before implementation. Findings (RV-S08, RV-S09) below.
+> Decision 2026-10-21: implemented as part of TCK-175 (training track, epic TCK-171). The RV-S09 question (blind generation 1) is decided there. Findings (RV-S08, RV-S09) below.
 
 ## Description
 Exploration spawn distances differ (650/1200/550); re-trial logic duplicates `initialize`; rejection sampling has no iteration limit; Gen-1 ignores `base_dna`.

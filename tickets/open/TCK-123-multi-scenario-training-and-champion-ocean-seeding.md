@@ -1,12 +1,14 @@
 ---
 id: TCK-123
 title: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocean Seeding
-status: ongoing
-assigned: Gemini-CLI
+status: open
+assigned: unassigned
 created_at: 2026-08-31
 ---
 
 # TCK-123: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocean Seeding (Master Epic)
+
+> Status 2026-10-21: back to open; not started (only `standard`/`exploration` scenarios exist). The curriculum core (one difficulty knob driven by success rate) moved to TCK-176 in the training track (epic TCK-171). Re-scope this ticket after TCK-176: split into sub-tickets; Match Arena and HUD interpolation as separate tickets; check whether champion export can use `creature_catalogue` instead of a new `prepared_creatures` table.
 
 ## Description
 Establish a comprehensive, closed-loop evolutionary pipeline. This Epic consolidates and merges all sub-tickets (`TCK-112`, `TCK-130`, `TCK-132`) into a unified Curriculum Learning framework. 

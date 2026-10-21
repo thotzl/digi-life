@@ -5,7 +5,7 @@ description: Standardized workflows for maintaining and syncing this project's A
 # workspace-workflows: Portable AI Workspace Synchronization
 
 ## I. Portable Context
-This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`, `.agents/state/next-tasks.md`) and its own knowledge base (`wiki/`). Any agent can bootstrap from it without global configuration.
+This repository carries its own agent context (`AGENTS.md` -> `.agents/skills/`, optional `.agents/state/next-tasks.md`) and its own knowledge base (`wiki/`). Any agent can bootstrap from it without global configuration.
 
 ## II. Workflows
 - **`/init`:** bootstrap or extend the `.agents/skills/` layout from the tech stack. Spec: `.agents/skills/workspace-workflows/references/init.md`.
