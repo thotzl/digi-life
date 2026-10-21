@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Ocean
@@ -9,14 +9,14 @@ The open-world mode: a closed basin with a free-living population.
 ## World
 
 - Size `19200 × 10800` px, hard elastic walls (no torus since TCK-103).
-- Procedural world generated in Rust (`src/shared/map_generator.rs`, `generate_world(seed, w, h)`, Mulberry32 PRNG): biomes, reef obstacles (`ProceduralObstacle`), current vents, vertices. Sent to the client in `INIT_STATE` on `CLIENT_READY`/`RESET_WORLD`; the client only renders it (FIX-127).
+- Procedural world generated in Rust (`src/shared/map_generator.rs`, `generate_world(seed, w, h)` with config `seed`, Mulberry32 PRNG, TCK-149): biomes, reef obstacles (`ProceduralObstacle`), current vents, vertices. Sent to the client in `INIT_STATE` on `CLIENT_READY`/`RESET_WORLD`; the client only renders it (FIX-127).
 - Reefs collide physically and are felt by tactile organs (FIX-131), see [[wiki/simulation/physics]].
-- Biomes are generated and rendered but have no simulation effect (RV-S01).
+- Biomes are generated and rendered but have no simulation effect; the unused biome config keys were removed (TCK-149).
 
 ## Population and food
 
 - `foodSporeCount` spores (300) spawned around nutrient centers; ~1 spore per 830 × 830 px. Sensor range `scale · 550` (190–990 px).
-- Restocking refills to `targetPopulation` from catalogue clones or random genomes (catalogue loaded once per pass). `maxCreatures` exists but is not read.
+- Restocking refills to `targetPopulation` from catalogue clones or random genomes (catalogue loaded once per pass). `maxCreatures` (45) caps `INJECT_URZELLE`/`SPAWN_CLONE` (rejected with a `LOG_EVENT`, `logType` system) and Ocean mitosis (TCK-149).
 - Creatures see/smell nearby plants and peers via the spatial grid (TCK-129), see [[wiki/biology/sensing]].
 - Catalogue releases are scattered randomly to avoid stacking (TCK-129).
 - Mitosis, death, decomposition and predation: [[wiki/biology/metabolism-and-reproduction]].

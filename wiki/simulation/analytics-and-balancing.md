@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md]
+sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Analytics and Balancing
@@ -20,7 +20,7 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 - **No Ocean offspring (RV-B01):** generation counters and species rows grow, but the population is restocked. Ocean lineage analysis is meaningless; use `trainer_genomes` for trends.
 - **Species = genome string (RV-B10):** species counts measure mutation volume, not cladogenesis.
-- **Keys without effect (RV-S01):** verify a key is read in `src/` before tuning it ([[wiki/architecture/configuration]]).
+- **Unread keys:** every config key has a test-enforced read site except `steerTorqueBaseMultiplier`, `dragLateralCoefficient`, `bitingBaseEnergyGain` (TCK-149, [[wiki/architecture/configuration]]).
 - **No reproducible runs:** `thread_rng()` everywhere (RV-T04). There is no headless measurement runner (RV-T03).
 - **`src/bin/cli_trainer.rs`** (`npm run sim:balance`) feeds a 3-input model from before TCK-122 and writes into the production DB (RV-S11) — not usable for balancing.
 
@@ -28,7 +28,7 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 1. Herbivore/predator ratio: aim for ~75 % with `carnivory < bitingCarnivoryThreshold`, ≤ 25 % predators; if predators dominate, lower biting gain or raise carnivore metabolic cost.
 2. BMR vs food: compare `bmrBaseScale` drain with spore availability (`foodSporeCount`) and average time-to-food.
-3. Mitosis cost: `reproductionSplitLossRatio` must keep growth bounded; restocking refills to `targetPopulation`; `maxCreatures` is not read.
+3. Mitosis cost: `reproductionSplitLossRatio` must keep growth bounded; restocking refills to `targetPopulation`; `maxCreatures` caps spawn actions and mitosis (TCK-149).
 4. Change one constant at a time; record before/after series in this article.
 
 ## Lineage and diversity

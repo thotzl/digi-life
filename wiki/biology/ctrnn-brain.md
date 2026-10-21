@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # CTRNN Brain
@@ -18,7 +18,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing
 ## Topology
 
 - **Neuron index layout** depends on organelle count — see `get_input_neurons_count`, `get_motor_thrust_id`, `get_motor_bending_id`, `get_hidden_neurons_start_id` in `dna.rs`.
-- **Outputs:** motor 0 thrust (forward/backward), motor 1 bending (left/right), motor 3 biolum, 4 reserved (both without effect, RV-S01).
+- **Outputs:** motor 0 thrust (forward/backward), motor 1 bending (left/right), motor 3 biolum, 4 reserved (both without effect; `bioluminescenceFlashCost` removed, TCK-149).
 - **Thalamus** layer between sensors and hidden nodes; hardwired reflex synapses (±1.0); reflex pairs precomputed in a `HashSet` (TCK-140).
 - **NEU genes** define hidden neurons (τ, bias, activation, depth `0.15..0.85`); fallback 2 hidden neurons. **SY genes** define strong synapses (`from`/`to` modulo-mapped over absolute indices, weight `[-2, 2]`) (TCK-119).
 - **Synaptic exuberance:** at birth fully connected sources (7 base inputs + thalamus + hidden) × destinations (4 motors + hidden), no self-loops (TCK-121). Synapse count ≈ `(7 + 10·thalamus blocks + H) · (4 + H)`, H ≤ 12, organ count uncapped: ~120 (1 block, H 2), ~250 (2 / 4), ~1,000 (4 / 12), ~1,700 (8 / 12). Non-`SY` weights start in `[-0.5, 0.5]` (`dna.rs:1327`).

@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md]
+sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Simulation Engine
@@ -37,7 +37,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - Creature construction exists 6× with diverging start values (energy 0.6 vs 0.8, `antisense` empty vs set, `neuron_states` empty vs preallocated); spore spawn with nutrient centers 3×; `TRAINER_STATE_CHANGED` payload 5×; `base_dna` literal 3× (RV-A01).
 - Not unit-testable (needs a Tauri window); logic is tested through extracted pure functions ([[wiki/quality/testing]]).
 - World size `19200 × 10800` hardcoded in Rust (`engine.rs`, `trainer_engine.rs`) and TS; trainer epoch length `300/1800` and chamber size `1000/3500` are engine literals (RV-A05).
-- `rand::thread_rng()` at ~20 sites — runs are not reproducible; `config.seed` is unused (RV-T04).
+- `rand::thread_rng()` at ~20 sites — runs are not reproducible (RV-T04); `config.seed` only seeds Ocean world generation (TCK-149).
 
 ## Key Takeaways
 
@@ -45,4 +45,4 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - The hot loop is free of per-step SQL, grid allocations and agent clones (TCK-139).
 - Engine structure, hardcoded constants and RNG are known limitations (RV-A01, RV-A05, RV-T04).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149.

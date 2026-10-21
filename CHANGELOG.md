@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.15] - 2026-10-21
+
+### Changed
+- Config keys without effect are resolved (training track P1, epic TCK-171): the Ocean world is generated from `seed`; `maxCreatures` caps manual spawns (`INJECT_URZELLE`, `SPAWN_CLONE`) and mitosis; lifespan is `min(mature_age * creatureLifespanMatureAgeMultiplier, creatureMaxAgeTicks)` with the former literal 12 moved into the config; mitosis applies `creatureMatureAgeFloor` and `reproductionStomachThresholdFloor`; Lamarckian assimilation in the Ocean requires the parent to be at least `lamarckianAssimilationAgeFloor` ticks old (ref TCK-149).
+- `AppConfig` and `SimulationRules` reject unknown keys (`deny_unknown_fields`); a test asserts that every config key has a read site in `src/`, with an explicit exemption list for keys wired up later (steering/lateral drag TCK-150/TCK-180, biting energy gain TCK-145) (ref TCK-149).
+
+### Removed
+- Config keys without effect: `adrenaline*` (including the always-neutral metabolic surcharge), `bioluminescenceFlashCost`, `biome*`, `predatorSavageThrust*`, `restockFounderGeneInheritChance`, and the keys unknown to the struct (`obstacles*`, `vents*`, `disableVentsForce`) (ref TCK-149).
+
 ## [1.12.14] - 2026-10-21
 
 ### Changed

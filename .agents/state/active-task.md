@@ -47,8 +47,11 @@ Training that works: creatures that really develop and improve across rooms, so 
 - Pool tickets TCK-144/145/149/150/151/152/153 were pulled in with the session's recommended defaults (recorded in each ticket); the user may still veto. TCK-151 direction confirmed by the user after research (activity-based cost).
 - Not added: an explicit non-goals list (user declined).
 
+## Progress
+- P1 Config done (v1.12.15): TCK-149 implemented for P1; ticket stays ongoing for its P3/P5/P6 rests (see ticket).
+
 ## Next step
-P1: go through the dead config keys of TCK-149 with the user, key by key (default grouping is in the ticket), then implement. P2 does not depend on the user and can follow directly after the P1 gate.
+P2 Sim lab (TCK-173, 172, 185, 183 runner/retention, 186, 188), after the user's 'GO PHASE P2'. Work with subagents on scoped, context-heavy slices.
 
 ## Open points
-- Local commits of this session are not pushed yet (check `git status -sb`); `gh` is not installed, so CI runs and the GitHub ticket sync must be checked in the browser.
+- Check `git status -sb` for unpushed commits; `gh` is not installed, so CI runs and the GitHub ticket sync must be checked in the browser.

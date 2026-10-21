@@ -1,7 +1,7 @@
 ---
 id: TCK-149
 title: Dead Config Keys: Implement or Remove
-status: open
+status: ongoing
 priority: high
 decision: accepted
 assigned: unassigned
@@ -31,3 +31,20 @@ Decide per key; afterwards `deny_unknown_fields`.
 - **RV-S01 · P1 · verified** — 16 of 44 `SimulationRules` are never read: `creatureMaxAgeTicks`, `creatureMatureAgeFloor`, `lamarckianAssimilationAgeFloor`, `adrenalineMaxMultiplier`, `adrenalineIncreaseRate`, `adrenalineDecayRate`, `bioluminescenceFlashCost`, `biomeHazardDamageScale`, `biomeAlgaeSporeSpawnThreshold`, `bitingBaseEnergyGain`, `reproductionStomachThresholdFloor`, `steerTorqueBaseMultiplier`, `predatorSavageThrustThreshold`, `predatorSavageThrustMultiplier`, `dragLateralCoefficient`, `restockFounderGeneInheritChance`. `AppConfig`: `maxCreatures`, `seed` unused. 9 keys in `config.json` do not exist in the struct (`obstacles*`, `vents*`, `disableVentsForce`) and are silently ignored.
 - Consequences: adrenaline constant 1.0 (brain input always 0, metabolic surcharge always 1); biolum output (motor 3) and "reserved" (4) have no effect but cost synapses/BMR; biomes have no simulation effect.
 - Decision per key (user): implement or remove. Target: `#[serde(deny_unknown_fields)]`, every key has at least one read site; config test that every key deserializes.
+
+## Progress P1 (2026-10-21, v1.12.15)
+Decisions (user, 2026-10-21): groups A–E as proposed; values introduced by the fixes live in `config.json`, not in code.
+- Implemented: `seed` (Ocean world, `engine.rs` `generate_world`, INIT_STATE), `maxCreatures` (guard arm for `INJECT_URZELLE`/`SPAWN_CLONE`, mitosis condition `population < max_creatures`), `creatureMaxAgeTicks` as upper bound with new key `creatureLifespanMatureAgeMultiplier` (12, formerly a literal), `creatureMatureAgeFloor` and `reproductionStomachThresholdFloor` as floors at the mitosis read site (`parse_genome` unchanged, golden master unchanged), `lamarckianAssimilationAgeFloor` as Ocean-only age gate for Lamarckian offsets.
+- Removed: `adrenaline*` (4, incl. the always-neutral BMR surcharge), `bioluminescenceFlashCost`, `biome*` (2), `predatorSavageThrust*` (2), `restockFounderGeneInheritChance`; from `config.json`: `obstacles*`, `vents*`, `disableVentsForce`.
+- `#[serde(deny_unknown_fields)]` on `AppConfig` and `SimulationRules`.
+
+## Remaining (ticket stays ongoing)
+- P3 (with TCK-179 golden-master change): agent field `adrenaline` and brain input `adrenaline_level` (always 0); motor 3 (biolum) and motor 4 (reserved): remove or keep.
+- P5 (TCK-150/TCK-180): `steerTorqueBaseMultiplier`, `dragLateralCoefficient`.
+- P6 (TCK-145): `bitingBaseEnergyGain`.
+- These three keys are listed in `KEYS_WITHOUT_READ_SITE` (`src/shared/types.rs`); remove each entry when its key gets a read site.
+
+## Verification (P1)
+- `cargo test`: 45 passed, 0 failed, incl. new `shared::types::tests::test_every_config_key_has_read_site`, `test_unknown_config_key_is_rejected`, existing `test_embedded_config_matches_config_json`, golden master unchanged.
+- `cargo build`: 4 warnings before and after (no new warnings). `npm run build`: green.
+- Not run: the app itself (manual smoke checklist of TCK-186 does not exist yet; it is built in P2).

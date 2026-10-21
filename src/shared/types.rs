@@ -110,22 +110,16 @@ impl From<&CreatureAgent> for TelemetryCreature {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SimulationRules {
     pub creature_max_age_ticks: u32,
+    pub creature_lifespan_mature_age_multiplier: u32,
     pub creature_mature_age_floor: u32,
     pub lamarckian_assimilation_age_floor: u32,
     pub lamarckian_assimilation_chance: f32,
     pub bmr_base_scale: f32,
-    pub adrenaline_max_multiplier: f32,
-    pub adrenaline_increase_rate: f32,
-    pub adrenaline_decay_rate: f32,
-    pub adrenaline_metabolic_surcharge_scale: f32,
     pub thermal_stress_penalty_scale: f32,
-    pub bioluminescence_flash_cost: f32,
     pub photosynthesis_energy_gain: f32,
-    pub biome_hazard_damage_scale: f32,
-    pub biome_algae_spore_spawn_threshold: f32,
     pub grazing_radius_multiplier: f32,
     pub grazing_radius_offset: f32,
     pub grazing_efficiency_herbivore_scale: f32,
@@ -140,8 +134,6 @@ pub struct SimulationRules {
     pub reproduction_recoil_velocity_scale: f32,
     pub thrust_base_multiplier: f32,
     pub steer_torque_base_multiplier: f32,
-    pub predator_savage_thrust_threshold: f32,
-    pub predator_savage_thrust_multiplier: f32,
     pub drag_forward_coefficient: f32,
     pub drag_forward_stiffness_decay: f32,
     pub drag_lateral_coefficient: f32,
@@ -153,12 +145,11 @@ pub struct SimulationRules {
     pub decomposition_spore_min: i32,
     pub decomposition_spore_max: i32,
     pub decomposition_size_ratio: f32,
-    pub restock_founder_gene_inherit_chance: f32,
     pub restock_initial_stomach_ratio: f32,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfig {
     pub seed: String,
     pub target_population: usize,
@@ -211,5 +202,61 @@ mod tests {
         assert_eq!(embedded.target_population as u64, on_disk["targetPopulation"].as_u64().unwrap());
         assert_eq!(embedded.rules.creature_max_age_ticks as u64, on_disk["rules"]["creatureMaxAgeTicks"].as_u64().unwrap());
         assert!((embedded.rules.thrust_base_multiplier as f64 - on_disk["rules"]["thrustBaseMultiplier"].as_f64().unwrap()).abs() < 1e-6);
+    }
+
+    /// Keys kept on purpose without a read site, each with the ticket that wires it up.
+    const KEYS_WITHOUT_READ_SITE: [(&str, &str); 3] = [
+        ("steer_torque_base_multiplier", "TCK-150/TCK-180"),
+        ("drag_lateral_coefficient", "TCK-150/TCK-180"),
+        ("biting_base_energy_gain", "TCK-145"),
+    ];
+
+    fn camel_to_snake(key: &str) -> String {
+        let mut out = String::new();
+        for c in key.chars() {
+            if c.is_ascii_uppercase() {
+                out.push('_');
+                out.push(c.to_ascii_lowercase());
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
+    fn collect_rust_sources(dir: &std::path::Path, out: &mut String) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                collect_rust_sources(&path, out);
+            } else if path.extension().map_or(false, |e| e == "rs") && !path.ends_with("shared/types.rs") {
+                out.push_str(&std::fs::read_to_string(&path).unwrap());
+            }
+        }
+    }
+
+    #[test]
+    fn test_every_config_key_has_read_site() {
+        let on_disk: serde_json::Value = serde_json::from_str(include_str!("../../config.json")).unwrap();
+        let mut keys: Vec<String> = on_disk.as_object().unwrap().keys().filter(|k| *k != "rules").cloned().collect();
+        keys.extend(on_disk["rules"].as_object().unwrap().keys().cloned());
+
+        let mut sources = String::new();
+        collect_rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut sources);
+
+        let unread: Vec<String> = keys
+            .iter()
+            .map(|k| camel_to_snake(k))
+            .filter(|field| !KEYS_WITHOUT_READ_SITE.iter().any(|(exempt, _)| exempt == field))
+            .filter(|field| !sources.contains(&format!(".{}", field)))
+            .collect();
+        assert!(unread.is_empty(), "config keys without a read site in src/: {:?}", unread);
+    }
+
+    #[test]
+    fn test_unknown_config_key_is_rejected() {
+        let mut on_disk: serde_json::Value = serde_json::from_str(include_str!("../../config.json")).unwrap();
+        on_disk["rules"]["ventsBaseCount"] = serde_json::json!(6);
+        assert!(serde_json::from_value::<AppConfig>(on_disk).is_err());
     }
 }

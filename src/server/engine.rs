@@ -60,15 +60,14 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
         let logical_width = 19200.0;
         let logical_height = 10800.0;
-        let ocean_world = generate_world("ocean-tauri-seed-77", logical_width, logical_height);
+        let app_config = crate::shared::types::AppConfig::global();
+        let ocean_world = generate_world(&app_config.seed, logical_width, logical_height);
         let mut grid = SpatialGrid::new(logical_width, logical_height, 80.0);
 
         // Mirror of species_records (id, status, peak) in SELECT order; reloaded only after inserts/resets
         let mut species_cache: Vec<(String, String, i32)> = Vec::new();
         let mut species_cache_dirty = true;
 
-        let app_config = crate::shared::types::AppConfig::global();
-        
         let mut is_running = false;
         let mut ocean_warp_factor = 1;
         let mut creatures: Vec<CreatureAgent> = Vec::new();
@@ -394,7 +393,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
-                                    "seed": "ocean-tauri-seed-77",
+                                    "seed": app_config.seed,
                                     "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
@@ -415,6 +414,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     is_running = running;
                                     emit_state(json!({ "type": "SIM_STATE", "running": is_running }));
                                 }
+                            }
+                            "INJECT_URZELLE" | "SPAWN_CLONE" if creatures.len() >= app_config.max_creatures => {
+                                emit_state(json!({
+                                    "type": "LOG_EVENT",
+                                    "message": format!("Population cap reached ({} creatures), spawn rejected.", app_config.max_creatures),
+                                    "logType": "system"
+                                }));
                             }
                             "INJECT_URZELLE" => {
                                 let mut rng = rand::thread_rng();
@@ -748,7 +754,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
-                                    "seed": "ocean-tauri-seed-77",
+                                    "seed": app_config.seed,
                                     "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
@@ -1082,6 +1088,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let mut damage_map = std::collections::HashMap::<u32, f32>::new();
 
                     let mut next_creatures = Vec::new();
+                    let population = creatures.len();
 
                     // 2. Physics & Biology Loop over all creatures
                     for mut agent in creatures {
@@ -1211,10 +1218,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let out_thrust = outputs[0];
                         let out_left = outputs[1];
 
-                        // Passive metabolism + Adrenaline surcharge (aligned with config rules!)
-                        let metabolic_surcharge = 1.0 + (agent.adrenaline - 1.0) * app_config.rules.adrenaline_metabolic_surcharge_scale;
+                        // Passive metabolism
                         // Reduce Ozean basal metabolic rate decay by half (0.45 coefficient) for long, organic, and gentle lifespans!
-                        let bmr_decay = agent.phenotype.basal_metabolic_rate * app_config.rules.bmr_base_scale * app_config.basal_metabolic_rate_multiplier * metabolic_surcharge * 0.45;
+                        let bmr_decay = agent.phenotype.basal_metabolic_rate * app_config.rules.bmr_base_scale * app_config.basal_metabolic_rate_multiplier * 0.45;
                         agent.energy -= bmr_decay;
 
                         // Photosynthesis for green creatures in light zone
@@ -1234,7 +1240,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             agent.energy -= thermal_stress * app_config.rules.thermal_stress_penalty_scale;
                         }
 
-                        let max_age_ticks = agent.phenotype.mature_age * 12;
+                        let max_age_ticks = (agent.phenotype.mature_age * app_config.rules.creature_lifespan_mature_age_multiplier)
+                            .min(app_config.rules.creature_max_age_ticks);
                         if agent.energy <= 0.0 || agent.age >= max_age_ticks {
                             // Decompose corpse into nutrient spores (elastic spore relocation, no array deletion!)
                             let num_pellets = (((base_length * mean_radius) / app_config.rules.decomposition_size_ratio).floor() as i32)
@@ -1369,8 +1376,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
 
                             // Asexual Reproduction (Mitosis)
-                            let can_reproduce = agent.age >= agent.phenotype.mature_age && agent.has_eaten;
-                            let threshold = agent.phenotype.stomach_capacity * agent.phenotype.repro_threshold;
+                            let mature_age = agent.phenotype.mature_age.max(app_config.rules.creature_mature_age_floor);
+                            let repro_threshold = agent.phenotype.repro_threshold.max(app_config.rules.reproduction_stomach_threshold_floor);
+                            let can_reproduce = agent.age >= mature_age && agent.has_eaten && population < app_config.max_creatures;
+                            let threshold = agent.phenotype.stomach_capacity * repro_threshold;
                             
                             if can_reproduce && agent.energy >= threshold {
                                 agent.energy *= app_config.rules.reproduction_split_loss_ratio;
@@ -1396,9 +1405,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     child.phenotype = parse_genome(&child.genome, None, None);
                                     
                                     // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses
-                                    let parent_synapses = &agent.phenotype.brain.synapses;
+                                    // (only from parents old enough to have learned something)
+                                    let assimilate = agent.age >= app_config.rules.lamarckian_assimilation_age_floor;
+                                    let parent_synapses: &[_] = if assimilate { &agent.phenotype.brain.synapses } else { &[] };
                                     let parent_weights = &agent.synapse_weights;
-                                    
+
                                     let mut child_weights = vec![0.0; child.phenotype.brain.synapses.len()];
                                     for (c_idx, c_syn) in child.phenotype.brain.synapses.iter().enumerate() {
                                         let mut w = c_syn.weight;

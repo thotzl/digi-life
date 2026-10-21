@@ -1,5 +1,5 @@
 ---
-sources: [ideas.md, docs/revisit/04-simulation-model.md]
+sources: [ideas.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Porting Concepts
@@ -11,8 +11,8 @@ Assessment of the four porting ideas in `ideas.md` (sections II and III, "Epochs
 | Idea (ideas.md epoch) | Inspiration | Current state in code | Fit |
 | :--- | :--- | :--- | :--- |
 | Swimbot oscillators for the notochord (14) | Gene Pool | spine wave via `WAV`/`PUL` genes and `SpinalHarmonics`; thrust scaling may immobilize genomes (RV-S02) | depends on how thrust actually scales |
-| Functional chromatophores / colour-segment metabolism (15) | Biogenesis | colours cosmetic; photosynthesis is a flat config value, biomes without effect (RV-S01) | would give biomes/light a function |
-| Hormonal endocrinology: adrenaline, dopamine, satiety (16) | The Bibites | adrenaline input exists but is constant; all adrenaline keys unused (RV-S01) | direct fit for the unused adrenaline system; dopamine interacts with the Hebbian rule |
+| Functional chromatophores / colour-segment metabolism (15) | Biogenesis | colours cosmetic; photosynthesis is a flat config value, biomes without effect, biome keys removed (TCK-149) | would give biomes/light a function |
+| Hormonal endocrinology: adrenaline, dopamine, satiety (16) | The Bibites | adrenaline input exists but is constant 0; adrenaline config keys removed (TCK-149), re-introduced with TCK-165 | direct fit for the inert adrenaline input; dopamine interacts with the Hebbian rule |
 | Relative f1 circuits in the DNA (17) | Framsticks | `SY` genes map `from`/`to` by modulo over absolute indices, which shift on indels | interacts with evaluation order and plasticity (RV-S04, RV-S06) |
 
 ## Key Takeaways

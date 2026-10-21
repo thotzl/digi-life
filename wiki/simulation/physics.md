@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, docs/revisit/04-simulation-model.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Physics
@@ -34,7 +34,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.m
 ## Known limitations
 
 - For low-pulse/low-stiffness genomes the thrust scaling yields near-zero terminal speed (hypothesis RV-S02), see [[wiki/simulation/ocean]].
-- `dragLateralCoefficient` and `steerTorqueBaseMultiplier` have no effect (RV-S01).
+- `dragLateralCoefficient` and `steerTorqueBaseMultiplier` are unread, exempt in the config read-site test (TCK-149; TCK-150/TCK-180).
 
 ## Key Takeaways
 
@@ -42,4 +42,4 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.m
 - Wall reflection is correct and tested on all four walls.
 - The grid is reused; food lookup is linear.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, TCK-104, FIX-131, TCK-135, `docs/revisit/04-simulation-model.md`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, TCK-104, FIX-131, TCK-135, TCK-149, `docs/revisit/04-simulation-model.md`.

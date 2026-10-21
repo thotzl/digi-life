@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md]
+sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
 ---
 
 # Sensing
@@ -25,7 +25,7 @@ Computed in `compute_sensory_inputs` (`src/shared/brain.rs`), one implementation
 
 ## Systemic base inputs (TCK-133)
 
-Always present, appended after organ channels: `clock_val` (CPG), `linear_speed`, `rotational_speed`, `internal_energy`, `adrenaline_level` (constant 0, RV-S01), `pain_signal`. Organ channels are exteroception only.
+Always present, appended after organ channels: `clock_val` (CPG), `linear_speed`, `rotational_speed`, `internal_energy`, `adrenaline_level` (constant 0, agent `adrenaline` fixed at 1.0; TCK-149), `pain_signal`. Organ channels are exteroception only.
 
 ## Angle space (TCK-133)
 
