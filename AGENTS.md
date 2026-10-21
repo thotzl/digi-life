@@ -16,7 +16,12 @@ At session start: the user's request defines the session task; the project state
 
 ## 📚 Project Knowledge
 
-Facts about the code, architecture and biology model live in the wiki: `wiki/_master-index.md`. Open work and findings live only in tickets; the roadmap is epic TCK-169. Skills hold agent rules and link to the wiki. Tickets: `tickets/`. Release notes: `CHANGELOG.md`.
+Wiki and tickets together hold (almost) all project knowledge. Read them before analysing the code from scratch:
+
+- **Wiki** (`wiki/_master-index.md`): current state of code, architecture and biology model, results of closed tickets, known limitations (with `RV-*` IDs), decisions (ADRs) and research.
+- **Tickets** (`tickets/`): all open work and findings with code locations, research, decisions and acceptance criteria. Roadmap: epic TCK-169. Current focus: epic TCK-171 (training track, phases P1–P8).
+
+Skills hold agent rules and link to the wiki. Release notes: `CHANGELOG.md`. Verify against the code before changing it; if wiki and code disagree, the code wins and the wiki gets corrected.
 
 ## 📂 Modular AI Skills Index
 
