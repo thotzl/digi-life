@@ -40,40 +40,31 @@ A trainer rebuild alone would not fix this foundation.
 
 Interpretation: in the small chamber food is almost always in sensor range, so approaching pays off directly. In the large chamber there is no signal until food comes into view by chance (the bootstrap problem of evolutionary robotics), and the failure fitness rewards "swim to the wall". With different tasks per sandbox and ~2 parents, the easiest dice roll wins.
 
-## Child tickets (order)
-Scope decision (user, 2026-10-21): all fixes that fundamentally belong to creature mechanics and training are part of this track, even if not yet visible in the first two rooms; new rooms are decided later, once the setup is sound. Refactoring (DRY, typed enums, shared types, helpers) happens on the way in the tickets that touch the code, limited to the trainer path and shared creature code; Ocean refactoring stays in Phase 1.
+## Goal
+User, 2026-10-21: training that works — creatures that really develop and improve across different rooms, so that they can later survive in the Ocean. Two rooms suffice for now (small 1000 px `standard`, large 3500 px `exploration`; an arena exists only as a plan in TCK-123); further rooms are defined once the setup is sound and safe.
 
-| Stage | # | Ticket | Content | Depends on |
-| :--- | :--- | :--- | :--- | :--- |
-| A Measure | 1 | TCK-172 | Mechanics diagnosis probes (measurement only; baseline for all fixes) | – |
-| | 2 | TCK-173 | `TrainerSim`, seeded RNG, headless runner + baseline; trainer refactoring | – |
-| B Mechanics | 3 | TCK-179 | Stable synapse identity and trait locality (heredity), property tests | TCK-172, TCK-173 |
-| | 4 | TCK-144 | Dedicated ΔI channel (klinotaxis steering), organ type enum | TCK-179 |
-| | 5 | TCK-153 | Brain evaluation order: keep + document unless the steering probe says otherwise | TCK-172 |
-| | 6 | TCK-150 | Thrust rescaling (narrow the speed spread, turning at low speed) | TCK-172 |
-| | 7 | TCK-180 | Wall contact behaviour | TCK-172 |
-| | 8 | TCK-152 | Hebbian: Oja rule, plastic flag, Lamarck as probability | TCK-179 |
-| | 9 | TCK-182 | Brain topology compaction (no dead wiring, pair weight sharing, targeted vs. minimal start) | TCK-179, TCK-173 |
-| C Energy and config | 10 | TCK-149 | Dead config keys (per-key confirmation), `deny_unknown_fields` | – |
-| | 11 | TCK-151 | Metabolic cost: per neuron + activity + organ size, calibrated by shares | – |
-| | 12 | TCK-178 | Energy budget in the trainer (shared energy function) | TCK-173, TCK-151 |
-| | 13 | TCK-145 | Predation energy gain and bite cooldown | TCK-178 |
-| D Training | 14 | TCK-174 | Fair evaluation and selection | TCK-173 |
-| | 15 | TCK-181 | Body/brain mutation decoupling | TCK-179, TCK-174 |
-| | 16 | TCK-175 | Fitness rebuild (includes TCK-154), chamber size from plugin, cross-room comparability | TCK-173, TCK-154 |
-| | 17 | TCK-176 | Curriculum small/large, retention across rooms, switch test, metabolic ramp | TCK-175 |
-| | 18 | TCK-177 | Trainer UI metrics, typed trainer events | TCK-173 |
+Scope decision (user, 2026-10-21): all fixes that fundamentally belong to creature mechanics, brain, performance, energy costs and training are part of this epic, even if not yet visible in the first two rooms. Refactoring (DRY, typed enums, shared types, helpers) happens on the way in the tickets that touch the code, limited to the trainer path and shared creature code; Ocean-only refactoring stays in Phase 1. Backward compatibility is not required; the DB may be emptied on model changes (TCK-183).
 
-Runtime performance without model change (enums in the hot loop, buffer reuse, pruned-synapse skipping, parallel sandboxes, ticks/s metric) is part of TCK-173.
+## Phases
+Phases run in order. Each phase closes with one commit, one version bump, one CHANGELOG entry and one wiki update covering all its tickets, plus the smoke checklist of TCK-186. Acceptance per phase: before/after measurement with the runner (TCK-173) and the probes (TCK-172) against the target values (TCK-188).
 
-Golden-master window: TCK-179, TCK-182, TCK-144, (TCK-153 if reordered) and the biolum/reserved output decision of TCK-149 change the fingerprint together, once.
-Stages B–D can interleave after stage A; every ticket is accepted by a before/after measurement (TCK-172 probes and/or TCK-173 report).
+| Phase | Tickets | Content |
+| :--- | :--- | :--- |
+| **P1 Config** | TCK-149 | Per-key decision with the user, implement/remove, `deny_unknown_fields`; `seed`/`maxCreatures` needed later |
+| **P2 Sim lab** | TCK-173, TCK-172, TCK-185, TCK-183 (runner/retention), TCK-186 (CI), TCK-188 (targets, analytics skill) | `TrainerSim`, seeded RNG, one runner with probe subcommands, trainer refactoring, runtime performance, `CreatureFactory`, in-memory runner and retention, CI reference run; baseline and target values |
+| **P3 Brain v2** | TCK-179, TCK-182, TCK-144, TCK-153, TCK-184, TCK-187, TCK-183 (reset rule), TCK-188 (ADR-002), TCK-149 (biolum/reserved motors) | One rebuild of the genome compiler and brain: stable synapse identity, trait locality, compact topology with pair weight sharing, ΔI channel, evaluation order, structured random genomes, gene-level and creep mutation, gene spans from backend; one golden-master change, DB reset |
+| **P4 Learning** | TCK-152 | Oja rule, `plastic` flag, Lamarck as probability on the new synapse structure |
+| **P5 Locomotion v2** | TCK-150, TCK-180 | Thrust rescaling, turning at low speed, wall contact |
+| **P6 Energy v2** | TCK-151, TCK-178, TCK-145 | One shared energy function: per neuron + activity + organ size, constants computed from share targets; energy budget in the trainer; predation energy |
+| **P7 Evaluation and fitness** | TCK-174, TCK-175, TCK-154 | Shared layouts, trials, mutation strength, parents, population; fitness rebuild, spawn distances, chamber size from plugin, cross-room comparability, generation-1 equipment; measured in two steps |
+| **P8 Curriculum and UI** | TCK-176, TCK-177 | Curriculum small/large with rehearsal, switch at generation boundary, metabolic ramp; UI metrics and typed trainer events |
+| *conditional* | TCK-181 | Body/brain mutation decoupling, only if P7 shows body mutations destroy learned behaviour |
 
-Goal (user, 2026-10-21): training that works — creatures that really develop and improve across different rooms, so that they can later survive in the Ocean. A few rooms suffice for now (today two exist in code: small 1000 px `standard`, large 3500 px `exploration`; an arena exists only as a plan in TCK-123); further rooms are defined once the setup is sound.
+Calibration loops are cut by fixed targets: metabolic constants come from share targets (computable from the phenotype, no training needed); thrust, fitness weights, curriculum thresholds and rehearsal share are time-boxed against the TCK-188 targets.
 
-Related, not part of the track: TCK-168 (relative synapse addressing; research, only if TCK-179 is insufficient), TCK-161 (rest of the test suite; property tests are in TCK-179), TCK-155 / TCK-157 (non-trainer parts).
+Related, not part of the epic: TCK-168 (relative synapse addressing; research, only if TCK-179 is insufficient), TCK-161 (rest of the test suite; property tests are in TCK-179/TCK-184), TCK-155 / TCK-157 / TCK-160 (non-trainer parts), TCK-159 (Ocean-side persistence).
 
-Later (Ocean phase): Ocean survival benchmark for champions — headless, trained vs. random creatures, lifespan and eating rate; needs TCK-143 and the Ocean part of TCK-156. This is the actual proof of the goal. Every child ticket uses a before/after measurement with the TCK-173 runner as acceptance; results go into `wiki/simulation/trainer.md` (and `wiki/simulation/physics.md` / `wiki/biology/*` for mechanics) on closing.
+Later (Ocean phase): Ocean survival benchmark for champions — headless, trained vs. random creatures, lifespan and eating rate; needs TCK-143 and the Ocean part of TCK-156. This is the actual proof of the goal.
 
 ## Research summary (2026-10-21)
 Checked via search results and abstracts, not full texts.
@@ -118,6 +109,6 @@ Sources:
 - Cheney et al. 2018: https://meclab.w3.uvm.edu/papers/2018_RoySoc_Cheney.pdf ; critical follow-up 2025: https://arxiv.org/pdf/2508.17464
 
 ## Definition of Done
-- All tickets of the stage table closed or consciously dropped (with measurement).
-- Headless report shows a measurable success rate in the large chamber, compared against the TCK-173 baseline.
+- Phases P1–P8 closed; all their tickets closed or consciously dropped (with measurement).
+- Target values of TCK-188 reached, compared against the P2 baseline.
 - Wiki articles describe the resulting trainer and mechanics.
