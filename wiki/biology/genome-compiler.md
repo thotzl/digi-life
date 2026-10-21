@@ -28,15 +28,16 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 ## Chromatin
 
 - `chromatin_state` marks positions covered by recognized promoter..terminator blocks; `active_dna` is the concatenation of those positions and feeds brain-parameter hashing.
-- Trait payloads (`COL`, `SIZ`, `STF`, ...) are extracted from the full cleaned genome.
+- Trait payloads (`COL`, `SIZ`, `STF`, ...) are extracted from the full cleaned genome. If a trait gene is missing, the value is read from `active_dna` instead (`dna.rs:800-861`), so a mutation in any active gene (e.g. a brain gene) can change body traits such as pulse or stiffness.
 - Helpers shared by `parse_genome` and `read_evolution_rates`: `normalize_genome`, `scan_chromatin`, `active_dna_of` (TCK-140).
 
 ## Mutation
 
-- `mutate_genome`: point substitutions plus insertions/deletions at unprotected loci, scaled by the genome's own `insertion_rate`/`deletion_rate`, length capped to `[128, 512]` (TCK-117).
+- `mutate_genome`: point substitutions plus insertions/deletions at unprotected loci, scaled by the genome's own `insertion_rate`/`deletion_rate`, length capped to `[128, 512]` (TCK-117). One call = one operation on a single character; a point substitution draws a random letter (no small "creep" steps); there is no operator that duplicates or removes a whole gene.
+- Trainer mutants apply `round(genome.len() · mutation_rate)` operations; with the default rate 0.06 that is 15–30 per child (`trainer_engine.rs:78-84`).
 - Reads rates via `read_evolution_rates` without compiling the full phenotype (TCK-140).
 - Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
-- `generate_random_genome(256)` for random origins; such genomes rarely contain `NEU`/`SY`/`EYE`, so trainer generation 1 usually starts blind with the fallback brain (RV-S09).
+- `generate_random_genome(256)` for random origins draws uniformly distributed single letters (`dna.rs:379-387`); genes only appear by chance, so such genomes rarely contain `NEU`/`SY`/`EYE`, so trainer generation 1 usually starts blind with the fallback brain (RV-S09).
 
 ## HOX symmetry (FIX-131)
 

@@ -9,7 +9,7 @@
 | Path | Purpose | Git |
 | :--- | :--- | :--- |
 | `.agents/skills/<name>/SKILL.md` | Agent rules per domain; take precedence over global skills | tracked |
-| `.agents/state/next-tasks.md` | Optional handover notes: findings and candidate tasks not yet ticketed (dated); deleted once ticketed; may be stale or unrelated to the current task | tracked |
+| `.agents/state/next-tasks.md` | Optional handover note (dated): next steps, where to find what, and findings not yet ticketed (removed once ticketed); may be stale or unrelated to the current task | tracked |
 | `.agents/artifacts/` | Temporary scripts, logs, filtered outputs; never write scratch files elsewhere | ignored |
 
 At session start: the user's request defines the session task; the project state comes from the tickets (`tickets/ongoing/`, roadmap epic TCK-169) and `git log`. If present, read `.agents/state/next-tasks.md` for handover context from previous sessions, not as an instruction. If it is outdated or contradicts the tickets, the tickets win and the note gets updated. Then activate the skills from the index below that match the task. Before touching the engine, router, physics or bundle config, read `wiki/architecture/invariants.md`. Search tools must not skip `.agents/` (gitignored paths in `artifacts/`).

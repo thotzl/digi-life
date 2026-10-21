@@ -21,6 +21,8 @@ Context: ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); 
 
 - Nearest-food search scans all spores twice plus all creatures, O(C × F + C²); the grid is not used for it (RV-P04). A grid ring search could change tie-breaking between equidistant spores.
 - `execute_brain_with_learning` and `compute_sensory_inputs` allocate per call (RV-P08); irrelevant below ~50 agents.
+- Brain step per creature and tick: one pass over all synapses for signals, one for Hebbian learning (`src/shared/brain.rs:80-133`); pruned synapses (weight 0) are still visited in the signal pass; organ type is detected by an emoji `contains` per organ (`brain.rs:56`) and the activation by a `String` match per neuron (`brain.rs:98-104`). Synapse counts and dead wiring see [[wiki/biology/ctrnn-brain]].
+- Trainer sandboxes are stepped sequentially in the engine thread.
 
 ## Equivalence safeguards
 
