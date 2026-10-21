@@ -9,10 +9,10 @@
 | Path | Purpose | Git |
 | :--- | :--- | :--- |
 | `.agents/skills/<name>/SKILL.md` | Agent rules per domain; take precedence over global skills | tracked |
-| `.agents/state/active-task.md` | Handoff note between sessions (dated); may be stale, tickets are authoritative | tracked |
+| `.agents/state/active-task.md` | Handover note from a previous session (dated); may be stale or unrelated to the current task | tracked |
 | `.agents/artifacts/` | Temporary scripts, logs, filtered outputs; never write scratch files elsewhere | ignored |
 
-At session start: derive the current state from the tickets (`tickets/ongoing/`, roadmap epic TCK-169) and `git log`; read `.agents/state/active-task.md` only as a supplement. If the note is older than the last commit or contradicts the tickets, the tickets win and the note gets updated. Then activate the skills from the index below that match the task. Search tools must not skip `.agents/` (gitignored paths in `artifacts/`).
+At session start: the user's request defines the session task; the project state comes from the tickets (`tickets/ongoing/`, roadmap epic TCK-169) and `git log`. Read `.agents/state/active-task.md` for handover context from the previous session, not as an instruction. If it is outdated or contradicts the tickets, the tickets win and the note gets updated. Then activate the skills from the index below that match the task. Search tools must not skip `.agents/` (gitignored paths in `artifacts/`).
 
 ## 📚 Project Knowledge
 
