@@ -50,11 +50,10 @@ Training that works: creatures that really develop and improve across rooms, so 
 ## Progress
 - P1 Config done (v1.12.15): TCK-149 implemented for P1; ticket stays ongoing for its P3/P5/P6 rests (see ticket).
 - P2 Sim lab done (v1.12.16): TCK-172/173/185/186 closed, TCK-183/188 ongoing (P3 rests). Runner `target/release/trainer_runner run|probe`; targets in TCK-171; UI smoke tooling `.agents/artifacts/uicheck/run-smoke.sh` (backs up and restores the app DB; local, gitignored).
-
-- P3 in progress (uncommitted working tree): slice A (Brain v2 compiler core) done and green (83 tests, new golden fingerprint `0x0c404a33923c8dd9`); slice B (genome operators, TCK-184) done (88 tests); slice C done (94 tests; stable gene identity by promoter spelling + occurrence, MODEL_VERSION = 2 reset, Lamarck by key; golden `0x65f701a6937c1e71`; 5-seed success std 0.122 / expl 0.033 vs P2 0.040 / 0.023); slice D (frontend gene spans + inspector, TCK-187) running. Contract `.agents/artifacts/p3-design.md`; measurements `.agents/artifacts/p3/{before,after-A,after-B}/`. Remaining: C (model-version DB reset, trainer Lamarck by key), D (frontend gene spans/inspector, TCK-187), E (measurement, ADR-002, wiki, CI reference regeneration, smoke, phase commit).
+- P3 Brain v2 done (v1.12.17): TCK-179/182/144/153/184/187/183/188 closed, TCK-149 ongoing (P5/P6 keys). ADR-002 `wiki/decisions/adr-002-brain-v2.md`; golden `0x65f701a6937c1e71`; `MODEL_VERSION` 2; 5-seed success (pop 16, 30 gens, last 5 gens) small 0.122 / large 0.033 (P2 0.040 / 0.023). Open finding in `.agents/state/next-tasks.md` (thalamus sum offset).
 
 ## Next step
-P3 Brain v2 (TCK-179, 182, 144, 153, 184, 187, 183 reset rule, 188 ADR-002, 149 motors 3/4 + adrenaline input): one golden-master change, CI reference update, DB reset. All phases run without stops (TCK-171 `## Execution decisions`). Work with subagents on scoped slices, sequentially when they touch the same files.
+P4 Learning (TCK-152: Oja rule, `plastic` flag, Lamarck as probability on the synapse-key structure), then P5 Locomotion v2 (TCK-150, TCK-180, steer/drag keys of TCK-149). All phases run without stops (TCK-171 `## Execution decisions`). Measure with `trainer_runner` on seeds b1..b5 (pop 16, 30 gens) plus probes; UI smoke `.agents/artifacts/uicheck/run-smoke.sh <out> [smoke.cjs|inspect.cjs|resetlat.cjs]` (backs up and restores the app DB).
 
 ## Open points
 - Check `git status -sb` for unpushed commits.
