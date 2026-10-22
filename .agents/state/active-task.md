@@ -51,6 +51,8 @@ Training that works: creatures that really develop and improve across rooms, so 
 - P1 Config done (v1.12.15): TCK-149 implemented for P1; ticket stays ongoing for its P3/P5/P6 rests (see ticket).
 - P2 Sim lab done (v1.12.16): TCK-172/173/185/186 closed, TCK-183/188 ongoing (P3 rests). Runner `target/release/trainer_runner run|probe`; targets in TCK-171; UI smoke tooling `.agents/artifacts/uicheck/run-smoke.sh` (backs up and restores the app DB; local, gitignored).
 
+- P3 in progress (uncommitted working tree): slice A (Brain v2 compiler core) done and green (83 tests, new golden fingerprint `0x0c404a33923c8dd9`); slice B (genome operators, TCK-184) done (88 tests); slice C done (94 tests; stable gene identity by promoter spelling + occurrence, MODEL_VERSION = 2 reset, Lamarck by key; golden `0x65f701a6937c1e71`; 5-seed success std 0.122 / expl 0.033 vs P2 0.040 / 0.023); slice D (frontend gene spans + inspector, TCK-187) running. Contract `.agents/artifacts/p3-design.md`; measurements `.agents/artifacts/p3/{before,after-A,after-B}/`. Remaining: C (model-version DB reset, trainer Lamarck by key), D (frontend gene spans/inspector, TCK-187), E (measurement, ADR-002, wiki, CI reference regeneration, smoke, phase commit).
+
 ## Next step
 P3 Brain v2 (TCK-179, 182, 144, 153, 184, 187, 183 reset rule, 188 ADR-002, 149 motors 3/4 + adrenaline input): one golden-master change, CI reference update, DB reset. All phases run without stops (TCK-171 `## Execution decisions`). Work with subagents on scoped slices, sequentially when they touch the same files.
 

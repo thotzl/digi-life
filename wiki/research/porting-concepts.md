@@ -12,12 +12,12 @@ Assessment of the four porting ideas in `ideas.md` (sections II and III, "Epochs
 | :--- | :--- | :--- | :--- |
 | Swimbot oscillators for the notochord (14) | Gene Pool | spine wave via `WAV`/`PUL` genes and `SpinalHarmonics`; thrust scaling may immobilize genomes (RV-S02) | depends on how thrust actually scales |
 | Functional chromatophores / colour-segment metabolism (15) | Biogenesis | colours cosmetic; photosynthesis is a flat config value, biomes without effect, biome keys removed (TCK-149) | would give biomes/light a function |
-| Hormonal endocrinology: adrenaline, dopamine, satiety (16) | The Bibites | adrenaline input exists but is constant 0; adrenaline config keys removed (TCK-149), re-introduced with TCK-165 | direct fit for the inert adrenaline input; dopamine interacts with the Hebbian rule |
-| Relative f1 circuits in the DNA (17) | Framsticks | `SY` genes map `from`/`to` by modulo over absolute indices, which shift on indels | interacts with evaluation order and plasticity (RV-S04, RV-S06) |
+| Hormonal endocrinology: adrenaline, dopamine, satiety (16) | The Bibites | no hormone exists: the inert adrenaline input, agent field and config keys were removed (TCK-149) | a hormone would be a new systemic input (`SystemicInput`); dopamine interacts with the Hebbian rule |
+| Relative f1 circuits in the DNA (17) | Framsticks | `SY` genes address neuron roles modulo the size of their role class; synapse keys and owner genes are stable (TCK-179) | interacts with plasticity (RV-S04) |
 
 ## Key Takeaways
 
 - All four ideas are compatible in spirit but specified against an outdated genome model.
-- Hormones are the most direct fit; oscillators depend on the thrust behaviour.
+- Hormones would be new systemic inputs; oscillators depend on the thrust behaviour.
 
 Sources: `ideas.md`, `docs/revisit/04-simulation-model.md`.

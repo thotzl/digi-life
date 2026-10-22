@@ -5,6 +5,29 @@
   "maxCreatures": 45,
   "basalMetabolicRateMultiplier": 1.0,
   "trainerGenomeRetentionPerRun": 200,
+  "genomeComposition": {
+    "targetLength": 256,
+    "payloadLengthMin": 8,
+    "payloadLengthMax": 16,
+    "organCountMin": 1,
+    "organCountMax": 3,
+    "pFoodOrgan": 0.9,
+    "foodOrganEyeShare": 0.5,
+    "pHox": 0.3,
+    "neuCountMin": 1,
+    "neuCountMax": 3,
+    "syCountMin": 0,
+    "syCountMax": 2
+  },
+  "mutationOperators": {
+    "creep": 0.6,
+    "point": 0.15,
+    "insertion": 0.05,
+    "deletion": 0.05,
+    "geneDuplication": 0.075,
+    "geneDeletion": 0.075,
+    "creepMaxStep": 2
+  },
   "rules": {
     "creatureMaxAgeTicks": 36000,
     "creatureLifespanMatureAgeMultiplier": 12,

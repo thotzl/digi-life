@@ -1,7 +1,7 @@
 ---
 id: TCK-144
 title: Motion Vision Channel Design
-status: open
+status: closed
 priority: high
 decision: accepted
 assigned: unassigned
@@ -28,3 +28,10 @@ Decide: dedicated 6th channel vs. separate neuron; organ type as enum.
 ## Findings (review 2026-10-19, base commit `998244e`)
 - **RV-B06 · P1 · static** — `src/shared/brain.rs`: for eyes/noses channel 5 (`base_idx + 4`) is overwritten every tick with the motion delta ΔI. Meat emits exactly on channel 5 (IR, weight 1.0), so meat reaches the brain only via channel 4 (weight 0.5): carnivore sensing is systematically weakened. The logic is coupled to emoji labels (`label.contains("👁️")`).
 - Decision needed: motion vision as its own 6th channel or as its own neuron type. Organ type as an enum in the phenotype instead of label string matching (see TCK-155).
+
+## Verification (P3, v1.12.17)
+- Dedicated 6th channel per organ for the signed temporal change `clamp(2.5 * (I_now - I_prev), -1, 1)` (I = sum of the 5 spectral inputs); channel 5 (meat/IR) is no longer overwritten (RV-B06 resolved). Applies to eyes, noses and thermal organs.
+- `OrganKind` enum (Eye, Nose, Thermal, Bristle, LateralLine, Proprioceptor) in the phenotype; no emoji label matching in Rust or in the inspector (labels are display-only).
+- Test `test_delta_channel_and_one_tick_latency`.
+- Steering probe (food at +-45 deg): still undirected after P3 (structured genomes: toward 0.090, away 0.100); directed steering is a training outcome measured again in P5/P7 against the TCK-171 target.
+- Golden master `0xa7b82dc4fe552ac8` -> `0x65f701a6937c1e71` (one intended Brain v2 change for TCK-179/182/144/153/184/149; ADR-002). CI reference `tests/reference/trainer-ci.json` regenerated. `cargo test` 94 passed (1 ignored measurement), 0 warnings; `npm run build` and `npm test` green.

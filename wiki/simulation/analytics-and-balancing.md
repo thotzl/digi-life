@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/ongoing/TCK-183-trainer-persistence-and-db-reset.md, tickets/ongoing/TCK-188-targets-adr-and-analytics-skill.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs]
+sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs]
 ---
 
 # Analytics and Balancing
@@ -13,7 +13,7 @@ Trainer measurements run headless with `trainer_runner` (TCK-173): reproducible,
 ```
 cargo run --release --bin trainer_runner -- run --seed <text> --generations <N> --scenario standard|exploration --population <N>
     [--trials 3] [--multi-trial true|false] [--parallel true|false] [--persist --db <path>] [--run-id <id>] [--out <file>]
-cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|all --seed <text>
+cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|all --seed <text>
     [--out <file; directory for all>] [--db <path>] [--hof-limit 64] [--samples <N>]
 ```
 
@@ -41,14 +41,17 @@ cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steer
 
 `src/biology/probes.rs`, measurement only. Each probe is deterministic for its seed (own RNG sub-stream per probe, so `all` equals single runs) and writes JSON (default `.agents/artifacts/probes/<name>.json`). `--db` loads up to `--hof-limit` distinct hall-of-fame genomes read-only from a DB; without it the HoF sets are skipped and the Hebbian probe uses the best elites of a seeded 5-generation trainer run instead.
 
+Genome sets (since TCK-184): `letter_soup` = random 256-base genomes (the former random immigrants, same RNG stream as before, so pre-P3 numbers stay comparable) and `structured` = `generate_structured_genome` with config `genomeComposition` (trainer generation 1 and immigrants). Heredity, speed, equipment, steering, wall and topology report both sets; heredity also uses the wildtype and HoF parents.
+
 | Probe | Measures | Results |
 | :--- | :--- | :--- |
-| `heredity` | parent–child correlation of exuberant weights, explicit synapses, body traits after 1/5/15 point/insertion/deletion/mixed mutations | [[wiki/biology/genome-compiler]] |
+| `heredity` | parent–child correlation of non-`SY` tape weights and `SY` weights on homologous synapses (same key), body traits, speed and organ changes after 1/5/15 ops: each forced `MutationKind`, `mixed` (`mutate_genome`, config operator mix) and `legacy` (the pre-TCK-184 character mix) | [[wiki/biology/genome-compiler]] |
 | `speed` | terminal speed at forced full thrust (1,800 ticks), turning radius and rate | [[wiki/simulation/physics]] |
 | `equipment` | eyes, noses, `HOX` pairs, sensor range, food stimulus at spawn per room | [[wiki/biology/sensing]] |
 | `steering` | heading change toward food at ±45° vs. control, mean thrust sign | [[wiki/biology/ctrnn-brain]] |
 | `wall` | getting free from a wall within 600 ticks, forced thrust vs. real brain | [[wiki/simulation/physics]] |
 | `hebbian` | trainer evaluation of the same genomes with and without Hebbian learning, both rooms | [[wiki/biology/ctrnn-brain]] |
+| `topology` | synapse, neuron, organ count and genome length distributions per set, wildtype synapse/neuron count (TCK-182) | [[wiki/biology/ctrnn-brain]] |
 
 ## Comparing runs
 
@@ -72,13 +75,14 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 | Table | Useful columns |
 | :--- | :--- |
-| `simulation_state` | `state_json` → `creatures[]` (`energy`, `age`, `generation`, `adrenaline`, `neuronStates`), `foodPellets`, `highestGeneration` |
+| `simulation_state` | `state_json` → `creatures[]` (`energy`, `age`, `generation`, `neuronStates`), `foodPellets`, `highestGeneration` |
 | `simulation_history` | `generation`, `population_count`, `average_fitness`/`max_fitness` (actually avg/max energy) |
 | `species_records` | `latin_name`, `parent_name`, `status`, `peak_population`, `generation`, `carnivory`, `birth_time`, `extinction_time` |
 | `trainer_genomes` | `run_id`, `generation`, `fitness`, `active`, `genome`, `methylations`, `synapse_weights` (best 200 per run, TCK-183) |
 | `creature_catalogue` | `source`, `fitness`, `carnivory` |
 
 - Ancestry via `species_records.parent_name → latin_name`.
+- Rows from an older model version are gone: the first start after a `MODEL_VERSION` bump resets all model tables (TCK-183, [[wiki/architecture/persistence]]).
 - Ocean heuristics: herbivore/predator ratio ~75 % with `carnivory < bitingCarnivoryThreshold`; BMR drain (`bmrBaseScale`) vs. spore availability (`foodSporeCount`); `reproductionSplitLossRatio` must keep growth bounded; `maxCreatures` caps spawn actions and mitosis (TCK-149).
 
 ## Key Takeaways
@@ -87,4 +91,4 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 - Compare reports minus `perf`, over fixed seed sets, against the TCK-171 targets.
 - The Ocean has no reproducible measurement path yet; trainer data is the evolution signal.
 
-Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-172, TCK-173, TCK-183, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.
+Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-172, TCK-173, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.

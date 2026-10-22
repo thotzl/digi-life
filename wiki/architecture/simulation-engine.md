@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
+sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md]
 ---
 
 # Simulation Engine
@@ -40,7 +40,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 
 ## Known limitations
 
-- Spore spawn with nutrient centers 3×; `base_dna` literal 2× in `engine.rs` besides `dna::WILDTYPE_GENOME` (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185).
+- Spore spawn with nutrient centers 3×; `base_dna` literal 1× (fresh-start seeding) in `engine.rs` besides `dna::WILDTYPE_GENOME`; the `RESET_EVOLUTION` copy was replaced by structured random founders (TCK-184) (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185).
 - Not unit-testable (needs a Tauri window); logic is tested through extracted pure functions ([[wiki/quality/testing]]).
 - World size `19200 × 10800` hardcoded in Rust and TS (RV-A05); trainer chamber size and epoch length come from the scenario plugin (TCK-173).
 - Ocean RNG is `thread_rng` (RV-T04, above).
@@ -52,4 +52,4 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - Trainer state, RNG and breeding are in the IO-free `TrainerSim`; one `CreatureFactory` for all spawns.
 - Ocean engine structure, world-size constants and Ocean RNG are known limitations (RV-A01, RV-A05, RV-T04).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-185, TCK-186.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-185, TCK-184, TCK-186.

@@ -4,14 +4,15 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use rand::Rng;
 use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
 use crate::biology::dna::{
-    extract_raw_gene_payloads, generate_random_genome, get_payload_linear_value_offset, mutate_genome, mutate_genome_with_kind,
-    normalize_genome, parse_genome, CreaturePhenotype, MutationKind, CHANNELS_PER_ORGANELLE, OUTPUT_MOTOR_NODES_COUNT,
-    SYSTEMIC_BASE_INPUTS_COUNT, WILDTYPE_GENOME,
+    extract_raw_gene_payloads, generate_random_genome, generate_structured_genome, mutate_genome, mutate_genome_with_kind, normalize_genome,
+    parse_genome, read_evolution_rates, CreaturePhenotype, MutationKind, MutationOperators, NeuronRole, OrganSide, CHANNELS_PER_ORGANELLE,
+    OUTPUT_MOTOR_NODES_COUNT, WILDTYPE_GENOME,
 };
 use crate::biology::scenarios::Scenario;
 use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics_with_config, SandboxOrigin};
@@ -22,10 +23,10 @@ use crate::shared::physics::step_creature_kinematics;
 use crate::shared::rng::{derive, seed_from_str, SimRng};
 use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
 
-pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian"];
+pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology"];
 
-/// Length of the genomes of random immigrants (`breed_genome`).
-const RANDOM_GENOME_LENGTH: usize = 256;
+/// Length of the letter-soup genomes (the random immigrants before TCK-184).
+const LETTER_SOUP_LENGTH: usize = 256;
 /// Organs with a spectral affinity from here on detect food (light/chemical branch of `compute_sensory_inputs`).
 const FOOD_SENSING_AFFINITY: f32 = 0.25;
 /// Arena edge for wall-free kinematics (creature starts in the centre and never reaches a wall).
@@ -39,6 +40,11 @@ const STREAM_HEREDITY: u64 = 2;
 const STREAM_EQUIPMENT: u64 = 3;
 const STREAM_WALL: u64 = 5;
 const STREAM_HEBBIAN: u64 = 6;
+const STREAM_STRUCTURED_GENOMES: u64 = 7;
+
+/// Population labels: random letters (no gene structure) vs `generate_structured_genome` (trainer generation 1).
+const LETTER_SOUP: &str = "letter_soup";
+const STRUCTURED: &str = "structured";
 
 /// Inputs shared by all probes.
 #[derive(Debug, Clone)]
@@ -78,6 +84,7 @@ pub fn run_probe(name: &str, opts: &ProbeOptions) -> Result<serde_json::Value, S
         "steering" => serde_json::to_value(probe_steering(opts)),
         "wall" => serde_json::to_value(probe_wall(opts)),
         "hebbian" => serde_json::to_value(probe_hebbian(opts)),
+        "topology" => serde_json::to_value(probe_topology(opts)),
         other => return Err(format!("unknown probe '{}' (known: {}, all)", other, PROBE_NAMES.join(", "))),
     }
     .map_err(|e| e.to_string())?;
@@ -193,9 +200,20 @@ pub fn pearson(pairs: &[(f32, f32)]) -> Option<f32> {
     if sxx <= 0.0 || syy <= 0.0 { None } else { Some((sxy / (sxx * syy).sqrt()) as f32) }
 }
 
-/// The same random genomes for every probe: `derive(seed, [STREAM_RANDOM_GENOMES, i])`.
-pub fn random_genomes(seed: u64, n: usize) -> Vec<String> {
-    (0..n).map(|i| generate_random_genome(RANDOM_GENOME_LENGTH, &mut derive(seed, &[STREAM_RANDOM_GENOMES, i as u64]))).collect()
+/// The same letter-soup genomes for every probe: `derive(seed, [STREAM_RANDOM_GENOMES, i])`.
+pub fn letter_soup_genomes(seed: u64, n: usize) -> Vec<String> {
+    (0..n).map(|i| generate_random_genome(LETTER_SOUP_LENGTH, &mut derive(seed, &[STREAM_RANDOM_GENOMES, i as u64]))).collect()
+}
+
+/// The same structured genomes (config `genomeComposition`, as trainer generation 1) for every probe.
+pub fn structured_genomes(seed: u64, n: usize) -> Vec<String> {
+    let composition = &AppConfig::global().genome_composition;
+    (0..n).map(|i| generate_structured_genome(composition, &mut derive(seed, &[STREAM_STRUCTURED_GENOMES, i as u64]))).collect()
+}
+
+/// Both random populations, letter soup first.
+fn random_populations(seed: u64, n: usize) -> [(&'static str, Vec<String>); 2] {
+    [(LETTER_SOUP, letter_soup_genomes(seed, n)), (STRUCTURED, structured_genomes(seed, n))]
 }
 
 fn agent_at(genome: &str, px: f32, py: f32, heading_angle: f32) -> CreatureAgent {
@@ -261,42 +279,21 @@ pub const HEREDITY_MUTATION_COUNTS: &[usize] = &[1, 5, 15];
 
 /// Phenotype features one heredity comparison needs.
 struct HeredityProfile {
-    /// Non-reflex synapses (source is not a raw input): (from, to) -> (weight, explicit `SY` synapse)
-    synapses: BTreeMap<(usize, usize), (f32, bool)>,
+    /// Non-reflex synapses (source is not a sensor): key -> (weight, owned by an `SY` gene)
+    synapses: BTreeMap<u64, (f32, bool)>,
     traits: Vec<f32>,
     neurons: usize,
     organs: usize,
 }
 
-/// Explicit `SY` (from, to) pairs, recomputed exactly as `parse_genome` maps them.
-fn explicit_synapse_pairs(genome: &str, phenotype: &CreaturePhenotype) -> BTreeSet<(usize, usize)> {
-    let k_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE;
-    let input_count = k_count + SYSTEMIC_BASE_INPUTS_COUNT;
-    let hidden_start = input_count + OUTPUT_MOTOR_NODES_COUNT;
-    let total = phenotype.brain.neurons.len();
-    let sources: Vec<usize> = (k_count..input_count).chain(hidden_start..total).collect();
-    let destinations: Vec<usize> = (input_count..hidden_start).chain(hidden_start..total).collect();
-    extract_raw_gene_payloads(&normalize_genome(genome), "SY", "EN")
-        .iter()
-        .take(30)
-        .map(|payload| {
-            let h_from = get_payload_linear_value_offset(payload, 1);
-            let h_to = get_payload_linear_value_offset(payload, 4);
-            (sources[(h_from * 1000.0) as usize % sources.len()], destinations[(h_to * 1000.0) as usize % destinations.len()])
-        })
-        .collect()
-}
-
 fn heredity_profile(genome: &str) -> HeredityProfile {
     let phenotype = parse_genome(genome, None, None);
-    let explicit = explicit_synapse_pairs(genome, &phenotype);
-    let k_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE;
     let synapses = phenotype
         .brain
         .synapses
         .iter()
-        .filter(|s| s.from_node >= k_count)
-        .map(|s| ((s.from_node, s.to_node), (s.weight, explicit.contains(&(s.from_node, s.to_node)))))
+        .filter(|s| !matches!(phenotype.brain.neurons[s.from_node].role, NeuronRole::Sensor { .. }))
+        .map(|s| (s.key, (s.weight, phenotype.genes[s.owner].gene.promoter == "SY")))
         .collect();
     let sh = &phenotype.spinal_harmonics;
     let traits = vec![
@@ -327,11 +324,11 @@ struct SynapseTally {
 pub struct SynapseHeredity {
     /// Synapses of all parents (summed over children)
     pub parent_synapses: usize,
-    /// Pearson correlation of parent vs child weight over homologous synapses (same from/to), pooled
+    /// Pearson correlation of parent vs child weight over homologous synapses (same key), pooled
     pub pearson: Option<f32>,
-    /// Share of parent synapses with the same from/to in the child
+    /// Share of parent synapses with the same key in the child
     pub retained_share: f32,
-    /// Share of parent synapses with the same from/to and the identical weight in the child
+    /// Share of parent synapses with the same key and the identical weight in the child
     pub unchanged_share: f32,
 }
 
@@ -356,7 +353,7 @@ pub struct TraitChange {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct HeredityCell {
-    /// point | insertion | deletion | mixed (`mutate_genome`, the trainer's operator)
+    /// A forced `MutationKind` label, mixed (`mutate_genome`, the trainer's operator mix) or legacy (the pre-TCK-184 mix)
     pub kind: String,
     pub mutations: usize,
     pub children: usize,
@@ -387,6 +384,8 @@ pub struct HeredityReport {
     pub notes: Vec<String>,
     /// Kind composition of `mutate_genome` ops over all mixed cells
     pub mixed_op_shares: BTreeMap<String, f32>,
+    /// Kind composition of the legacy character mix over all legacy cells
+    pub legacy_op_shares: BTreeMap<String, f32>,
     pub groups: Vec<HeredityGroup>,
 }
 
@@ -394,38 +393,58 @@ pub struct HeredityReport {
 enum HeredityKind {
     Forced(MutationKind),
     Mixed,
+    Legacy,
 }
 
 impl HeredityKind {
     fn label(self) -> &'static str {
         match self {
-            HeredityKind::Forced(MutationKind::Point) => "point",
-            HeredityKind::Forced(MutationKind::Insertion) => "insertion",
-            HeredityKind::Forced(MutationKind::Deletion) => "deletion",
+            HeredityKind::Forced(kind) => kind.label(),
             HeredityKind::Mixed => "mixed",
+            HeredityKind::Legacy => "legacy",
         }
     }
 }
 
-/// Applies `count` ops; returns the child, the applied op count and (mixed only) per-kind op counts [point, insertion, deletion].
-fn mutate_n(parent: &str, kind: HeredityKind, count: usize, rng: &mut SimRng) -> (String, usize, [usize; 3]) {
+/// Per-kind op counts in `MutationKind::ALL` order.
+type OpCounts = [usize; MutationKind::ALL.len()];
+
+fn kind_index(kind: MutationKind) -> usize {
+    MutationKind::ALL.iter().position(|&k| k == kind).expect("kind in ALL")
+}
+
+/// The pre-TCK-184 operator mix of `mutate_genome`: deletion and insertion with probability EVO rate x 0.5 each
+/// (within the length bounds), otherwise a random point mutation.
+fn legacy_mutate(genome: &str, ops: &MutationOperators, rng: &mut SimRng) -> Option<(String, MutationKind)> {
+    let (insertion_rate, deletion_rate) = read_evolution_rates(genome);
+    let roll = rng.gen_range(0.0..1.0);
+    let kind = if roll < deletion_rate * 0.5 && genome.len() > 128 {
+        MutationKind::Deletion
+    } else if roll < (deletion_rate + insertion_rate) * 0.5 && genome.len() < 512 {
+        MutationKind::Insertion
+    } else {
+        MutationKind::Point
+    };
+    mutate_genome_with_kind(genome, kind, ops, rng).map(|g| (g, kind))
+}
+
+/// Applies `count` ops; returns the child, the applied op count and (mixed/legacy only) per-kind op counts.
+fn mutate_n(parent: &str, kind: HeredityKind, count: usize, rng: &mut SimRng) -> (String, usize, OpCounts) {
+    let ops_config = &AppConfig::global().mutation_operators;
     let mut genome = parent.to_string();
-    let (mut applied, mut ops) = (0, [0usize; 3]);
+    let (mut applied, mut ops) = (0, OpCounts::default());
     for _ in 0..count {
-        match kind {
-            HeredityKind::Forced(k) => {
-                if let Some(next) = mutate_genome_with_kind(&genome, k, rng) {
-                    genome = next;
-                    applied += 1;
-                }
+        let next = match kind {
+            HeredityKind::Forced(k) => mutate_genome_with_kind(&genome, k, ops_config, rng).map(|g| (g, k)),
+            HeredityKind::Mixed => mutate_genome(&genome, ops_config, rng).map(|m| (m.genome, m.kind)),
+            HeredityKind::Legacy => legacy_mutate(&genome, ops_config, rng),
+        };
+        if let Some((next, k)) = next {
+            if !matches!(kind, HeredityKind::Forced(_)) {
+                ops[kind_index(k)] += 1;
             }
-            HeredityKind::Mixed => {
-                if let Some((next, _, from, _)) = mutate_genome(&genome, rng) {
-                    ops[match from { '+' => 1, '-' => 2, _ => 0 }] += 1;
-                    genome = next;
-                    applied += 1;
-                }
-            }
+            genome = next;
+            applied += 1;
         }
     }
     (genome, applied, ops)
@@ -440,10 +459,10 @@ struct ChildComparison {
     organ_changed: bool,
     identical: bool,
     applied: usize,
-    ops: [usize; 3],
+    ops: OpCounts,
 }
 
-fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, applied: usize, ops: [usize; 3]) -> ChildComparison {
+fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, applied: usize, ops: OpCounts) -> ChildComparison {
     let child = heredity_profile(child_genome);
     let (mut exuberant, mut explicit) = (SynapseTally::default(), SynapseTally::default());
     for (key, &(pw, is_explicit)) in &parent.synapses {
@@ -512,14 +531,17 @@ fn heredity_cell(kind: HeredityKind, mutations: usize, comparisons: Vec<ChildCom
     }
 }
 
+/// Op counts of all mixed and all legacy cells.
+#[derive(Default)]
+struct MixTally {
+    mixed: OpCounts,
+    legacy: OpCounts,
+}
+
 /// Heredity of `parents` for the given mutation kinds and counts; `children` children per parent and cell.
-fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[usize], seed: u64, group_id: u64, mixed_ops: &mut [usize; 3]) -> HeredityGroup {
-    let kinds = [
-        HeredityKind::Forced(MutationKind::Point),
-        HeredityKind::Forced(MutationKind::Insertion),
-        HeredityKind::Forced(MutationKind::Deletion),
-        HeredityKind::Mixed,
-    ];
+fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[usize], seed: u64, group_id: u64, mix: &mut MixTally) -> HeredityGroup {
+    let kinds: Vec<HeredityKind> =
+        MutationKind::ALL.iter().map(|&k| HeredityKind::Forced(k)).chain([HeredityKind::Mixed, HeredityKind::Legacy]).collect();
     let profiles: Vec<HeredityProfile> = parents.par_iter().map(|g| heredity_profile(g)).collect();
     let mut cells = Vec::new();
     for (kind_idx, &kind) in kinds.iter().enumerate() {
@@ -533,10 +555,15 @@ fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[us
                     compare(&profiles[p], &parents[p], &child, applied, ops)
                 })
                 .collect();
-            if let HeredityKind::Mixed = kind {
+            let tally = match kind {
+                HeredityKind::Mixed => Some(&mut mix.mixed),
+                HeredityKind::Legacy => Some(&mut mix.legacy),
+                HeredityKind::Forced(_) => None,
+            };
+            if let Some(tally) = tally {
                 for c in &comparisons {
-                    for k in 0..3 {
-                        mixed_ops[k] += c.ops[k];
+                    for (t, n) in tally.iter_mut().zip(c.ops) {
+                        *t += n;
                     }
                 }
             }
@@ -546,35 +573,41 @@ fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[us
     HeredityGroup { parents: label.to_string(), parent_count: parents.len(), children_per_parent_and_cell: children, cells }
 }
 
-/// Parent-child similarity after 1/5/15 mutations per kind, for random, wildtype and HoF parents.
+/// Parent-child similarity after 1/5/15 mutations per kind, for letter-soup, structured, wildtype and HoF parents.
 pub fn probe_heredity(opts: &ProbeOptions) -> HeredityReport {
     heredity_with_counts(opts, HEREDITY_MUTATION_COUNTS)
 }
 
 fn heredity_with_counts(opts: &ProbeOptions, counts: &[usize]) -> HeredityReport {
     let seed = seed_from_str(&opts.seed);
-    let random = random_genomes(seed, opts.samples.unwrap_or(200));
-    let mut mixed_ops = [0usize; 3];
+    let n = opts.samples.unwrap_or(200);
+    let mut mix = MixTally::default();
     let mut groups = vec![
-        heredity_group("random", &random, 4, counts, seed, 0, &mut mixed_ops),
-        heredity_group("wildtype", &[WILDTYPE_GENOME.to_string()], 400, counts, seed, 1, &mut mixed_ops),
+        heredity_group(LETTER_SOUP, &letter_soup_genomes(seed, n), 4, counts, seed, 0, &mut mix),
+        heredity_group("wildtype", &[WILDTYPE_GENOME.to_string()], 400, counts, seed, 1, &mut mix),
+        heredity_group(STRUCTURED, &structured_genomes(seed, n), 4, counts, seed, 3, &mut mix),
     ];
     if !opts.hof.is_empty() {
         let hof: Vec<String> = opts.hof.iter().map(|h| h.genome.clone()).collect();
         let per_parent = (800 / hof.len()).clamp(4, 400);
-        groups.push(heredity_group("hof", &hof, per_parent, counts, seed, 2, &mut mixed_ops));
+        groups.push(heredity_group("hof", &hof, per_parent, counts, seed, 2, &mut mix));
     }
-    let total_ops: usize = mixed_ops.iter().sum();
-    let mixed_op_shares = ["point", "insertion", "deletion"].iter().zip(mixed_ops).map(|(k, n)| (k.to_string(), share(n, total_ops))).collect();
+    let shares = |ops: OpCounts| -> BTreeMap<String, f32> {
+        let total: usize = ops.iter().sum();
+        MutationKind::ALL.iter().zip(ops).map(|(k, n)| (k.label().to_string(), share(n, total))).collect()
+    };
     HeredityReport {
         traits: HEREDITY_TRAITS.iter().map(|t| t.to_string()).collect(),
         notes: vec![
-            "Homologous synapse = same (from_node, to_node) in parent and child; reflex synapses (raw organ inputs) are excluded.".to_string(),
-            "explicit = synapse whose (from, to) the parent's SY genes address; exuberant = all other non-reflex synapses.".to_string(),
+            "Homologous synapse = same synapse key (source and target role) in parent and child; reflex synapses (sensor sources) are excluded.".to_string(),
+            "explicit = synapse owned by an SY gene; exuberant = all other non-reflex synapses (gene-tape weights).".to_string(),
             "terminal_speed: straight run at full thrust for 1800 ticks (see speed probe).".to_string(),
             "The trainer applies round(len * 0.06) mixed ops per mutant child (15 at 256 bases).".to_string(),
+            "mixed = mutate_genome (TCK-184 operator mix, config mutationOperators; EVO scales the indel weights); legacy = the pre-TCK-184 character mix (EVO-rate indels, otherwise a random point mutation).".to_string(),
+            "Forced kinds skip ops that are not applicable (length bounds, no suitable gene); mixed falls back to creep instead.".to_string(),
         ],
-        mixed_op_shares,
+        mixed_op_shares: shares(mix.mixed),
+        legacy_op_shares: shares(mix.legacy),
         groups,
     }
 }
@@ -715,7 +748,7 @@ fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
 /// Real terminal speed at forced full thrust (thrust = 1, turn = 0) and turning at full bend.
 pub fn probe_speed(opts: &ProbeOptions) -> SpeedReport {
     let seed = seed_from_str(&opts.seed);
-    let mut sets = vec![speed_set("random", &random_genomes(seed, opts.samples.unwrap_or(1000)))];
+    let mut sets: Vec<SpeedSet> = random_populations(seed, opts.samples.unwrap_or(1000)).iter().map(|(label, genomes)| speed_set(label, genomes)).collect();
     if !opts.hof.is_empty() {
         sets.push(speed_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>()));
     }
@@ -744,8 +777,14 @@ pub struct SpawnSensing {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EquipmentReport {
-    pub n: usize,
     pub notes: Vec<String>,
+    pub sets: Vec<EquipmentSet>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EquipmentSet {
+    pub genomes: String,
+    pub n: usize,
     pub organ_count: Option<Distribution>,
     pub share_no_organ: f32,
     /// Organ with spectral affinity >= 0.80 (vision labels)
@@ -765,10 +804,20 @@ pub struct EquipmentReport {
     pub spawn: Vec<SpawnSensing>,
 }
 
-/// Organ equipment of random genomes and food in sensor range at spawn (real scenario initialisation).
+/// Organ equipment of letter-soup and structured random genomes and food in sensor range at spawn (real scenario initialisation).
 pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
     let seed = seed_from_str(&opts.seed);
-    let genomes = random_genomes(seed, opts.samples.unwrap_or(1000));
+    EquipmentReport {
+        notes: vec![
+            "Sensors see foods[0] (plant) and foods[1] (meat) of the scenario's visible foods only.".to_string(),
+            "eye/nose by affinity (OrganKind Eye >= 0.80, Nose 0.25..=0.65); food detection uses affinity >= 0.25, so 0.65..0.80 organs (OrganKind Thermal) also see food.".to_string(),
+            "letter_soup = random letters; structured = generate_structured_genome (config genomeComposition, trainer generation 1 and immigrants).".to_string(),
+        ],
+        sets: random_populations(seed, opts.samples.unwrap_or(1000)).iter().enumerate().map(|(set_id, (label, genomes))| equipment_set(label, genomes, seed, set_id as u64)).collect(),
+    }
+}
+
+fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64) -> EquipmentSet {
     let phenotypes: Vec<CreaturePhenotype> = genomes.par_iter().map(|g| parse_genome(g, None, None)).collect();
     let food_organs = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).count();
     let ranges: Vec<f32> = phenotypes.iter().flat_map(|p| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).map(|o| o.scale * 550.0)).collect();
@@ -783,7 +832,8 @@ pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
                 .par_iter()
                 .enumerate()
                 .map(|(i, genome)| {
-                    let mut rng = derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64]);
+                    // Letter soup keeps its pre-TCK-184 stream (set 0)
+                    let mut rng = if set_id == 0 { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64]) } else { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64, set_id]) };
                     let sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, scenario, None, None, &mut rng);
                     let mut scratch = Vec::new();
                     let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut scratch).to_vec();
@@ -805,23 +855,24 @@ pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
         })
         .collect();
 
-    // Thalamus pair b compares organelles[2b] and [2b+1] (parse_genome); a midline organ before a pair shifts that pairing
-    let thalamus_pairs = |p: &CreaturePhenotype| p.brain.neurons.iter().filter(|n| n.label.contains("Thalamus Diff Pair")).count() / CHANNELS_PER_ORGANELLE;
+    // A HOX pair is the left and right organ of one gene (consecutive in organelles); its thalamus has Diff nodes
     let pair_organs = |p: &CreaturePhenotype| -> Vec<(f32, f32, f32)> {
-        (0..thalamus_pairs(p)).map(|b| (p.organelles[2 * b].spectral_affinity.min(p.organelles[2 * b + 1].spectral_affinity), p.organelles[2 * b].angle, p.organelles[2 * b + 1].angle)).collect()
+        p.organelles
+            .windows(2)
+            .filter(|w| w[0].side == OrganSide::Left)
+            .map(|w| (w[0].spectral_affinity.min(w[1].spectral_affinity), w[0].angle, w[1].angle))
+            .collect()
     };
-    EquipmentReport {
+    let thalamus_pairs = |p: &CreaturePhenotype| pair_organs(p).len();
+    EquipmentSet {
+        genomes: label.to_string(),
         n: genomes.len(),
-        notes: vec![
-            "Sensors see foods[0] (plant) and foods[1] (meat) of the scenario's visible foods only.".to_string(),
-            "eye/nose follow the input labels of parse_genome; food detection uses affinity >= 0.25, so 0.65..0.80 organs (tactile labels) also see food.".to_string(),
-        ],
         organ_count: Distribution::of(&phenotypes.iter().map(|p| p.organelles.len() as f32).collect::<Vec<_>>()),
         share_no_organ: share_where(&phenotypes, |p| p.organelles.is_empty()),
         share_with_eye: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.spectral_affinity >= 0.80)),
         share_with_nose: share_where(&phenotypes, |p| p.organelles.iter().any(|o| (0.25..=0.65).contains(&o.spectral_affinity))),
         share_with_food_sensor: share_where(&phenotypes, |p| food_organs(p) > 0),
-        share_with_hox_gene: share_where(&genomes, |g| !extract_raw_gene_payloads(&normalize_genome(g), "HOX", "EN").is_empty()),
+        share_with_hox_gene: share_where(genomes, |g| !extract_raw_gene_payloads(&normalize_genome(g), "HOX", "EN").is_empty()),
         share_with_hox_pair: share_where(&phenotypes, |p| thalamus_pairs(p) > 0),
         share_with_food_sensing_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(aff, l, r)| aff >= FOOD_SENSING_AFFINITY && l == -r)),
         share_with_misaligned_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(_, l, r)| l != -r)),
@@ -958,7 +1009,7 @@ fn steering_set(label: &str, genomes: &[String]) -> SteeringSet {
 pub fn probe_steering(opts: &ProbeOptions) -> SteeringReport {
     let seed = seed_from_str(&opts.seed);
     // Runs are fully determined by the genomes (fixed start, no RNG)
-    let mut sets = vec![steering_set("random", &random_genomes(seed, opts.samples.unwrap_or(500)))];
+    let mut sets: Vec<SteeringSet> = random_populations(seed, opts.samples.unwrap_or(500)).iter().map(|(label, genomes)| steering_set(label, genomes)).collect();
     if !opts.hof.is_empty() {
         sets.push(steering_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>()));
     }
@@ -1085,10 +1136,12 @@ fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64) -> Vec<Wa
 /// Thrust into the top wall at 30/60/90 degrees: does the creature get free within 600 ticks?
 pub fn probe_wall(opts: &ProbeOptions) -> WallReport {
     let seed = seed_from_str(&opts.seed);
-    let mut cells = wall_cells("random", &random_genomes(seed, opts.samples.unwrap_or(300)), seed, 0);
+    let [(soup_label, soup), (structured_label, structured)] = random_populations(seed, opts.samples.unwrap_or(300));
+    let mut cells = wall_cells(soup_label, &soup, seed, 0);
     if !opts.hof.is_empty() {
         cells.extend(wall_cells("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), seed, 1));
     }
+    cells.extend(wall_cells(structured_label, &structured, seed, 2));
     WallReport {
         notes: vec![
             "Standard chamber (1000 px); start at the top wall centre, 2 px gap, at rest, heading into the wall at the given angle to the wall surface.".to_string(),
@@ -1239,6 +1292,54 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
     }
 }
 
+// ==========================================================================
+// 7. Topology
+// ==========================================================================
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TopologyReport {
+    pub notes: Vec<String>,
+    pub sets: Vec<TopologySet>,
+    pub wildtype_synapses: usize,
+    pub wildtype_neurons: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TopologySet {
+    pub genomes: String,
+    pub n: usize,
+    pub synapses: Option<Distribution>,
+    pub neurons: Option<Distribution>,
+    pub organs: Option<Distribution>,
+    pub genome_length: Option<Distribution>,
+}
+
+/// Synapse and neuron counts of letter-soup and structured random genomes (brain size per creature, TCK-182).
+pub fn probe_topology(opts: &ProbeOptions) -> TopologyReport {
+    let seed = seed_from_str(&opts.seed);
+    let sets = random_populations(seed, opts.samples.unwrap_or(1000))
+        .iter()
+        .map(|(label, genomes)| {
+            let counts: Vec<[f32; 4]> = genomes
+                .par_iter()
+                .map(|g| {
+                    let p = parse_genome(g, None, None);
+                    [p.brain.synapses.len() as f32, p.brain.neurons.len() as f32, p.organelles.len() as f32, g.len() as f32]
+                })
+                .collect();
+            let column = |i: usize| Distribution::of(&counts.iter().map(|c| c[i]).collect::<Vec<_>>());
+            TopologySet { genomes: label.to_string(), n: genomes.len(), synapses: column(0), neurons: column(1), organs: column(2), genome_length: column(3) }
+        })
+        .collect();
+    let wildtype = parse_genome(WILDTYPE_GENOME, None, None);
+    TopologyReport {
+        notes: vec!["letter_soup = random 256-base genomes, structured = generate_structured_genome (same sets as the other probes); counts from parse_genome.".to_string()],
+        sets,
+        wildtype_synapses: wildtype.brain.synapses.len(),
+        wildtype_neurons: wildtype.brain.neurons.len(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1264,11 +1365,15 @@ mod tests {
     #[test]
     fn test_forced_mutation_kinds_change_length_as_named() {
         let mut rng = derive(1, &[]);
+        let ops = &AppConfig::global().mutation_operators;
         let len = WILDTYPE_GENOME.len();
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Point, &mut rng).unwrap().len(), len);
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Insertion, &mut rng).unwrap().len(), len + 1);
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Deletion, &mut rng).unwrap().len(), len - 1);
-        assert!(mutate_genome_with_kind(&"A".repeat(128), MutationKind::Deletion, &mut rng).is_none());
+        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Point, ops, &mut rng).unwrap().len(), len);
+        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Creep, ops, &mut rng).unwrap().len(), len);
+        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Insertion, ops, &mut rng).unwrap().len(), len + 1);
+        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Deletion, ops, &mut rng).unwrap().len(), len - 1);
+        assert!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::GeneDuplication, ops, &mut rng).unwrap().len() > len);
+        assert!(mutate_genome_with_kind(&"A".repeat(128), MutationKind::Deletion, ops, &mut rng).is_none());
+        assert!(mutate_genome_with_kind(&"A".repeat(128), MutationKind::GeneDuplication, ops, &mut rng).is_none());
     }
 
     #[test]

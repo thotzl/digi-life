@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::shared::rng::SimRng;
-use crate::shared::types::{CreatureAgent, FoodSpore};
-use crate::biology::dna::{mutate_genome, generate_random_genome};
+use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
+use crate::biology::dna::{mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{spawn_creature, start_energy, SpawnOptions};
 use crate::biology::scenarios::{spawn_at_min_distance, target_distance_by_diet, Scenario, SPAWN_MAX_TRIES};
 use rand::Rng;
@@ -78,19 +78,20 @@ pub struct TrainerTelemetrySandbox {
     pub coverage_mask: u64,
 }
 
-/// Genome of a new sandbox: mutants get `round(len * mutation_rate)` point mutations,
-/// random immigrants a fresh random genome, elites and hof entries an unmodified copy.
+/// Genome of a new sandbox: mutants get `round(len * mutation_rate)` mutations (`mutate_genome` operator mix),
+/// random immigrants a fresh structured genome (config `genomeComposition`), elites and hof entries an unmodified copy.
 pub fn breed_genome(parent_genome: &str, origin: SandboxOrigin, mutation_rate: f32, rng: &mut SimRng) -> String {
+    let config = AppConfig::global();
     let mut genome = parent_genome.to_string();
     if origin == SandboxOrigin::Mutant && mutation_rate > 0.0 {
         let mutations_count = (genome.len() as f32 * mutation_rate).round() as usize;
         for _ in 0..mutations_count {
-            if let Some((mutated, _, _, _)) = mutate_genome(&genome, rng) {
-                genome = mutated;
+            if let Some(mutation) = mutate_genome(&genome, &config.mutation_operators, rng) {
+                genome = mutation.genome;
             }
         }
     } else if origin == SandboxOrigin::Random {
-        genome = generate_random_genome(256, rng);
+        genome = generate_structured_genome(&config.genome_composition, rng);
     }
     genome
 }
@@ -162,7 +163,6 @@ impl TrainerSandbox {
         self.agent.bend_angle = 0.0;
         self.agent.omega_rot = 0.0;
         self.agent.energy = start_energy(&self.agent.phenotype);
-        self.agent.adrenaline = 1.0;
         self.agent.age = 0;
         self.agent.has_eaten = false;
 

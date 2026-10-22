@@ -6,10 +6,12 @@ import { CreatureRenderer } from "../render/creatureRenderer";
 import { safeInvoke } from "../api";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
-  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
-  selectedMethylations, selectedPhenotype, selectedBrainActivations, computeActiveGeneSpans, getLocusDescription
+  selectedMaxEnergy, selectedAge, selectedGenome,
+  selectedMethylations, selectedPhenotype, selectedBrainActivations
 } from "../signals";
 import { IconPlus, IconDna, IconBrain } from "../components/Icons";
+import { describeGene, geneIndexByPosition, isSilentCopy } from "../shared/genome";
+import type { GeneSpan } from "../../bindings/GeneSpan";
 
 // --- STYLED COMPONENTS ---
 
@@ -301,8 +303,6 @@ export class UnifiedDiagnosticsPanel {
   private specimenStatusEl: HTMLElement;
   private energyBarEl: HTMLElement;
   private energyTextEl: HTMLElement;
-  private adrenalineBarEl: HTMLElement;
-  private adrenalineTextEl: HTMLElement;
   private ageBarEl: HTMLElement;
   private ageTextEl: HTMLElement;
   private genomeGridEl: HTMLElement;
@@ -336,9 +336,6 @@ export class UnifiedDiagnosticsPanel {
 
     this.energyBarEl = ProgressBarFill({ class: "fill-green" });
     this.energyTextEl = VitalText({ children: "0nJ" });
-
-    this.adrenalineBarEl = ProgressBarFill({ class: "fill-cyan" });
-    this.adrenalineTextEl = VitalText({ children: "1.00x" });
 
     this.ageBarEl = ProgressBarFill({ class: "fill-purple" });
     this.ageTextEl = VitalText({ children: "0s" });
@@ -402,13 +399,6 @@ export class UnifiedDiagnosticsPanel {
                 VitalLabel({ children: "Digestive Energy" }),
                 ProgressBarBg({ children: this.energyBarEl }),
                 this.energyTextEl
-              ]
-            }),
-            VitalRow({
-              children: [
-                VitalLabel({ children: "Adrenaline Sprint" }),
-                ProgressBarBg({ children: this.adrenalineBarEl }),
-                this.adrenalineTextEl
               ]
             }),
             VitalRow({
@@ -497,13 +487,6 @@ export class UnifiedDiagnosticsPanel {
     });
 
     effect(() => {
-      const val = selectedAdrenaline.value;
-      const pct = Math.max(0, Math.min(100, ((val - 1.0) / 0.8) * 100));
-      this.adrenalineBarEl.style.width = `${pct}%`;
-      this.adrenalineTextEl.innerText = `${val.toFixed(2)}x`;
-    });
-
-    effect(() => {
       const val = selectedAge.value;
       const pct = Math.max(0, Math.min(100, (val / 2700) * 100));
       this.ageBarEl.style.width = `${pct}%`;
@@ -523,49 +506,51 @@ export class UnifiedDiagnosticsPanel {
 
       this.dnaTextEl.value = g;
 
-      let html = "";
-      const cs = p ? (p.chromatinState || p.chromatin_state) : null;
-      const activeGeneSpans = (p && cs) ? computeActiveGeneSpans(g, cs) : [];
+      // Gene spans come from the backend compiler (TCK-187); positions outside every span are non-coding
+      const genes: GeneSpan[] = p?.genes ?? [];
+      const organelles = p?.organelles ?? [];
+      const owner = geneIndexByPosition(genes, g.length);
+      const geneText = genes.map((_, idx) => describeGene(genes, idx, organelles));
+      const silent = genes.map((_, idx) => isSilentCopy(genes, idx));
 
+      let html = "";
       for (let i = 0; i < g.length; i++) {
         const char = g[i];
-        const isPromoter = i < 16;
         const isMethylated = m && m[i] !== 0;
+        const geneIdx = owner[i];
+        const span = geneIdx >= 0 ? genes[geneIdx] : null;
+        const isPromoter = !!span && i < span.start + span.gene.spelling.length;
+        const charVal = char.charCodeAt(0) - 65;
 
-        let isActiveGene = false;
-        if (activeGeneSpans) {
-          isActiveGene = activeGeneSpans.some((span: any) => i >= span.start && i <= span.end);
-        }
-
-        let bg = "rgba(255,255,255,0.02)";
+        let bg: string;
         let border = "1px solid rgba(255,255,255,0.03)";
-        let lociClass = "inactive";
+        let lociClass: string;
         let colorStyle = "";
+        let activityText: string;
 
         if (isPromoter) {
-          bg = "#ffffff";
           lociClass = "promoter";
+          bg = "#ffffff";
+          activityText = `${geneText[geneIdx]} [promoter]`;
+        } else if (span) {
+          const alpha = silent[geneIdx] ? 0.15 : 0.35;
+          lociClass = "active";
+          bg = `hsla(${charVal * 13.8}, 75%, 45%, ${alpha})`;
+          border = `1.2px solid hsla(${charVal * 13.8}, 75%, 45%, ${alpha + 0.45})`;
+          activityText = geneText[geneIdx];
         } else {
-          const charVal = char.charCodeAt(0) - 65;
-          if (isActiveGene) {
-            lociClass = "active";
-            bg = `hsla(${charVal * 13.8}, 75%, 45%, 0.35)`;
-            border = `1.2px solid hsla(${charVal * 13.8}, 75%, 45%, 0.8)`;
-          } else {
-            lociClass = "inactive";
-            bg = `hsla(${charVal * 13.8}, 35%, 15%, 0.03)`;
-            border = `1.0px dashed hsla(${charVal * 13.8}, 35%, 15%, 0.15)`;
-            colorStyle = "color: rgba(255,255,255,0.15);";
-          }
+          lociClass = "inactive";
+          bg = `hsla(${charVal * 13.8}, 35%, 15%, 0.03)`;
+          border = `1.0px dashed hsla(${charVal * 13.8}, 35%, 15%, 0.15)`;
+          colorStyle = "color: rgba(255,255,255,0.15);";
+          activityText = "Non-coding";
         }
 
-        const locusDesc = getLocusDescription(i);
-        const activityText = isPromoter ? " [Promoter]" : (isActiveGene ? " [Active Gene]" : " [Inactive Junk DNA]");
-
+        const title = `Locus ${i}: ${char} - ${activityText}${isMethylated ? ` (Methylated +${m[i]})` : ""}`;
         html += `
-          <div class="loci-node ${lociClass} ${isMethylated ? 'methylated' : ''}" 
-               style="background: ${bg}; border: ${border}; ${colorStyle}" 
-               title="Locus ${i}: ${escapeHtml(char)} - ${locusDesc}${activityText}${isMethylated ? ' (Methylated +' + m[i] + ')' : ''}">
+          <div class="loci-node ${lociClass} ${isMethylated ? 'methylated' : ''}"
+               style="background: ${bg}; border: ${border}; ${colorStyle}"
+               title="${escapeHtml(title)}">
             ${escapeHtml(char)}
           </div>
         `;
@@ -577,7 +562,7 @@ export class UnifiedDiagnosticsPanel {
     effect(() => {
       const p = selectedPhenotype.value;
       if (p) {
-        this.brainRenderer.compile(p.brain, p.organelles.length * 5);
+        this.brainRenderer.compile(p.brain, { genes: p.genes ?? [], organelles: p.organelles ?? [] });
       }
     });
 

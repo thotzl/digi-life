@@ -36,6 +36,9 @@ jobs:
       - name: build frontend
         run: npm run build
 
+      - name: frontend unit tests
+        run: npm test
+
       # Also regenerates the ts-rs bindings in bindings/
       - name: rust tests
         run: cargo test

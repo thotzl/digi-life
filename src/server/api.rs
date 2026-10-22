@@ -205,8 +205,10 @@ pub fn apply_champion(db: State<'_, DbState>, genome: String) -> Result<bool, St
     Ok(true)
 }
 
+// async: runs on the async runtime instead of the main thread, so a burst of phenotype requests
+// (new genomes every trainer generation) cannot stall other commands and event delivery
 #[tauri::command]
-pub fn get_fossil_phenotype(genome: String) -> Result<serde_json::Value, String> {
+pub async fn get_fossil_phenotype(genome: String) -> Result<serde_json::Value, String> {
     let pheno = parse_genome(&genome, None, None);
     serde_json::to_value(&pheno).map_err(|e| e.to_string())
 }

@@ -3,7 +3,7 @@ import { safeInvoke, getPhenotype, phenotypeCache } from './api';
 import { IconElite, IconTrophy, IconMutant, IconPlant, IconSuccess, IconActive } from './components/Icons';
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
-  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
+  selectedMaxEnergy, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype, selectedBrainActivations
 } from "./signals";
 
@@ -261,7 +261,6 @@ async function rebuildSandboxGrid() {
           selectedStatus.value = lastTele.finished ? "🏁 SUCCESS" : "Active";
           selectedEnergy.value = lastTele.energy;
           selectedMaxEnergy.value = fullPheno.stomachCapacity;
-          selectedAdrenaline.value = lastTele.adrenaline || 1.0;
           selectedAge.value = lastTele.age;
           selectedGenome.value = lastTele.genome;
           selectedMethylations.value = fullPheno.methylations;
@@ -275,7 +274,6 @@ async function rebuildSandboxGrid() {
               selectedStatus.value = lastTele.finished ? "🏁 SUCCESS" : "Active";
               selectedEnergy.value = lastTele.energy;
               selectedMaxEnergy.value = p.stomachCapacity;
-              selectedAdrenaline.value = lastTele.adrenaline || 1.0;
               selectedAge.value = lastTele.age;
               selectedGenome.value = lastTele.genome;
               selectedMethylations.value = p.methylations;
@@ -616,7 +614,6 @@ async function setupTauriListeners() {
             selectedStatus.value = tele.finished ? "🏁 SUCCESS" : "Active";
             selectedEnergy.value = tele.energy;
             selectedMaxEnergy.value = pheno.stomachCapacity;
-            selectedAdrenaline.value = tele.adrenaline || 1.0;
             selectedAge.value = tele.age;
             selectedGenome.value = tele.genome;
             selectedMethylations.value = pheno.methylations;

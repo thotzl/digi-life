@@ -7,7 +7,7 @@ import { IconCatalogue, IconBack, IconRocket, IconWeights } from "../components/
 import { UnifiedDiagnosticsPanel } from "./UnifiedDiagnosticsPanel";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
-  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
+  selectedMaxEnergy, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype
 } from "../signals";
 
@@ -469,7 +469,6 @@ export class CatalogueView {
     selectedStatus.value = "Cryo-Frozen";
     selectedEnergy.value = 100;
     selectedMaxEnergy.value = 100;
-    selectedAdrenaline.value = 1.0;
     selectedAge.value = 0;
     selectedGenome.value = creature.genome;
     selectedMethylations.value = creature.methylations;

@@ -4,8 +4,8 @@
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
-use crate::biology::dna::WILDTYPE_GENOME;
+use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, SpawnOptions};
+use crate::biology::dna::{parse_genome, CTRNNSynapse, WILDTYPE_GENOME};
 use crate::biology::scenarios::Scenario;
 use crate::biology::trainer_engine::{breed_genome, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
 use crate::shared::rng::{derive, SimRng};
@@ -163,7 +163,7 @@ impl GenerationStats {
 }
 
 impl TrainerSim {
-    /// Generation 1: all sandboxes are random wildtypes.
+    /// Generation 1: all sandboxes are structured random genomes (`breed_genome`, origin Random).
     pub fn new(params: TrainerParams, seed: u64, hof_retention: usize) -> Self {
         Self::restore(params, seed, 1, Vec::new(), Vec::new(), hof_retention)
     }
@@ -373,7 +373,7 @@ impl TrainerSim {
 
     /// Builds the sandboxes of `self.generation` from parents and hall of fame.
     /// Slot plan: elites (unmodified) | hof (copied, no mutation) | random immigrants | mutants of the parents.
-    /// Without parents every slot is a random wildtype (generation 1).
+    /// Without parents every slot is a structured random genome (generation 1).
     /// Every slot breeds and initializes with its own RNG streams, so `parallel` (rayon) never changes the result.
     fn breed(&mut self, parallel: bool) {
         let n = self.params.population;
@@ -409,15 +409,20 @@ impl TrainerSim {
         }).collect();
 
         let (seed, generation, parents, lamarckian, scenario) = (self.seed, self.generation as u64, &self.parents, p.lamarckian, p.scenario);
+        // Lamarckian sources: each parent's synapses (keys and genome weights) for matching by key
+        let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian { parents.iter().map(|r| parse_genome(&r.genome, None, None).brain.synapses).collect() } else { Vec::new() };
         let build_slot = |(idx, &(source, origin, mut_rate, parent_idx)): (usize, &(&str, SandboxOrigin, f32, Option<usize>))| {
             let mut breed_rng = derive(seed, &[generation, BREED_STREAM, idx as u64]);
             let genome = breed_genome(source, origin, mut_rate, &mut breed_rng);
 
-            // Lamarckian inheritance: the source parent's learned methylations and synapse weights,
-            // applied to this sandbox's (possibly mutated) genome by the factory
-            let inherited = if lamarckian { parent_idx.map(|i| &parents[i]) } else { None };
-            let methylations = inherited.map(|r| &r.methylations[..]).filter(|m| !m.is_empty());
-            let synapse_weights = inherited.map(|r| r.synapse_weights.clone()).filter(|s| !s.is_empty());
+            // Lamarckian inheritance: the source parent's learned methylations, and its learned weight offsets
+            // matched to this sandbox's (possibly mutated) genome by synapse key (unchanged synapses: the learned weight)
+            let inherited = if lamarckian { parent_idx } else { None };
+            let methylations = inherited.map(|i| &parents[i].methylations[..]).filter(|m| !m.is_empty());
+            let synapse_weights = inherited.filter(|&i| !parents[i].synapse_weights.is_empty()).map(|i| {
+                let child = parse_genome(&genome, None, None).brain.synapses;
+                inherit_learned_weights(&parent_synapses[i], &parents[i].synapse_weights, &child, 1.0)
+            });
 
             let mut rng = derive(seed, &[generation, 0, idx as u64]);
             let sb = init_rust_sandbox((idx + 1) as u32, &genome, generation as u32, origin, scenario, methylations, synapse_weights, &mut rng);
@@ -522,6 +527,63 @@ mod tests {
         }
         // Learned weights are inherited by the unmutated elite
         assert_eq!(sim.sandboxes[0].agent.synapse_weights, parent.synapse_weights);
+    }
+
+    /// Structured parent genome with learned weights = genome weight + a distinct offset per synapse.
+    fn learned_parent(seed: u64) -> (GenomeRecord, Vec<CTRNNSynapse>, Vec<f32>) {
+        let config = crate::shared::types::AppConfig::global();
+        let genome = crate::biology::dna::generate_structured_genome(&config.genome_composition, &mut crate::shared::rng::seeded(seed));
+        let synapses = parse_genome(&genome, None, None).brain.synapses;
+        let offsets: Vec<f32> = (0..synapses.len()).map(|i| 0.01 * (i + 1) as f32).collect();
+        let learned = synapses.iter().zip(&offsets).map(|(s, o)| s.weight + o).collect();
+        let record = GenomeRecord { genome, name: "parent".to_string(), fitness: 100.0, generation: 1, methylations: Vec::new(), synapse_weights: learned };
+        (record, synapses, offsets)
+    }
+
+    /// Learned offset per key that `weights` carry over the genome weights of `genome`.
+    fn offsets_by_key(genome: &str, weights: &[f32]) -> std::collections::BTreeMap<u64, f32> {
+        parse_genome(genome, None, None).brain.synapses.iter().zip(weights).map(|(s, w)| (s.key, w - s.weight)).collect()
+    }
+
+    #[test]
+    fn test_lamarck_offsets_follow_synapse_keys_across_gene_duplication() {
+        use crate::biology::dna::{mutate_genome_with_kind, MutationKind};
+        let ops = &crate::shared::types::AppConfig::global().mutation_operators;
+        let mut checked = 0;
+        for seed in 0..40 {
+            let (parent, synapses, offsets) = learned_parent(seed);
+            let Some(child_genome) = mutate_genome_with_kind(&parent.genome, MutationKind::GeneDuplication, ops, &mut crate::shared::rng::seeded(seed)) else { continue };
+            let child = parse_genome(&child_genome, None, None).brain.synapses;
+            let inherited = inherit_learned_weights(&synapses, &parent.synapse_weights, &child, 1.0);
+            let child_offsets = offsets_by_key(&child_genome, &inherited);
+            // The duplication shifts synapse indices, but every parent offset lands on its own key
+            for (s, o) in synapses.iter().zip(&offsets) {
+                let c = child_offsets.get(&s.key).expect("parent synapse kept by the duplication");
+                assert!((c - o).abs() < 1e-5, "key {} offset {} -> {}", s.key, o, c);
+                checked += 1;
+            }
+            // The copy's new synapses start at their genome weight
+            assert!(child_offsets.iter().filter(|(k, _)| !synapses.iter().any(|s| s.key == **k)).all(|(_, &o)| o == 0.0));
+        }
+        assert!(checked > 1000, "{} offsets checked", checked);
+    }
+
+    #[test]
+    fn test_lamarck_breeding_matches_learned_offsets_by_key() {
+        let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.0, inflow_rate: 0.0, mutation_rate: 0.02, lamarckian: true, ..TrainerParams::default() };
+        let (parent, synapses, offsets) = learned_parent(3);
+        let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200);
+        assert_eq!(sim.sandboxes[0].agent.synapse_weights, parent.synapse_weights, "the unmutated elite keeps its learned weights exactly");
+        let parent_offsets: std::collections::BTreeMap<u64, f32> = synapses.iter().zip(&offsets).map(|(s, o)| (s.key, *o)).collect();
+        let mut matched = 0;
+        for sb in sim.sandboxes.iter().filter(|s| s.origin_type == SandboxOrigin::Mutant) {
+            for (key, o) in offsets_by_key(&sb.agent.genome, &sb.agent.synapse_weights) {
+                let expected = parent_offsets.get(&key).copied().unwrap_or(0.0);
+                assert!((o - expected).abs() < 1e-5, "sandbox {} key {}: offset {} expected {}", sb.id, key, o, expected);
+                matched += parent_offsets.contains_key(&key) as usize;
+            }
+        }
+        assert!(matched > 50, "{} homologous synapses", matched);
     }
 
     #[test]

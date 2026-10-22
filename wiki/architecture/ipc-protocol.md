@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/02-architecture.md, docs/revisit/06-frontend.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/02-architecture.md, docs/revisit/06-frontend.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md]
 ---
 
 # IPC Protocol
@@ -34,14 +34,15 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-base
 
 ## Types (ts-rs)
 
-- Rust structs with `#[derive(TS)]` / `#[ts(export)]` (`CreatureAgent`, `FoodSpore`, `CreaturePhenotype`, `TelemetryCreature`, `TrainerTelemetrySandbox`, world types, ...) are exported to `bindings/` (19 files, incl. the trainer enums `Scenario` and `SandboxOrigin` used by `TrainerTelemetrySandbox` since TCK-173) when `cargo test` runs (= `npm run types:generate`).
+- Rust structs with `#[derive(TS)]` / `#[ts(export)]` (`CreatureAgent`, `FoodSpore`, `CreaturePhenotype`, `TelemetryCreature`, `TrainerTelemetrySandbox`, world types, ...) are exported to `bindings/` (27 files, incl. the trainer enums `Scenario` and `SandboxOrigin` used by `TrainerTelemetrySandbox` since TCK-173) when `cargo test` runs (= `npm run types:generate`).
+- Brain v2 types (TCK-179, TCK-144, TCK-187): `NeuronRole` (tagged by `role`: `systemic`/`sensor`/`thalamus`/`hidden`/`motor`), `GeneRef`, `GeneSpan`, `OrganKind`, `OrganSide`, `SystemicInput`, `Motor`, `ThalamusKind`. `CTRNNNeuron` has `role`; `CTRNNSynapse` has `key` (53-bit, exact as a JS number) and `owner` (index into `CreaturePhenotype.genes`); `SensoryPatch` has `kind` and `side`; `CreaturePhenotype.genes` lists the gene spans. `CreatureAgent`/`TelemetryCreature` lost `adrenaline` (TCK-149).
 - CI fails on uncommitted binding drift (`git diff --exit-code -- bindings/`), see [[wiki/quality/ci-and-tooling]].
-- **The frontend does not import `bindings/`**; it uses handwritten `frontend/shared/types.ts`, which deviates (e.g. `OrganelleLocus` `x?/y?` vs Rust `SensoryPatch` `geneStartIndex/geneEndIndex`) (RV-A03, RV-F01). ~41 `any`, mostly at the IPC boundary.
+- **Partly consumed** (RV-A03 partly resolved, TCK-187): `frontend/shared/types.ts` re-exports `CTRNNNeuron`, `CTRNNSynapse`, `BrainTopology`, `GeneSpan` from `bindings/`; `shared/genome.ts`, `render/brainRenderer.ts` and `views/UnifiedDiagnosticsPanel.ts` import binding types directly. The rest of `types.ts` (phenotype, agent, telemetry) is still handwritten and deviates (e.g. `OrganelleLocus` `x?/y?` vs Rust `SensoryPatch` `geneStartIndex/geneEndIndex/kind/side`) (RV-A03, RV-F01). ~40 `any`, mostly at the IPC boundary.
 - Timestamp units are mixed across payloads and tables (RV-A06), see [[wiki/architecture/persistence]].
 
 ## Key Takeaways
 
 - Commands in, one stringly-typed event out; the contract is not type-checked across the boundary (RV-A02).
-- `bindings/` is generated and drift-checked in CI but not consumed by the frontend (RV-A03).
+- `bindings/` is generated and drift-checked in CI; brain and gene types are consumed by the frontend, the rest of the IPC types are still handwritten (RV-A03 partly).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, TCK-173.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, TCK-149, TCK-173, TCK-179, TCK-187.

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.17] - 2026-10-22
+
+Training track P3 "Brain v2" (epic TCK-171). Intended model change: new golden master, new CI reference, and the app database's model tables (trainer genomes, catalogue, Ocean state and history, species) are reset once on first start.
+
+### Changed
+- Heredity: every synapse has a stable identity and belongs to one gene, and its initial weight comes from that gene; body traits come only from their own gene. A mutation now changes only what its gene controls; parent-child weight correlation after 15 mutations rises from 0.32 to 0.81 (ref TCK-179).
+- Compact brains: only live structure is wired (no dead motors, no silent thalamus nodes, pairs share weights); about 70 % fewer synapses per random genome and roughly double the simulation throughput (ref TCK-182).
+- Sensing: eyes, noses and thermal organs get a dedicated channel for the change of the stimulus over time, so single organs can follow gradients; the meat channel is no longer overwritten; organ types are an enum (ref TCK-144).
+- Brain step: inputs reach the motors one tick after sensing (was two), and a stable integration step replaces the Euler step that made fast neurons oscillate (ref TCK-153).
+- Genomes: generation 1, random immigrants and new Ocean creatures are composed from valid genes (body genes, at least one food organ in most cases); mutation prefers small value steps and can duplicate or delete whole genes (ref TCK-184).
+- Lamarckian inheritance matches learned weights by synapse identity in trainer and Ocean (ref TCK-183).
+- Gene tooltips, the genome view and the neural inspector show what the backend compiled (gene spans, neuron roles, owner genes) (ref TCK-187).
+
+### Removed
+- The no-effect motors (bioluminescence, reserved) and the constant adrenaline input, including the adrenaline bar in the UI (ref TCK-149).
+
+### Fixed
+- UI: the trainer requested the same phenotype many times per second while a new generation's genomes were loading, which stalled the app at high speed (a reset took up to 11 s to show); requests per genome are now shared, the phenotype cache is bounded, and the phenotype command no longer blocks the main thread (ref TCK-186).
+
+### Added
+- Database model version: when the creature model changes, model tables are reset at startup instead of loading incompatible data (ref TCK-183).
+- ADR-002 "Brain v2" with the decisions and alternatives (ref TCK-188); probe `topology`; first frontend unit tests.
+
 ## [1.12.16] - 2026-10-22
 
 Training track P2 "Sim lab" (epic TCK-171).

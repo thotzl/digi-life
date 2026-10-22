@@ -1,5 +1,5 @@
 ---
-sources: [src/, frontend/, package.json, Cargo.toml, .github/workflows/, tickets/closed/TCK-101-initialize-workspace.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
+sources: [src/, frontend/, package.json, Cargo.toml, .github/workflows/, tickets/closed/TCK-101-initialize-workspace.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-187-gene-spans-from-backend.md]
 ---
 
 # Repository Map
@@ -32,14 +32,14 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `main.rs`, `lib.rs` | Tauri setup, command registration, DB setup, starts the engine; module tree | [[wiki/architecture/system-overview]] |
 | `server/engine.rs` | simulation thread: Ocean + Trainer loop, actions, events, auto-save, restock | [[wiki/architecture/simulation-engine]] |
 | `server/api.rs` | Tauri commands (species, trainer, catalogue, phenotype) | [[wiki/architecture/ipc-protocol]] |
-| `database.rs` | SQLite path, schema, WAL, shared connection, error logging | [[wiki/architecture/persistence]] |
-| `biology/dna.rs` | genome compiler, brain topology, mutation, Latin names | [[wiki/biology/genome-compiler]] |
-| `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers) | [[wiki/biology/metabolism-and-reproduction]] |
+| `database.rs` | SQLite path, schema, model-version reset, WAL, shared connection, error logging, trainer genome IO | [[wiki/architecture/persistence]] |
+| `biology/dna.rs` | genome compiler (gene table and identity, traits, organs), Brain v2 topology (roles, keys, owners, weight tapes), structured genome generator, mutation operators, Latin names | [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]] |
+| `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers); Lamarckian weight inheritance by synapse key | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, breeding, hall of fame, generation stats | [[wiki/simulation/trainer]] |
 | `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox physics step | [[wiki/simulation/trainer]] |
 | `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait, shared sandbox step, spawn and fitness functions | [[wiki/simulation/trainer]] |
 | `biology/trainer_report.rs` | headless trainer run and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
-| `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian) | [[wiki/simulation/analytics-and-balancing]] |
+| `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology) | [[wiki/simulation/analytics-and-balancing]] |
 | `shared/brain.rs` | CTRNN execution, Hebbian learning, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |
@@ -49,7 +49,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `shared/fmath.rs` | platform-deterministic math (`libm`) for the per-tick path | [[wiki/architecture/performance]] |
 | `bin/trainer_runner.rs` | headless runner CLI: `run` and `probe` (replaced `cli_trainer`, RV-S11) | [[wiki/simulation/analytics-and-balancing]] |
 
-Largest files: `dna.rs` (~2,000 lines), `engine.rs` (~1,500), `probes.rs` (~1,300).
+Largest files: `dna.rs` (~3,000 lines, ~900 of them tests), `engine.rs` (~1,500), `probes.rs` (~1,400).
 
 ## Frontend (`frontend/`)
 
@@ -58,12 +58,13 @@ Largest files: `dna.rs` (~2,000 lines), `engine.rs` (~1,500), `probes.rs` (~1,30
 | `main.ts`, `core/router.ts` | view mounting, navigation, backend mode | [[wiki/frontend/structure]] |
 | `ocean.ts`, `trainer.ts` | event handling and render loops per mode | [[wiki/frontend/structure]] |
 | `api.ts` | `invoke` wrapper, phenotype cache | [[wiki/architecture/ipc-protocol]] |
-| `signals.ts` | selection/telemetry signals, legacy locus helpers | [[wiki/frontend/structure]] |
+| `signals.ts` | selection/telemetry signals | [[wiki/frontend/structure]] |
 | `views/` | MainMenu, OceanView, TrainerView, CatalogueView, UnifiedDiagnosticsPanel | [[wiki/frontend/structure]] |
 | `render/` | creature and brain renderers | [[wiki/frontend/structure]] |
 | `core/` | camera, `styled` engine, HTML escaping | [[wiki/frontend/structure]] |
 | `components/` | icons | — |
-| `shared/types.ts` | handwritten IPC types | [[wiki/architecture/ipc-protocol]] |
+| `shared/types.ts` | IPC types: brain/gene types re-exported from `bindings/`, the rest handwritten | [[wiki/architecture/ipc-protocol]] |
+| `shared/genome.ts`, `shared/genome.test.ts` | display names for backend gene spans and neuron roles (genome view, neural inspector tooltips); Vitest tests | [[wiki/frontend/structure]] |
 | `styles.css` | global styles | — |
 
 ## Key Takeaways
@@ -72,4 +73,4 @@ Largest files: `dna.rs` (~2,000 lines), `engine.rs` (~1,500), `probes.rs` (~1,30
 - Frontend: router + two loop modules + views + renderers.
 - Every module row links to the article that explains it.
 
-Sources: directory listing of `src/` and `frontend/` (2026-10-22), `src/main.rs`, `src/lib.rs`, `package.json`.
+Sources: directory listing of `src/` and `frontend/` (2026-10-22, after TCK-171 P3), `src/main.rs`, `src/lib.rs`, `package.json`.

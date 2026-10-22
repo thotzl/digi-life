@@ -16,7 +16,7 @@ const USAGE: &str = "Usage:
   trainer_runner run --seed <str> --generations <N> --scenario standard|exploration --population <N>
                      [--trials 3] [--multi-trial true|false] [--parallel true|false]
                      [--persist --db <path>] [--run-id <id>] [--out <file>]
-  trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|all --seed <str>
+  trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|topology|all --seed <str>
                      [--out <file; directory for 'all'>] [--db <path: HoF genomes, opened read-only>]
                      [--hof-limit 64] [--samples <N random genomes>]
                      (default out: .agents/artifacts/probes/<name>.json)";

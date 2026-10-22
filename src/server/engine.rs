@@ -9,8 +9,8 @@ use rand::Rng;
 use crate::shared::types::{CreatureAgent, FoodSpore, TelemetryCreature};
 use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::map_generator::generate_world;
-use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
-use crate::biology::creature_factory::{spawn_from_phenotype, SpawnOptions};
+use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
+use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::Scenario;
 use crate::biology::trainer_engine::TrainerTelemetrySandbox;
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
@@ -171,8 +171,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             for _ in 0..15 {
                 let mut mutated_dna = base_dna.to_string();
                 if rng.gen_range(0.0..1.0) < 0.60 {
-                    if let Some((mutated, _, _, _)) = mutate_genome(&base_dna, &mut rng) {
-                        mutated_dna = mutated;
+                    if let Some(mutation) = mutate_genome(&base_dna, &app_config.mutation_operators, &mut rng) {
+                        mutated_dna = mutation.genome;
                     }
                 }
 
@@ -298,7 +298,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "INJECT_URZELLE" => {
                                 let mut rng = rand::thread_rng();
-                                let random_dna = generate_random_genome(256, &mut rng);
+                                let random_dna = generate_structured_genome(&app_config.genome_composition, &mut rng);
                                 let random_pheno = parse_genome(&random_dna, None, None);
 
                                 let px = rng.gen_range(500.0..logical_width - 500.0);
@@ -473,32 +473,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                     emit_state(json!({ "type": "LOG_EVENT", "message": format!("Evolution reset. Biosphere repopulated with 25 clones from Catalogue."), "logType": "system" }));
                                 } else {
-                                    // Fallback to random wildtypes if catalogue is empty
-                                    let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
+                                    // Fallback to structured random genomes if the catalogue is empty (TCK-184)
                                     for _ in 0..25 {
-                                        let mut mutated_dna = base_dna.to_string();
+                                        let founder_dna = generate_structured_genome(&app_config.genome_composition, &mut rng);
 
-                                        let num_mutations = rng.gen_range(3..=8);
-                                        for _ in 0..num_mutations {
-                                            if let Some((mutated, _, _, _)) = mutate_genome(&mutated_dna, &mut rng) {
-                                                mutated_dna = mutated;
-                                            }
-                                        }
-
-                                        let mut char_vec: Vec<char> = mutated_dna.chars().collect();
-                                        if char_vec.len() >= 6 {
-                                            char_vec[3] = rng.gen_range(b'A'..=b'Z') as char;
-                                            char_vec[4] = rng.gen_range(b'A'..=b'Z') as char;
-                                            char_vec[5] = rng.gen_range(b'A'..=b'Z') as char;
-                                        }
-                                        mutated_dna = char_vec.into_iter().collect();
-
-                                        let random_pheno = parse_genome(&mutated_dna, None, None);
+                                        let random_pheno = parse_genome(&founder_dna, None, None);
                                         let px = rng.gen_range(500.0..logical_width - 500.0);
                                         let py = rng.gen_range(500.0..logical_height - 500.0);
                                         let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                                        let mut new_agent = spawn_from_phenotype(&mutated_dna, random_pheno.clone(), SpawnOptions {
+                                        let mut new_agent = spawn_from_phenotype(&founder_dna, random_pheno.clone(), SpawnOptions {
                                             id: next_creature_id,
                                             px,
                                             py,
@@ -518,13 +502,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             .as_secs() as i64;
                                         conn.execute(
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                            params![mutated_dna, &random_pheno.latin_name, mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
+                                            params![founder_dna, &random_pheno.latin_name, founder_dna, None::<String>, now_millis, random_pheno.carnivory],
                                         ).log_db_err("INSERT OR IGNORE INTO species_records");
                                         species_cache_dirty = true;
                                         next_creature_id += 1;
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                    emit_state(json!({ "type": "LOG_EVENT", "message": "Evolution reset. Biosphere repopulated with 25 unique wildtype cells.", "logType": "system" }));
+                                    emit_state(json!({ "type": "LOG_EVENT", "message": "Evolution reset. Biosphere repopulated with 25 structured random founder cells.", "logType": "system" }));
                                 }
 
                                 // Regenerate 12 random nutrient centers for the reset biosphere
@@ -1093,31 +1077,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 // Mutate child genome with 35% probability
                                 let mut rng = rand::thread_rng();
                                 if rng.gen_range(0.0..1.0) < 0.35 {
-                                    if let Some((mutated, _, _, _)) = mutate_genome(&agent.genome, &mut rng) {
-                                        child.genome = mutated;
+                                    if let Some(mutation) = mutate_genome(&agent.genome, &app_config.mutation_operators, &mut rng) {
+                                        child.genome = mutation.genome;
                                     }
                                     child.species_id = child.genome.clone();
                                     child.phenotype = parse_genome(&child.genome, None, None);
                                     child.antisense = child.phenotype.antisense_strand.clone();
                                     
-                                    // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses
+                                    // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses (same synapse key)
                                     // (only from parents old enough to have learned something)
                                     let assimilate = agent.age >= app_config.rules.lamarckian_assimilation_age_floor;
-                                    let parent_synapses: &[_] = if assimilate { &agent.phenotype.brain.synapses } else { &[] };
-                                    let parent_weights = &agent.synapse_weights;
-
-                                    let mut child_weights = vec![0.0; child.phenotype.brain.synapses.len()];
-                                    for (c_idx, c_syn) in child.phenotype.brain.synapses.iter().enumerate() {
-                                        let mut w = c_syn.weight;
-                                        if let Some(p_idx) = parent_synapses.iter().position(|ps| ps.from_node == c_syn.from_node && ps.to_node == c_syn.to_node) {
-                                            if p_idx < parent_weights.len() {
-                                                let parent_learned_offset = parent_weights[p_idx] - parent_synapses[p_idx].weight;
-                                                w += parent_learned_offset * app_config.rules.lamarckian_assimilation_chance;
-                                            }
-                                        }
-                                        child_weights[c_idx] = w.clamp(-4.0, 4.0);
-                                    }
-                                    child.synapse_weights = child_weights;
+                                    let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate { (&agent.phenotype.brain.synapses, &agent.synapse_weights) } else { (&[], &[]) };
+                                    child.synapse_weights = inherit_learned_weights(
+                                        parent_synapses,
+                                        parent_weights,
+                                        &child.phenotype.brain.synapses,
+                                        app_config.rules.lamarckian_assimilation_chance,
+                                    );
                                     child.brain_runtime = Default::default();
                                     
                                     // Save new mutated child species into SQLite database
@@ -1308,8 +1284,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             let pheno = parse_genome(genome, None, m_opt);
                             (genome.clone(), pheno, m_arr, s_arr, format!("📚 Catalog Clonal '{}'", name), 1)
                         } else {
-                            // Fallback to random wildtype founder if catalogue is empty
-                            let genome = generate_random_genome(256, &mut rng);
+                            // Fallback to a structured random founder if the catalogue is empty
+                            let genome = generate_structured_genome(&app_config.genome_composition, &mut rng);
                             let pheno = parse_genome(&genome, None, None);
                             (genome, pheno, Vec::new(), Vec::new(), "🌱 Random Founder".to_string(), 1)
                         };

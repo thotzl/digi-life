@@ -42,7 +42,7 @@ The creature's brain is modeled as a **Continuous-Time Recurrent Neural Network 
 - **Physical Effectors (Outputs):** Direct actions (propulsion thrust, rotational steering angle, mitotic splitting trigger, attacking force, and feeding rate).
 - **Recurrent Hidden Layers:** Self-referential neural connections that allow the network to maintain memory, build temporal patterns, and develop internal oscillations (e.g., swimming rhythms).
 
-The physical and neural state is updated on the simulation server in real-time. The neuron activation states are integrated numerically using the Euler method for every simulation frame:
+The physical and neural state is updated on the simulation server in real-time. The neuron states are integrated numerically for every simulation frame (implementation: exact exponential step with `dt = 1`, see [[wiki/biology/ctrnn-brain]]):
 
 $$\tau_i \frac{dy_i}{dt} = -y_i + \sum w_{ji} \sigma(y_j + \theta_j) + I_i$$
 

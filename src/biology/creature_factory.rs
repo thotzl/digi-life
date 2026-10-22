@@ -1,4 +1,4 @@
-use crate::biology::dna::{parse_genome, CreaturePhenotype};
+use crate::biology::dna::{parse_genome, CTRNNSynapse, CreaturePhenotype};
 use crate::shared::brain::BrainRuntime;
 use crate::shared::types::{AppConfig, CreatureAgent};
 
@@ -14,6 +14,26 @@ pub struct SpawnOptions<'a> {
     pub methylations: Option<&'a [f32]>,
     /// Learned weights; ignored unless the length matches the genome's synapse count.
     pub synapse_weights: Option<Vec<f32>>,
+}
+
+/// Lamarckian inheritance by synapse key (TCK-179): each child synapse gets its genome weight plus `scale` × the
+/// learned offset (learned − genome weight) of the parent synapse with the same key, clamped to [-4, 4] like Hebbian
+/// learning; child synapses without a homologue keep their genome weight. `parent_weights` are the parent's learned
+/// weights in `parent_synapses` order; on a length mismatch nothing is inherited. With `scale` 1 a child with the
+/// parent's genome gets exactly the parent's learned weights.
+pub fn inherit_learned_weights(parent_synapses: &[CTRNNSynapse], parent_weights: &[f32], child_synapses: &[CTRNNSynapse], scale: f32) -> Vec<f32> {
+    let learned: std::collections::HashMap<u64, (f32, f32)> = if parent_weights.len() == parent_synapses.len() {
+        parent_synapses.iter().zip(parent_weights).map(|(s, &w)| (s.key, (s.weight, w))).collect()
+    } else {
+        Default::default()
+    };
+    child_synapses
+        .iter()
+        .map(|c| match learned.get(&c.key) {
+            Some(&(genome_weight, learned_weight)) => (learned_weight * scale + (c.weight - genome_weight * scale)).clamp(-4.0, 4.0),
+            None => c.weight,
+        })
+        .collect()
 }
 
 /// Start energy of a fresh agent: a fixed share of its stomach capacity (config `creatureStartStomachRatio`).
@@ -46,7 +66,6 @@ pub fn spawn_from_phenotype(genome: &str, phenotype: CreaturePhenotype, opts: Sp
         bend_angle: 0.0,
         omega_rot: 0.0,
         energy: start_energy(&phenotype),
-        adrenaline: 1.0,
         age: 0,
         generation: opts.generation,
         has_eaten: false,

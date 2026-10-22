@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md]
 ---
 
 # Ocean
@@ -16,7 +16,7 @@ The open-world mode: a closed basin with a free-living population.
 ## Population and food
 
 - `foodSporeCount` spores (300) spawned around nutrient centers; ~1 spore per 830 × 830 px. Sensor range `scale · 550` (190–990 px).
-- Restocking refills to `targetPopulation` from catalogue clones or random genomes (catalogue loaded once per pass). `maxCreatures` (45) caps `INJECT_URZELLE`/`SPAWN_CLONE` (rejected with a `LOG_EVENT`, `logType` system) and Ocean mitosis (TCK-149).
+- Restocking refills to `targetPopulation` from catalogue clones or, with an empty catalogue, structured random founders (`generate_structured_genome`, TCK-184; catalogue loaded once per pass). `INJECT_URZELLE` and the empty-catalogue branch of `RESET_EVOLUTION` (25 founders) use structured random genomes as well; the fresh-start seeding mutates the wildtype literal. `maxCreatures` (45) caps `INJECT_URZELLE`/`SPAWN_CLONE` (rejected with a `LOG_EVENT`, `logType` system) and Ocean mitosis (TCK-149).
 - Creatures see/smell nearby plants and peers via the spatial grid (TCK-129), see [[wiki/biology/sensing]].
 - Catalogue releases are scattered randomly to avoid stacking (TCK-129).
 - Mitosis, death, decomposition and predation: [[wiki/biology/metabolism-and-reproduction]].
@@ -38,4 +38,4 @@ The open-world mode: a closed basin with a free-living population.
 - Population is held by restocking only (RV-B01).
 - Low mobility is confirmed for random genomes by the TCK-172 probes; Ocean mobility and sparse food remain unmeasured (RV-S02, RV-S07).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`, TCK-172.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`, TCK-172, TCK-184.

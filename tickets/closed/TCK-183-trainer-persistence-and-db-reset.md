@@ -1,7 +1,7 @@
 ---
 id: TCK-183
 title: Trainer Persistence, Retention and DB Reset on Model Change
-status: ongoing
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -32,3 +32,8 @@ Part of epic TCK-171. Parts in phase P2 (runner, retention) and P3 (reset rule).
 - Runner in memory by default; `--persist` requires `--db <path>`; a run without `--persist` opens/creates no DB file (verified).
 - Retention: `prune_trainer_genomes` keeps the best `trainerGenomeRetentionPerRun` (200) rows per run plus all active rows; called after every generation save (engine and runner); test on `:memory:`; in-memory HoF bounded to the same N.
 - Remaining for P3: model-version reset rule.
+
+## Verification (P3, v1.12.17)
+- `MODEL_VERSION = 2` and a `meta` table in `src/database.rs`; at `init_db` a different or missing stored version (with model data present) drops and recreates `trainer_genomes`, `creature_catalogue`, `simulation_state`, `simulation_history`, `species_records` in one transaction, keeps `sessions`, logs once. Tests `test_fresh_db_stores_model_version_and_reset_drops_model_tables`, `test_file_db_model_version_reset_on_reopen`.
+- Runner check: `--persist --db` on a version-1 DB logged the reset, restarted the trainer at generation 1 and wrote fresh rows; the Ocean starts fresh from the existing seed path.
+- P2 parts (runner in memory, retention) see `## Progress P2`.

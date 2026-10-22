@@ -9,7 +9,7 @@ import { safeInvoke, phenotypeCache } from "./api";
 import { currentView } from "./core/router";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
-  selectedMaxEnergy, selectedAdrenaline, selectedAge, selectedGenome,
+  selectedMaxEnergy, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype, selectedBrainActivations, speciesRosterSignal,
   isAliveExpanded, isExtinctExpanded
 } from "./signals";
@@ -554,7 +554,6 @@ listen("simulation-state", (event: any) => {
         local.headingAngle = tele.headingAngle;
         local.omegaRot = tele.omegaRot;
         local.energy = tele.energy;
-        local.adrenaline = tele.adrenaline;
         local.age = tele.age;
         local.generation = tele.generation;
         local.hasEaten = tele.hasEaten;
@@ -571,7 +570,6 @@ listen("simulation-state", (event: any) => {
       if (active) {
         selectedStatus.value = "Alive";
         selectedEnergy.value = active.energy;
-        selectedAdrenaline.value = active.adrenaline || 1.0;
         selectedAge.value = active.age;
 
         if (data.selectedBrain && Number(data.selectedBrain.id) === Number(id)) {

@@ -1,14 +1,14 @@
 ---
-sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-185-creature-factory.md]
+sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md]
 ---
 
 # Metabolism, Reproduction and Species
 
 ## Metabolism
 
-- BMR scales with body and brain: `brain_complexity_multiplier = 1 + synapses · 0.06` times `(1 + k_count · 0.08)` (`dna.rs`). The Ocean compensates with a `* 0.45` factor (`engine.rs`).
-- One organ adds ~10 thalamus sources → ~40–120 synapses → BMR ×3–×8: strong selection pressure against sense organs (RV-S03).
-- Adrenaline is constant 1.0 and has no metabolic effect; the adrenaline config keys and the BMR surcharge factor were removed (TCK-149).
+- BMR (`parse_genome`): `(body area term + organ tax) · (1 + organs · 5 · 0.08) · 1.4 · stiffness · (1 + synapses · 0.06)`. The Ocean compensates with a `* 0.45` factor (`engine.rs`).
+- Brain v2 (TCK-182) changed only the synapse count: an organ gene now adds one sum thalamus node per live channel (up to 6 for distance senses, 2 for tactile kinds; plus as many difference nodes for a `HOX` pair), each wired to 2 motors and to every hidden neuron, instead of ~10 fully wired thalamus sources. Median synapses 142 → 41 (letter soup), 78 for structured genomes, so the synapse term is lower; the organ term still counts 5 channels per organ (ΔI not counted). The multiplicative brain cost still penalizes organs (RV-S03).
+- `CreatureAgent.adrenaline` is removed (TCK-149); the adrenaline keys and the always-1 BMR surcharge were removed in P1.
 
 ## Start energy (TCK-185)
 
@@ -37,8 +37,9 @@ sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ct
 
 ## Lamarckian inheritance
 
-- Mutated children inherit the parent's learned offsets `ΔW = W_active − W_base` on homologous synapses (same from/to), scaled by `lamarckian_assimilation_chance` (TCK-119). The value acts as a scale factor, not a probability (RV-S05).
-- Ocean only: offsets are passed only when parent `age >= lamarckianAssimilationAgeFloor` (1200); younger parents give the child its genetic base weights (TCK-149). The trainer Lamarck toggle is not age-gated.
+- `creature_factory::inherit_learned_weights(parent_synapses, parent_weights, child_synapses, scale)`: each child synapse gets `child genome weight + scale · (parent learned − parent genome weight)` of the parent synapse with the **same synapse key**, clamped to ±4; child synapses without a homologue keep their genome weight; a parent weight vector of the wrong length passes nothing (TCK-179). Before P3 homology was the same (from, to) index pair, which mutations re-mapped.
+- Ocean mitosis (mutated children, scale `lamarckian_assimilation_chance`): offsets only when parent `age >= lamarckianAssimilationAgeFloor` (1200); younger parents give the child its genetic base weights (TCK-149). The value acts as a scale factor, not a probability (RV-S05).
+- Trainer (toggle, scale 1, not age-gated): elites and mutants get the source parent's offsets by key; an unmutated elite keeps its learned weights exactly ([[wiki/simulation/trainer]]).
 - Trainer toggle "Lamarckian Synapse Inheritance" (default off) (TCK-128).
 - Catalogue "cryo-cloning" stores genome, methylations and live synapse weights; restore selectable on spawn (TCK-128).
 
@@ -48,8 +49,8 @@ sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ct
 
 ## Key Takeaways
 
-- Brain cost dominates BMR and penalizes organs (RV-S03).
+- Brain cost still multiplies BMR (RV-S03), with fewer synapses since TCK-182; Lamarckian offsets follow synapse keys (TCK-179).
 - Ocean offspring are not simulated, so the Ocean does not evolve (RV-B01); trainer data is the evolution signal.
 - Predation gives no energy gain; species = genome string.
 
-Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-149, TCK-185, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-149, TCK-179, TCK-182, TCK-185, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.

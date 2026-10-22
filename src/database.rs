@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use crate::biology::trainer_sim::GenomeRecord;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -9,6 +9,14 @@ pub const LEGACY_DB_PATH: &str = "target/pixel_life_local.db";
 pub const DB_FILE_NAME: &str = "pixel_life_local.db";
 
 static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
+
+/// Version of the genome/brain model the stored genomes and weights were made with (TCK-183). Bump it on every change
+/// that makes stored synapse weights or phenotypes invalid: `init_db` then recreates the model tables empty.
+/// 2 = Brain v2 (TCK-171 P3: role keys, gene identity by promoter spelling, weight tapes).
+pub const MODEL_VERSION: u32 = 2;
+
+/// Tables whose rows depend on the model version; dropped (and recreated empty) on a version change. No migration.
+const MODEL_TABLES: [&str; 5] = ["trainer_genomes", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];
 
 /// Sets the database location once at startup (the desktop app passes its app data dir).
 pub fn set_db_path(path: PathBuf) {
@@ -65,6 +73,8 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
 
     // Enable foreign keys for data integrity
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
+
+    reset_model_tables_on_version_change(&conn)?;
 
     // 1. Create sessions table
     conn.execute(
@@ -182,6 +192,36 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
     )?;
 
     Ok(conn)
+}
+
+/// Model-version rule (TCK-183): a stored `model_version` other than `MODEL_VERSION`, or none in a database that
+/// already has model tables, drops the model tables (`init_db` recreates them empty). Stores the current version.
+fn reset_model_tables_on_version_change(conn: &Connection) -> Result<()> {
+    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);", [])?;
+    let stored: Option<String> = conn
+        .query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |row| row.get(0))
+        .optional()?;
+    if stored.as_deref() == Some(MODEL_VERSION.to_string().as_str()) {
+        return Ok(());
+    }
+    let has_model_tables: bool = conn.query_row(
+        &format!("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name IN ('{}'))", MODEL_TABLES.join("', '")),
+        [],
+        |row| row.get(0),
+    )?;
+    let reset = stored.is_some() || has_model_tables;
+    let tx = conn.unchecked_transaction()?;
+    if reset {
+        for table in MODEL_TABLES {
+            tx.execute(&format!("DROP TABLE IF EXISTS {}", table), [])?;
+        }
+    }
+    tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('model_version', ?1)", params![MODEL_VERSION.to_string()])?;
+    tx.commit()?;
+    if reset {
+        println!("[DB] Model version {} -> {}: model tables reset", stored.as_deref().unwrap_or("none"), MODEL_VERSION);
+    }
+    Ok(())
 }
 
 // ==========================================================================
@@ -377,6 +417,69 @@ mod tests {
         assert!(!migrate_legacy_db(&legacy, &target).unwrap());
         assert_eq!(std::fs::read(&target).unwrap(), b"legacy-content");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn model_version(conn: &Connection) -> Option<String> {
+        conn.query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |r| r.get(0)).optional().unwrap()
+    }
+
+    /// One row in every model table plus a session (not a model table; inserted once).
+    fn fill_model_tables(conn: &Connection) {
+        conn.execute("INSERT OR IGNORE INTO sessions (id, name, config_json) VALUES ('s', 'session', '{}')", []).unwrap();
+        conn.execute("INSERT INTO simulation_history (session_id, generation, average_fitness, max_fitness, population_count) VALUES ('s', 1, 1.0, 2.0, 3)", []).unwrap();
+        conn.execute("INSERT INTO simulation_state (key, state_json, updated_at) VALUES ('current_state', '{}', 0)", []).unwrap();
+        conn.execute("INSERT INTO species_records (id, latin_name, genome_string, birth_time, carnivory) VALUES ('sp', 'Name', 'COL', 0, 0.0)", []).unwrap();
+        conn.execute("INSERT INTO creature_catalogue (id, name, genome, source, methylations, synapse_weights) VALUES ('c', 'n', 'COL', 'src', '[]', '[]')", []).unwrap();
+        save_trainer_elites(conn, "run", 1, &[elite(1.0)], 10);
+    }
+
+    fn row_counts(conn: &Connection) -> Vec<i64> {
+        MODEL_TABLES.iter().chain(&["sessions"]).map(|t| conn.query_row(&format!("SELECT COUNT(*) FROM {}", t), [], |r| r.get(0)).unwrap()).collect()
+    }
+
+    #[test]
+    fn test_fresh_db_stores_model_version_and_reset_drops_model_tables() {
+        let conn = init_db(":memory:").unwrap();
+        assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+        fill_model_tables(&conn);
+
+        // Same version: untouched
+        reset_model_tables_on_version_change(&conn).unwrap();
+        assert_eq!(row_counts(&conn), vec![1, 1, 1, 1, 1, 1]);
+
+        // Older version: model tables dropped (init_db recreates them), sessions kept, version updated
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+        reset_model_tables_on_version_change(&conn).unwrap();
+        let tables: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('trainer_genomes', 'creature_catalogue', 'simulation_state', 'simulation_history', 'species_records')", [], |r| r.get(0)).unwrap();
+        assert_eq!(tables, 0);
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+    }
+
+    #[test]
+    fn test_file_db_model_version_reset_on_reopen() {
+        let dir = temp_dir("model-version");
+        let path = dir.join("test.db");
+        fill_model_tables(&init_db(&path).unwrap());
+
+        // Same version: reopening keeps every row
+        assert_eq!(row_counts(&init_db(&path).unwrap()), vec![1, 1, 1, 1, 1, 1]);
+
+        // Stored version differs: model tables recreated empty, version updated, other tables kept
+        init_db(&path).unwrap().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+        let conn = init_db(&path).unwrap();
+        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 1]);
+        assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+        fill_model_tables(&conn);
+
+        // Pre-versioning database (model tables, no stored version): reset as well
+        conn.execute("DELETE FROM meta", []).unwrap();
+        drop(conn);
+        let conn = init_db(&path).unwrap();
+        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 1]);
+        assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+        drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,3 +1,6 @@
+import type { BrainTopology } from "../../bindings/BrainTopology";
+import type { GeneSpan } from "../../bindings/GeneSpan";
+
 export interface HSLColor {
   h: number;
   s: number;
@@ -28,32 +31,11 @@ export interface OrganelleLocus {
   angle: number;
 }
 
-export interface CTRNNNeuron {
-  id: number;
-  type: "input" | "hidden" | "output";
-  label: string;
-  tau: number;
-  bias: number;
-  activationType?: string;
-  x?: number;
-  y?: number;
-}
-
-export interface CTRNNSynapse {
-  fromNode: number;
-  toNode: number;
-  weight: number;
-}
-
-export interface BrainTopology {
-  neurons: CTRNNNeuron[];
-  synapses: CTRNNSynapse[];
-}
-
-export interface GeneSpan {
-  start: number;
-  end: number;
-}
+// Brain and gene types are generated from Rust (ts-rs, RV-A03)
+export type { CTRNNNeuron } from "../../bindings/CTRNNNeuron";
+export type { CTRNNSynapse } from "../../bindings/CTRNNSynapse";
+export type { BrainTopology } from "../../bindings/BrainTopology";
+export type { GeneSpan } from "../../bindings/GeneSpan";
 
 export interface CreaturePhenotype {
   symmetry: string;
@@ -76,7 +58,8 @@ export interface CreaturePhenotype {
   carnivory: number;
   isPredator: boolean;
   latinName: string;
-  activeGeneSpans: GeneSpan[];
+  /** Recognised genes in genome order (backend gene spans, TCK-187) */
+  genes: GeneSpan[];
   methylations: number[];
 }
 
@@ -110,7 +93,6 @@ export interface CreatureAgent {
   age: number;        // Age in frames
   generation: number; // Gen lineage
   parentSpeciesId?: string; // Parent Species DNA ID (Lineage!)
-  adrenaline: number; // Endocrine hormonal adrenaline multiplier [1.0 to 1.8]
   hasEaten: boolean;  // Physiological feeding guarantee (must consume at least 1 spore/prey to reproduce!)
 
   // NATIVE RECURRENT CTRNN BRAIN STATES (Euler integration state holders):
@@ -141,7 +123,6 @@ export interface TelemetryCreatureInput {
   headingAngle: number;
   omegaRot: number;
   energy: number;
-  adrenaline: number;
   age: number;
   generation: number;
   hasEaten: boolean;

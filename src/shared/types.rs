@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::biology::dna::CreaturePhenotype;
+use crate::biology::dna::{CreaturePhenotype, GenomeComposition, MutationOperators};
 use crate::shared::brain::BrainRuntime;
 use ts_rs::TS;
 
@@ -41,7 +41,6 @@ pub struct CreatureAgent {
     pub omega_rot: f32,
     
     pub energy: f32,
-    pub adrenaline: f32,
     pub age: u32,
     pub generation: u32,
     #[serde(rename = "hasEaten")]
@@ -87,7 +86,6 @@ pub struct TelemetryCreature {
     #[ts(rename = "omegaRot")]
     pub omega_rot: f32,
     pub energy: f32,
-    pub adrenaline: f32,
     pub age: u32,
     pub generation: u32,
     #[serde(rename = "hasEaten")]
@@ -107,7 +105,6 @@ impl From<&CreatureAgent> for TelemetryCreature {
             heading_angle: c.heading_angle,
             omega_rot: c.omega_rot,
             energy: c.energy,
-            adrenaline: c.adrenaline,
             age: c.age,
             generation: c.generation,
             has_eaten: c.has_eaten,
@@ -164,6 +161,10 @@ pub struct AppConfig {
     pub basal_metabolic_rate_multiplier: f32,
     /// Trainer genomes kept per run in the DB and in the in-memory hall of fame (best by fitness)
     pub trainer_genome_retention_per_run: usize,
+    /// Random genomes of trainer generation 1, immigrants and Ocean founders (TCK-184)
+    pub genome_composition: GenomeComposition,
+    /// Operator weights of `mutate_genome` (TCK-184)
+    pub mutation_operators: MutationOperators,
     pub rules: SimulationRules,
 }
 
@@ -246,8 +247,17 @@ mod tests {
     #[test]
     fn test_every_config_key_has_read_site() {
         let on_disk: serde_json::Value = serde_json::from_str(include_str!("../../config.json")).unwrap();
-        let mut keys: Vec<String> = on_disk.as_object().unwrap().keys().filter(|k| *k != "rules").cloned().collect();
-        keys.extend(on_disk["rules"].as_object().unwrap().keys().cloned());
+        // Top-level keys plus the keys of every nested block (rules, genomeComposition, ...)
+        let mut keys: Vec<String> = Vec::new();
+        for (key, value) in on_disk.as_object().unwrap() {
+            match value.as_object() {
+                Some(block) => {
+                    keys.push(key.clone());
+                    keys.extend(block.keys().cloned());
+                }
+                None => keys.push(key.clone()),
+            }
+        }
 
         let mut sources = String::new();
         collect_rust_sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut sources);

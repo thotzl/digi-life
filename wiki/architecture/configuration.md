@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-138-embedded-config.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/ongoing/TCK-183-trainer-persistence-and-db-reset.md]
+sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-138-embedded-config.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md]
 ---
 
 # Configuration (`config.json`)
@@ -16,12 +16,12 @@ sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-c
 ## Rule for new tunables
 
 - Do not hardcode tunables in Rust; add them to `config.json` + `SimulationRules`.
-- Every key needs a read site: test `test_every_config_key_has_read_site` scans `src/` (excluding `shared/types.rs`) for `.<snake_case_key>` per `config.json` key and fails on unread keys (TCK-149).
+- Every key needs a read site: test `test_every_config_key_has_read_site` scans `src/` (excluding `shared/types.rs`) for `.<snake_case_key>` per `config.json` key, including the keys of every nested block, and fails on unread keys (TCK-149, TCK-184).
 - Keys kept without a read site must be listed in `KEYS_WITHOUT_READ_SITE` (`src/shared/types.rs`) with the ticket that wires them up.
 
 ## Key usage (RV-S01, TCK-149)
 
-- `config.json`: 6 top-level keys (`seed`, `targetPopulation`, `foodSporeCount`, `maxCreatures`, `basalMetabolicRateMultiplier`, `trainerGenomeRetentionPerRun`) + `rules` (34 `SimulationRules`). All are read except the 3 exempt keys below.
+- `config.json`: 6 top-level scalar keys (`seed`, `targetPopulation`, `foodSporeCount`, `maxCreatures`, `basalMetabolicRateMultiplier`, `trainerGenomeRetentionPerRun`), the blocks `genomeComposition` (12 keys) and `mutationOperators` (7 keys), and `rules` (34 `SimulationRules`). All are read except the 3 exempt keys below.
 - Exempt, unread on purpose: `steerTorqueBaseMultiplier`, `dragLateralCoefficient` (TCK-150/TCK-180), `bitingBaseEnergyGain` (TCK-145).
 - Removed (TCK-149): `adrenalineMaxMultiplier`, `adrenalineIncreaseRate`, `adrenalineDecayRate`, `adrenalineMetabolicSurchargeScale` (with the always-1 surcharge factor in the Ocean BMR), `bioluminescenceFlashCost`, `biomeHazardDamageScale`, `biomeAlgaeSporeSpawnThreshold`, `predatorSavageThrustThreshold`, `predatorSavageThrustMultiplier`, `restockFounderGeneInheritChance`, and the 7 struct-less keys `obstacles*`, `vents*`, `disableVentsForce`. Adrenaline keys return with TCK-165, biolum with TCK-167.
 - Wired by TCK-149:
@@ -31,11 +31,14 @@ sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-c
 - Added in P2 of TCK-171:
   - `trainerGenomeRetentionPerRun` (top level, 200) → `trainer_genomes` rows kept per run and size of the in-memory trainer hall of fame (TCK-183, [[wiki/architecture/persistence]]).
   - `rules.creatureStartStomachRatio` (0.60, renamed from `restockInitialStomachRatio`) → start energy `stomach_capacity · ratio` of every spawned creature, Ocean and trainer (`creature_factory::start_energy`, TCK-185, [[wiki/biology/metabolism-and-reproduction]]).
-- Without effect outside the config: agent field `adrenaline` is constant 1.0 (brain input `adrenaline_level` always 0); motor 3 (biolum) and motor 4 (reserved) have no effect but cost synapses/BMR; biomes have no simulation effect.
+- Added in P3 of TCK-171 (TCK-184), structs `GenomeComposition` / `MutationOperators` in `dna.rs`, both `deny_unknown_fields`:
+  - `genomeComposition` → `generate_structured_genome` (trainer generation 1 and immigrants, Ocean random founders): `targetLength` 256, `payloadLengthMin`/`Max` 8/16, `organCountMin`/`Max` 1/3, `pFoodOrgan` 0.9 (first organ is an eye or nose), `foodOrganEyeShare` 0.5, `pHox` 0.3, `neuCountMin`/`Max` 1/3, `syCountMin`/`Max` 0/2 ([[wiki/biology/genome-compiler]]).
+  - `mutationOperators` → relative operator weights of `mutate_genome`: `creep` 0.6, `point` 0.15, `insertion` 0.05, `deletion` 0.05, `geneDuplication` 0.075, `geneDeletion` 0.075, `creepMaxStep` 2; the `EVO` gene scales the indel weights.
+- P3 also removed the last adrenaline and biolum model parts (agent field `adrenaline`, brain input, motors 3/4; TCK-149). Biomes have no simulation effect.
 
 ## Key Takeaways
 
 - One config, embedded in the binary, overridable in dev; unknown keys are rejected.
 - Every key has a read site, enforced by test; 3 documented exemptions (TCK-149).
 
-Sources: `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/04-simulation-model.md`, TCK-138, TCK-149, TCK-173, TCK-183, TCK-185.
+Sources: `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/04-simulation-model.md`, TCK-138, TCK-149, TCK-173, TCK-183, TCK-184, TCK-185.

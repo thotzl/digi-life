@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md]
 ---
 
 # CI, Toolchain and Releases
@@ -12,7 +12,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 | `npm run build` | `tsc` + Vite build into `dist/` |
 | `cargo test` / `npm run test:rust` / `npm run types:generate` | Rust tests, regenerates `bindings/` |
 | `cargo clippy --all-targets` | lint (baseline 69 warnings, TCK-134) |
-| `npm run test` | Vitest (no test files yet) |
+| `npm run test` | Vitest (`frontend/shared/genome.test.ts`, TCK-187; not part of CI) |
 | `npm run test:all` | Vitest + cargo test + `cargo check --bin trainer_runner` |
 | `npm run sim:balance` | headless trainer run (release): `--seed baseline --generations 20 --scenario standard --population 16 --parallel true`, report to `.agents/artifacts/runner/balance.json` |
 | `cargo run --release --bin trainer_runner -- run ...` | headless trainer run with JSON report ([[wiki/simulation/analytics-and-balancing]]) |
@@ -63,4 +63,4 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 - Tickets are mirrored to GitHub issues on every push to master.
 - Every closed ticket = patch bump + changelog entry.
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, TCK-173, TCK-186, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, TCK-173, TCK-186, TCK-187, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.

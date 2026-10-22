@@ -48,3 +48,7 @@ Decisions (user, 2026-10-21): groups A–E as proposed; values introduced by the
 - `cargo test`: 45 passed, 0 failed, incl. new `shared::types::tests::test_every_config_key_has_read_site`, `test_unknown_config_key_is_rejected`, existing `test_embedded_config_matches_config_json`, golden master unchanged.
 - `cargo build`: 4 warnings before and after (no new warnings). `npm run build`: green.
 - Not run: the app itself (manual smoke checklist of TCK-186 does not exist yet; it is built in P2).
+
+## Progress P3 (v1.12.17)
+- Motor 3 (biolum), motor 4 (reserved) and the adrenaline brain input plus `CreatureAgent.adrenaline` removed with the Brain v2 golden-master change (TCK-179).
+- Remaining: `steerTorqueBaseMultiplier`, `dragLateralCoefficient` (P5, TCK-150/TCK-180), `bitingBaseEnergyGain` (P6, TCK-145).

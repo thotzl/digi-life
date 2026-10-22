@@ -1,7 +1,7 @@
 ---
 id: TCK-182
 title: Brain Topology Compaction
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -34,3 +34,11 @@ Fewer, meaningful synapses help three ways: compute per tick, energy (activity-b
 - `wiki/biology/ctrnn-brain.md` describes the new topology.
 
 Source: NEAT (minimal start, complexification): https://axon.cs.byu.edu/~dan/778/papers/NeuroEvolution/stanley2*.pdf
+
+## Verification (P3, v1.12.17)
+- Targeted connectivity: thalamus -> hidden/motor, systemic -> hidden/motor (systemic -> motor only with an `OUT` gene), hidden -> motor; no default hidden -> hidden; sensor -> thalamus reflexes fixed.
+- No dead structure: motors 3/4 removed (TCK-149), thalamus nodes only for live channels, difference nodes only for HOX pairs; pairs share one weight set through sum/difference nodes.
+- Synapses per random letter-soup genome p10/p50/p90 52/142/249 -> 14/41/103 (mean 150 -> 52); wildtype 249 -> 118; structured genomes p50 78 (`probe topology`).
+- Throughput (seed b1, pop 16): standard 158k -> 323k ticks/s, exploration 425k -> 763k.
+- Chosen variant: targeted connectivity. NEAT-style minimal start was not implemented: there was no add-connection operator before TCK-184, and the targeted wiring already removes ~70 % of synapses while keeping 97 % of genomes moving; gene duplication (TCK-184) now adds structure coherently.
+- Golden master `0xa7b82dc4fe552ac8` -> `0x65f701a6937c1e71` (one intended Brain v2 change for TCK-179/182/144/153/184/149; ADR-002). CI reference `tests/reference/trainer-ci.json` regenerated. `cargo test` 94 passed (1 ignored measurement), 0 warnings; `npm run build` and `npm test` green.
