@@ -1,7 +1,7 @@
 ---
 id: TCK-183
 title: Trainer Persistence, Retention and DB Reset on Model Change
-status: open
+status: ongoing
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -27,3 +27,8 @@ Part of epic TCK-171. Parts in phase P2 (runner, retention) and P3 (reset rule).
 - Runner without `--persist` leaves the DB untouched.
 - After a model version bump the app starts with empty trainer/catalogue tables and no errors.
 - `trainer_genomes` stays bounded over a long UI run.
+
+## Progress P2 (v1.12.16)
+- Runner in memory by default; `--persist` requires `--db <path>`; a run without `--persist` opens/creates no DB file (verified).
+- Retention: `prune_trainer_genomes` keeps the best `trainerGenomeRetentionPerRun` (200) rows per run plus all active rows; called after every generation save (engine and runner); test on `:memory:`; in-memory HoF bounded to the same N.
+- Remaining for P3: model-version reset rule.

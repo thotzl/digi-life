@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.16] - 2026-10-22
+
+Training track P2 "Sim lab" (epic TCK-171).
+
+### Added
+- Headless trainer runner `trainer_runner` (replaces the outdated `cli_trainer`): `run` writes a seeded, reproducible JSON report per generation (success rate, time to first catch, fitness distribution, genome length, immobile share, throughput); in memory by default, `--persist --db <path>` writes elites; sandboxes and breeding run in parallel with identical results (ref TCK-173, TCK-183).
+- Mechanics probes `trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|all`; they confirm the four suspected causes of failed large-room training: low heredity, a ×65 speed spread, no directed steering, creatures stuck at walls (ref TCK-172).
+- `CreatureFactory`: Ocean and trainer spawn creatures through one path with one start-energy rule (`creatureStartStomachRatio`) (ref TCK-185).
+- Retention for `trainer_genomes`: the best `trainerGenomeRetentionPerRun` rows per run are kept (ref TCK-183).
+- CI runs a fixed-seed trainer reference run and fails on unintended changes; per-phase smoke checklist (ref TCK-186).
+- Target values for the epic, derived from the P2 baseline; analytics skill and wiki rebuilt on the runner (ref TCK-188).
+
+### Changed
+- The trainer is an IO-free `TrainerSim` with seeded per-sandbox random streams and platform-independent math; scenarios, spawn helpers, trial reset and state payloads exist once; scenario, origin and diet are typed enums (ref TCK-173).
+- Trainer start energy is a share of stomach capacity (was 100), clones and assigned creatures start with the same share (was 0.8) (ref TCK-185).
+- Faster brain step (cached activation kinds, reused buffers, pruned synapses skipped) and parallel breeding: generation end at population 300 from 2.8 s to 0.7 s (ref TCK-173).
+
+### Fixed
+- Trainer breeding with Lamarckian inheritance: no index underflow for fallback mutants, and mutants get the phenotype of their own mutated genome (ref TCK-173).
+- Assigning a creature to a sandbox rebuilds it completely (no leftover brain state) (ref TCK-173).
+- UI: extra CSS classes of styled components were never applied (e.g. main menu card hover colours); a fast switch to the training room right after startup no longer leaves the trainer inactive; the large room option reads 3500x3500 (was 2500x2500) (ref TCK-186).
+
 ## [1.12.15] - 2026-10-21
 
 ### Changed

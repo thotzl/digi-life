@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use rand::Rng;
 use ts_rs::TS;
 
 pub const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -7,6 +6,9 @@ pub const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 pub const CHANNELS_PER_ORGANELLE: usize = 5;
 pub const SYSTEMIC_BASE_INPUTS_COUNT: usize = 7; // Erhöht auf 7 Kanäle (Inklusive Such-Arousal)
 pub const OUTPUT_MOTOR_NODES_COUNT: usize = 4;
+
+/// Wildtype progenitor genome (trainer slot plan placeholder for random immigrants, tests).
+pub const WILDTYPE_GENOME: &str = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
 
 // Semantic Helper utilities for brain neurons index calculations
 pub fn get_input_neurons_count(organelles_len: usize) -> usize {
@@ -376,8 +378,7 @@ pub fn extract_raw_gene_payloads(
     payloads
 }
 
-pub fn generate_random_genome(length: usize) -> String {
-    let mut rng = rand::thread_rng();
+pub fn generate_random_genome<R: rand::Rng + ?Sized>(length: usize, rng: &mut R) -> String {
     let mut dna = String::with_capacity(length);
     for _ in 0..length {
         let idx = rng.gen_range(0..26);
@@ -386,11 +387,8 @@ pub fn generate_random_genome(length: usize) -> String {
     dna
 }
 
-pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
-    if genome.is_empty() {
-        return None;
-    }
-    let mut rng = rand::thread_rng();
+/// Positions outside the protected promoter/terminator motifs (the loci `mutate_genome` may hit).
+fn unprotected_indices(genome: &str) -> Vec<usize> {
     let current_length = genome.len();
 
     // Protect crucial promoter/terminator motifs from mutations to prevent catastrophic brain-death / synapse loss
@@ -418,12 +416,62 @@ pub fn mutate_genome(genome: &str) -> Option<(String, usize, char, char)> {
     }
 
     // Gather all unprotected indices
-    let mut unprotected_indices = Vec::new();
-    for i in 0..current_length {
-        if !protected[i] {
-            unprotected_indices.push(i);
+    (0..current_length).filter(|&i| !protected[i]).collect()
+}
+
+/// Mutation operator of `mutate_genome`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MutationKind {
+    Point,
+    Insertion,
+    Deletion,
+}
+
+/// One mutation of a fixed kind at a random unprotected locus (diagnostic probes, TCK-172).
+/// Same operators and length limits as `mutate_genome`, without the EVO-rate roll.
+/// `None` if the kind is not applicable (deletion at <= 128 or insertion at >= 512 bases, empty genome).
+pub fn mutate_genome_with_kind<R: rand::Rng + ?Sized>(genome: &str, kind: MutationKind, rng: &mut R) -> Option<String> {
+    let current_length = genome.len();
+    if current_length == 0 {
+        return None;
+    }
+    let unprotected = unprotected_indices(genome);
+    let pick = |rng: &mut R| if unprotected.is_empty() { rng.gen_range(0..current_length) } else { unprotected[rng.gen_range(0..unprotected.len())] };
+    let mut new_genome = String::from(genome);
+    match kind {
+        MutationKind::Deletion => {
+            if current_length <= 128 || unprotected.is_empty() {
+                return None;
+            }
+            new_genome.remove(pick(rng));
+        }
+        MutationKind::Insertion => {
+            if current_length >= 512 {
+                return None;
+            }
+            let index = pick(rng);
+            new_genome.insert(index, ALPHABET[rng.gen_range(0..26)] as char);
+        }
+        MutationKind::Point => {
+            let index = pick(rng);
+            let current_char = genome.as_bytes()[index];
+            let mut new_char = current_char;
+            while new_char == current_char {
+                new_char = ALPHABET[rng.gen_range(0..26)];
+            }
+            new_genome.replace_range(index..index + 1, &(new_char as char).to_string());
         }
     }
+    Some(new_genome)
+}
+
+pub fn mutate_genome<R: rand::Rng + ?Sized>(genome: &str, rng: &mut R) -> Option<(String, usize, char, char)> {
+    if genome.is_empty() {
+        return None;
+    }
+    let current_length = genome.len();
+    let unprotected_indices = unprotected_indices(genome);
 
     // Dynamic insertion/deletion rates (0.0 .. 0.12) determined by the EVO gene
     let (insertion_rate, deletion_rate) = read_evolution_rates(genome);
@@ -686,7 +734,7 @@ pub fn get_payload_linear_value_offset(payload: &str, shift: usize) -> f32 {
 }
 
 /// Uppercases and pads/truncates a genome to the compiled length range [128, 512].
-fn normalize_genome(genome: &str) -> String {
+pub fn normalize_genome(genome: &str) -> String {
     let current_length = genome.len().clamp(128, 512);
     let mut clean_genome = genome.to_ascii_uppercase().chars().take(current_length).collect::<String>();
     while clean_genome.len() < current_length {
@@ -1542,7 +1590,7 @@ mod tests {
     #[test]
     fn test_random_generation() {
         let length = 128;
-        let dna = generate_random_genome(length);
+        let dna = generate_random_genome(length, &mut crate::shared::rng::seeded(1));
         assert_eq!(dna.len(), length); // Sequence-based base_dna length is dynamic and matches requested length exactly
         for c in dna.chars() {
             assert!(ALPHABET.contains(&(c as u8)));
@@ -1612,8 +1660,9 @@ mod tests {
     #[test]
     fn test_mutation() {
         // Let's use a 200-char random genome which is in the safe range for substitution, deletion, and insertion
-        let original = generate_random_genome(200);
-        if let Some((mutated, idx, old, new)) = mutate_genome(&original) {
+        let mut rng = crate::shared::rng::seeded(2);
+        let original = generate_random_genome(200, &mut rng);
+        if let Some((mutated, idx, old, new)) = mutate_genome(&original, &mut rng) {
             assert!(mutated.len() == original.len() || mutated.len() == original.len() + 1 || mutated.len() == original.len() - 1);
             assert_ne!(mutated, original);
             if mutated.len() == original.len() {
@@ -1636,7 +1685,7 @@ mod tests {
         // Verify promoter-safe conservation with degenerate matching
         let genome_with_promoter = "COLABCEN"; // "COL" (promoter), "ABC" (payload), "EN" (terminator)
         for _ in 0..100 {
-            if let Some((mutated, idx, _, _)) = mutate_genome(genome_with_promoter) {
+            if let Some((mutated, idx, _, _)) = mutate_genome(genome_with_promoter, &mut rng) {
                 // The mutation index should only target unprotected regions.
                 // In "COLABCEN", COL is protected, EN is protected. ABC is at index 3..=5.
                 // But wait! If mutate_genome rolls an insertion, mutated.len() can become 9, adding a char at 3..=5.
@@ -1718,6 +1767,7 @@ mod tests {
                 &mut states,
                 &mut activations,
                 &mut synapse_weights,
+                &mut crate::shared::brain::BrainRuntime::default(),
                 0.1, // high learning rate
                 0.0,
                 0.001, // small decay
@@ -1769,6 +1819,7 @@ mod tests {
                 &mut states,
                 &mut activations,
                 &mut synapse_weights,
+                &mut crate::shared::brain::BrainRuntime::default(),
                 0.0001, // tiny learning rate to keep the learning block active!
                 0.0,
                 0.1, // high forgetting rate to prune quickly
@@ -1809,13 +1860,14 @@ mod tests {
         use crate::shared::brain::execute_brain_with_learning;
 
         // 1. Generate 50 heavily mutated genomes of different lengths (fuzzing sweep)
+        let mut rng = crate::shared::rng::seeded(3);
         for trial in 0..50 {
             let start_len = 128 + (trial * 7) % 380; // various lengths in [128..508]
-            let mut genome = generate_random_genome(start_len);
+            let mut genome = generate_random_genome(start_len, &mut rng);
 
             // Apply 50 random mutations, insertions, or deletions consecutively to scramble promoters and terminators
             for _ in 0..50 {
-                if let Some((mutated, _, _, _)) = mutate_genome(&genome) {
+                if let Some((mutated, _, _, _)) = mutate_genome(&genome, &mut rng) {
                     genome = mutated;
                 }
             }
@@ -1845,6 +1897,7 @@ mod tests {
                     &mut states,
                     &mut activations,
                     &mut synapse_weights,
+                    &mut crate::shared::brain::BrainRuntime::default(),
                     0.05, // active Hebbian learning
                     0.01, // active stiffness decay
                     0.02, // active forgetting decay

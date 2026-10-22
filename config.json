@@ -4,6 +4,7 @@
   "foodSporeCount": 300,
   "maxCreatures": 45,
   "basalMetabolicRateMultiplier": 1.0,
+  "trainerGenomeRetentionPerRun": 200,
   "rules": {
     "creatureMaxAgeTicks": 36000,
     "creatureLifespanMatureAgeMultiplier": 12,
@@ -38,6 +39,6 @@
     "decompositionSporeMin": 1,
     "decompositionSporeMax": 5,
     "decompositionSizeRatio": 1200,
-    "restockInitialStomachRatio": 0.60
+    "creatureStartStomachRatio": 0.60
   }
 }

@@ -1,40 +1,87 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/ongoing/TCK-183-trainer-persistence-and-db-reset.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs]
 ---
 
 # Trainer
 
-Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor genomes.
+Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor genomes. Since TCK-173 the trainer is an IO-free simulation (`TrainerSim`) driven either by the engine thread (UI) or by the headless runner ([[wiki/simulation/analytics-and-balancing]]).
 
 ## Structure
 
-- `src/biology/trainer_engine.rs`: `TrainerSandbox`, `init_rust_sandbox`, `step_trainer_sandbox_physics`, `TrainerTelemetrySandbox` (25 Hz telemetry).
-- `src/biology/scenarios.rs`: `TrainingScenarioPlugin` trait with `calculate_fitness`; plugins `StandardScenario` (`standard`) and `ExplorationScenario` (`exploration`), selected by `get_scenario_plugin`.
-- Grid of N sandboxes (16 chambers in the current UI), one creature + target spores each, runs in the engine thread ([[wiki/architecture/simulation-engine]]).
-- Prey mocking ("meatballs") provides meat targets for carnivore training (TCK-106). There are no live opponents; each sandbox holds exactly one creature (`TrainerSandbox.agent`).
-- Two rooms exist: `standard` 1000 px and `exploration` 3500 px (the UI option reads "2500x2500", `frontend/views/TrainerView.ts:546`). `SET_TRAINER_MODE` switches the room of the running population immediately (`engine.rs:774-806`); epoch ticks, trial index and accumulated fitness keep running across the switch.
-- No metabolism in the trainer: `energy` starts at 100 and is never reduced (`trainer_engine.rs:101`); the Ocean drains BMR every tick. Trainer creatures are constructed differently from Ocean creatures (energy, `antisense`, neuron buffers).
-- Sensor range `scale · 550` (≈ 190–990 px, [[wiki/biology/sensing]]): in the small room food is usually in range, in the large room usually not at start.
+- `src/biology/trainer_sim.rs` — `TrainerSim`: population of sandboxes, epoch/trial loop, breeding, parents and hall of fame; no IO. API: `new` (generation 1), `restore` (continue from parents + HoF), `step(parallel) -> Option<TrainerEvent>`, `set_scenario`, `assign_creature`. Types `TrainerParams`, `GenomeRecord`, `GenerationStats`, `TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats }` (TCK-173).
+- `src/biology/trainer_engine.rs` — `TrainerSandbox` (one creature + its food), `SandboxOrigin` enum (`elite`/`hof`/`mutant`/`random`, ts-rs), `breed_genome`, `init_rust_sandbox`, `TrainerSandbox::reset_trial`, `step_trainer_sandbox_physics` (eating, respawn, wall counter, 8×8 coverage mask), `TrainerTelemetrySandbox`.
+- `src/biology/scenarios.rs` — `Scenario` enum (`standard`/`exploration`, ts-rs), `DietClass` (`CARNIVORE_MIN` 0.6, `HERBIVORE_MAX` 0.4), `TrainingScenarioPlugin` trait (`chamber_size`, `epoch_ticks`, `respawn_min_distance`, `trial_min_distance`, `initialize`, `visible_foods`, `calculate_fitness`) returned as `&'static dyn` by `Scenario::plugin()`; one shared `step_physics` (sensing, brain, kinematics, food drift) with the `visible_foods` hook; helpers `spawn_at_min_distance` and `target_distance_by_diet` (TCK-173).
+- Engine (`src/server/engine.rs`) keeps only the UI state: active/running flags, warp (cap 35, [[wiki/architecture/invariants]]), selected sandbox, run id, 25 Hz telemetry and DB writes. One function builds the `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED` payload ([[wiki/architecture/simulation-engine]]).
+- Creatures are spawned by the shared `CreatureFactory` (`src/biology/creature_factory.rs`, TCK-185), identical to Ocean spawns except position, heading, id and generation. Each sandbox holds exactly one creature; prey mocking ("meatballs") provides meat targets (TCK-106).
+
+## Rooms
+
+| | `standard` | `exploration` |
+| :--- | :--- | :--- |
+| Chamber | 1000 px | 3500 px |
+| Epoch (one trial) | 300 ticks | 1800 ticks |
+| Food | 1 plant + 1 meat | 3 plants + 3 meat |
+| Visible to sensors | all food | nearest plant and nearest meat only |
+| Min. food distance: init / new trial / respawn after eating | 200 / 200 / 200 px | 650 / 1200 / 550 px |
+
+- All values come from the scenario plugin; the engine has no chamber/epoch literals (TCK-173, RV-A05 trainer part).
+- Spawns use `spawn_at_min_distance` with at most 1000 tries (`SPAWN_MAX_TRIES`), then the farthest candidate (25 px margin) — the unbounded rejection loops are gone (TCK-173). The distances are unchanged: trial 1 of the large room is easier than trials 2/3 (RV-S08).
+- `SET_TRAINER_MODE` switches the room of the running population (`TrainerSim::set_scenario`): every sandbox restarts its trial in the new chamber; genomes, the epoch tick counter and the trial accumulators are kept.
+- Sensor range `scale · 550`, measured 256 / 575 / 926 px (p10/p50/p90) over random genomes; food is in range at spawn for 57 % of random genomes in the small and 14 % in the large room (TCK-172, [[wiki/biology/sensing]]).
+
+## Start state and energy
+
+- Start energy = `stomach_capacity · creatureStartStomachRatio` (0.60), set by the factory and again by every trial reset (TCK-185; before: fixed 100). The brain input `internal_energy = energy / 100` therefore differs per body instead of being 1.0.
+- No metabolism in the trainer: energy is never reduced during a trial.
+- `reset_trial`: agent to the centre with a random heading, velocity/bend/age reset, start energy, neuron states cleared, food respawned at `trial_min_distance`; learned synapse weights are kept.
 
 ## Generation loop
 
-- Epoch of fixed ticks (engine literals `300`/`1800`, chamber size `1000`/`3500`, standard/exploration).
-- **Multi-trial (TCK-120):** optionally 3 trials per generation; agents reset (position, velocity, neuron states), spores re-randomized, fitness averaged; no catch in any trial → fitness × 0.1, otherwise +150 per successful trial (`engine.rs:1889-1895`).
-- Every sandbox rolls its own food layout (`scenarios.rs:53-76,197-209`, re-trial `engine.rs:1832-1845`), so candidates of one generation face different tasks.
-- Selection: 16 sandboxes, `eliteRatio` 0.15 → ~2 elites copied unmodified; the rest is filled from Hall of Fame, inflow and mutants of the parents (`engine.rs:157-200`, TCK-105); elites saved to `trainer_genomes` every generation without pruning; Hall of Fame per run, sorted by raw fitness across rooms (`engine.rs:145`).
-- Default `mutationRate` 0.06 means `genome.len() · 0.06` mutation operations per mutant (15–30), see [[wiki/biology/genome-compiler]].
-- `sb.epoch_ticks` increments every tick (TCK-136, RV-B05), so `finish_tick` records the real consumption tick.
-- Generation 1 with origin `random` uses `generate_random_genome(256)` instead of `base_dna` (RV-S09).
+- `step` advances every sandbox one tick; `parallel` steps them on the rayon pool. The UI engine calls `step(true)`.
+- Fitness is computed per tick only for the UI telemetry (`track_live_fitness`); the runner computes it at epoch end only, with identical results (TCK-173).
+- **Multi-trial (TCK-120, default on, 3 trials):** fitness accumulated per trial, then averaged; no catch in any trial → × 0.1, otherwise + 150 per successful trial.
+- Every sandbox rolls its own food layout, so candidates of one generation face different tasks.
+- `GenerationStats` are computed at generation end over the final fitness, before breeding ([[wiki/simulation/analytics-and-balancing]] for the fields).
+- **Selection:** sandboxes sorted by fitness; `elite_count = clamp(round(N · eliteRatio), 1, N)` elites become the parents and enter the hall of fame (sorted by fitness, bounded to `trainerGenomeRetentionPerRun`, 200).
+- **Slot plan** of the next generation: elites (unmodified) | hall-of-fame copies (`round(N · hofRate)`, not mutated) | random immigrants (`round(N · inflowRate)`, `generate_random_genome(256)`) | mutants of the parents round-robin. Missing parents/HoF entries fall back to mutants of parent 0. Generation 1 (no parents): every slot is a random 256-base genome (RV-S09).
+- **Mutants:** `round(len · mutationRate)` calls of `mutate_genome` (default 0.06 → 15 at 256 bases), see [[wiki/biology/genome-compiler]].
+- **Lamarckian toggle** (default off, TCK-128): elites and mutants receive the source parent's methylations and synapse weights; the factory applies them to the (possibly mutated) genome and falls back to the genome weights on a length mismatch.
+- Defaults (`TrainerParams::default`, same as the UI): population 16, elite 0.15, mutation 0.06, inflow 0.15, HoF 0.15, multi-trial on, 3 trials, Lamarck off.
+- Fixed while extracting (TCK-173): Lamarck source index underflow for fallback mutants; Lamarck mutants were built from the unmutated parent genome; catalogue assignment kept the old `antisense` and neuron buffers.
+- Kept as is (TCK-173 equivalence): HoF slots are not mutated although a mutation rate is passed; `avg_fitness` divides by the population size.
 
-## Spawn distances (exploration)
+## Determinism
 
-- Initialization `min_dist = 650` (`scenarios.rs`), re-trial `1200` (`engine.rs`), respawn after eating `550` (`trainer_engine.rs`); trial 1 is easier than trials 2/3. The rejection-sampling loops have no iteration limit (RV-S08).
+- One seed per run: `seed_from_str("{config.seed}:{run_id}")` in the UI, `seed_from_str(--seed)` in the runner ([[wiki/architecture/simulation-engine]]).
+- RNG streams (`src/shared/rng.rs`): sandbox `i` in generation `g`, trial `t` uses `derive(seed, [g, t, i])`; breeding slot `s` uses `derive(seed, [g, BREED_STREAM, s])`. Results do not depend on `parallel` or the thread count (tests in [[wiki/quality/testing]]).
+- The per-tick path uses `src/shared/fmath.rs` (pure-Rust `libm`) for transcendental functions, so reports are identical across platforms.
+
+## Persistence
+
+- On `GenerationCompleted` the engine emits `TRAINER_GENERATION_COMPLETED` (`generation`, `bestFitness`, `avgFitness`, `bestGenome`) and calls `save_trainer_elites`: previous rows of the run become inactive, the elites are inserted as active, then retention prunes the run ([[wiki/architecture/persistence]], TCK-183).
+- `SET_MODE trainer`, a new `runId`, a population change or the Lamarck toggle restore the population from the DB (`load_trainer_genomes`: active parents up to N, HoF up to the retention); the generation continues from the newest parent. `TRAINER_RESET` deletes the run's rows and starts a fresh `TrainerSim`.
+- `ASSIGN_SANDBOX_CREATURE` rebuilds the agent through the factory (position, heading and motion kept, trial counters restart) and stores it as an active row with fitness 0.
 
 ## Fitness
 
 - Standard success: `(yield · 1000 + path_efficiency + speed_bonus) · wall_penalty`, `speed_bonus = (epoch − finish_tick) · 0.2`; failure: `(base − distance · 0.20) · penalty · wall_penalty`.
-- Exploration success: `(yield · 3000 + 1000 · path_efficiency + speed_bonus + coverage_bonus) · wall_penalty`, speed factor `0.5`; failure kinetic waste `distance · 0.02`.
-- Speed bonus uses `saturating_sub`. Fitness of runs after TCK-135/136 is not comparable with older HoF entries.
+- Exploration success: `(yield · 3000 + 1000 · path_efficiency + speed_bonus + coverage_bonus) · wall_penalty`, speed factor `0.5`; failure rewards displacement from the centre (`· 1.2`) plus a homing bonus within 550 px, kinetic waste `distance · 0.02`; tight looping (average radius < 180 px) × 0.25.
+- `sb.epoch_ticks` increments every tick (TCK-136), so `finish_tick` records the real consumption tick. Fitness of runs after TCK-135/136 is not comparable with older HoF entries.
+
+## Baseline (P2, TCK-173)
+
+Headless runner, release build, `--parallel true`, current settings; mean of the last 5 generations (reports kept locally in `.agents/artifacts/baseline/p2/`).
+
+| Setup | Success rate gen 1 | Success rate last 5 gens | Best gen | Mean time to first catch (last 5) |
+| :--- | :--- | :--- | :--- | :--- |
+| small, pop 16, 30 gens, 5 seeds | 0.004 | 0.040 | 0.125 | ≈ 190 ticks |
+| large, pop 16, 30 gens, 5 seeds | 0.000 | 0.023 | 0.083 | ≈ 1210 ticks |
+| small, pop 300, 20 gens, 1 seed | 0.004 | 0.165 | 0.179 | ≈ 216 ticks |
+| large, pop 300, 10 gens, 1 seed | 0.006 | 0.054 | 0.064 | ≈ 880 ticks |
+
+- Success rate = share of sandbox-trials with at least one catch. Immobile share (< 5 px travelled) in the small room: 0.108 in generation 1, 0.032 at the end.
+- Throughput: standard pop 300 ≈ 206k sandbox-ticks/s total, exploration pop 16 ≈ 469k ([[wiki/architecture/performance]]).
+- Mechanics limits measured by the TCK-172 probes (heredity, speed, steering, walls) are in [[wiki/biology/genome-compiler]], [[wiki/simulation/physics]], [[wiki/biology/ctrnn-brain]] and [[wiki/biology/sensing]].
 
 ## Controls
 
@@ -42,7 +89,8 @@ Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor
 
 ## Key Takeaways
 
-- Plugin-based scenarios (2) with multi-trial evaluation and elitist selection.
-- The speed bonus is effective since TCK-136; spawn distances differ per trial (RV-S08).
+- `TrainerSim` is IO-free, seeded and parallel-safe; the engine and the headless runner drive the same code.
+- Two plugin rooms with multi-trial evaluation and elitist selection; spawn loops are bounded, spawn distances still differ per trial (RV-S08).
+- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-173, TCK-183, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.

@@ -1,10 +1,10 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md]
+sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
 ---
 
 # Simulation Engine
 
-`src/server/engine.rs` — `spawn_simulation_thread(window, rx)` is started from `main.rs` setup. The whole engine is one thread closure holding Ocean and Trainer state as local variables (~2,000 lines, RV-A01).
+`src/server/engine.rs` — `spawn_simulation_thread(window, rx)` is started from `main.rs` setup. The engine is one thread closure holding the Ocean state as local variables (~1,500 lines, RV-A01). The trainer lives in `TrainerSim` (`src/biology/trainer_sim.rs`, TCK-173); the closure keeps only its UI state (active/running, warp, selected sandbox, run id), telemetry and DB writes ([[wiki/simulation/trainer]]).
 
 ## Frame and timing
 
@@ -16,13 +16,19 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 ## Modes
 
 - One engine, two modes: `SET_MODE` `ocean` | `trainer`.
-- The mode is set only by `navigateTo` in `frontend/core/router.ts` ([[wiki/architecture/invariants]]).
+- The mode is set only by `navigateTo` in `frontend/core/router.ts` ([[wiki/architecture/invariants]]). `CLIENT_READY` only answers with `INIT_STATE` and no longer switches the trainer off; forcing Ocean there raced a fast navigation to the trainer after startup (TCK-186 smoke check).
 - Ocean: [[wiki/simulation/ocean]]. Trainer: [[wiki/simulation/trainer]].
 
 ## Events
 
 - `emit_state` only buffers; `flush_events()` sends the buffer once per frame in original order and coalesces repeated `DATABASE_CHANGED` (TCK-139, RV-P05).
 - One Tauri event channel `simulation-state` for everything, see [[wiki/architecture/ipc-protocol]].
+
+## Creature spawning and RNG
+
+- All Ocean spawn sites (seed, inject, clone, reset, restock) and the trainer build agents through `CreatureFactory` (`src/biology/creature_factory.rs`: `spawn_creature`, `spawn_from_phenotype`, `start_energy`) with the same start energy, `antisense` and neuron buffers (TCK-185). Ocean mitosis children are still clones of the parent agent ([[wiki/biology/metabolism-and-reproduction]]).
+- Trainer: seeded `SimRng` (`ChaCha8Rng`, `src/shared/rng.rs`), run seed `seed_from_str("{config.seed}:{run_id}")`, sandboxes stepped in parallel with `TrainerSim::step(true)`; reproducible per run ([[wiki/simulation/trainer]]).
+- Ocean: `rand::thread_rng()` at 11 sites in `engine.rs`; Ocean runs are not reproducible (RV-T04). `config.seed` seeds the Ocean world generation and the trainer run seed (TCK-149, TCK-173).
 
 ## Hot-loop rules
 
@@ -34,15 +40,16 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 
 ## Known limitations
 
-- Creature construction exists 6× with diverging start values (energy 0.6 vs 0.8, `antisense` empty vs set, `neuron_states` empty vs preallocated); spore spawn with nutrient centers 3×; `TRAINER_STATE_CHANGED` payload 5×; `base_dna` literal 3× (RV-A01).
+- Spore spawn with nutrient centers 3×; `base_dna` literal 2× in `engine.rs` besides `dna::WILDTYPE_GENOME` (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185).
 - Not unit-testable (needs a Tauri window); logic is tested through extracted pure functions ([[wiki/quality/testing]]).
-- World size `19200 × 10800` hardcoded in Rust (`engine.rs`, `trainer_engine.rs`) and TS; trainer epoch length `300/1800` and chamber size `1000/3500` are engine literals (RV-A05).
-- `rand::thread_rng()` at ~20 sites — runs are not reproducible (RV-T04); `config.seed` only seeds Ocean world generation (TCK-149).
+- World size `19200 × 10800` hardcoded in Rust and TS (RV-A05); trainer chamber size and epoch length come from the scenario plugin (TCK-173).
+- Ocean RNG is `thread_rng` (RV-T04, above).
 
 ## Key Takeaways
 
 - One thread, ~60 Hz, max 35 steps per frame, events flushed once per frame.
 - The hot loop is free of per-step SQL, grid allocations and agent clones (TCK-139).
-- Engine structure, hardcoded constants and RNG are known limitations (RV-A01, RV-A05, RV-T04).
+- Trainer state, RNG and breeding are in the IO-free `TrainerSim`; one `CreatureFactory` for all spawns.
+- Ocean engine structure, world-size constants and Ocean RNG are known limitations (RV-A01, RV-A05, RV-T04).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-185, TCK-186.

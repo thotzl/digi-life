@@ -48,6 +48,9 @@ export function styled<T extends keyof HTMLElementTagNameMap>(tag: T) {
           applyChildren(el, val);
         } else if (key === "style" && typeof val === "object") {
           Object.assign(el.style, val);
+        } else if (key === "class" || key === "className") {
+          // Extra classes add to the generated one (assigning el.class would be a no-op property)
+          el.classList.add(...String(val).split(/\s+/).filter(Boolean));
         } else if (key.startsWith("on") && typeof val === "function") {
           const eventName = key.slice(2).toLowerCase();
           el.addEventListener(eventName, val as any);

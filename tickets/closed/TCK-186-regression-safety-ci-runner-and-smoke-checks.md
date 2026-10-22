@@ -1,7 +1,7 @@
 ---
 id: TCK-186
 title: "Regression Safety: CI Runner Run and Per-Phase Smoke Checks"
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -27,3 +27,12 @@ Brain, physics and energy are shared by Ocean and trainer; every phase of the ep
 ## Acceptance
 - CI job fails on an unintended change of the reference report.
 - Every closed phase of TCK-171 records its smoke-check result.
+
+## Smoke checklist (per phase)
+1. `cargo test` and `npm run build` green; `cargo build` without warnings.
+2. CI reference run matches (`trainer_runner run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true`, compared by `tests/reference/compare-trainer-report.mjs`); an intended model change updates `tests/reference/trainer-ci.json` in the phase commit.
+3. UI (app via `tauri dev`, WebView2 remote debugging, app DB backed up and restored): Ocean starts, population/generation/spores without NaN, inject works; trainer completes a generation (backend log), fitness labels update, room switch, pause stops generation completions, reset returns to generation 1; no console errors. From P3: neural inspector and gene tooltips show the current model (TCK-187).
+
+## Verification (P2, v1.12.16)
+- CI step "trainer reference run" in `.github/workflows/ci.yml`; the comparator fails on a single changed value (tested with a modified report) and ignores `perf` and `meta.version`.
+- P2 smoke result: 1-3 passed (UI smoke 2026-10-22: Ocean 15 -> 16 after inject, trainer generations completed, pause 0 completions in 8 s, reset -> 1, 0 console errors). UI fixes found on the way: `styled.ts` class props, `CLIENT_READY` forcing trainer mode off.

@@ -23,5 +23,5 @@ description: Baseline rules for working in the Pixel DNA Life repository (Tauri 
 - **No DB work in the hot loop:** keep SQLite out of the per-step physics path; batch writes on timers or events.
 - **Bindings:** after changing a `#[derive(TS)]` struct run `cargo test` and commit the regenerated `bindings/`.
 - **Versioning:** one patch bump per closed ticket in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, plus a `CHANGELOG.md` entry referencing the ticket.
-- **Do not trust `src/bin/cli_trainer.rs` output** (outdated model, RV-S11).
+- **Trainer measurements:** use the headless runner `src/bin/trainer_runner.rs` (`npm run sim:balance`); the outdated `cli_trainer` was removed (RV-S11).
 - **Keep the wiki current:** when a change invalidates a wiki statement, update the article in the same commit. Wikilinks are vault-root relative (`[[wiki/topic/article]]`; vault = repo root).

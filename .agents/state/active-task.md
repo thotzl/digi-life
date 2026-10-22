@@ -49,9 +49,10 @@ Training that works: creatures that really develop and improve across rooms, so 
 
 ## Progress
 - P1 Config done (v1.12.15): TCK-149 implemented for P1; ticket stays ongoing for its P3/P5/P6 rests (see ticket).
+- P2 Sim lab done (v1.12.16): TCK-172/173/185/186 closed, TCK-183/188 ongoing (P3 rests). Runner `target/release/trainer_runner run|probe`; targets in TCK-171; UI smoke tooling `.agents/artifacts/uicheck/run-smoke.sh` (backs up and restores the app DB; local, gitignored).
 
 ## Next step
-P2 Sim lab (TCK-173, 172, 185, 183 runner/retention, 186, 188), after the user's 'GO PHASE P2'. Work with subagents on scoped, context-heavy slices.
+P3 Brain v2 (TCK-179, 182, 144, 153, 184, 187, 183 reset rule, 188 ADR-002, 149 motors 3/4 + adrenaline input): one golden-master change, CI reference update, DB reset. All phases run without stops (TCK-171 `## Execution decisions`). Work with subagents on scoped slices, sequentially when they touch the same files.
 
 ## Open points
-- Check `git status -sb` for unpushed commits; `gh` is not installed, so CI runs and the GitHub ticket sync must be checked in the browser.
+- Check `git status -sb` for unpushed commits.

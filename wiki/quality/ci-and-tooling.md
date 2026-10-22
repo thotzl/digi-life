@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, package.json]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
 ---
 
 # CI, Toolchain and Releases
@@ -13,8 +13,10 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 | `cargo test` / `npm run test:rust` / `npm run types:generate` | Rust tests, regenerates `bindings/` |
 | `cargo clippy --all-targets` | lint (baseline 69 warnings, TCK-134) |
 | `npm run test` | Vitest (no test files yet) |
-| `npm run test:all` | Vitest + cargo test + `cargo check --bin cli_trainer` |
-| `npm run sim:balance` | outdated `cli_trainer` (RV-S11, not usable) |
+| `npm run test:all` | Vitest + cargo test + `cargo check --bin trainer_runner` |
+| `npm run sim:balance` | headless trainer run (release): `--seed baseline --generations 20 --scenario standard --population 16 --parallel true`, report to `.agents/artifacts/runner/balance.json` |
+| `cargo run --release --bin trainer_runner -- run ...` | headless trainer run with JSON report ([[wiki/simulation/analytics-and-balancing]]) |
+| `cargo run --release --bin trainer_runner -- probe <name>\|all --seed <s>` | mechanics probes (TCK-172), JSON to `.agents/artifacts/probes/` |
 
 ## Dev server
 
@@ -36,7 +38,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 ## Workflows (`.github/workflows/`)
 
-- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134).
+- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134), then step "trainer reference run": `cargo run --release --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json` and `node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json` (TCK-186). The comparator ignores `perf` and `meta.version`, prints the first 20 differing values and fails on any difference; an intended model change updates `tests/reference/trainer-ci.json` in the same commit.
 - `release.yml` — only `v*` tags and manual dispatch; matrix macOS / Windows / Ubuntu 22.04 via `tauri-action`; draft release (TCK-114, TCK-134).
 - `sync-tickets.yml` — on push to master/main: `.github/scripts/sync_github.cjs` mirrors `tickets/` to GitHub issues (`[TCK-…] title`, labels `priority:*`, `status:*`; closed folder = closed issue). Needs valid ticket frontmatter.
 - `.gitattributes` pins `bindings/**` and `gen/**` to LF so the drift check is stable on Windows.
@@ -52,13 +54,13 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 ## Toolchain state
 
 - `rustc 1.99.1` stable-msvc (TCK-134).
-- `Cargo.toml` package name `src-tauri`; `rusqlite 0.29` and `rand 0.8` are old; `typescript ^5`, `vite ^5`, `vitest ^1.6` with transitive deprecations (RV-T05).
+- `Cargo.toml` package name `src-tauri`, binaries `src-tauri` (default) and `trainer_runner`; dependencies added in TCK-173: `rand_chacha 0.3` (seeded `ChaCha8Rng`), `rayon 1` (parallel trainer), `libm 0.2` (platform-identical math). `rusqlite 0.29` and `rand 0.8` are old; `typescript ^5`, `vite ^5`, `vitest ^1.6` with transitive deprecations (RV-T05).
 - `types:generate` depends on all tests passing.
 
 ## Key Takeaways
 
-- CI verifies build, tests and binding drift; releases only on tags.
+- CI verifies build, tests, binding drift and the trainer reference report; releases only on tags.
 - Tickets are mirrored to GitHub issues on every push to master.
 - Every closed ticket = patch bump + changelog entry.
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, TCK-173, TCK-186, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.

@@ -1,7 +1,7 @@
 ---
 id: TCK-173
 title: TrainerSim, Seeded RNG and Headless Trainer Runner
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -46,3 +46,13 @@ Training changes cannot be compared today: the trainer lives inside the ~2000-li
 ## Notes
 - Warp cap 35 stays for the UI path (invariant); the headless runner has no cap.
 - `src/bin/cli_trainer.rs` is outdated (RV-S11); replace or remove it here or in TCK-158.
+
+## Verification (P2, v1.12.16)
+- `src/biology/trainer_sim.rs`: IO-free `TrainerSim` (`new`, `restore`, `step(parallel)`, `set_scenario`, `assign_creature`), `TrainerParams`, `GenomeRecord`, `GenerationStats`, `TrainerEvent`; the engine keeps only active/running/warp cap 35/selected sandbox/run id/telemetry/DB.
+- Seeded RNG: `src/shared/rng.rs` (ChaCha8); per-sandbox streams `derive(seed,[gen,trial,i])`, per-slot breed streams `derive(seed,[gen,BREED_STREAM,slot])`; no `thread_rng` in the trainer path. Cross-platform determinism via `src/shared/fmath.rs` (libm) in the per-tick path.
+- Runner: `src/bin/trainer_runner.rs` + `src/biology/trainer_report.rs` (replaces `cli_trainer.rs`, RV-S11). Same seed -> identical report minus `perf`; parallel == sequential; `RAYON_NUM_THREADS=1/3` identical (tests `test_same_seed_identical_report_and_parallel_equals_sequential`, `test_parallel_step_equals_sequential`, `test_parallel_breeding_equals_sequential`).
+- Refactoring: `Scenario`/`SandboxOrigin`/`DietClass` enums (ts-rs), plugin `chamber_size`/`epoch_ticks`, one shared `step_physics`, `spawn_at_min_distance` (try limit 1000, RV-S08 loops bounded), one `target_distance_by_diet`, `TrainerSandbox::reset_trial`, one state payload builder, no `>= 2000.0`/300/1800 literals in the engine, dead `world` field removed.
+- Bugs fixed while porting: Lamarck source index underflow (fallback mutants), Lamarck mutants built from the unmutated parent genome, ASSIGN kept old antisense/neuron buffers. Quirks kept for TCK-174: `hof` origin is not mutated, avg fitness divides by N, generation number after restart, `set_scenario` keeps accumulators.
+- Performance (behaviour-preserving, report bit-identical before/after): `BrainRuntime` (activation enum, organ/motion flags, active-synapse list), reused buffers, live fitness only for the UI; per-tick step +20-30 % (std pop 32: 718k -> 879k sandbox-ticks/s); parallel breeding: generation end at pop 300 2.79 s -> 0.67 s.
+- Baseline (5 seeds, 30 gens, pop 16, mean of last 5 gens): success rate small 0.040 (gen 1 0.004), large 0.023 (gen 1 0.000); pop 300: small 0.165 (20 gens), large 0.054 (10 gens); time to first catch small ~190-216 ticks, large ~880-1210 ticks; immobile share gen 1 small 0.108; throughput standard pop 300 parallel ~206k ticks/s total, exploration pop 16 ~469k.
+- `cargo test` green, 0 warnings, `npm run build` green, golden master unchanged; UI smoke (TCK-186) passed.

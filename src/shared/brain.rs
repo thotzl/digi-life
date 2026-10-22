@@ -4,6 +4,72 @@ use crate::biology::dna::{
 };
 use crate::shared::types::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
+use crate::shared::fmath;
+
+/// Neuron activation function, decoded once from `CTRNNNeuron::activation_type`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Activation {
+    Tanh,
+    Relu,
+    Sigmoid,
+    Sin,
+}
+
+impl Activation {
+    /// Unknown or missing labels fall back to tanh.
+    pub fn from_label(label: Option<&str>) -> Self {
+        match label.unwrap_or("tanh") {
+            "relu" => Activation::Relu,
+            "sigmoid" => Activation::Sigmoid,
+            "sin" => Activation::Sin,
+            _ => Activation::Tanh,
+        }
+    }
+
+    fn apply(self, x: f32) -> f32 {
+        match self {
+            Activation::Relu => x.max(0.0),
+            Activation::Sigmoid => 1.0 / (1.0 + fmath::exp(-x)),
+            Activation::Sin => fmath::sin(x),
+            Activation::Tanh => fmath::tanh(x),
+        }
+    }
+}
+
+/// Per-agent data derived from the brain topology, so the brain step does no string matching.
+/// Not serialized; built lazily on the first brain step. Reset it (`BrainRuntime::default()`)
+/// whenever the agent's phenotype or synapse weights are replaced in place.
+#[derive(Debug, Clone, Default)]
+pub struct BrainRuntime {
+    built: bool,
+    activations: Vec<Activation>,
+    /// Per neuron: first channel of an eye or nose organ (motion vision delta)
+    motion_sensor: Vec<bool>,
+    /// Synapses with a non-zero weight, in synapse order (sorted by `to_node`); pruned ones are dropped
+    active_synapses: Vec<ActiveSynapse>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveSynapse {
+    idx: usize,
+    from: usize,
+    to: usize,
+}
+
+impl BrainRuntime {
+    fn build(&mut self, brain: &BrainTopology, synapse_weights: &[f32]) {
+        self.activations = brain.neurons.iter().map(|n| Activation::from_label(n.activation_type.as_deref())).collect();
+        self.motion_sensor = brain.neurons.iter().map(|n| n.label.contains("👁️") || n.label.contains("👃")).collect();
+        self.active_synapses = brain
+            .synapses
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| synapse_weights[*idx] != 0.0)
+            .map(|(idx, s)| ActiveSynapse { idx, from: s.from_node, to: s.to_node })
+            .collect();
+        self.built = true;
+    }
+}
 
 /// Dynamic Deep CTRNN Recurrent Brain signal execution with Hebbian Learning (Euler integration + Plasticity)
 pub fn execute_brain_with_learning(
@@ -12,15 +78,17 @@ pub fn execute_brain_with_learning(
     neuron_states: &mut Vec<f32>,
     neuron_activations: &mut Vec<f32>,
     synapse_weights: &mut Vec<f32>,
+    runtime: &mut BrainRuntime,
     hebbian_rate: f32,
     _hebbian_decay: f32, // stiffness decay
     forgetting_decay: f32,
-) -> Vec<f32> {
+) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
     let total_nodes = brain.neurons.len();
     let total_synapses = brain.synapses.len();
 
     // Dynamically resize and initialize synapse weights if needed
-    if synapse_weights.len() != total_synapses {
+    let weights_reset = synapse_weights.len() != total_synapses;
+    if weights_reset {
         synapse_weights.clear();
         for syn in &brain.synapses {
             synapse_weights.push(syn.weight);
@@ -33,6 +101,9 @@ pub fn execute_brain_with_learning(
     }
     if neuron_activations.len() != total_nodes {
         neuron_activations.resize(total_nodes, 0.0);
+    }
+    if !runtime.built || runtime.activations.len() != total_nodes || weights_reset {
+        runtime.build(brain, synapse_weights);
     }
 
     let k_count = inputs.len() - 1; // Last input represents the clock
@@ -53,8 +124,7 @@ pub fn execute_brain_with_learning(
     };
     for idx in 0..organelles_len {
         let base_idx = idx * CHANNELS_PER_ORGANELLE;
-        let label = &brain.neurons[base_idx].label;
-        if label.contains("👁️") || label.contains("👃") {
+        if runtime.motion_sensor[base_idx] {
             let ch0 = inputs[base_idx];
             let ch1 = inputs[base_idx + 1];
             let ch2 = inputs[base_idx + 2];
@@ -71,9 +141,11 @@ pub fn execute_brain_with_learning(
         }
     }
 
+    // Pruned synapses (weight 0) contribute nothing to the sums and are skipped
+    let active = &runtime.active_synapses;
     let mut syn_idx = 0;
     // Move syn_idx to the first synapse that has to_node >= k_count + 1
-    while syn_idx < total_synapses && brain.synapses[syn_idx].to_node < k_count + 1 {
+    while syn_idx < active.len() && active[syn_idx].to < k_count + 1 {
         syn_idx += 1;
     }
 
@@ -85,8 +157,9 @@ pub fn execute_brain_with_learning(
 
         // Sum synaptic weights from all active connections in a single linear O(S) pass!
         let mut sum = 0.0;
-        while syn_idx < total_synapses && brain.synapses[syn_idx].to_node == i {
-            sum += neuron_activations[brain.synapses[syn_idx].from_node] * synapse_weights[syn_idx];
+        while syn_idx < active.len() && active[syn_idx].to == i {
+            let syn = active[syn_idx];
+            sum += neuron_activations[syn.from] * synapse_weights[syn.idx];
             syn_idx += 1;
         }
 
@@ -97,25 +170,17 @@ pub fn execute_brain_with_learning(
         neuron_states[i] = neuron_states[i].clamp(-4.0, 4.0);
 
         // Heterogeneous Activation Mapping
-        let act_type = neuron.activation_type.as_deref().unwrap_or("tanh");
-        neuron_activations[i] = match act_type {
-            "relu" => neuron_states[i].max(0.0),
-            "sigmoid" => 1.0 / (1.0 + (-neuron_states[i]).exp()),
-            "sin" => neuron_states[i].sin(),
-            _ => neuron_states[i].tanh(), // Default to tanh standard activation
-        };
+        neuron_activations[i] = runtime.activations[i].apply(neuron_states[i]);
     }
 
     // 3. Hebbian learning update with Active Lifetime Pruning!
     if hebbian_rate > 0.0 {
-        for (syn_idx, syn) in brain.synapses.iter().enumerate() {
-            // Skip permanently pruned synapses
-            if synapse_weights[syn_idx] == 0.0 {
-                continue;
-            }
-
-            let act_pre = neuron_activations[syn.from_node];
-            let act_post = neuron_activations[syn.to_node];
+        // Permanently pruned synapses are not in the active list
+        let mut pruned = false;
+        for syn in &runtime.active_synapses {
+            let syn_idx = syn.idx;
+            let act_pre = neuron_activations[syn.from];
+            let act_post = neuron_activations[syn.to];
 
             // Hebbian Correlation delta
             let correlation = act_pre * act_post;
@@ -129,15 +194,19 @@ pub fn execute_brain_with_learning(
             // Active Pruning: if weight drops below threshold, lock permanently at 0.0
             if synapse_weights[syn_idx].abs() < 0.015 {
                 synapse_weights[syn_idx] = 0.0;
+                pruned = true;
             } else {
                 // Clamp active weights to avoid divergent explosions
                 synapse_weights[syn_idx] = synapse_weights[syn_idx].clamp(-4.0, 4.0);
             }
         }
+        if pruned {
+            runtime.active_synapses.retain(|s| synapse_weights[s.idx] != 0.0);
+        }
     }
 
     // 4. Map output node activations directly to the motor directions
-    let mut outputs = vec![0.0; OUTPUT_MOTOR_NODES_COUNT];
+    let mut outputs = [0.0; OUTPUT_MOTOR_NODES_COUNT];
     let outputs_start_id = get_input_neurons_count(organelles_len);
     for i in 0..OUTPUT_MOTOR_NODES_COUNT {
         let idx = outputs_start_id + i;
@@ -158,8 +227,24 @@ pub fn compute_sensory_inputs(
     canvas_width: f32,
     canvas_height: f32,
 ) -> Vec<f32> {
+    let mut inputs = Vec::new();
+    compute_sensory_inputs_into(agent, clock_val, foods, obstacles, canvas_width, canvas_height, &mut inputs);
+    inputs
+}
+
+/// `compute_sensory_inputs` into a reused buffer (overwritten and resized to the input count).
+pub fn compute_sensory_inputs_into(
+    agent: &CreatureAgent,
+    clock_val: f32,
+    foods: &[FoodSpore],
+    obstacles: &[ProceduralObstacle],
+    canvas_width: f32,
+    canvas_height: f32,
+    inputs: &mut Vec<f32>,
+) {
     let k = agent.phenotype.organelles.len();
-    let mut inputs = vec![0.0; k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT];
+    inputs.clear();
+    inputs.resize(k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT, 0.0);
 
     // Fixed center frequencies for the 5 receptive channels (Cones)
     let channel_frequencies = [0.10, 0.30, 0.50, 0.70, 0.90];
@@ -192,7 +277,7 @@ pub fn compute_sensory_inputs(
                 let dist = (dx*dx + dy*dy).sqrt();
 
                 if dist <= range {
-                    let mut angle_rel = dy.atan2(dx) - agent.heading_angle;
+                    let mut angle_rel = fmath::atan2(dy, dx) - agent.heading_angle;
                     while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
                     while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
                     let mut delta_beta = angle_rel - alpha;
@@ -200,7 +285,7 @@ pub fn compute_sensory_inputs(
                     while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
                     if delta_beta.abs() <= half_cone {
-                        let falloff = (1.0 - dist / range) * delta_beta.cos();
+                        let falloff = (1.0 - dist / range) * fmath::cos(delta_beta);
                         
                         // Algae emits: 1.0 on Channel 2 (Blue) and 0.5 on Channel 3 (Green)
                         let emission = [0.0, 1.0, 0.5, 0.0, 0.0];
@@ -222,7 +307,7 @@ pub fn compute_sensory_inputs(
                 let dist_peer = (dx_peer*dx_peer + dy_peer*dy_peer).sqrt();
 
                 if dist_peer <= range {
-                    let mut angle_rel = dy_peer.atan2(dx_peer) - agent.heading_angle;
+                    let mut angle_rel = fmath::atan2(dy_peer, dx_peer) - agent.heading_angle;
                     while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
                     while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
                     let mut delta_beta = angle_rel - alpha;
@@ -230,7 +315,7 @@ pub fn compute_sensory_inputs(
                     while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
 
                     if delta_beta.abs() <= half_cone {
-                        let falloff_peer = (1.0 - dist_peer / range) * delta_beta.cos();
+                        let falloff_peer = (1.0 - dist_peer / range) * fmath::cos(delta_beta);
                         
                         // Meat emits: 1.0 on Channel 5 (IR) and 0.5 on Channel 4 (Red)
                         let emission_peer = [0.0, 0.0, 0.0, 0.5, 1.0];
@@ -315,10 +400,10 @@ pub fn compute_sensory_inputs(
                 let organ_heading = agent.heading_angle + patch.angle * (std::f32::consts::PI / 180.0);
                 let flow_x = -agent.vx;
                 let flow_y = -agent.vy;
-                let flow_proj = flow_x * organ_heading.cos() + flow_y * organ_heading.sin();
+                let flow_proj = flow_x * fmath::cos(organ_heading) + flow_y * fmath::sin(organ_heading);
 
                 let organ_rad = patch.angle * (std::f32::consts::PI / 180.0);
-                let rot_flow = -agent.omega_rot * 12.0 * organ_rad.sin() * 0.4;
+                let rot_flow = -agent.omega_rot * 12.0 * fmath::sin(organ_rad) * 0.4;
 
                 let local_drag = (flow_proj + rot_flow).clamp(-1.0, 1.0);
 
@@ -377,8 +462,6 @@ pub fn compute_sensory_inputs(
     inputs[base_inputs_start + 4] = adrenaline_level;
     inputs[base_inputs_start + 5] = pain_signal;
     inputs[base_inputs_start + 6] = search_arousal;
-
-    inputs
 }
 
 /// Legacy wrapper for execute_brain without live learning
@@ -387,9 +470,9 @@ pub fn execute_brain(
     inputs: &[f32],
     neuron_states: &mut Vec<f32>,
     neuron_activations: &mut Vec<f32>,
-) -> Vec<f32> {
+) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
     let mut temp_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, 0.0, 0.0, 0.0)
+    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, &mut BrainRuntime::default(), 0.0, 0.0, 0.0)
 }
 
 #[cfg(test)]
@@ -449,6 +532,7 @@ mod tests {
             neuron_states: vec![0.0; num_neurons],
             neuron_activations: vec![0.0; num_neurons],
             synapse_weights: phenotype.brain.synapses.iter().map(|s| s.weight).collect(),
+            brain_runtime: BrainRuntime::default(),
         };
 
         let foods = vec![

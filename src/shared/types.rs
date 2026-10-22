@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::biology::dna::CreaturePhenotype;
+use crate::shared::brain::BrainRuntime;
 use ts_rs::TS;
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -61,6 +62,11 @@ pub struct CreatureAgent {
     #[serde(rename = "synapseWeights")]
     #[ts(rename = "synapseWeights")]
     pub synapse_weights: Vec<f32>,
+
+    /// Derived brain data (runtime only; reset when phenotype or weights are replaced in place)
+    #[serde(skip)]
+    #[ts(skip)]
+    pub brain_runtime: BrainRuntime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -145,7 +151,7 @@ pub struct SimulationRules {
     pub decomposition_spore_min: i32,
     pub decomposition_spore_max: i32,
     pub decomposition_size_ratio: f32,
-    pub restock_initial_stomach_ratio: f32,
+    pub creature_start_stomach_ratio: f32,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
@@ -156,6 +162,8 @@ pub struct AppConfig {
     pub food_spore_count: usize,
     pub max_creatures: usize,
     pub basal_metabolic_rate_multiplier: f32,
+    /// Trainer genomes kept per run in the DB and in the in-memory hall of fame (best by fitness)
+    pub trainer_genome_retention_per_run: usize,
     pub rules: SimulationRules,
 }
 
@@ -174,13 +182,13 @@ impl AppConfig {
         if let Ok(file_content) = std::fs::read_to_string("config.json") {
             match serde_json::from_str::<Self>(&file_content) {
                 Ok(parsed) => {
-                    println!("[CONFIG] Loaded config override from working directory config.json.");
+                    eprintln!("[CONFIG] Loaded config override from working directory config.json.");
                     return parsed;
                 }
                 Err(e) => eprintln!("[CONFIG] ERROR: working directory config.json is invalid ({}). Using embedded config.", e),
             }
         }
-        println!("[CONFIG] Using embedded config.json.");
+        eprintln!("[CONFIG] Using embedded config.json.");
         Self::embedded()
     }
 

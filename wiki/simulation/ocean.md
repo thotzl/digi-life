@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md]
 ---
 
 # Ocean
@@ -28,7 +28,7 @@ The open-world mode: a closed basin with a free-living population.
 ## Observed behaviour
 
 - **No heredity:** mitosis children are not simulated; the population is held by restocking (RV-B01).
-- **"Motionless Ocean":** many creatures barely move. Hypothesis RV-S02: thrust `≈ stiffness · (pulse·1000)² · 3.4 · eta · out_thrust`; with `pulse = 0.0015` (genome minimum) and `stiffness = 0.15` → ~1.1 · eta, mass `r^1.5 · L/25` ≈ 230–1,180, damping 0.94 → terminal speed 10⁻³–10⁻² px/tick. Negative `out_thrust` swims backwards. Not yet measured.
+- **"Motionless Ocean":** many creatures barely move. Hypothesis RV-S02: thrust `≈ stiffness · (pulse·1000)² · 3.4 · eta · out_thrust`; with `pulse = 0.0015` (genome minimum) and `stiffness = 0.15` → ~1.1 · eta, mass `r^1.5 · L/25` ≈ 230–1,180, damping 0.94 → terminal speed 10⁻³–10⁻² px/tick. Negative `out_thrust` swims backwards. The speed probe confirms the spread for random genomes at full thrust (p10 0.064, p50 0.66 px/tick, 24.5 % below 0.2 px/tick; 48 % of random brains have a negative mean thrust; TCK-172, [[wiki/simulation/physics]]); the Ocean population itself has not been measured.
 - **Sparse ecology:** with 300 spores, 25 agents and the sensor range above, random food finding is rare (hypothesis RV-S07).
 - The earlier explanation (render time scale in `frontend/ocean.ts`) is superseded by RV-S02/RV-S07.
 
@@ -36,6 +36,6 @@ The open-world mode: a closed basin with a free-living population.
 
 - Rust-generated world, rendered by the client; biomes are cosmetic.
 - Population is held by restocking only (RV-B01).
-- Low mobility and sparse food are unmeasured hypotheses (RV-S02, RV-S07).
+- Low mobility is confirmed for random genomes by the TCK-172 probes; Ocean mobility and sparse food remain unmeasured (RV-S02, RV-S07).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`, TCK-172.

@@ -1,33 +1,186 @@
 use crate::biology::trainer_engine::TrainerSandbox;
-use crate::shared::types::{AppConfig, FoodSpore};
+use crate::shared::fmath;
+use crate::shared::rng::SimRng;
+use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+/// Training room; selects the scenario plugin (chamber size, epoch length, food layout, fitness).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum Scenario {
+    #[default]
+    Standard,
+    Exploration,
+}
+
+impl Scenario {
+    /// UI mode string (`SET_TRAINER_MODE`); anything but "exploration" is the standard room.
+    pub fn from_mode(mode: &str) -> Self {
+        if mode == "exploration" { Scenario::Exploration } else { Scenario::Standard }
+    }
+
+    pub fn plugin(self) -> &'static dyn TrainingScenarioPlugin {
+        get_scenario_plugin(self)
+    }
+}
+
+/// Carnivory at or above this value: the creature hunts meat only.
+pub const CARNIVORE_MIN: f32 = 0.6;
+/// Carnivory below this value: the creature grazes plants only (in between: omnivore).
+pub const HERBIVORE_MAX: f32 = 0.4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DietClass {
+    Herbivore,
+    Omnivore,
+    Carnivore,
+}
+
+impl DietClass {
+    pub fn from_carnivory(carnivory: f32) -> Self {
+        if carnivory >= CARNIVORE_MIN {
+            DietClass::Carnivore
+        } else if carnivory >= HERBIVORE_MAX {
+            DietClass::Omnivore
+        } else {
+            DietClass::Herbivore
+        }
+    }
+}
+
+/// Upper bound for spawn rejection sampling; afterwards the farthest candidate is used.
+pub const SPAWN_MAX_TRIES: u32 = 1000;
+
+/// Random point in the chamber (25 px margin) at least `min_dist` away from `from`.
+/// After `max_tries` rejected candidates the farthest one found is returned.
+pub fn spawn_at_min_distance(rng: &mut SimRng, chamber_size: f32, from: (f32, f32), min_dist: f32, max_tries: u32) -> (f32, f32) {
+    let mut best = (from.0, from.1);
+    let mut best_dist = -1.0;
+    for _ in 0..max_tries {
+        let x = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
+        let y = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
+        let dist = ((x - from.0) * (x - from.0) + (y - from.1) * (y - from.1)).sqrt();
+        if dist >= min_dist {
+            return (x, y);
+        }
+        if dist > best_dist {
+            best = (x, y);
+            best_dist = dist;
+        }
+    }
+    best
+}
+
+/// Distance from the agent to the nearest food its diet targets (plants = type 1, meat = type 2;
+/// omnivores take the nearer of both). `f32::MAX` if no such food exists.
+pub fn target_distance_by_diet(agent: &CreatureAgent, foods: &[FoodSpore]) -> f32 {
+    let nearest = |type_id: u32| {
+        foods
+            .iter()
+            .filter(|f| f.type_id == type_id)
+            .map(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt())
+            .fold(f32::MAX, f32::min)
+    };
+    let (dist_plant, dist_meat) = (nearest(1), nearest(2));
+    match DietClass::from_carnivory(agent.phenotype.carnivory) {
+        DietClass::Carnivore => dist_meat,
+        DietClass::Omnivore => dist_meat.min(dist_plant),
+        DietClass::Herbivore => dist_plant,
+    }
+}
 
 /// Slices representing the standard trait-based interface for training scenarios (Curriculum Plugins)
 pub trait TrainingScenarioPlugin: Send + Sync {
-    fn name(&self) -> &'static str;
-    
+    /// Edge length of the square chamber in px
+    fn chamber_size(&self) -> f32;
+
+    /// Ticks per epoch (one trial)
+    fn epoch_ticks(&self) -> u32;
+
+    /// Minimum distance of a food spore respawned after a catch
+    fn respawn_min_distance(&self) -> f32;
+
+    /// Minimum food distance when a new trial starts (multi-trial reset)
+    fn trial_min_distance(&self) -> f32;
+
     /// Initializes food spores and sandbox conditions dynamically based on the active scenario
-    fn initialize(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32);
-    
-    /// Executes scenario-specific physics, currents, or drift updates per tick
-    fn step_physics(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32, app_config: &AppConfig) -> bool;
-    
+    fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng);
+
+    /// Food the creature's sensors see this tick (hook of the shared `step_physics`);
+    /// `scratch` is a reused buffer for foods built per tick
+    fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore];
+
     /// Calculates scenario-specific evolutionary fitness at the end of the epoch
-    fn calculate_fitness(
-        &self,
-        sb: &TrainerSandbox,
-        epoch_duration_ticks: u32,
-        canvas_width: f32,
-        canvas_height: f32,
-    ) -> f32;
+    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32;
 }
 
-/// Helper function to retrieve the active scenario plugin by name
-pub fn get_scenario_plugin(name: &str) -> Box<dyn TrainingScenarioPlugin> {
-    match name {
-        "exploration" => Box::new(ExplorationScenario),
-        _ => Box::new(StandardScenario),
+/// Helper function to retrieve the active scenario plugin
+pub fn get_scenario_plugin(scenario: Scenario) -> &'static dyn TrainingScenarioPlugin {
+    match scenario {
+        Scenario::Standard => &StandardScenario,
+        Scenario::Exploration => &ExplorationScenario,
     }
+}
+
+/// Spawns every food of `sb` at least `min_dist` away from the agent (in food order).
+fn spawn_foods(sb: &mut TrainerSandbox, rng: &mut SimRng, min_dist: f32) {
+    let size = sb.scenario.plugin().chamber_size();
+    let from = (sb.agent.px, sb.agent.py);
+    for food in &mut sb.foods {
+        let (x, y) = spawn_at_min_distance(rng, size, from, min_dist, SPAWN_MAX_TRIES);
+        food.x = x;
+        food.y = y;
+    }
+}
+
+/// One tick of sensing, brain, kinematics and food drift; shared by all scenarios.
+/// Returns whether the creature hit a wall.
+pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
+    let plugin = sb.scenario.plugin();
+    let size = plugin.chamber_size();
+
+    let clock_val = 0.5 + 0.5 * fmath::sin((sb.agent.age as f32) * 0.1);
+    let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut sb.visible_scratch);
+    crate::shared::brain::compute_sensory_inputs_into(&sb.agent, clock_val, visible, &[], size, size, &mut sb.sensor_inputs);
+
+    use crate::shared::brain::execute_brain_with_learning;
+    let outputs = execute_brain_with_learning(
+        &sb.agent.phenotype.brain,
+        &sb.sensor_inputs,
+        &mut sb.agent.neuron_states,
+        &mut sb.agent.neuron_activations,
+        &mut sb.agent.synapse_weights,
+        &mut sb.agent.brain_runtime,
+        app_config.rules.hebbian_learning_rate_base,
+        app_config.rules.hebbian_learning_stiffness_decay,
+        app_config.rules.hebbian_forgetting_decay,
+    );
+    let out_thrust = outputs[0];
+    let out_left = outputs[1];
+
+    let old_heading = sb.agent.heading_angle;
+    use crate::shared::physics::step_creature_kinematics;
+    let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, app_config, &[], size, size);
+
+    // Track absolute heading change (cumulative rotation in radians)
+    let mut diff = sb.agent.heading_angle - old_heading;
+    while diff > std::f32::consts::PI { diff -= std::f32::consts::TAU; }
+    while diff < -std::f32::consts::PI { diff += std::f32::consts::TAU; }
+    sb.cumulative_rotation += diff.abs();
+
+    let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
+    sb.distance_traveled += movement;
+
+    use crate::shared::physics::{step_food_spore_physics, SporePusher};
+    let temp_creatures = [SporePusher::from(&sb.agent)];
+    for pellet in &mut sb.foods {
+        step_food_spore_physics(pellet, &temp_creatures, &[], size, size);
+    }
+
+    hit_wall
 }
 
 // ==========================================================================
@@ -36,109 +189,40 @@ pub fn get_scenario_plugin(name: &str) -> Box<dyn TrainingScenarioPlugin> {
 pub struct StandardScenario;
 
 impl TrainingScenarioPlugin for StandardScenario {
-    fn name(&self) -> &'static str {
-        "standard"
+    fn chamber_size(&self) -> f32 {
+        1000.0
     }
 
-    fn initialize(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32) {
-        let mut rng = rand::thread_rng();
+    fn epoch_ticks(&self) -> u32 {
+        300
+    }
+
+    fn respawn_min_distance(&self) -> f32 {
+        200.0
+    }
+
+    fn trial_min_distance(&self) -> f32 {
+        200.0
+    }
+
+    fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng) {
         sb.foods = vec![
             FoodSpore { id: 1, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // plant
             FoodSpore { id: 2, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meatball
         ];
+        spawn_foods(sb, rng, 200.0);
 
-        let min_dist = 200.0;
-
-        // Spawn foods[0] (Plant)
-        let mut valid_spawn_0 = false;
-        while !valid_spawn_0 {
-            sb.foods[0].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-            sb.foods[0].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-            let dx = sb.foods[0].x - sb.agent.px;
-            let dy = sb.foods[0].y - sb.agent.py;
-            let dist = (dx*dx + dy*dy).sqrt();
-            if dist >= min_dist {
-                valid_spawn_0 = true;
-            }
-        }
-
-        // Spawn foods[1] (Meat)
-        let mut valid_spawn_1 = false;
-        while !valid_spawn_1 {
-            sb.foods[1].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-            sb.foods[1].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-            let dx = sb.foods[1].x - sb.agent.px;
-            let dy = sb.foods[1].y - sb.agent.py;
-            let dist = (dx*dx + dy*dy).sqrt();
-            if dist >= min_dist {
-                valid_spawn_1 = true;
-            }
-        }
-
-        let dist_plant = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
-        let dist_meat = ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt();
-        
-        let carnivory = sb.agent.phenotype.carnivory;
-        let target_food = if carnivory >= 0.60 {
-            &sb.foods[1]
-        } else if carnivory >= 0.40 {
-            if dist_meat <= dist_plant { &sb.foods[1] } else { &sb.foods[0] }
-        } else {
-            &sb.foods[0]
-        };
-
-        sb.start_distance = ((target_food.x - sb.agent.px).powi(2) + (target_food.y - sb.agent.py).powi(2)).sqrt();
+        sb.start_distance = target_distance_by_diet(&sb.agent, &sb.foods);
         sb.min_distance = sb.start_distance;
     }
 
-    fn step_physics(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32, app_config: &AppConfig) -> bool {
-        // Standard homing runs 100% barrier-free in standard training
-        let clock_val = 0.5 + 0.5 * ((sb.agent.age as f32) * 0.1).sin();
-        let inputs = crate::shared::brain::compute_sensory_inputs(&sb.agent, clock_val, &sb.foods, &[], canvas_width, canvas_height);
-
-        use crate::shared::brain::execute_brain_with_learning;
-        let outputs = execute_brain_with_learning(
-            &sb.agent.phenotype.brain,
-            &inputs,
-            &mut sb.agent.neuron_states,
-            &mut sb.agent.neuron_activations,
-            &mut sb.agent.synapse_weights,
-            app_config.rules.hebbian_learning_rate_base,
-            app_config.rules.hebbian_learning_stiffness_decay,
-            app_config.rules.hebbian_forgetting_decay,
-        );
-        let out_thrust = outputs[0];
-        let out_left = outputs[1];
-
-        let old_heading = sb.agent.heading_angle;
-        use crate::shared::physics::step_creature_kinematics;
-        let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, app_config, &[], canvas_width, canvas_height);
-
-        // Track absolute heading change (cumulative rotation in radians)
-        let mut diff = sb.agent.heading_angle - old_heading;
-        while diff > std::f32::consts::PI { diff -= std::f32::consts::TAU; }
-        while diff < -std::f32::consts::PI { diff += std::f32::consts::TAU; }
-        sb.cumulative_rotation += diff.abs();
-
-        let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
-        sb.distance_traveled += movement;
-
-        use crate::shared::physics::{step_food_spore_physics, SporePusher};
-        let temp_creatures = [SporePusher::from(&sb.agent)];
-        for pellet in &mut sb.foods {
-            step_food_spore_physics(pellet, &temp_creatures, &[], canvas_width, canvas_height);
-        }
-
-        hit_wall
+    fn visible_foods<'a>(&self, _agent: &CreatureAgent, foods: &'a [FoodSpore], _scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore] {
+        // Standard homing runs 100% barrier-free in standard training, all food is in view
+        foods
     }
 
-    fn calculate_fitness(
-        &self,
-        sb: &TrainerSandbox,
-        epoch_duration_ticks: u32,
-        canvas_width: f32,
-        canvas_height: f32,
-    ) -> f32 {
+    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32 {
+        let size = self.chamber_size();
         let wall_penalty = (1.0 - (sb.wall_collisions as f32) * 0.10).max(0.1);
         let fit;
 
@@ -154,7 +238,7 @@ impl TrainingScenarioPlugin for StandardScenario {
             if sb.distance_traveled < 120.0 && sb.min_distance >= 40.0 {
                 penalty_multiplier *= 0.3;
             }
-            let displacement = ((sb.agent.px - (canvas_width / 2.0)).powi(2) + (sb.agent.py - (canvas_height / 2.0)).powi(2)).sqrt();
+            let displacement = ((sb.agent.px - (size / 2.0)).powi(2) + (sb.agent.py - (size / 2.0)).powi(2)).sqrt();
             if sb.distance_traveled > 150.0 && displacement < 120.0 {
                 penalty_multiplier *= 0.05; // Brutal 95% penalty for localized looping on the spot!
             }
@@ -177,12 +261,24 @@ impl TrainingScenarioPlugin for StandardScenario {
 pub struct ExplorationScenario;
 
 impl TrainingScenarioPlugin for ExplorationScenario {
-    fn name(&self) -> &'static str {
-        "exploration"
+    fn chamber_size(&self) -> f32 {
+        3500.0
     }
 
-    fn initialize(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32) {
-        let mut rng = rand::thread_rng();
+    fn epoch_ticks(&self) -> u32 {
+        1800
+    }
+
+    fn respawn_min_distance(&self) -> f32 {
+        // Out-of-sight spawn limit: 550.0 pixels away from the creature's current position!
+        550.0
+    }
+
+    fn trial_min_distance(&self) -> f32 {
+        1200.0
+    }
+
+    fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng) {
         sb.foods = vec![
             FoodSpore { id: 1, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // plant 1
             FoodSpore { id: 2, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // plant 2
@@ -191,138 +287,49 @@ impl TrainingScenarioPlugin for ExplorationScenario {
             FoodSpore { id: 5, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meat 2
             FoodSpore { id: 6, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meat 3
         ];
+        spawn_foods(sb, rng, 650.0); // Dynamic curriculum blind search limit
 
-        let min_dist = 650.0; // Dynamic curriculum blind search limit
-
-        for target_idx in 0..6 {
-            let mut valid_spawn = false;
-            while !valid_spawn {
-                sb.foods[target_idx].x = 25.0 + rng.gen_range(0.0..(canvas_width - 50.0));
-                sb.foods[target_idx].y = 25.0 + rng.gen_range(0.0..(canvas_height - 50.0));
-                let dx = sb.foods[target_idx].x - sb.agent.px;
-                let dy = sb.foods[target_idx].y - sb.agent.py;
-                let dist = (dx*dx + dy*dy).sqrt();
-                if dist >= min_dist {
-                    valid_spawn = true;
-                }
-            }
-        }
-
-        // Calculate start distance to the single closest target food based on diet
-        let dist_plant_0 = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
-        let dist_plant_1 = ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt();
-        let dist_plant_2 = ((sb.foods[2].x - sb.agent.px).powi(2) + (sb.foods[2].y - sb.agent.py).powi(2)).sqrt();
-        let min_plant_dist = dist_plant_0.min(dist_plant_1).min(dist_plant_2);
-
-        let dist_meat_0 = ((sb.foods[3].x - sb.agent.px).powi(2) + (sb.foods[3].y - sb.agent.py).powi(2)).sqrt();
-        let dist_meat_1 = ((sb.foods[4].x - sb.agent.px).powi(2) + (sb.foods[4].y - sb.agent.py).powi(2)).sqrt();
-        let dist_meat_2 = ((sb.foods[5].x - sb.agent.px).powi(2) + (sb.foods[5].y - sb.agent.py).powi(2)).sqrt();
-        let min_meat_dist = dist_meat_0.min(dist_meat_1).min(dist_meat_2);
-
-        let carnivory = sb.agent.phenotype.carnivory;
-        let target_dist = if carnivory >= 0.60 {
-            min_meat_dist
-        } else if carnivory >= 0.40 {
-            min_meat_dist.min(min_plant_dist)
-        } else {
-            min_plant_dist
-        };
-
-        sb.start_distance = target_dist;
+        // Start distance to the single closest target food based on diet
+        sb.start_distance = target_distance_by_diet(&sb.agent, &sb.foods);
         sb.min_distance = sb.start_distance;
     }
 
-    fn step_physics(&self, sb: &mut TrainerSandbox, canvas_width: f32, canvas_height: f32, app_config: &AppConfig) -> bool {
-        // Find closest plant and meat spores among all foods for sensory inputs
-        let mut nearest_plant: Option<FoodSpore> = None;
+    fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore] {
+        // Sensors see only the closest plant and the closest meat spore
+        let mut nearest_plant: Option<&FoodSpore> = None;
         let mut min_plant_dist = f32::MAX;
-        let mut nearest_meat: Option<FoodSpore> = None;
+        let mut nearest_meat: Option<&FoodSpore> = None;
         let mut min_meat_dist = f32::MAX;
 
-        for f in &sb.foods {
-            let dx = f.x - sb.agent.px;
-            let dy = f.y - sb.agent.py;
+        for f in foods {
+            let dx = f.x - agent.px;
+            let dy = f.y - agent.py;
             let dist_sq = dx * dx + dy * dy;
             if f.type_id == 1 {
                 if dist_sq < min_plant_dist {
                     min_plant_dist = dist_sq;
-                    nearest_plant = Some(f.clone());
+                    nearest_plant = Some(f);
                 }
             } else if f.type_id == 2 {
                 if dist_sq < min_meat_dist {
                     min_meat_dist = dist_sq;
-                    nearest_meat = Some(f.clone());
+                    nearest_meat = Some(f);
                 }
             }
         }
 
-        let plant_target = nearest_plant.unwrap_or_else(|| FoodSpore {
-            id: 1,
-            type_id: 1,
-            x: -99999.0,
-            y: -99999.0,
-            amount: 0.0,
-            vx: 0.0,
-            vy: 0.0,
-        });
-        let meat_target = nearest_meat.unwrap_or_else(|| FoodSpore {
-            id: 2,
-            type_id: 2,
-            x: -99999.0,
-            y: -99999.0,
-            amount: 0.0,
-            vx: 0.0,
-            vy: 0.0,
-        });
+        let absent = |id: u32, type_id: u32| FoodSpore { id, type_id, x: -99999.0, y: -99999.0, amount: 0.0, vx: 0.0, vy: 0.0 };
+        let plant_target = nearest_plant.cloned().unwrap_or_else(|| absent(1, 1));
+        let meat_target = nearest_meat.cloned().unwrap_or_else(|| absent(2, 2));
 
-        let virtual_foods = vec![plant_target, meat_target];
-
-        let clock_val = 0.5 + 0.5 * ((sb.agent.age as f32) * 0.1).sin();
-        let inputs = crate::shared::brain::compute_sensory_inputs(&sb.agent, clock_val, &virtual_foods, &[], canvas_width, canvas_height);
-
-        use crate::shared::brain::execute_brain_with_learning;
-        let outputs = execute_brain_with_learning(
-            &sb.agent.phenotype.brain,
-            &inputs,
-            &mut sb.agent.neuron_states,
-            &mut sb.agent.neuron_activations,
-            &mut sb.agent.synapse_weights,
-            app_config.rules.hebbian_learning_rate_base,
-            app_config.rules.hebbian_learning_stiffness_decay,
-            app_config.rules.hebbian_forgetting_decay,
-        );
-        let out_thrust = outputs[0];
-        let out_left = outputs[1];
-
-        let old_heading = sb.agent.heading_angle;
-        use crate::shared::physics::step_creature_kinematics;
-        let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, app_config, &[], canvas_width, canvas_height);
-
-        // Track absolute heading change (cumulative rotation in radians)
-        let mut diff = sb.agent.heading_angle - old_heading;
-        while diff > std::f32::consts::PI { diff -= std::f32::consts::TAU; }
-        while diff < -std::f32::consts::PI { diff += std::f32::consts::TAU; }
-        sb.cumulative_rotation += diff.abs();
-
-        let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
-        sb.distance_traveled += movement;
-
-        use crate::shared::physics::{step_food_spore_physics, SporePusher};
-        let temp_creatures = [SporePusher::from(&sb.agent)];
-        for pellet in &mut sb.foods {
-            step_food_spore_physics(pellet, &temp_creatures, &[], canvas_width, canvas_height);
-        }
-
-        hit_wall
+        scratch.clear();
+        scratch.push(plant_target);
+        scratch.push(meat_target);
+        scratch
     }
 
-    fn calculate_fitness(
-        &self,
-        sb: &TrainerSandbox,
-        epoch_duration_ticks: u32,
-        canvas_width: f32,
-        canvas_height: f32,
-    ) -> f32 {
+    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32 {
+        let size = self.chamber_size();
         let wall_penalty = (1.0 - (sb.wall_collisions as f32) * 0.15).max(0.1);
         let fit;
 
@@ -341,7 +348,7 @@ impl TrainingScenarioPlugin for ExplorationScenario {
                 penalty_multiplier *= 0.1;
             }
 
-            let displacement = ((sb.agent.px - (canvas_width / 2.0)).powi(2) + (sb.agent.py - (canvas_height / 2.0)).powi(2)).sqrt();
+            let displacement = ((sb.agent.px - (size / 2.0)).powi(2) + (sb.agent.py - (size / 2.0)).powi(2)).sqrt();
 
             // Kontinuierliche Suchbasis + additiver Homing-Bonus (keine Klippe!)
             let exploration_reward = displacement * 1.2;
@@ -368,5 +375,32 @@ impl TrainingScenarioPlugin for ExplorationScenario {
         }
 
         if final_fit.is_nan() || final_fit.is_infinite() { 0.0 } else { final_fit }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shared::rng::seeded;
+
+    #[test]
+    fn test_spawn_at_min_distance_respects_limit_and_terminates() {
+        let mut rng = seeded(7);
+        for _ in 0..50 {
+            let (x, y) = spawn_at_min_distance(&mut rng, 1000.0, (500.0, 500.0), 200.0, SPAWN_MAX_TRIES);
+            assert!(((x - 500.0).powi(2) + (y - 500.0).powi(2)).sqrt() >= 200.0);
+            assert!((25.0..=975.0).contains(&x) && (25.0..=975.0).contains(&y));
+        }
+        // Unreachable distance: returns the farthest candidate instead of looping forever
+        let (x, y) = spawn_at_min_distance(&mut rng, 1000.0, (500.0, 500.0), 5000.0, 20);
+        assert!((25.0..=975.0).contains(&x) && (25.0..=975.0).contains(&y));
+    }
+
+    #[test]
+    fn test_diet_class_thresholds() {
+        assert_eq!(DietClass::from_carnivory(0.39), DietClass::Herbivore);
+        assert_eq!(DietClass::from_carnivory(0.4), DietClass::Omnivore);
+        assert_eq!(DietClass::from_carnivory(0.59), DietClass::Omnivore);
+        assert_eq!(DietClass::from_carnivory(0.6), DietClass::Carnivore);
     }
 }

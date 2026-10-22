@@ -1,7 +1,7 @@
 ---
 id: TCK-172
 title: Mechanics Diagnosis for Training
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -75,3 +75,13 @@ Original candidate notes:
 - **Walls:** reflect the heading too, or allow sliding along the wall.
 
 Sources: see epic TCK-171.
+
+## Verification (P2, v1.12.16)
+Probes: `trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|all` (`src/biology/probes.rs`), seed `tck172`, HoF = 34 genomes from the app DB (read-only); two runs byte-identical.
+1. **Heredity - confirmed (nuance).** After the trainer's 15 ops (~94 % point, 2 % insertion, 4 % deletion): exuberant-weight correlation r = 0.32 random / 0.28 wildtype / 0.21 HoF parents; 65-79 % of parent synapses keep their from/to; explicit `SY` r ~0.71-0.76; 17-25 % of children change terminal speed >= 2x; organ count changes in 19-35 %. One point mutation keeps r ~0.93; a single indel drops r to 0.32-0.40, 5 indels to ~0.
+2. **Speed - confirmed.** 1000 random genomes, full thrust: p10/p50/p90 = 0.064/0.66/4.21 px/tick, p90/p10 x65; 24.5 % below 0.2 px/tick; 50.4 % cannot cover 1200 px in 1800 ticks. HoF p50 1.54, 8.8 % too slow. Minimum turn radius 55.6 px for every body; turn rate 0.06 deg/tick (slow) to 4.2 deg/tick (fast).
+3. **Sensing and brain layout - confirmed.** >= 1 eye 29 %, >= 1 nose 43 %, no organ 21 %, `HOX` pair (thalamus difference nodes) 21 %; food stimulus at spawn small 31 %, large 4.8 %. Steering +-45 deg: random 3.2 % toward vs 5.0 % away (noise), HoF 0/34 toward on both sides; 48 % of random and 71 % of HoF brains have negative mean thrust (swim backwards).
+4. **Walls - confirmed.** Forced full thrust at 30/60/90 deg: 0 % get free in 600 ticks, contact speed 0.08/0.02/0.013 px/tick; with the real brain 22-30 % (random) / 68 % (HoF) get free.
+- Hebbian: inconclusive (success 2-3 % in all conditions; standard on > off for 59 %, exploration off > on for 75 %); re-measured in P4.
+- Side finding: output neurons with tau < 0.5 oscillate (forward Euler unstable for dt/tau > 2) -> TCK-153.
+- Consequences: findings 1-4 keep their fix tickets (TCK-179/181, TCK-150, TCK-144/153, TCK-180); none is dropped. Target values in TCK-171.

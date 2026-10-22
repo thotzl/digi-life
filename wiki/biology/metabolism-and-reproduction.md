@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
+sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-185-creature-factory.md]
 ---
 
 # Metabolism, Reproduction and Species
@@ -9,6 +9,12 @@ sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ct
 - BMR scales with body and brain: `brain_complexity_multiplier = 1 + synapses · 0.06` times `(1 + k_count · 0.08)` (`dna.rs`). The Ocean compensates with a `* 0.45` factor (`engine.rs`).
 - One organ adds ~10 thalamus sources → ~40–120 synapses → BMR ×3–×8: strong selection pressure against sense organs (RV-S03).
 - Adrenaline is constant 1.0 and has no metabolic effect; the adrenaline config keys and the BMR surcharge factor were removed (TCK-149).
+
+## Start energy (TCK-185)
+
+- Every spawned creature starts with `stomach_capacity · creatureStartStomachRatio` (0.60), defined once in `creature_factory::start_energy` and used by all Ocean spawn sites and the trainer (also on every trainer trial reset).
+- Intended changes against the previous per-site values: trainer 100 → stomach × 0.60 (the brain input `internal_energy = energy / 100` changes with it, [[wiki/biology/sensing]]); `SPAWN_CLONE` and catalogue assignment to a trainer sandbox 0.8 → 0.60. `antisense` and neuron buffers are always set from the phenotype.
+- Ocean mitosis children are not spawned through the factory: they clone the parent agent (below).
 
 ## Food and predation
 
@@ -46,4 +52,4 @@ sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ct
 - Ocean offspring are not simulated, so the Ocean does not evolve (RV-B01); trainer data is the evolution signal.
 - Predation gives no energy gain; species = genome string.
 
-Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-149, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-149, TCK-185, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.

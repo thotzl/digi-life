@@ -1,7 +1,7 @@
 ---
 id: TCK-188
 title: Epic Target Values, ADR-002 Brain v2 and Analytics Skill
-status: open
+status: ongoing
 priority: medium
 assigned: unassigned
 created_at: 2026-10-21
@@ -20,3 +20,8 @@ Part of epic TCK-171. Target values and skill at the end of phase P2, ADR-002 in
 
 ## Acceptance
 - Targets in TCK-171; ADR-002 linked from `wiki/_master-index.md`; skill references the runner commands.
+
+## Progress P2 (v1.12.16)
+- Target values set from the P2 baseline and recorded in TCK-171 "Target values" (rule documented there).
+- Analytics skill and `wiki/simulation/analytics-and-balancing.md` rewritten on top of the runner (RV-T03, RV-S11).
+- Remaining for P3: ADR-002 Brain v2.

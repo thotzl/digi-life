@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-frontend.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md]
+sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-frontend.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
 ---
 
 # Frontend Structure
@@ -20,7 +20,7 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 
 - `views/UnifiedDiagnosticsPanel.ts` — shared inspector sidebar for Ocean, Trainer, Catalogue: HD preview (own animation loop), vitals/meta, Watson-Crick double helix (chromatin), CTRNN brain graph, raw DNA copy (TCK-128). The catalogue preview loop also exists in `ocean.ts` (RV-F06).
 - `views/CatalogueView.ts` — fullscreen catalogue, selection dialog with synapse restore options.
-- `core/styled.ts` — small typed CSS-in-JS engine; `applyChildren` treats strings starting with `<` as HTML. `styles.css` global styles.
+- `core/styled.ts` — small typed CSS-in-JS engine; `applyChildren` treats strings starting with `<` as HTML. `class`/`className` props are added to the generated class via `classList` (before the TCK-186 smoke check they were assigned as a no-op JS property, so e.g. the main-menu card hover styles and catalogue classes never applied). `styles.css` global styles.
 - `core/escape.ts` — `escapeHtml` for interpolated DB/user data (TCK-141).
 - `components/Icons.ts` — SVG icons.
 
@@ -51,4 +51,4 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 - Four views mounted once, router owns the backend mode, renderers are pure Canvas 2D.
 - Output escaping is in place; there is no CSP and no per-view listener lifecycle.
 
-Sources: `.agents/skills/client-rendering/SKILL.md`, `docs/revisit/06-frontend.md`, TCK-115, TCK-128, TCK-141, FIX-131.
+Sources: `.agents/skills/client-rendering/SKILL.md`, `docs/revisit/06-frontend.md`, TCK-115, TCK-128, TCK-141, FIX-131, TCK-186.

@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md]
 ---
 
 # CTRNN Brain
@@ -14,6 +14,9 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing
 - **Time constants:** `tau = (0.2 + hash * 1.8).clamp(0.1, 2.5)`.
 - Output ranges: `tanh`/`sin` `[-1, 1]`, `sigmoid` `[0, 1]`, `relu` `[0, ∞)`.
 - **Evaluation order:** neuron IDs are `[Inputs][Outputs][Thalamus][Hidden]` and the Euler pass runs ascending, so outputs read thalamus/hidden activations from the previous tick: sensor → motor latency is 2 ticks (RV-S06).
+- **Euler step size:** `dt = 1`, state update `y += (1/τ)(−y + Σ + θ)`, clamp `±4`. For `τ < 0.5` (`dt/τ > 2`) forward Euler is unstable: such output neurons flip every tick between about ±0.999; 11 of 500 random genomes have a mean thrust of exactly 0 for this reason (TCK-172 steering probe).
+- **`BrainRuntime`** (TCK-173): per-agent cache on `CreatureAgent.brain_runtime` (not serialized), built lazily on the first brain step — activation enum per neuron, motion-sensor flag per organ channel, and the list of active (non-zero) synapses in synapse order. The signal pass and the Hebbian pass iterate only active synapses; a synapse pruned during the step is removed from the list. Rebuilt when the synapse-weight vector is re-initialized; code that replaces an agent's phenotype or weights in place resets it (`BrainRuntime::default()`). Results are bit-identical to the uncached step (golden master unchanged).
+- Transcendental functions in the brain step (`tanh`, `exp`, `sin`) go through `src/shared/fmath.rs` (pure-Rust `libm`), identical on every platform (TCK-173).
 
 ## Topology
 
@@ -32,11 +35,20 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing
 - **Active pruning:** `|w| < 0.015` → set to exactly 0 and frozen for the lifetime (TCK-121).
 - Learned weights stored as `synapse_weights`; Lamarckian inheritance see [[wiki/biology/metabolism-and-reproduction]].
 - The rule has no normalization (Oja/BCM), so weights drift toward the clamp over long lives; reflex synapses are plastic and prunable as well; the `_hebbian_decay` parameter is ignored (RV-S04).
+- Measured effect in the trainer (TCK-172 Hebbian probe, 32 HoF genomes, 3 trials, learning on vs. off with the same RNG streams): inconclusive — success 2–3 % in all conditions; learning helped in 59 % of genomes in the small room and hurt in 75 % in the large room.
+
+## Measured behaviour (TCK-172)
+
+Probes in `src/biology/probes.rs` (`trainer_runner probe steering`), seed `tck172`, 500 random and 34 HoF genomes:
+- **No directed steering:** food fixed at 300 px and ±45°, real brain with learning, heading change after 100 ticks: random brains turn toward the food 3.2 % and away 5.0 % (noise level); toward on both sides 0.4 % of random and 0 of 34 HoF genomes.
+- **Swimming backwards:** mean thrust output is negative for 48 % of random and 71 % of HoF brains; initial weights in `[-0.5, 0.5]` and `tanh` give a thrust near 0 on average.
+- Heredity of weights under mutation: [[wiki/biology/genome-compiler]].
 
 ## Key Takeaways
 
 - Genome-defined CTRNN with mixed activations, τ in `[0.1, 2.5]`, thalamus and HOX-gated fusion.
 - Born fully connected, pruned and Hebbian-trained during life.
-- Unnormalized learning and the 2-tick sensor-motor latency are known model properties (RV-S04, RV-S06).
+- Unnormalized learning and the 2-tick sensor-motor latency are known model properties (RV-S04, RV-S06); `τ < 0.5` outputs oscillate under the `dt = 1` Euler step.
+- Measured: random and trained brains show no directed turning toward food (TCK-172).
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, TCK-172, TCK-173, `docs/revisit/04-simulation-model.md`.

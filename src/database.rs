@@ -1,4 +1,5 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
+use crate::biology::trainer_sim::GenomeRecord;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -183,6 +184,84 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
     Ok(conn)
 }
 
+// ==========================================================================
+// Trainer genome persistence (the IO side of `TrainerSim`)
+// ==========================================================================
+
+/// Persists a completed generation: previous elites become inactive, the new elites are
+/// inserted as active parents, then the run is pruned to `retention` rows.
+pub fn save_trainer_elites(conn: &Connection, run_id: &str, generation: u32, elites: &[GenomeRecord], retention: usize) {
+    conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![run_id]).log_db_err("UPDATE trainer_genomes");
+
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+
+    for (idx, elite) in elites.iter().enumerate() {
+        let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_secs);
+        let methylations_json = serde_json::to_string(&elite.methylations).unwrap_or_else(|_| "[]".to_string());
+        let synapse_weights_json = serde_json::to_string(&elite.synapse_weights).unwrap_or_else(|_| "[]".to_string());
+        conn.execute(
+            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
+            params![
+                unique_id,
+                run_id,
+                generation as i32,
+                elite.name,
+                elite.genome,
+                elite.fitness as f64,
+                now_secs,
+                methylations_json,
+                synapse_weights_json
+            ],
+        ).log_db_err("INSERT INTO trainer_genomes");
+    }
+
+    prune_trainer_genomes(conn, run_id, retention);
+}
+
+/// Retention (TCK-183): keeps the best `retention` rows of the run by fitness plus the active
+/// parents (so a restore always finds them) and deletes the rest.
+pub fn prune_trainer_genomes(conn: &Connection, run_id: &str, retention: usize) {
+    conn.execute(
+        "DELETE FROM trainer_genomes WHERE run_id = ?1 AND active = 0 AND id NOT IN
+         (SELECT id FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2)",
+        params![run_id, retention as i64],
+    ).log_db_err("DELETE FROM trainer_genomes (retention)");
+}
+
+/// Best genomes of a run by fitness: the active parents (`active_only`) or the hall of fame (all rows).
+pub fn load_trainer_genomes(conn: &Connection, run_id: &str, active_only: bool, limit: usize) -> Vec<GenomeRecord> {
+    let sql = if active_only {
+        "SELECT genome, name, fitness, generation, methylations, synapse_weights FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2"
+    } else {
+        "SELECT genome, name, fitness, generation, methylations, synapse_weights FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2"
+    };
+    let mut records = Vec::new();
+    match conn.prepare(sql) {
+        Ok(mut stmt) => {
+            let rows = stmt.query_map(params![run_id, limit as i64], |row| {
+                Ok(GenomeRecord {
+                    genome: row.get(0)?,
+                    name: row.get(1)?,
+                    fitness: row.get::<_, f64>(2)? as f32,
+                    generation: row.get::<_, i32>(3)? as u32,
+                    methylations: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
+                    synapse_weights: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                })
+            });
+            match rows {
+                Ok(rows) => records.extend(rows.flatten()),
+                Err(e) => eprintln!("[DB] SELECT FROM trainer_genomes failed: {}", e),
+            }
+        }
+        Err(e) => eprintln!("[DB] SELECT FROM trainer_genomes failed: {}", e),
+    }
+    records
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +378,38 @@ mod tests {
         assert_eq!(std::fs::read(&target).unwrap(), b"legacy-content");
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn elite(fitness: f32) -> GenomeRecord {
+        GenomeRecord {
+            genome: format!("GENOME{}", fitness),
+            name: "elite".to_string(),
+            fitness,
+            generation: 1,
+            methylations: vec![0.5],
+            synapse_weights: vec![0.25, 0.75],
+        }
+    }
+
+    #[test]
+    fn test_trainer_retention_keeps_best_rows_and_active_parents() {
+        let conn = init_db(":memory:").unwrap();
+        save_trainer_elites(&conn, "run", 1, &[elite(90.0), elite(50.0)], 3);
+        save_trainer_elites(&conn, "run", 2, &[elite(80.0), elite(70.0)], 3);
+        save_trainer_elites(&conn, "other", 1, &[elite(1.0)], 3);
+        // Gen 3 elites are worse than the top 3 but stay as active parents
+        save_trainer_elites(&conn, "run", 3, &[elite(10.0), elite(5.0)], 3);
+
+        let hof: Vec<f32> = load_trainer_genomes(&conn, "run", false, 100).iter().map(|r| r.fitness).collect();
+        assert_eq!(hof, vec![90.0, 80.0, 70.0, 10.0, 5.0]);
+
+        let parents = load_trainer_genomes(&conn, "run", true, 100);
+        assert_eq!(parents.iter().map(|r| r.fitness).collect::<Vec<_>>(), vec![10.0, 5.0]);
+        assert_eq!(parents[0].generation, 3);
+        assert_eq!(parents[0].methylations, vec![0.5]);
+        assert_eq!(parents[0].synapse_weights, vec![0.25, 0.75]);
+
+        // Other runs are untouched
+        assert_eq!(load_trainer_genomes(&conn, "other", false, 100).len(), 1);
     }
 }

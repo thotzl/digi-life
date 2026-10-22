@@ -1,10 +1,10 @@
 ---
-sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md]
+sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md]
 ---
 
 # Performance
 
-Context: ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); every operation in the step body multiplies accordingly. The Ocean population is 25–45 because offspring are not simulated (RV-B01); higher populations will stress the remaining linear searches.
+Context: the UI runs a ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); every operation in the step body multiplies accordingly. The headless trainer runner has no warp cap ([[wiki/simulation/analytics-and-balancing]]). The Ocean population is 25–45 because offspring are not simulated (RV-B01); higher populations will stress the remaining linear searches.
 
 ## Implemented optimizations (behaviour-preserving)
 
@@ -16,24 +16,37 @@ Context: ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); 
 | IPC | events emitted inside the step loop; full world per trainer sandbox at 25 Hz | buffered, flushed once per frame, `DATABASE_CHANGED` coalesced; no world in trainer telemetry | RV-P05, TCK-139/140 |
 | Mutation | `mutate_genome` compiled the full phenotype to read two rates; nested reflex check | `read_evolution_rates`; reflex pairs in a `HashSet` | RV-P06, TCK-140 |
 | Restock | catalogue re-queried per missing creature | loaded once per restock pass | RV-P07, TCK-139 |
+| Brain step | emoji `contains` per organ and `String` match per neuron every tick; pruned synapses visited | `BrainRuntime` cache per agent: activation enum, motion-sensor flags, active-synapse list without pruned weights ([[wiki/biology/ctrnn-brain]]) | TCK-173 |
+| Trainer buffers | sensor inputs, brain outputs and large-room visible foods allocated per tick | per-sandbox reused buffers (`compute_sensory_inputs_into`, visible-food scratch), outputs as a fixed array | RV-P08 (trainer path), TCK-173 |
+| Trainer fitness | `calculate_fitness` every tick for every sandbox | only for the UI telemetry (`track_live_fitness`); the runner computes it at epoch end | TCK-173 |
+| Trainer parallelism | sandboxes stepped sequentially | sandboxes and breeding slots on the rayon pool, one RNG stream each (results identical to sequential); used by the UI (`step(true)`) and the runner (`--parallel true`) | TCK-173 |
 
 ## Remaining costs
 
 - Nearest-food search scans all spores twice plus all creatures, O(C × F + C²); the grid is not used for it (RV-P04). A grid ring search could change tie-breaking between equidistant spores.
-- `execute_brain_with_learning` and `compute_sensory_inputs` allocate per call (RV-P08); irrelevant below ~50 agents.
-- Brain step per creature and tick: one pass over all synapses for signals, one for Hebbian learning (`src/shared/brain.rs:80-133`); pruned synapses (weight 0) are still visited in the signal pass; organ type is detected by an emoji `contains` per organ (`brain.rs:56`) and the activation by a `String` match per neuron (`brain.rs:98-104`). Synapse counts and dead wiring see [[wiki/biology/ctrnn-brain]].
-- Trainer sandboxes are stepped sequentially in the engine thread.
+- The Ocean still calls the allocating `compute_sensory_inputs` per creature and tick (RV-P08); irrelevant below ~50 agents.
+- Brain step per creature and tick: one pass over the active synapses for signals, one for Hebbian learning. Synapse counts and dead wiring (fully wired but silent nodes) see [[wiki/biology/ctrnn-brain]].
+- Trainer generation end (final fitness, stats, sort, breeding incl. `parse_genome` for every new sandbox) dominates the headless wall time: standard pop 300 spends 22.9 of 26.2 s in generation-end ticks over 20 generations (P2 baseline).
+
+## Trainer throughput (TCK-173)
+
+Measured with the headless runner (release build), `perf` block of the report; machine-dependent.
+- Per-tick step after the brain/buffer changes: +20–30 % sandbox-ticks/s.
+- Parallel breeding: generation end at standard pop 300 2.79 s → 0.67 s (2-generation benchmark).
+- P2 baseline totals: standard pop 300 parallel ≈ 206k sandbox-ticks/s (20 generations incl. breeding), exploration pop 16 parallel ≈ 469k, exploration pop 300 ≈ 717k (10 generations).
 
 ## Equivalence safeguards
 
-- Golden master `test_parse_genome_golden_master` (fingerprint `0xa7b82dc4fe552ac8`) unchanged across TCK-140.
+- Golden master `test_parse_genome_golden_master` (fingerprint `0xa7b82dc4fe552ac8`) unchanged across TCK-140 and TCK-173.
+- Trainer report bit-identical before/after the TCK-173 performance work; parallel == sequential tests ([[wiki/quality/testing]]); CI reference run ([[wiki/quality/ci-and-tooling]]).
 - `test_spore_push_from_snapshot_matches_full_agent` (TCK-139).
 - Engine changes preserve iteration order and data.
 - Optimizations need profiler evidence ([[wiki/decisions/adr-001-non-goals]]).
 
 ## Key Takeaways
 
-- Per-step SQL, allocations, clones and per-step IPC are gone.
-- Remaining hot spots: linear nearest-food search and per-call brain allocations.
+- Per-step SQL, allocations, clones and per-step IPC are gone; the brain step does no string matching and skips pruned synapses.
+- Trainer sandboxes and breeding run in parallel, deterministically.
+- Remaining hot spots: linear nearest-food search, Ocean sensor allocation, trainer generation end.
 
-Sources: `docs/revisit/03-performance.md`, TCK-139, TCK-140.
+Sources: `docs/revisit/03-performance.md`, TCK-139, TCK-140, TCK-173.

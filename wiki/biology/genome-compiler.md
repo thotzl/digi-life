@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md]
 ---
 
 # Genome Compiler
@@ -34,10 +34,26 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 ## Mutation
 
 - `mutate_genome`: point substitutions plus insertions/deletions at unprotected loci, scaled by the genome's own `insertion_rate`/`deletion_rate`, length capped to `[128, 512]` (TCK-117). One call = one operation on a single character; a point substitution draws a random letter (no small "creep" steps); there is no operator that duplicates or removes a whole gene.
-- Trainer mutants apply `round(genome.len() · mutation_rate)` operations; with the default rate 0.06 that is 15–30 per child (`trainer_engine.rs:78-84`).
+- `mutate_genome` and `generate_random_genome` take the caller's RNG (seeded `SimRng` in the trainer and runner, `thread_rng` in the Ocean; TCK-173). `mutate_genome_with_kind` applies one operation of a fixed kind (point/insertion/deletion) for the probes.
+- Trainer mutants apply `round(genome.len() · mutation_rate)` operations (`breed_genome`); with the default rate 0.06 that is 15–30 per child.
 - Reads rates via `read_evolution_rates` without compiling the full phenotype (TCK-140).
 - Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
-- `generate_random_genome(256)` for random origins draws uniformly distributed single letters (`dna.rs:379-387`); genes only appear by chance, so such genomes rarely contain `NEU`/`SY`/`EYE`, so trainer generation 1 usually starts blind with the fallback brain (RV-S09).
+- `generate_random_genome(256)` for random origins draws uniformly distributed single letters; genes appear only by chance via degenerate matching (RV-S09). Measured over 1,000 random 256-base genomes (TCK-172): 21 % have no organ, 29 % at least one eye, 43 % at least one nose, 67 % at least one food-sensing organ (affinity ≥ 0.25), 21 % a `HOX` organ pair ([[wiki/biology/sensing]]).
+
+## Measured heredity (TCK-172)
+
+Probe `trainer_runner probe heredity`: parent–child Pearson correlation of exuberant (non-`SY`, non-reflex) synapse weights on homologous synapses (same from/to), 200 random parents, the wildtype and 34 HoF genomes.
+
+| Mutation | 1 op | 5 ops | 15 ops |
+| :--- | :--- | :--- | :--- |
+| Trainer operator mix (≈ 94 % point, 2 % insertion, 4 % deletion) | 0.90–0.94 | 0.62–0.66 | 0.21–0.32 |
+| Point only | 0.93–0.94 | 0.74–0.77 | 0.40–0.50 |
+| Insertion or deletion only | 0.32–0.40 | ≤ 0.08 | ≈ 0 |
+
+- A single indel inside active DNA re-maps most weights (position hash, see [[wiki/biology/ctrnn-brain]]); 15 trainer ops keep the from/to of 65–79 % of parent synapses.
+- Explicit `SY` synapses are more stable (r ≈ 0.76 after 15 mixed ops, random parents).
+- Body coupling: after 15 trainer ops 17–25 % of children change their terminal speed by ≥ 2× and 19–35 % change their organ count; after one op 1–2 % change speed ≥ 2×.
+- Consequence: the trainer's 15–30 ops per child act close to random search; elites survive only as unmodified copies.
 
 ## HOX symmetry (FIX-131)
 
@@ -56,7 +72,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 
 ## Known limitations
 
-- Model semantics in free-text strings: activation, organ type (emoji label), symmetry, scenario, origin, diet class; a typo falls back to the default silently (RV-S10).
+- Model semantics in free-text strings: activation, organ type (emoji label), symmetry; a typo falls back to the default silently (RV-S10). Scenario, sandbox origin and diet class are enums since TCK-173; the brain decodes activation and organ type once per agent (`BrainRuntime`, [[wiki/biology/ctrnn-brain]]).
 - The frontend interprets a legacy positional genome model, so gene tooltips are wrong (RV-F03), see [[wiki/frontend/structure]].
 
 ## Key Takeaways
@@ -64,5 +80,6 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 - Sequence-based, promoter-driven, degenerate-matching compiler; pure and deterministic.
 - HOX controls bilateral symmetry; chromatin drives brain hashing.
 - Any model change shows up in the golden master ([[wiki/quality/testing]]).
+- Heredity is low: one indel or 15 trainer ops leave parent and child weights nearly uncorrelated (TCK-172).
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-162, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-162, TCK-172, TCK-173, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.

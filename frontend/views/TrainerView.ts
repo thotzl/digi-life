@@ -543,7 +543,7 @@ export function createTrainerView(): HTMLElement {
                 id: "select-trainer-mode",
                 children: [
                   styled("option")``({ value: "standard", children: "Standard Chamber (1000x1000)" }),
-                  styled("option")``({ value: "exploration", children: "Exploration (2500x2500)" })
+                  styled("option")``({ value: "exploration", children: "Exploration (3500x3500)" })
                 ]
               })
             ]

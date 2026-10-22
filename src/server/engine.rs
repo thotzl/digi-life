@@ -10,11 +10,12 @@ use crate::shared::types::{CreatureAgent, FoodSpore, TelemetryCreature};
 use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_random_genome};
-use crate::biology::trainer_engine::{
-    init_rust_sandbox, step_trainer_sandbox_physics,
-    TrainerSandbox, TrainerTelemetrySandbox,
-};
-use crate::database::{init_db, LogDbError};
+use crate::biology::creature_factory::{spawn_from_phenotype, SpawnOptions};
+use crate::biology::scenarios::Scenario;
+use crate::biology::trainer_engine::TrainerTelemetrySandbox;
+use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
+use crate::database::{init_db, load_trainer_genomes, save_trainer_elites, LogDbError};
+use crate::shared::rng::seed_from_str;
 
 /// Per-step snapshot of the fields other creatures read (prey search, bite targets).
 struct PeerSnapshot {
@@ -30,6 +31,24 @@ impl From<&CreatureAgent> for PeerSnapshot {
     fn from(c: &CreatureAgent) -> Self {
         Self { id: c.id, species_id: c.species_id.clone(), px: c.px, py: c.py, vx: c.vx, vy: c.vy }
     }
+}
+
+/// TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED payload: the trainer settings as the UI shows them.
+fn trainer_state_payload(event_type: &str, is_running: bool, params: &TrainerParams, warp_speed: usize, is_headless: bool, run_id: &str) -> serde_json::Value {
+    json!({
+        "type": event_type,
+        "isRunning": is_running,
+        "N": params.population,
+        "warpSpeed": warp_speed,
+        "eliteRatio": params.elite_ratio,
+        "mutationRate": params.mutation_rate,
+        "inflowRate": params.inflow_rate,
+        "hofRate": params.hof_rate,
+        "multiTrial": params.multi_trial,
+        "isHeadless": is_headless,
+        "runId": run_id,
+        "lamarckian": params.lamarckian
+    })
 }
 
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
@@ -87,156 +106,26 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let mut next_spore_id = 1000;
         let mut highest_generation = 1;
 
+        // Trainer: TrainerSim owns population, epochs and breeding; the engine keeps the UI state,
+        // DB persistence and telemetry
         let mut is_trainer_active = false;
         let mut trainer_is_running = false;
-        let mut trainer_warp_speed = 1;
-        #[allow(non_snake_case)]
-        let mut trainer_N = 16;
-        let mut trainer_elite_ratio = 0.15;
-        let mut trainer_mutation_rate = 0.06;
-        let mut trainer_inflow_rate = 0.15;
-        let mut trainer_hof_rate = 0.15;
-        let mut trainer_multi_trial = true;
-        let mut trainer_is_headless = false;
+        let mut trainer_warp_speed: usize = 1;
+        let mut trainer_is_headless = false; // only echoed back to the UI
         let mut trainer_run_id = "default_run".to_string();
         let mut trainer_selected_sandbox_id: Option<u32> = Some(1);
-        let mut trainer_lamarckian = false;
+        let trainer_retention = app_config.trainer_genome_retention_per_run;
+        let trainer_seed = |run_id: &str| seed_from_str(&format!("{}:{}", app_config.seed, run_id));
 
-        let mut trainer_generation = 1;
-        let mut trainer_epoch_ticks = 0;
-        let mut trainer_chamber_size = 1000.0;
-
-        // Helper to rebuild sandbox grid in Rust!
-        let rebuild_sandbox_grid = |n: usize, run_id: &str, generation_val: u32, mut_rate: f32, db_conn: &rusqlite::Connection, elite_ratio: f32, inflow_rate: f32, hof_rate: f32, lamarckian: bool, chamber_size: f32| -> (Vec<TrainerSandbox>, u32) {
-            let mut sandboxes = Vec::with_capacity(n);
-            let mut restored_generation = generation_val;
-            
-            // Try to load active parent genomes (elites) from SQLite
-            let mut parent_genomes = Vec::new();
-            let mut parent_methylations = Vec::new();
-            let mut parent_synapses = Vec::new();
-
-            if let Ok(mut stmt) = db_conn.prepare("SELECT genome, generation, methylations, synapse_weights FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2") {
-                if let Ok(rows) = stmt.query_map(params![run_id, n as i32], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, i32>(1)?,
-                        row.get::<_, String>(2)?,
-                        row.get::<_, String>(3)?
-                    ))
-                }) {
-                    for row in rows {
-                        if let Ok((genome, gen_val, methylations_str, synapses_str)) = row {
-                            parent_genomes.push(genome);
-                            restored_generation = restored_generation.max(gen_val as u32);
-
-                            let m: Vec<f32> = serde_json::from_str(&methylations_str).unwrap_or_default();
-                            let s: Vec<f32> = serde_json::from_str(&synapses_str).unwrap_or_default();
-                            parent_methylations.push(m);
-                            parent_synapses.push(s);
-                        }
-                    }
-                }
-            }
-
-            // Try to load Hall of Fame genomes from SQLite
-            let mut hof_genomes = Vec::new();
-            if let Ok(mut stmt) = db_conn.prepare("SELECT genome FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2") {
-                if let Ok(rows) = stmt.query_map(params![run_id, n as i32], |row| row.get::<_, String>(0)) {
-                    for row in rows {
-                        if let Ok(genome) = row {
-                            hof_genomes.push(genome);
-                        }
-                    }
-                }
-            }
-
-            let base_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
-
-            let elite_count = ((n as f32) * elite_ratio).round() as usize;
-            let elite_count = elite_count.clamp(1, n);
-
-            let hof_count = ((n as f32) * hof_rate).round() as usize;
-            let inflow_count = ((n as f32) * inflow_rate).round() as usize;
-
-            let scenario_name = if chamber_size >= 2000.0 { "exploration" } else { "standard" };
-
-            for idx in 0..n {
-                let id = (idx + 1) as u32;
-
-                if parent_genomes.is_empty() {
-                    // Gen 1: Greenfield start
-                    let sb = init_rust_sandbox(
-                        id,
-                        base_dna,
-                        restored_generation,
-                        mut_rate,
-                        "random", // ALL are fresh random wildtypes on Gen 1!
-                        chamber_size,
-                        chamber_size,
-                        scenario_name,
-                    );
-                    sandboxes.push(sb);
-                } else {
-                    // Gen 2+: Slider-controlled composition matching TS nextGenPlans 1:1!
-                    let (parent_genome, origin, actual_mut_rate) = if idx < elite_count {
-                        if idx < parent_genomes.len() {
-                            (parent_genomes[idx].clone(), "elite", 0.0) // elites are unmodified clones!
-                        } else {
-                            (parent_genomes[0].clone(), "mutant", mut_rate)
-                        }
-                    } else if idx < elite_count + hof_count {
-                        let hof_idx = idx - elite_count;
-                        if hof_idx < hof_genomes.len() {
-                            (hof_genomes[hof_idx].clone(), "hof", mut_rate)
-                        } else {
-                            (parent_genomes[0].clone(), "mutant", mut_rate)
-                        }
-                    } else if idx < elite_count + hof_count + inflow_count {
-                        (base_dna.to_string(), "random", 0.0) // random immigrants are pure new wildtypes
-                    } else {
-                        let source_idx = (idx - elite_count - hof_count - inflow_count) % parent_genomes.len();
-                        (parent_genomes[source_idx].clone(), "mutant", mut_rate)
-                    };
-
-                    let mut sb = init_rust_sandbox(
-                        id,
-                        &parent_genome,
-                        restored_generation,
-                        actual_mut_rate,
-                        origin,
-                        chamber_size,
-                        chamber_size,
-                        scenario_name,
-                    );
-
-                    if lamarckian && !parent_genomes.is_empty() {
-                        let parent_idx = if origin == "elite" {
-                            if idx < parent_genomes.len() { idx } else { 0 }
-                        } else if origin == "mutant" {
-                            let source_idx = (idx - elite_count - hof_count - inflow_count) % parent_genomes.len();
-                            source_idx
-                        } else {
-                            9999 // Not an elite or mutant clone (e.g. hof, random)
-                        };
-
-                        if parent_idx < parent_genomes.len() {
-                            let m = &parent_methylations[parent_idx];
-                            let s = &parent_synapses[parent_idx];
-                            if !m.is_empty() {
-                                sb.agent.phenotype = parse_genome(&parent_genome, None, Some(m));
-                            }
-                            if !s.is_empty() && s.len() == sb.agent.synapse_weights.len() {
-                                sb.agent.synapse_weights = s.clone();
-                            }
-                        }
-                    }
-
-                    sandboxes.push(sb);
-                }
-            }
-            (sandboxes, restored_generation)
+        // Continues a run from the DB: active parents + hall of fame; the generation counter
+        // continues from the newest parent
+        let restore_trainer = |params: TrainerParams, run_id: &str, generation: u32, db_conn: &rusqlite::Connection| -> TrainerSim {
+            let parents = load_trainer_genomes(db_conn, run_id, true, params.population);
+            let hof = load_trainer_genomes(db_conn, run_id, false, trainer_retention);
+            let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
+            TrainerSim::restore(params, trainer_seed(run_id), generation, parents, hof, trainer_retention)
         };
+        let mut trainer = TrainerSim::new(TrainerParams::default(), trainer_seed(&trainer_run_id), trainer_retention);
 
         // Ensure the default desktop session exists to satisfy foreign key constraints
         conn.execute(
@@ -282,7 +171,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             for _ in 0..15 {
                 let mut mutated_dna = base_dna.to_string();
                 if rng.gen_range(0.0..1.0) < 0.60 {
-                    if let Some((mutated, _, _, _)) = mutate_genome(&base_dna) {
+                    if let Some((mutated, _, _, _)) = mutate_genome(&base_dna, &mut rng) {
                         mutated_dna = mutated;
                     }
                 }
@@ -292,28 +181,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                 let py = rng.gen_range(500.0..logical_height - 500.0);
                 let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                let new_agent = CreatureAgent {
+                let mut new_agent = spawn_from_phenotype(&mutated_dna, random_pheno.clone(), SpawnOptions {
                     id: next_creature_id,
-                    species_id: mutated_dna.clone(),
                     px,
                     py,
-                    vx: rng.gen_range(-0.4..0.4),
-                    vy: rng.gen_range(-0.4..0.4),
                     heading_angle,
-                    bend_angle: 0.0,
-                    omega_rot: 0.0,
-                    energy: random_pheno.stomach_capacity * 0.60,
-                    adrenaline: 1.0,
-                    age: 0,
                     generation: 1,
-                    has_eaten: false,
-                    genome: mutated_dna.clone(),
-                    antisense: String::new(),
-                    phenotype: random_pheno.clone(),
-                    neuron_states: Vec::new(),
-                    neuron_activations: Vec::new(),
-                    synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
-                };
+                    methylations: None,
+                    synapse_weights: None,
+                });
+                new_agent.vx = rng.gen_range(-0.4..0.4);
+                new_agent.vy = rng.gen_range(-0.4..0.4);
 
                 creatures.push(new_agent.clone());
 
@@ -372,11 +250,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let emit_interval = Duration::from_millis(40); // 25Hz broadcast rate
         let food_emit_interval = Duration::from_millis(500); // 2Hz food broadcast rate
 
-        let mut trainer_sandboxes: Vec<TrainerSandbox> = Vec::new();
-        let mut trainer_trial_index: usize = 0;
-        let mut trainer_accumulated_fitness: Vec<f32> = Vec::new();
-        let mut trainer_accumulated_eaten: Vec<u32> = Vec::new();
-
         loop {
             let loop_start = Instant::now();
 
@@ -386,7 +259,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     if let Some(act_type) = action["type"].as_str() {
                         match act_type {
                             "CLIENT_READY" => {
-                                is_trainer_active = false; // Safely force switch back to Ocean mode!
+                                // The mode stays with the router (SET_MODE): forcing Ocean here raced a fast
+                                // navigation to the trainer after startup and left the trainer inactive
                                 println!("[SIMULATION] Client Handshake successful! Synchronizing {} creatures and {} spores...", creatures.len(), food_pellets.len());
                                 let world = ocean_world.clone();
                                 let init_json = json!({
@@ -424,35 +298,24 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "INJECT_URZELLE" => {
                                 let mut rng = rand::thread_rng();
-                                let random_dna = generate_random_genome(256);
+                                let random_dna = generate_random_genome(256, &mut rng);
                                 let random_pheno = parse_genome(&random_dna, None, None);
 
                                 let px = rng.gen_range(500.0..logical_width - 500.0);
                                 let py = rng.gen_range(500.0..logical_height - 500.0);
                                 let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                                let new_agent = CreatureAgent {
+                                let mut new_agent = spawn_from_phenotype(&random_dna, random_pheno.clone(), SpawnOptions {
                                     id: next_creature_id,
-                                    species_id: random_dna.clone(),
                                     px,
                                     py,
-                                    vx: rng.gen_range(-0.4..0.4),
-                                    vy: rng.gen_range(-0.4..0.4),
                                     heading_angle,
-                                    bend_angle: 0.0,
-                                    omega_rot: 0.0,
-                                    energy: random_pheno.stomach_capacity * 0.60,
-                                    adrenaline: 1.0,
-                                    age: 0,
                                     generation: 1,
-                                    has_eaten: false,
-                                    genome: random_dna.clone(),
-                                    antisense: String::new(),
-                                    phenotype: random_pheno.clone(),
-                                    neuron_states: Vec::new(),
-                                    neuron_activations: Vec::new(),
-                                    synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
-                                };
+                                    methylations: None,
+                                    synapse_weights: None,
+                                });
+                                new_agent.vx = rng.gen_range(-0.4..0.4);
+                                new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                 creatures.push(new_agent.clone());
                                 newly_spawned_creatures.push(new_agent.clone());
@@ -490,37 +353,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let py = rng.gen_range(500.0..logical_height - 500.0);
                                     let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
                                     
-                                    let mut synapse_weights = pheno.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-                                    if load_learned_synapses {
-                                        let s_vec: Vec<f32> = serde_json::from_value(action["synapse_weights"].clone()).unwrap_or_default();
-                                        if !s_vec.is_empty() && s_vec.len() == synapse_weights.len() {
-                                            synapse_weights = s_vec;
-                                        }
-                                    }
-                                    
-                                    let num_neurons = pheno.brain.neurons.len();
-                                    let new_agent = CreatureAgent {
+                                    let learned_synapses = if load_learned_synapses {
+                                        serde_json::from_value::<Vec<f32>>(action["synapse_weights"].clone()).ok()
+                                    } else {
+                                        None
+                                    };
+
+                                    let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
                                         id: next_creature_id,
-                                        species_id: genome.to_string(),
                                         px,
                                         py,
-                                        vx: rng.gen_range(-0.4..0.4),
-                                        vy: rng.gen_range(-0.4..0.4),
                                         heading_angle,
-                                        bend_angle: 0.0,
-                                        omega_rot: 0.0,
-                                        energy: pheno.stomach_capacity * 0.8, // Start with 80% stomach capacity
-                                        adrenaline: 1.0,
-                                        age: 0,
                                         generation: 1,
-                                        has_eaten: false,
-                                        genome: genome.to_string(),
-                                        antisense: pheno.antisense_strand.clone(),
-                                        phenotype: pheno.clone(),
-                                        neuron_states: vec![0.0; num_neurons],
-                                        neuron_activations: vec![0.0; num_neurons],
-                                        synapse_weights,
-                                    };
+                                        methylations: m_opt,
+                                        synapse_weights: learned_synapses,
+                                    });
+                                    new_agent.vx = rng.gen_range(-0.4..0.4);
+                                    new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                     creatures.push(new_agent.clone());
                                     newly_spawned_creatures.push(new_agent);
@@ -596,34 +445,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let py = rng.gen_range(500.0..logical_height - 500.0);
                                         let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                                        let mut synapse_weights = pheno.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-                                        if !s_arr.is_empty() && s_arr.len() == synapse_weights.len() {
-                                            synapse_weights = s_arr;
-                                        }
-
-                                        let num_neurons = pheno.brain.neurons.len();
-                                        let new_agent = CreatureAgent {
+                                        let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
                                             id: next_creature_id,
-                                            species_id: genome.clone(),
                                             px,
                                             py,
-                                            vx: rng.gen_range(-0.4..0.4),
-                                            vy: rng.gen_range(-0.4..0.4),
                                             heading_angle,
-                                            bend_angle: 0.0,
-                                            omega_rot: 0.0,
-                                            energy: pheno.stomach_capacity * 0.60,
-                                            adrenaline: 1.0,
-                                            age: 0,
                                             generation: 1,
-                                            has_eaten: false,
-                                            genome: genome.clone(),
-                                            antisense: pheno.antisense_strand.clone(),
-                                            phenotype: pheno.clone(),
-                                            neuron_states: vec![0.0; num_neurons],
-                                            neuron_activations: vec![0.0; num_neurons],
-                                            synapse_weights,
-                                        };
+                                            methylations: m_opt,
+                                            synapse_weights: Some(s_arr),
+                                        });
+                                        new_agent.vx = rng.gen_range(-0.4..0.4);
+                                        new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                         creatures.push(new_agent.clone());
 
@@ -648,7 +480,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                         let num_mutations = rng.gen_range(3..=8);
                                         for _ in 0..num_mutations {
-                                            if let Some((mutated, _, _, _)) = mutate_genome(&mutated_dna) {
+                                            if let Some((mutated, _, _, _)) = mutate_genome(&mutated_dna, &mut rng) {
                                                 mutated_dna = mutated;
                                             }
                                         }
@@ -666,29 +498,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let py = rng.gen_range(500.0..logical_height - 500.0);
                                         let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                                        let num_neurons = random_pheno.brain.neurons.len();
-                                        let new_agent = CreatureAgent {
+                                        let mut new_agent = spawn_from_phenotype(&mutated_dna, random_pheno.clone(), SpawnOptions {
                                             id: next_creature_id,
-                                            species_id: mutated_dna.clone(),
                                             px,
                                             py,
-                                            vx: rng.gen_range(-0.4..0.4),
-                                            vy: rng.gen_range(-0.4..0.4),
                                             heading_angle,
-                                            bend_angle: 0.0,
-                                            omega_rot: 0.0,
-                                            energy: random_pheno.stomach_capacity * 0.60,
-                                            adrenaline: 1.0,
-                                            age: 0,
                                             generation: 1,
-                                            has_eaten: false,
-                                            genome: mutated_dna.clone(),
-                                            antisense: random_pheno.antisense_strand.clone(),
-                                            phenotype: random_pheno.clone(),
-                                            neuron_states: vec![0.0; num_neurons],
-                                            neuron_activations: vec![0.0; num_neurons],
-                                            synapse_weights: random_pheno.brain.synapses.iter().map(|s| s.weight).collect(),
-                                        };
+                                            methylations: None,
+                                            synapse_weights: None,
+                                        });
+                                        new_agent.vx = rng.gen_range(-0.4..0.4);
+                                        new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                         creatures.push(new_agent.clone());
 
@@ -779,35 +599,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "SET_TRAINER_MODE" => {
                                 if let Some(m) = action["mode"].as_str() {
-                                    let old_size = trainer_chamber_size;
-                                    trainer_chamber_size = if m == "exploration" { 3500.0 } else { 1000.0 };
-
-                                    if old_size != trainer_chamber_size {
-                                        for sb in &mut trainer_sandboxes {
-                                            sb.scenario = m.to_string();
-                                            sb.finished = false;
-                                            sb.finish_tick = None;
-
-                                            let center_x = trainer_chamber_size / 2.0;
-                                            let center_y = trainer_chamber_size / 2.0;
-
-                                            sb.agent.px = center_x;
-                                            sb.agent.py = center_y;
-                                            sb.agent.vx = 0.0;
-                                            sb.agent.vy = 0.0;
-                                            sb.distance_traveled = 0.0;
-                                            sb.epoch_ticks = 0;
-                                            sb.wall_collisions = 0;
-                                            sb.wall_collision_cooldown = 0;
-                                            sb.consumed_count = 0;
-                                            sb.accumulated_yield = 0.0;
-                                            sb.coverage_mask = 0;
-
-                                            // Dynamically re-initialize foods and conditions using the plugin
-                                            let plugin = crate::biology::scenarios::get_scenario_plugin(m);
-                                            plugin.initialize(sb, trainer_chamber_size, trainer_chamber_size);
-                                        }
-                                        println!("[TRAINER] Switched training mode to '{}' (Chamber size: {}x{})", m, trainer_chamber_size, trainer_chamber_size);
+                                    let scenario = Scenario::from_mode(m);
+                                    if scenario != trainer.params.scenario {
+                                        trainer.set_scenario(scenario);
+                                        let size = scenario.plugin().chamber_size();
+                                        println!("[TRAINER] Switched training mode to '{}' (Chamber size: {}x{})", m, size, size);
                                     }
                                 }
                             }
@@ -815,30 +611,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 if let Some(mode) = action["mode"].as_str() {
                                     if mode == "trainer" {
                                         is_trainer_active = true;
-                                        // Initialize sandboxes grid in Rust when entering trainer
-                                        let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate, trainer_lamarckian, trainer_chamber_size);
-                                        trainer_sandboxes = sbs;
-                                        trainer_generation = restored_gen;
-                                        trainer_trial_index = 0;
-                                        trainer_accumulated_fitness = vec![0.0; trainer_N];
-                                        trainer_accumulated_eaten = vec![0; trainer_N];
-                                        println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer_N, trainer_run_id, trainer_generation);
-                                        
+                                        // Rebuild the population from the DB when entering the trainer
+                                        trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, trainer.generation, &conn);
+                                        println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
+
                                         // Broadcast full hyperparams truth back to the UI!
-                                        emit_state(json!({
-                                            "type": "TRAINER_STATE_CHANGED",
-                                            "isRunning": trainer_is_running,
-                                            "N": trainer_N,
-                                            "warpSpeed": trainer_warp_speed,
-                                            "eliteRatio": trainer_elite_ratio,
-                                            "mutationRate": trainer_mutation_rate,
-                                            "inflowRate": trainer_inflow_rate,
-                                            "hofRate": trainer_hof_rate,
-                                            "multiTrial": trainer_multi_trial,
-                                            "isHeadless": trainer_is_headless,
-                                            "runId": trainer_run_id,
-                                            "lamarckian": trainer_lamarckian
-                                        }));
+                                        emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", trainer_is_running, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                     } else {
                                         is_trainer_active = false;
                                         println!("[TRAINER] Leaving trainer mode. Resuming Ocean substrate.");
@@ -847,66 +625,22 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "START_TRAINING" => {
                                 trainer_is_running = true;
-                                emit_state(json!({
-                                    "type": "TRAINER_STATE_CHANGED",
-                                    "isRunning": true,
-                                    "N": trainer_N,
-                                    "warpSpeed": trainer_warp_speed,
-                                    "eliteRatio": trainer_elite_ratio,
-                                    "mutationRate": trainer_mutation_rate,
-                                    "inflowRate": trainer_inflow_rate,
-                                    "hofRate": trainer_hof_rate,
-                                    "multiTrial": trainer_multi_trial,
-                                    "isHeadless": trainer_is_headless,
-                                    "runId": trainer_run_id,
-                                    "lamarckian": trainer_lamarckian
-                                }));
+                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", true, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                             }
                             "PAUSE_TRAINING" => {
                                 trainer_is_running = false;
-                                emit_state(json!({
-                                    "type": "TRAINER_STATE_CHANGED",
-                                    "isRunning": false,
-                                    "N": trainer_N,
-                                    "warpSpeed": trainer_warp_speed,
-                                    "eliteRatio": trainer_elite_ratio,
-                                    "mutationRate": trainer_mutation_rate,
-                                    "inflowRate": trainer_inflow_rate,
-                                    "hofRate": trainer_hof_rate,
-                                    "multiTrial": trainer_multi_trial,
-                                    "isHeadless": trainer_is_headless,
-                                    "runId": trainer_run_id,
-                                    "lamarckian": trainer_lamarckian
-                                }));
+                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", false, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                             }
                             "TRAINER_RESET" => {
                                 trainer_is_running = false;
-                                trainer_generation = 1;
-                                trainer_epoch_ticks = 0;
-                                
+
                                 // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
                                 conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]).log_db_err("DELETE FROM trainer_genomes");
+                                trainer = TrainerSim::new(trainer.params.clone(), trainer_seed(&trainer_run_id), trainer_retention);
 
-                                let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, 1, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate, trainer_lamarckian, trainer_chamber_size);
-                                trainer_sandboxes = sbs;
-                                trainer_trial_index = 0;
-                                trainer_accumulated_fitness = vec![0.0; trainer_N];
-                                trainer_accumulated_eaten = vec![0; trainer_N];
-                                emit_state(json!({
-                                    "type": "TRAINER_RESET_COMPLETED",
-                                    "generation": 1,
-                                    "isRunning": false,
-                                    "N": trainer_N,
-                                    "warpSpeed": trainer_warp_speed,
-                                    "eliteRatio": trainer_elite_ratio,
-                                    "mutationRate": trainer_mutation_rate,
-                                    "inflowRate": trainer_inflow_rate,
-                                    "hofRate": trainer_hof_rate,
-                                    "multiTrial": trainer_multi_trial,
-                                    "isHeadless": trainer_is_headless,
-                                    "runId": trainer_run_id,
-                                    "lamarckian": trainer_lamarckian
-                                }));
+                                let mut payload = trainer_state_payload("TRAINER_RESET_COMPLETED", false, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
+                                payload["generation"] = json!(1);
+                                emit_state(payload);
                             }
                             "SELECT_TRAINER_SANDBOX" => {
                                 if let Some(sb_id) = action["id"].as_u64() {
@@ -921,48 +655,28 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let load_syn = action["load_learned_synapses"].as_bool().unwrap_or(false);
                                         let m_vec: Vec<f32> = serde_json::from_value(action["methylations"].clone()).unwrap_or_default();
                                         let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
-                                        
-                                        let pheno = parse_genome(genome, None, m_opt);
-                                        
-                                        let mut synapse_weights = pheno.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-                                        if load_syn {
-                                            let s_vec: Vec<f32> = serde_json::from_value(action["synapse_weights"].clone()).unwrap_or_default();
-                                            if !s_vec.is_empty() && s_vec.len() == synapse_weights.len() {
-                                                synapse_weights = s_vec;
-                                            }
-                                        }
-                                        
-                                        if let Some(sb) = trainer_sandboxes.iter_mut().find(|s| s.id == sb_id as u32) {
-                                            sb.agent.genome = genome.to_string();
-                                            sb.agent.species_id = genome.to_string();
-                                            sb.agent.phenotype = pheno;
-                                            sb.agent.synapse_weights = synapse_weights;
-                                            sb.agent.energy = sb.agent.phenotype.stomach_capacity * 0.8;
-                                            sb.agent.age = 0;
-                                            sb.finished = false;
-                                            sb.finish_tick = None;
-                                            sb.current_fitness = 0.0;
-                                            sb.distance_traveled = 0.0;
-                                            sb.wall_collisions = 0;
-                                            sb.wall_collision_cooldown = 0;
-                                            sb.consumed_spore_type = None;
-                                            sb.epoch_ticks = 0;
-                                            sb.accumulated_yield = 0.0;
-                                            sb.consumed_count = 0;
-                                            
+                                        // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
+                                        let s_opt = if load_syn {
+                                            Some(serde_json::from_value::<Vec<f32>>(action["synapse_weights"].clone()).unwrap_or_default())
+                                        } else {
+                                            None
+                                        };
+
+                                        let generation = trainer.generation;
+                                        if let Some(sb) = trainer.assign_creature(sb_id as u32, genome, m_opt, s_opt) {
                                             // Also save this assigned creature as active in trainer_genomes SQLite database for this run!
-                                            let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, trainer_generation, sb_id);
+                                            let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, generation, sb_id);
                                             let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
                                             let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
                                             let now_millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-                                            
+
                                             conn.execute(
                                                 "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
                                                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
                                                 params![
                                                     unique_id,
                                                     trainer_run_id,
-                                                    trainer_generation as i32,
+                                                    generation as i32,
                                                     sb.agent.phenotype.latin_name,
                                                     sb.agent.genome,
                                                     0.0,
@@ -978,10 +692,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
                             "UPDATE_TRAINER_HYPERPARAMS" => {
                                 let mut grid_changed = false;
+                                let mut generation_base = trainer.generation;
+                                let p = &mut trainer.params;
                                 if let Some(n) = action["N"].as_u64() {
-                                    let prev_n = trainer_N;
-                                    trainer_N = n as usize;
-                                    if trainer_N != prev_n {
+                                    if n as usize != p.population {
+                                        p.population = n as usize;
                                         grid_changed = true;
                                     }
                                 }
@@ -989,64 +704,43 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     trainer_warp_speed = warp as usize;
                                 }
                                 if let Some(e_r) = action["eliteRatio"].as_f64() {
-                                    trainer_elite_ratio = e_r as f32;
+                                    p.elite_ratio = e_r as f32;
                                 }
                                 if let Some(m_r) = action["mutationRate"].as_f64() {
-                                    trainer_mutation_rate = m_r as f32;
+                                    p.mutation_rate = m_r as f32;
                                 }
                                 if let Some(i_r) = action["inflowRate"].as_f64() {
-                                    trainer_inflow_rate = i_r as f32;
+                                    p.inflow_rate = i_r as f32;
                                 }
                                 if let Some(h_r) = action["hofRate"].as_f64() {
-                                    trainer_hof_rate = h_r as f32;
+                                    p.hof_rate = h_r as f32;
                                 }
                                 if let Some(mt) = action["multiTrial"].as_bool() {
-                                    trainer_multi_trial = mt;
+                                    p.multi_trial = mt;
                                 }
                                 if let Some(hl) = action["isHeadless"].as_bool() {
                                     trainer_is_headless = hl;
                                 }
                                 if let Some(lam) = action["lamarckian"].as_bool() {
-                                    let prev_lam = trainer_lamarckian;
-                                    trainer_lamarckian = lam;
-                                    if trainer_lamarckian != prev_lam {
+                                    if lam != p.lamarckian {
+                                        p.lamarckian = lam;
                                         grid_changed = true;
                                     }
                                 }
                                 if let Some(r_id) = action["runId"].as_str() {
-                                    let prev_run = trainer_run_id.clone();
-                                    trainer_run_id = r_id.to_string();
-                                    if trainer_run_id != prev_run {
-                                        trainer_generation = 1;
-                                        trainer_epoch_ticks = 0;
+                                    if r_id != trainer_run_id {
+                                        trainer_run_id = r_id.to_string();
+                                        generation_base = 1;
                                         grid_changed = true;
                                     }
                                 }
 
                                 if grid_changed {
-                                    let (sbs, restored_gen) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate, trainer_lamarckian, trainer_chamber_size);
-                                    trainer_sandboxes = sbs;
-                                    trainer_generation = restored_gen;
-                                    trainer_trial_index = 0;
-                                    trainer_accumulated_fitness = vec![0.0; trainer_N];
-                                    trainer_accumulated_eaten = vec![0; trainer_N];
+                                    trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, generation_base, &conn);
                                 }
 
                                 // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
-                                emit_state(json!({
-                                    "type": "TRAINER_STATE_CHANGED",
-                                    "isRunning": trainer_is_running,
-                                    "N": trainer_N,
-                                    "warpSpeed": trainer_warp_speed,
-                                    "eliteRatio": trainer_elite_ratio,
-                                    "mutationRate": trainer_mutation_rate,
-                                    "inflowRate": trainer_inflow_rate,
-                                    "hofRate": trainer_hof_rate,
-                                    "multiTrial": trainer_multi_trial,
-                                    "isHeadless": trainer_is_headless,
-                                    "runId": trainer_run_id,
-                                    "lamarckian": trainer_lamarckian
-                                }));
+                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", trainer_is_running, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                             }
                             other => {
                                 eprintln!("[SIMULATION] Ignoring unknown client action type '{}'", other);
@@ -1211,6 +905,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             &mut agent.neuron_states,
                             &mut agent.neuron_activations,
                             &mut agent.synapse_weights,
+                            &mut agent.brain_runtime,
                             app_config.rules.hebbian_learning_rate_base,
                             app_config.rules.hebbian_learning_stiffness_decay,
                             app_config.rules.hebbian_forgetting_decay,
@@ -1398,11 +1093,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 // Mutate child genome with 35% probability
                                 let mut rng = rand::thread_rng();
                                 if rng.gen_range(0.0..1.0) < 0.35 {
-                                    if let Some((mutated, _, _, _)) = mutate_genome(&agent.genome) {
+                                    if let Some((mutated, _, _, _)) = mutate_genome(&agent.genome, &mut rng) {
                                         child.genome = mutated;
                                     }
                                     child.species_id = child.genome.clone();
                                     child.phenotype = parse_genome(&child.genome, None, None);
+                                    child.antisense = child.phenotype.antisense_strand.clone();
                                     
                                     // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses
                                     // (only from parents old enough to have learned something)
@@ -1422,6 +1118,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         child_weights[c_idx] = w.clamp(-4.0, 4.0);
                                     }
                                     child.synapse_weights = child_weights;
+                                    child.brain_runtime = Default::default();
                                     
                                     // Save new mutated child species into SQLite database
                                     let now_millis = std::time::SystemTime::now()
@@ -1612,7 +1309,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             (genome.clone(), pheno, m_arr, s_arr, format!("📚 Catalog Clonal '{}'", name), 1)
                         } else {
                             // Fallback to random wildtype founder if catalogue is empty
-                            let genome = generate_random_genome(256);
+                            let genome = generate_random_genome(256, &mut rng);
                             let pheno = parse_genome(&genome, None, None);
                             (genome, pheno, Vec::new(), Vec::new(), "🌱 Random Founder".to_string(), 1)
                         };
@@ -1621,34 +1318,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let py = rng.gen_range(500.0..logical_height - 500.0);
                         let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                        let mut synapse_weights = random_pheno.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-                        if !s_vec.is_empty() && s_vec.len() == synapse_weights.len() {
-                            synapse_weights = s_vec;
-                        }
-
-                        let num_neurons = random_pheno.brain.neurons.len();
-                        let new_restocked = CreatureAgent {
+                        let mut new_restocked = spawn_from_phenotype(&g, random_pheno.clone(), SpawnOptions {
                             id: next_creature_id,
-                            species_id: g.clone(),
                             px,
                             py,
-                            vx: rng.gen_range(-0.4..0.4),
-                            vy: rng.gen_range(-0.4..0.4),
                             heading_angle,
-                            bend_angle: 0.0,
-                            omega_rot: 0.0,
-                            energy: random_pheno.stomach_capacity * app_config.rules.restock_initial_stomach_ratio,
-                            adrenaline: 1.0,
-                            age: 0,
                             generation: generation_val,
-                            has_eaten: false,
-                            genome: g.clone(),
-                            antisense: random_pheno.antisense_strand.clone(),
-                            phenotype: random_pheno.clone(),
-                            neuron_states: vec![0.0; num_neurons],
-                            neuron_activations: vec![0.0; num_neurons],
-                            synapse_weights,
-                        };
+                            methylations: None,
+                            synapse_weights: Some(s_vec),
+                        });
+                        new_restocked.vx = rng.gen_range(-0.4..0.4);
+                        new_restocked.vy = rng.gen_range(-0.4..0.4);
 
                         creatures.push(new_restocked.clone());
                         newly_spawned_creatures.push(new_restocked.clone());
@@ -1759,242 +1439,42 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                 }
             }
 
-            // B. NATIVE PARALLEL TRAINER EVOLUTION TICK
+            // B. TRAINER EVOLUTION TICK
             if is_trainer_active {
                 if trainer_is_running {
-                    let trainer_epoch_duration = if trainer_chamber_size >= 2000.0 { 1800 } else { 300 };
-
-                    // Run trainer_warp_speed physics steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding)
+                    // Run trainer_warp_speed steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding)
                     let steps_this_frame = if trainer_warp_speed > 35 { 35 } else { trainer_warp_speed };
                     for _step in 0..steps_this_frame {
-                        if !trainer_is_running {
-                            break;
-                        }
+                        if let Some(event) = trainer.step(true) { // parallel == sequential (seeded per-sandbox and per-slot streams)
+                            let TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, .. } = event;
+                            println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", generation, best_fitness, avg_fitness);
 
-                        trainer_epoch_ticks += 1;
+                            // Broadcast completion metadata back to UI instantly
+                            emit_state(json!({
+                                "type": "TRAINER_GENERATION_COMPLETED",
+                                "generation": generation,
+                                "bestFitness": best_fitness,
+                                "avgFitness": avg_fitness,
+                                "bestGenome": best_genome,
+                            }));
 
-                        // Step all sandbox physical loops in Rust!
-                        for sb in &mut trainer_sandboxes {
-                            let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
-                            sb.current_fitness = plugin.calculate_fitness(sb, trainer_epoch_duration, trainer_chamber_size, trainer_chamber_size);
-
-                            // Run 1 tick of continuous physics, neural nets, and collisions in Rust for full 300 ticks!
-                            step_trainer_sandbox_physics(sb, trainer_chamber_size, trainer_chamber_size);
-                        }
-
-                        // If we completed the epoch:
-                        if trainer_epoch_ticks >= trainer_epoch_duration {
-                            // 1. Calculate fitness for all sandboxes
-                            for sb in &mut trainer_sandboxes {
-                                let plugin = crate::biology::scenarios::get_scenario_plugin(&sb.scenario);
-                                sb.current_fitness = plugin.calculate_fitness(sb, trainer_epoch_duration, trainer_chamber_size, trainer_chamber_size);
-                            }
-
-                            // If Multi-Trial is active, manage trial runs
-                            let mut run_breeding_step = true;
-                            if trainer_multi_trial {
-                                if trainer_accumulated_fitness.len() != trainer_sandboxes.len() {
-                                    trainer_accumulated_fitness = vec![0.0; trainer_sandboxes.len()];
-                                }
-                                if trainer_accumulated_eaten.len() != trainer_sandboxes.len() {
-                                    trainer_accumulated_eaten = vec![0; trainer_sandboxes.len()];
-                                }
-                                for (idx, sb) in trainer_sandboxes.iter().enumerate() {
-                                    trainer_accumulated_fitness[idx] += sb.current_fitness;
-                                    if sb.finished {
-                                        trainer_accumulated_eaten[idx] += 1;
-                                    }
-                                }
-
-                                if trainer_trial_index < 2 {
-                                    trainer_trial_index += 1;
-                                    trainer_epoch_ticks = 0;
-                                    
-                                    let mut rng = rand::thread_rng();
-                                    let center_x = trainer_chamber_size / 2.0;
-                                    let center_y = trainer_chamber_size / 2.0;
-                                    let is_exploration = trainer_chamber_size >= 2000.0;
-                                    let min_dist = if is_exploration { 1200.0 } else { 200.0 };
-
-                                    for sb in &mut trainer_sandboxes {
-                                        sb.agent.px = center_x;
-                                        sb.agent.py = center_y;
-                                        sb.agent.vx = 0.0;
-                                        sb.agent.vy = 0.0;
-                                        sb.agent.heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                                        sb.agent.bend_angle = 0.0;
-                                        sb.agent.omega_rot = 0.0;
-                                        sb.agent.energy = 100.0;
-                                        sb.agent.adrenaline = 1.0;
-                                        sb.agent.age = 0;
-                                        sb.agent.has_eaten = false;
-                                        
-                                        sb.agent.neuron_states.clear();
-                                        sb.agent.neuron_activations.clear();
-                                        
-                                        sb.finished = false;
-                                        sb.finish_tick = None;
-                                        sb.distance_traveled = 0.0;
-                                        sb.wall_collisions = 0;
-                                        sb.wall_collision_cooldown = 0;
-                                        sb.consumed_spore_type = None;
-                                        sb.epoch_ticks = 0;
-                                        sb.accumulated_yield = 0.0;
-                                        sb.consumed_count = 0;
-                                        sb.cumulative_rotation = 0.0;
-                                        sb.coverage_mask = 0;
-                                        
-                                        // Randomize spores respecting min_dist and chamber bounds!
-                                        for spore in &mut sb.foods {
-                                            let mut valid_spawn = false;
-                                            while !valid_spawn {
-                                                spore.x = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                spore.y = 25.0 + rng.gen_range(0.0..(trainer_chamber_size - 50.0));
-                                                let dx = spore.x - sb.agent.px;
-                                                let dy = spore.y - sb.agent.py;
-                                                let dist = (dx*dx + dy*dy).sqrt();
-                                                if dist >= min_dist {
-                                                    valid_spawn = true;
-                                                }
-                                            }
-                                            spore.vx = 0.0;
-                                            spore.vy = 0.0;
-                                        }
-                                        
-                                        let carnivory = sb.agent.phenotype.carnivory;
-                                        let target_dist = if sb.foods.len() >= 6 {
-                                            // Großer Raum (Exploration): 3 Pflanzen (0,1,2), 3 Fleisch (3,4,5)
-                                            let dist_p = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt()
-                                                .min(((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt())
-                                                .min(((sb.foods[2].x - sb.agent.px).powi(2) + (sb.foods[2].y - sb.agent.py).powi(2)).sqrt());
-
-                                            let dist_m = ((sb.foods[3].x - sb.agent.px).powi(2) + (sb.foods[3].y - sb.agent.py).powi(2)).sqrt()
-                                                .min(((sb.foods[4].x - sb.agent.px).powi(2) + (sb.foods[4].y - sb.agent.py).powi(2)).sqrt())
-                                                .min(((sb.foods[5].x - sb.agent.px).powi(2) + (sb.foods[5].y - sb.agent.py).powi(2)).sqrt());
-
-                                            if carnivory >= 0.60 { dist_m }
-                                            else if carnivory >= 0.40 { dist_m.min(dist_p) }
-                                            else { dist_p }
-                                        } else {
-                                            // Kleiner Raum (Standard): 1 Pflanze (0), 1 Fleisch (1)
-                                            let dist_p = ((sb.foods[0].x - sb.agent.px).powi(2) + (sb.foods[0].y - sb.agent.py).powi(2)).sqrt();
-                                            let dist_m = if sb.foods.len() > 1 {
-                                                ((sb.foods[1].x - sb.agent.px).powi(2) + (sb.foods[1].y - sb.agent.py).powi(2)).sqrt()
-                                            } else {
-                                                f32::MAX
-                                            };
-
-                                            if carnivory >= 0.60 { dist_m }
-                                            else if carnivory >= 0.40 { dist_m.min(dist_p) }
-                                            else { dist_p }
-                                        };
-                                        sb.start_distance = target_dist;
-                                        sb.min_distance = sb.start_distance;
-                                        sb.current_fitness = 0.0;
-                                    }
-                                    run_breeding_step = false;
-                                } else {
-                                    // Average the fitness scores across the 3 trials and apply Lamarckian Viability Gate
-                                    for (idx, sb) in trainer_sandboxes.iter_mut().enumerate() {
-                                        let avg_fit = trainer_accumulated_fitness[idx] / 3.0;
-                                        let eaten = trainer_accumulated_eaten[idx];
-                                        
-                                        if eaten == 0 {
-                                            // Starvation-Filter: 90% penalty if candidate didn't eat in any trial!
-                                            sb.current_fitness = avg_fit * 0.1;
-                                        } else {
-                                            // Success: Keep full average fitness and add +150 per successful catch!
-                                            sb.current_fitness = avg_fit + (eaten as f32 * 150.0);
-                                        }
-                                    }
-                                    trainer_trial_index = 0;
-                                    trainer_accumulated_fitness.clear();
-                                    trainer_accumulated_eaten.clear();
-                                }
-                            }
-
-                            if run_breeding_step {
-                                // Sort by fitness DESC
-                                trainer_sandboxes.sort_by(|a, b| b.current_fitness.partial_cmp(&a.current_fitness).unwrap_or(std::cmp::Ordering::Equal));
-
-                                let best_fit = trainer_sandboxes[0].current_fitness;
-                                let avg_fit = trainer_sandboxes.iter().map(|s| s.current_fitness).sum::<f32>() / (trainer_N as f32);
-                                let best_genome = trainer_sandboxes[0].agent.genome.clone();
-
-                                println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", trainer_generation, best_fit, avg_fit);
-
-                                // Broadcast completion metadata back to UI instantly
-                                emit_state(json!({
-                                    "type": "TRAINER_GENERATION_COMPLETED",
-                                    "generation": trainer_generation,
-                                    "bestFitness": best_fit,
-                                    "avgFitness": avg_fit,
-                                    "bestGenome": best_genome,
-                                }));
-
-                                // 2. Save Elite Champions to local SQLite
-                                let elite_count = (((trainer_N as f32) * trainer_elite_ratio).round() as usize).clamp(1, trainer_N);
-                                
-                                // Mark previous active genomes as inactive
-                                conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![trainer_run_id]).log_db_err("UPDATE trainer_genomes");
-
-                                let now_millis = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs() as i64;
-
-                                // Save the elites to SQLite
-                                for (idx, sb) in trainer_sandboxes.iter().take(elite_count).enumerate() {
-                                    let unique_id = format!("{}-{}-{}-{}", trainer_run_id, trainer_generation, idx, now_millis);
-                                    let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
-                                    let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
-
-                                    conn.execute(
-                                        "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
-                                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
-                                        params![
-                                            unique_id,
-                                            trainer_run_id,
-                                            trainer_generation as i32,
-                                            sb.agent.phenotype.latin_name,
-                                            sb.agent.genome,
-                                            sb.current_fitness as f64,
-                                            now_millis,
-                                            methylations_json,
-                                            synapse_weights_json
-                                        ],
-                                    ).log_db_err("INSERT INTO trainer_genomes");
-                                }
-
-                                // Re-trigger species selection / listing refreshes
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                
-                                // Increment generation and reset epoch ticks
-                                trainer_generation += 1;
-                                trainer_epoch_ticks = 0;
-
-                                // Rebuild sandbox grid in Rust!
-                                let (sbs, _) = rebuild_sandbox_grid(trainer_N, &trainer_run_id, trainer_generation, trainer_mutation_rate, &conn, trainer_elite_ratio, trainer_inflow_rate, trainer_hof_rate, trainer_lamarckian, trainer_chamber_size);
-                                trainer_sandboxes = sbs;
-
-                                // If headless is OFF, let the UI know it has been rebuilt
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                
-                                // Automatically restart training loop for next gen
-                                trainer_is_running = true;
-                            }
+                            // Save the elite champions (once per generation) and re-trigger roster refreshes
+                            save_trainer_elites(&conn, &trainer_run_id, generation, &elites, trainer_retention);
+                            emit_state(json!({ "type": "DATABASE_CHANGED" }));
                         }
                     }
                 }
 
                 // C. Stream Trainer Telemetry to UI at 25Hz (lightweight frames)
                 if last_emit_time.elapsed() >= emit_interval {
-                    let telemetry_sandboxes: Vec<TrainerTelemetrySandbox> = trainer_sandboxes
+                    let plugin = trainer.params.scenario.plugin();
+                    let telemetry_sandboxes: Vec<TrainerTelemetrySandbox> = trainer
+                        .sandboxes
                         .iter()
                         .map(|sb| {
                             TrainerTelemetrySandbox {
                                 id: sb.id,
-                                chamber_size: trainer_chamber_size,
+                                chamber_size: plugin.chamber_size(),
                                 px: sb.agent.px,
                                 py: sb.agent.py,
                                 vx: sb.agent.vx,
@@ -2003,7 +1483,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 omega_rot: sb.agent.omega_rot,
                                 finished: sb.finished,
                                 current_fitness: sb.current_fitness,
-                                origin_type: sb.origin_type.clone(),
+                                origin_type: sb.origin_type,
                                 consumed_spore_type: sb.consumed_spore_type.clone(),
                                 foods: sb.foods.clone(),
                                 latin_name: sb.agent.phenotype.latin_name.clone(),
@@ -2014,19 +1494,18 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 age: sb.agent.age,
                                 generation: sb.agent.generation,
                                 genome: sb.agent.genome.clone(),
-                                scenario: sb.scenario.clone(),
+                                scenario: sb.scenario,
                                 cumulative_rotation: sb.cumulative_rotation,
                                 coverage_mask: sb.coverage_mask,
                             }
                         })
                         .collect();
 
-                    let trainer_epoch_duration_f = if trainer_chamber_size >= 2000.0 { 1800.0 } else { 300.0 };
-                    let time_str = format!("{:.1}s", ((trainer_epoch_duration_f - trainer_epoch_ticks as f32) / 60.0).max(0.0));
+                    let time_str = format!("{:.1}s", ((plugin.epoch_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
 
                     // Compute selected sandbox live neural activations for real-time brain rendering
                     let selected_brain_json = if let Some(sel_id) = trainer_selected_sandbox_id {
-                        if let Some(sel_sb) = trainer_sandboxes.iter().find(|s| s.id == sel_id) {
+                        if let Some(sel_sb) = trainer.sandboxes.iter().find(|s| s.id == sel_id) {
                             json!({
                                 "id": sel_id,
                                 "activations": sel_sb.agent.neuron_activations
@@ -2040,7 +1519,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                     emit_state(json!({
                         "type": "TRAINER_TELEMETRY_TICK",
-                        "generation": trainer_generation,
+                        "generation": trainer.generation,
                         "isRunning": trainer_is_running,
                         "timeStr": time_str,
                         "sandboxes": telemetry_sandboxes,

@@ -1,5 +1,6 @@
 use crate::shared::types::{CreatureAgent, FoodSpore, AppConfig};
 use crate::shared::map_generator::ProceduralObstacle;
+use crate::shared::fmath;
 
 /// Kinematic snapshot of a creature that can push food spores (avoids cloning whole agents).
 #[derive(Debug, Clone, Copy)]
@@ -112,7 +113,7 @@ pub fn step_creature_kinematics(
     // 1. Calculate physical thrust scaled by biological characteristics (pulse speed, stiffness)
     let mut thrust_mag = stiffness * (pulse * 1000.0 * pulse * 1000.0) * app_config.rules.thrust_base_multiplier;
     let wave_phase = agent.phenotype.wave_phase;
-    let eta_swim = ((base_length / (mean_radius * 3.5)) * wave_phase.sin().max(0.01) * stiffness).clamp(0.1, 3.2);
+    let eta_swim = ((base_length / (mean_radius * 3.5)) * fmath::sin(wave_phase).max(0.01) * stiffness).clamp(0.1, 3.2);
     thrust_mag *= eta_swim;
 
     let limbs_count = agent.phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count() as f32;
@@ -122,7 +123,7 @@ pub fn step_creature_kinematics(
     let net_thrust_force = out_thrust * thrust_mag;
 
     // 2. Mass & Ballast
-    let mass = mean_radius.powf(1.5) * (base_length / 25.0);
+    let mass = fmath::powf(mean_radius, 1.5) * (base_length / 25.0);
     let receptor_ballast = agent.phenotype.organelles.len() as f32 * app_config.rules.receptor_ballast_scale;
     let drag_forward = (mean_radius * app_config.rules.drag_forward_coefficient + receptor_ballast) 
         * (1.0 - stiffness * app_config.rules.drag_forward_stiffness_decay);
@@ -167,31 +168,31 @@ pub fn apply_creature_physics(
     agent.bend_angle = agent.bend_angle.clamp(-max_flexion, max_flexion);
 
     // 2. Fluid drag & thrust forces
-    let v_forward = agent.vx * agent.heading_angle.cos() + agent.vy * agent.heading_angle.sin();
-    let fx = net_thrust_force * agent.heading_angle.cos();
-    let fy = net_thrust_force * agent.heading_angle.sin();
+    let v_forward = agent.vx * fmath::cos(agent.heading_angle) + agent.vy * fmath::sin(agent.heading_angle);
+    let fx = net_thrust_force * fmath::cos(agent.heading_angle);
+    let fy = net_thrust_force * fmath::sin(agent.heading_angle);
 
     // Kinematic Curve Turn coupling: turning is strictly dependent on forward/backward movement and flexion!
     let curvature_factor = 0.015;
     let delta_heading = v_forward * agent.bend_angle * curvature_factor;
     agent.heading_angle += delta_heading;
-    agent.heading_angle = agent.heading_angle.sin().atan2(agent.heading_angle.cos());
+    agent.heading_angle = fmath::atan2(fmath::sin(agent.heading_angle), fmath::cos(agent.heading_angle));
 
     // omegaRot acts as an alias for visual bending amount in the client renderer
     agent.omega_rot = agent.bend_angle / 12.0;
 
     // Fluid friction drag calculation
     let drag_force_forward = -drag_forward * v_forward;
-    let ax = (fx + drag_force_forward * agent.heading_angle.cos()) / mass;
-    let ay = (fy + drag_force_forward * agent.heading_angle.sin()) / mass;
+    let ax = (fx + drag_force_forward * fmath::cos(agent.heading_angle)) / mass;
+    let ay = (fy + drag_force_forward * fmath::sin(agent.heading_angle)) / mass;
 
     agent.vx = (agent.vx + ax) * 0.94;
     agent.vy = (agent.vy + ay) * 0.94;
 
     // Lock-on heading movement (No slip!)
-    let net_speed = agent.vx * agent.heading_angle.cos() + agent.vy * agent.heading_angle.sin();
-    agent.vx = net_speed * agent.heading_angle.cos();
-    agent.vy = net_speed * agent.heading_angle.sin();
+    let net_speed = agent.vx * fmath::cos(agent.heading_angle) + agent.vy * fmath::sin(agent.heading_angle);
+    agent.vx = net_speed * fmath::cos(agent.heading_angle);
+    agent.vy = net_speed * fmath::sin(agent.heading_angle);
 
     // Apply external environmental forces (e.g. currents)
     agent.vx += external_force_x;
@@ -260,32 +261,15 @@ pub fn apply_creature_physics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::dna::parse_genome;
+    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
 
     fn agent_moving(px: f32, py: f32, heading_angle: f32, speed: f32) -> CreatureAgent {
-        let phenotype = parse_genome("EYEABCDEFEN", None, None);
-        CreatureAgent {
-            id: 1,
-            species_id: "test".to_string(),
-            px,
-            py,
-            vx: speed * heading_angle.cos(),
-            vy: speed * heading_angle.sin(),
-            heading_angle,
-            bend_angle: 0.0,
-            omega_rot: 0.0,
-            energy: 100.0,
-            adrenaline: 1.0,
-            age: 0,
-            generation: 1,
-            has_eaten: false,
-            genome: String::new(),
-            antisense: String::new(),
-            synapse_weights: Vec::new(),
-            neuron_states: Vec::new(),
-            neuron_activations: Vec::new(),
-            phenotype,
-        }
+        let mut agent = spawn_creature("EYEABCDEFEN", SpawnOptions {
+            id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None,
+        });
+        agent.vx = speed * heading_angle.cos();
+        agent.vy = speed * heading_angle.sin();
+        agent
     }
 
     fn step_without_forces(agent: &mut CreatureAgent, size: f32) -> bool {

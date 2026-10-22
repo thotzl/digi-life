@@ -1,7 +1,7 @@
 {
   "name": "digi-life",
   "private": true,
-  "version": "1.12.15",
+  "version": "1.12.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,9 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:rust": "cargo test",
-    "sim:balance": "cargo run --bin cli_trainer",
+    "sim:balance": "cargo run --release --bin trainer_runner -- run --seed baseline --generations 20 --scenario standard --population 16 --parallel true --out .agents/artifacts/runner/balance.json",
     "types:generate": "cargo test",
-    "test:all": "npm run test && npm run test:rust && cargo check --bin cli_trainer",
+    "test:all": "npm run test && npm run test:rust && cargo check --bin trainer_runner",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run"

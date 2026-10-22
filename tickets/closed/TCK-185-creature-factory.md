@@ -1,7 +1,7 @@
 ---
 id: TCK-185
 title: CreatureFactory for Trainer and Ocean
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -24,3 +24,9 @@ Creatures start differently in trainer and Ocean: the trainer sets `energy: 100.
 - No `CreatureAgent { ... }` literal outside the factory (tests excepted).
 - Test: the same genome spawned for trainer and Ocean yields identical agents except position/heading/id.
 - Ocean smoke check (TCK-186) passes; intended start-energy change documented.
+
+## Verification (P2, v1.12.16)
+- `src/biology/creature_factory.rs`: `spawn_creature`, `spawn_from_phenotype`, `start_energy`; all 6 Ocean spawn sites and the trainer sandbox use it; no `CreatureAgent {` literal outside the factory except test fixtures (`brain.rs` test).
+- Start energy defined once: stomach x `creatureStartStomachRatio` (0.60, renamed from `restockInitialStomachRatio`). Intended changes: trainer start energy 100 -> stomach x 0.60 (the brain input `internal_energy` follows), SPAWN_CLONE and ASSIGN_SANDBOX_CREATURE 0.8 -> 0.60, trial reset uses `start_energy`; `antisense` and neuron buffers always set (buffers were resized before first use, so behaviour is unchanged).
+- Tests: trainer-style vs Ocean-style spawn identical except position/heading/id/generation; synapse-weight length mismatch falls back to genome weights. `cargo test` green.
+- Ocean smoke check (TCK-186): Ocean runs, inject works, no NaN (UI smoke 2026-10-22).

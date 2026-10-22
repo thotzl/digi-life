@@ -108,6 +108,33 @@ Sources:
 - Satoh et al., klinotaxis by a single neuron: https://pmc.ncbi.nlm.nih.gov/articles/PMC6608435 ; klinotaxis review: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4132367/
 - Cheney et al. 2018: https://meclab.w3.uvm.edu/papers/2018_RoySoc_Cheney.pdf ; critical follow-up 2025: https://arxiv.org/pdf/2508.17464
 
+## Execution decisions (user, 2026-10-21, before P2)
+- Work directly on `master`; one commit per phase at the end (bump, CHANGELOG, wiki, tickets) when everything is green.
+- Target values (TCK-188): derived by the agent from the P2 baseline by a documented rule, recorded here, no extra stop.
+- Defaults with veto option accepted: TCK-144 (ΔI as 6th channel), TCK-145 (bite energy formula + cooldown), TCK-152 (Oja, `plastic` flag, Lamarck as probability), TCK-153 (keep order unless the probe shows a problem); P3 removes motor 3 (biolum), motor 4 (reserved) and the adrenaline brain input.
+- Measurement-based decisions (TCK-181 yes/no, TCK-182 targeted wiring vs. minimal start, TCK-175 generation-1 equipment, TCK-153 reorder, steer/drag keys in P5, time-boxed calibration of thrust/fitness/curriculum) are taken by the agent and documented with numbers in the ticket; the user is consulted only on real target conflicts or targets missed after the time box.
+- All phases P2–P8 run without stops (user, 2026-10-21): the agent also performs the per-phase UI smoke checks itself, pushes after each green phase commit, checks CI, and continues. The user is consulted only on real ambiguities or decisions that cannot be taken clearly.
+- UI bugs found in passing (e.g. during the per-phase UI smoke checks) are fixed in the same phase and listed in its CHANGELOG entry (user, 2026-10-21).
+
+## Target values (TCK-188, set 2026-10-22 from the P2 baseline)
+Measured with `trainer_runner` (release, `--parallel true`) and the TCK-172 probes; reports in `.agents/artifacts/baseline/p2/` and `.agents/artifacts/probes/` (local), numbers in TCK-173/TCK-172.
+
+Rule: the goal is real improvement in both rooms with transfer between them. Success targets require a population majority in the small room, the large room at ≥ 60 % of the small room's rate, and a clear learning slope within a run; mechanics targets come from the probe findings (heredity, speed spread, steering, walls); cost and performance targets come from the epic (share 10–20 %) and from "no regression". A phase is accepted when its targets are met or a deliberate exception is documented in its ticket.
+
+| Target | P2 baseline | Target | Measured by |
+| :--- | :--- | :--- | :--- |
+| Success rate small room (pop 16, 30 gens, mean of last 5 gens, 5 seeds) | 0.040 | ≥ 0.50 | `run --scenario standard` |
+| Success rate large room (same protocol) | 0.023 | ≥ 0.30 (≥ 60 % of small) | `run --scenario exploration` |
+| Learning slope (success last 5 gens / gen 1, both rooms) | ×10 small (0.004 → 0.040), large 0 → 0.023 | ≥ ×3 and absolute targets above | `run` |
+| Speed spread p90/p10 (random genomes, full thrust) | ×65 | ≤ ×5 | `probe speed` |
+| Share of random genomes unable to cover 1200 px in 1800 ticks | 50 % | ≤ 10 % | `probe speed` |
+| Heredity: exuberant-weight correlation parent→child after 1 / 5 / 15 ops (random parents, trainer operator) | ≈ 0.93 / – / 0.32 | ≥ 0.95 / 0.85 / 0.60 | `probe heredity` |
+| Children with ≥ 2× speed change after one mutation | n/a (17–25 % after 15 ops) | ≤ 2 % after 1 op | `probe heredity` |
+| Steering: elite genomes after training turning toward food on both sides (±45°) | 0 % (HoF) | ≥ 50 % | `probe steering --db` / elites of a run |
+| Walls: forced full thrust into a wall, share free within 600 ticks | 0 % | ≥ 90 % | `probe wall` |
+| Brain + senses share of resting metabolic cost (median phenotype) | n/a (multiplicative model) | 10–20 % | P6 cost function test |
+| Ticks per second, standard, pop 300, parallel (total incl. breeding) | 206k | ≥ 206k (no regression) | `run --population 300` |
+
 ## Definition of Done
 - Phases P1–P8 closed; all their tickets closed or consciously dropped (with measurement).
 - Target values of TCK-188 reached, compared against the P2 baseline.

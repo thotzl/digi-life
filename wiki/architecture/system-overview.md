@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, tickets/closed/TCK-109-tauri-desktop-shell.md, tickets/closed/TCK-110-rust-simulation-core.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-107-refactoring-dry-and-shared-modularization.md, tickets/closed/TCK-108-headless-backend-evolutionary-trainer-migration.md]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, tickets/closed/TCK-109-tauri-desktop-shell.md, tickets/closed/TCK-110-rust-simulation-core.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-107-refactoring-dry-and-shared-modularization.md, tickets/closed/TCK-108-headless-backend-evolutionary-trainer-migration.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md]
 ---
 
 # System Overview
@@ -26,8 +26,9 @@ Webview (frontend/)
 
 - **Shell** — `src/main.rs`: Tauri builder, command registration, DB setup, starts the simulation thread.
 - **Engine** — `src/server/engine.rs`: Ocean and Trainer loop (~60 Hz), see [[wiki/architecture/simulation-engine]].
+- **Headless runner** — `src/bin/trainer_runner.rs`: trainer runs and mechanics probes without UI, see [[wiki/simulation/analytics-and-balancing]].
 - **API** — `src/server/api.rs`: Tauri commands, see [[wiki/architecture/ipc-protocol]].
-- **Domain** — `src/biology/` (genome compiler, trainer sandboxes, scenarios) and `src/shared/` (brain, physics, spatial grid, world generation, types/config). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
+- **Domain** — `src/biology/` (genome compiler, creature factory, IO-free trainer `TrainerSim`, sandboxes, scenarios, runner report, probes) and `src/shared/` (brain, physics, spatial grid, world generation, types/config, seeded RNG, deterministic math). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
 - **Persistence** — `src/database.rs`, see [[wiki/architecture/persistence]].
 - **Frontend** — `frontend/`, see [[wiki/frontend/structure]].
 - **Config** — root `config.json`, compiled into the binary, see [[wiki/architecture/configuration]].
@@ -45,7 +46,7 @@ Webview (frontend/)
 
 ## Known limitations
 
-- The engine is one ~2,000-line thread closure with all Ocean and Trainer state as local variables; it is not unit-testable because it needs a real `tauri::WebviewWindow` (RV-A01).
+- The engine is one ~1,500-line thread closure with the Ocean state as local variables; it is not unit-testable because it needs a real `tauri::WebviewWindow` (RV-A01). The trainer logic is outside it in `TrainerSim` and is unit-tested (TCK-173).
 
 ## Key Takeaways
 
@@ -53,4 +54,4 @@ Webview (frontend/)
 - Rust owns all simulation state; the frontend is a renderer.
 - The engine is a single closure (RV-A01).
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, TCK-107..110, TCK-115.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, TCK-107..110, TCK-115, TCK-173.
