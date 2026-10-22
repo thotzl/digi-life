@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.19] - 2026-10-22
+
+Training track P5 "Locomotion v2" (epic TCK-171). Physics only: the creature model and saved data are unchanged; new CI reference.
+
+### Changed
+- Swimming speed comes from a narrow, genome-controlled band (1–5 px/tick) instead of growing with the square of the pulse; body mass and drag only change acceleration. The speed spread of random genomes drops from ×12–×82 to ×1.5–×2, and no random genome is too slow for the large room any more (was 20–45 %) (ref TCK-150).
+- Creatures can turn while standing still (90° in about 165 ticks); at speed the turning radius is about 45 px (ref TCK-150).
+- Walls and reefs reflect the heading as well as the velocity, so creatures swimming into a wall turn away: 100 % get free with full thrust (was 0 %), 69–85 % with their own brain (was 24–42 %) (ref TCK-180).
+- Steering toward food improves as a consequence: the bearing to food shrinks on both sides for 56–64 % of random genomes (was 24–27 %) (ref TCK-150).
+
+### Removed
+- Config keys `thrustBaseMultiplier`, `steerTorqueBaseMultiplier` (replaced by `locomotionSpeedMin`/`locomotionSpeedMax` and `turnRateAtRest`) and `dragLateralCoefficient` (ref TCK-150, TCK-180, TCK-149).
+
 ## [1.12.18] - 2026-10-22
 
 Training track P4 "Learning" (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 3).

@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-138-embedded-config.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-138-embedded-config.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
 ---
 
 # Configuration (`config.json`)
@@ -21,8 +21,8 @@ sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-c
 
 ## Key usage (RV-S01, TCK-149)
 
-- `config.json`: 6 top-level scalar keys (`seed`, `targetPopulation`, `foodSporeCount`, `maxCreatures`, `basalMetabolicRateMultiplier`, `trainerGenomeRetentionPerRun`), the blocks `genomeComposition` (12 keys) and `mutationOperators` (7 keys), and `rules` (32 `SimulationRules`). All are read except the 3 exempt keys below.
-- Exempt, unread on purpose: `steerTorqueBaseMultiplier`, `dragLateralCoefficient` (TCK-150/TCK-180), `bitingBaseEnergyGain` (TCK-145).
+- `config.json`: 6 top-level scalar keys (`seed`, `targetPopulation`, `foodSporeCount`, `maxCreatures`, `basalMetabolicRateMultiplier`, `trainerGenomeRetentionPerRun`), the blocks `genomeComposition` (12 keys) and `mutationOperators` (7 keys), and `rules` (32 `SimulationRules`). All are read except the exempt key below.
+- Exempt, unread on purpose: `bitingBaseEnergyGain` (TCK-145), the only entry of `KEYS_WITHOUT_READ_SITE`.
 - Removed (TCK-149): `adrenalineMaxMultiplier`, `adrenalineIncreaseRate`, `adrenalineDecayRate`, `adrenalineMetabolicSurchargeScale` (with the always-1 surcharge factor in the Ocean BMR), `bioluminescenceFlashCost`, `biomeHazardDamageScale`, `biomeAlgaeSporeSpawnThreshold`, `predatorSavageThrustThreshold`, `predatorSavageThrustMultiplier`, `restockFounderGeneInheritChance`, and the 7 struct-less keys `obstacles*`, `vents*`, `disableVentsForce`. Adrenaline keys return with TCK-165, biolum with TCK-167.
 - Wired by TCK-149:
   - `seed` → Ocean world generation (`generate_world`) and the `seed` field of `INIT_STATE` (frontend does not read it); since TCK-173 also the trainer run seed `seed_from_str("{seed}:{run_id}")`. The Ocean simulation RNG is still `thread_rng` (RV-T04).
@@ -35,11 +35,14 @@ sources: [.agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/01-c
   - `genomeComposition` → `generate_structured_genome` (trainer generation 1 and immigrants, Ocean random founders): `targetLength` 256, `payloadLengthMin`/`Max` 8/16, `organCountMin`/`Max` 1/3, `pFoodOrgan` 0.9 (first organ is an eye or nose), `foodOrganEyeShare` 0.5, `pHox` 0.3, `neuCountMin`/`Max` 1/3, `syCountMin`/`Max` 0/2 ([[wiki/biology/genome-compiler]]).
   - `mutationOperators` → relative operator weights of `mutate_genome`: `creep` 0.6, `point` 0.15, `insertion` 0.05, `deletion` 0.05, `geneDuplication` 0.075, `geneDeletion` 0.075, `creepMaxStep` 2; the `EVO` gene scales the indel weights.
 - Removed in P4 of TCK-171 (TCK-152, Oja learning): `hebbianLearningStiffnessDecay` (passed to the brain step but never read) and `hebbianForgettingDecay` (redundant with the decay term of Oja's rule). `hebbianLearningRateBase` (0.00015) is the only learning key: η of the Oja rule ([[wiki/biology/ctrnn-brain]]). `lamarckianAssimilationChance` (0.25) is a probability per synapse since TCK-152 ([[wiki/biology/metabolism-and-reproduction]]).
+- Changed in P5 of TCK-171 (TCK-150, TCK-180, [[wiki/simulation/physics]]):
+  - Added `rules.locomotionSpeedMin` (1.0) / `rules.locomotionSpeedMax` (5.0): terminal speed at full thrust of the slowest / fastest genome in px/tick; thrust is derived from it (`target_terminal_speed`, `thrust_for_terminal_speed`). Added `rules.turnRateAtRest` (0.008): heading change per tick per unit bend independent of speed.
+  - Removed `thrustBaseMultiplier` (replaced by the speed band), `steerTorqueBaseMultiplier` (never read; turning is `turnRateAtRest` plus the speed-coupled curvature) and `dragLateralCoefficient` (never read; the lock-on heading leaves no lateral velocity) (TCK-149).
 - P3 also removed the last adrenaline and biolum model parts (agent field `adrenaline`, brain input, motors 3/4; TCK-149). Biomes have no simulation effect.
 
 ## Key Takeaways
 
 - One config, embedded in the binary, overridable in dev; unknown keys are rejected.
-- Every key has a read site, enforced by test; 3 documented exemptions (TCK-149).
+- Every key has a read site, enforced by test; 1 documented exemption (TCK-149).
 
-Sources: `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/04-simulation-model.md`, TCK-138, TCK-149, TCK-152, TCK-173, TCK-183, TCK-184, TCK-185.
+Sources: `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/04-simulation-model.md`, TCK-138, TCK-149, TCK-150, TCK-152, TCK-173, TCK-180, TCK-183, TCK-184, TCK-185.

@@ -1,5 +1,5 @@
 ---
-sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
 ---
 
 # Performance
@@ -36,6 +36,7 @@ Measured with the headless runner (release build), `perf` block of the report; m
 - Parallel breeding: generation end at standard pop 300 2.79 s → 0.67 s (2-generation benchmark).
 - P2 baseline totals: standard pop 300 parallel ≈ 206k sandbox-ticks/s (20 generations incl. breeding), exploration pop 16 parallel ≈ 469k, exploration pop 300 ≈ 717k (10 generations).
 - Brain v2 (TCK-182), pop 16, seed b1, same machine: standard 158k → 323k, exploration 425k → 763k sandbox-ticks/s.
+- Locomotion v2 (TCK-150, P5), standard pop 300, 10 generations, seed b1: 857k → 882k sandbox-ticks/s (thrust from the speed band is not more expensive than the old formula).
 
 ## Equivalence safeguards
 
@@ -51,4 +52,4 @@ Measured with the headless runner (release build), `perf` block of the report; m
 - Trainer sandboxes and breeding run in parallel, deterministically.
 - Remaining hot spots: linear nearest-food search, Ocean sensor allocation, trainer generation end.
 
-Sources: `docs/revisit/03-performance.md`, TCK-139, TCK-140, TCK-173, TCK-182.
+Sources: `docs/revisit/03-performance.md`, TCK-139, TCK-140, TCK-150, TCK-173, TCK-182.

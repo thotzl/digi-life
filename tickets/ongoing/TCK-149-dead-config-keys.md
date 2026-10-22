@@ -52,3 +52,6 @@ Decisions (user, 2026-10-21): groups A–E as proposed; values introduced by the
 ## Progress P3 (v1.12.17)
 - Motor 3 (biolum), motor 4 (reserved) and the adrenaline brain input plus `CreatureAgent.adrenaline` removed with the Brain v2 golden-master change (TCK-179).
 - Remaining: `steerTorqueBaseMultiplier`, `dragLateralCoefficient` (P5, TCK-150/TCK-180), `bitingBaseEnergyGain` (P6, TCK-145).
+
+## Progress P5 (v1.12.19)
+- `steerTorqueBaseMultiplier` replaced by `turnRateAtRest` (TCK-150), `dragLateralCoefficient` removed (TCK-180). Remaining: `bitingBaseEnergyGain` (P6, TCK-145).

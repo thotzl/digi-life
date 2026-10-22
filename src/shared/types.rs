@@ -135,11 +135,13 @@ pub struct SimulationRules {
     pub reproduction_stomach_threshold_floor: f32,
     pub reproduction_split_loss_ratio: f32,
     pub reproduction_recoil_velocity_scale: f32,
-    pub thrust_base_multiplier: f32,
-    pub steer_torque_base_multiplier: f32,
+    /// Terminal speed at full thrust of the slowest / fastest genome (px/tick); thrust is derived from it (TCK-150)
+    pub locomotion_speed_min: f32,
+    pub locomotion_speed_max: f32,
+    /// Heading change per tick per unit bend independent of speed (rad), allows turning at rest (TCK-150)
+    pub turn_rate_at_rest: f32,
     pub drag_forward_coefficient: f32,
     pub drag_forward_stiffness_decay: f32,
-    pub drag_lateral_coefficient: f32,
     pub receptor_ballast_scale: f32,
     pub elastic_wall_restitution: f32,
     /// η of the Oja rule of plastic synapses (TCK-152)
@@ -209,13 +211,11 @@ mod tests {
         assert_eq!(embedded.food_spore_count as u64, on_disk["foodSporeCount"].as_u64().unwrap());
         assert_eq!(embedded.target_population as u64, on_disk["targetPopulation"].as_u64().unwrap());
         assert_eq!(embedded.rules.creature_max_age_ticks as u64, on_disk["rules"]["creatureMaxAgeTicks"].as_u64().unwrap());
-        assert!((embedded.rules.thrust_base_multiplier as f64 - on_disk["rules"]["thrustBaseMultiplier"].as_f64().unwrap()).abs() < 1e-6);
+        assert!((embedded.rules.locomotion_speed_max as f64 - on_disk["rules"]["locomotionSpeedMax"].as_f64().unwrap()).abs() < 1e-6);
     }
 
     /// Keys kept on purpose without a read site, each with the ticket that wires it up.
-    const KEYS_WITHOUT_READ_SITE: [(&str, &str); 3] = [
-        ("steer_torque_base_multiplier", "TCK-150/TCK-180"),
-        ("drag_lateral_coefficient", "TCK-150/TCK-180"),
+    const KEYS_WITHOUT_READ_SITE: [(&str, &str); 1] = [
         ("biting_base_energy_gain", "TCK-145"),
     ];
 

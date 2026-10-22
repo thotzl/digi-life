@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
 ---
 
 # CTRNN Brain
@@ -74,15 +74,16 @@ Only live structure is wired; every synapse has a stable `key` and exactly one `
 
 ## Measured behaviour (TCK-172 steering probe)
 
-Food fixed at 300 px and ±45°, real brain with learning, heading change after 100 ticks; 500 genomes per set.
+Food fixed at 300 px and ±45°, real brain with learning, heading change after 100 ticks; 500 genomes per set. "Bearing reduced" = the minimum bearing to the food fell below 35° for both food sides.
 
-| | Before P3 (letter soup) | After P3, letter soup | After P3, structured |
-| :--- | :--- | :--- | :--- |
-| Turns toward / away from food | 3.2 % / 5.0 % | 3.8 % / 4.4 % | 9.0 % / 8.2 % |
-| Toward food on both sides | 0.4 % | 0.6 % | 0.2 % |
-| Mean thrust negative | 48 % | 52 % | 49 % |
+| | Before P3 (letter soup) | P3–P4, letter soup | P3–P4, structured | After P5, letter soup | After P5, structured |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Turns toward / away from food | 3.2 % / 5.0 % | 3.8 % / 4.4 % | 9.0 % / 8.2 % | 7.0 % / 6.2 % | 16.0 % / 14.6 % |
+| Toward food on both sides | 0.4 % | 0.6 % | 0.2 % | 0.4 % | 1.0 % |
+| Bearing reduced on both sides | – | 23.6 % | 27.4 % | 56.4 % | 64.0 % |
+| Mean thrust negative | 48 % | 52 % | 49 % | 52 % | 49 % |
 
-- Steering is still undirected at random initialisation (toward ≈ away); the ΔI channel and latency 1 make directed turning learnable but not innate.
+- Steering is still undirected at random initialisation (toward ≈ away); the ΔI channel and latency 1 make directed turning learnable but not innate. The P5 rise in turning and bearing reduction comes from the mechanics (turning at rest and faster turning of slow bodies, TCK-150, [[wiki/simulation/physics]]); the brain model is unchanged in P5.
 - Heredity of weights under mutation: [[wiki/biology/genome-compiler]].
 
 ## Key Takeaways
@@ -91,4 +92,4 @@ Food fixed at 300 px and ±45°, real brain with learning, heading change after 
 - Targeted wiring of live structure only; every synapse has a role key and one owner gene whose payload tape gives its weight.
 - Plastic synapses learn with Oja's rule (bounded, no drift to the clamp); sensor → thalamus reflexes are fixed (TCK-152). Lifetime learning has no measurable benefit yet; random brains do not steer toward food.
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, TCK-144, TCK-149, TCK-152, TCK-153, TCK-172, TCK-173, TCK-179, TCK-182, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, TCK-144, TCK-149, TCK-150, TCK-152, TCK-153, TCK-172, TCK-173, TCK-179, TCK-182, `docs/revisit/04-simulation-model.md`.

@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
 ---
 
 # Trainer
@@ -110,6 +110,20 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 - Variants measured and rejected: no pruning (last 5 gens small 0.166, large 0.026); pruning only with active presynaptic input (no measurable change). Kept: Oja + pruning.
 - Immobile share in the small room: 0.067 in generation 1, 0.008 at the end (last 5 gens).
 
+## After Locomotion v2 (P5)
+
+Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generations, Lamarck off), reports kept locally in `.agents/artifacts/p5/` (TCK-150, TCK-180, [[wiki/simulation/physics]]).
+
+| Setup | Success rate gen 1 | Success rate last 5 gens | Best gen | Mean time to first catch (last 5) |
+| :--- | :--- | :--- | :--- | :--- |
+| small, pop 16, 30 gens, 5 seeds | 0.013 | 0.218 (P4: 0.207) | 0.396 | ≈ 190 ticks |
+| large, pop 16, 30 gens, 5 seeds | 0.000 | 0.033 (P4: 0.046) | 0.083 | ≈ 1040 ticks |
+
+- Both changes are within the 5-seed noise (standard error ≈ 0.05 small, ≈ 0.01–0.02 large); on 10 seeds (b1–b10) small 0.150 → 0.193, large 0.027 → 0.060. Best fitness in the large room (mean of the last 5 generations) 934 → 1427.
+- Calibration of `locomotionSpeedMin` / `locomotionSpeedMax` / `turnRateAtRest`, time-boxed to two adjustments (5-seed success small / large): 0.8 / 3.0 / 0.013 → 0.095 / 0.023; 1.0 / 4.0 / 0.008 → 0.168 / 0.055; 1.0 / 5.0 / 0.008 → 0.218 / 0.033, chosen for the best 10-seed total.
+- Immobile share in the small room: 0.004 in generation 1, 0 at the end (P4: 0.067 / 0.008).
+- Throughput standard pop 300, 10 generations, seed b1: 857k → 882k sandbox-ticks/s.
+
 ## Controls
 
 - Start/pause/reset, warp (capped 35), hyperparameters, sandbox selection/assignment, Lamarckian synapse inheritance toggle (TCK-128), `apply_champion`, add catalogue creatures to training.
@@ -118,7 +132,7 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 
 - `TrainerSim` is IO-free, seeded and parallel-safe; the engine and the headless runner drive the same code.
 - Two plugin rooms with multi-trial evaluation and elitist selection; spawn loops are bounded, spawn distances still differ per trial (RV-S08).
-- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033; after Oja learning (P4) 0.207 and 0.046.
+- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033; after Oja learning (P4) 0.207 and 0.046; after Locomotion v2 (P5) 0.218 and 0.033 (10 seeds: 0.193 and 0.060).
 - Generation 1 and immigrants are structured random genomes; Lamarckian weights follow synapse keys and are inherited per plastic synapse with probability 0.25 (TCK-152).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-152, TCK-173, TCK-179, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-150, TCK-152, TCK-173, TCK-179, TCK-180, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.

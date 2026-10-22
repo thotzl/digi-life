@@ -259,7 +259,7 @@ fn senses_food(phenotype: &CreaturePhenotype, inputs: &[f32]) -> bool {
     })
 }
 
-/// Limbs as counted by `step_creature_kinematics` (thrust bonus).
+/// Limbs as counted by `physics::locomotion_drive` (part of the speed band).
 fn limb_count(phenotype: &CreaturePhenotype) -> usize {
     phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count()
 }
@@ -676,6 +676,32 @@ pub struct SpeedSet {
     pub share_below_200px_in_300_ticks: f32,
     pub share_not_settled: f32,
     pub turning: Vec<TurnStats>,
+    /// Thrust 0, full bend, from rest (TCK-150)
+    pub turn_at_rest: TurnAtRest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct TurnAtRest {
+    /// Ticks until the heading has changed by 90 degrees (genomes that got there)
+    pub ticks_to_90_deg: Option<Distribution>,
+    /// Share of genomes turning 90 degrees within 1800 ticks
+    pub share_reached: f32,
+}
+
+/// Thrust 0 and full bend from rest: ticks until the heading has turned 90 degrees (None within 1800 ticks).
+fn turn_from_rest(genome: &str) -> Option<u32> {
+    let config = AppConfig::global();
+    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0);
+    let mut turned = 0.0f32;
+    for tick in 1..=LONG_EPOCH_TICKS {
+        let before = agent.heading_angle;
+        step_creature_kinematics(&mut agent, 0.0, 1.0, config, &[], OPEN_ARENA, OPEN_ARENA);
+        turned += wrap_angle(agent.heading_angle - before).abs();
+        if turned >= std::f32::consts::FRAC_PI_2 {
+            return Some(tick);
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -740,6 +766,13 @@ fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
         share_below_200px_in_300_ticks: share_where(&runs, |r| r.distance_300 < 200.0),
         share_not_settled: share_where(&runs, |r| !r.settled),
         turning,
+        turn_at_rest: {
+            let ticks: Vec<Option<u32>> = genomes.par_iter().map(|g| turn_from_rest(g)).collect();
+            TurnAtRest {
+                ticks_to_90_deg: Distribution::of(&ticks.iter().flatten().map(|&t| t as f32).collect::<Vec<_>>()),
+                share_reached: share_where(&ticks, |t| t.is_some()),
+            }
+        },
     }
 }
 
@@ -754,6 +787,7 @@ pub fn probe_speed(opts: &ProbeOptions) -> SpeedReport {
         notes: vec![
             "step_creature_kinematics with forced outputs (thrust 1, turn 0) from rest, open arena, 1800 ticks; terminal speed = speed at tick 1800 (px/tick).".to_string(),
             "turning: thrust 1, turn 1 for 1800 ticks, measured over the last 200 ticks; bands by straight terminal speed.".to_string(),
+            "turn_at_rest: thrust 0, turn 1 from rest; ticks until the heading has changed by 90 degrees (1800 ticks max).".to_string(),
         ],
         sets,
     }
@@ -1015,7 +1049,7 @@ pub fn probe_steering(opts: &ProbeOptions) -> SteeringReport {
         notes: vec![
             "Standard chamber (1000 px), creature at the centre, heading 0, at rest; plant and meat on the same fixed point at 300 px and +/-45 degrees; real brain with Hebbian learning (config default); food does not drift.".to_string(),
             "Each genome runs three times: food at +45, at -45 and no food (control); turn = heading change after 100 ticks.".to_string(),
-            "Positive bearing = positive heading change (the brain must output bend > 0 while moving forward).".to_string(),
+            "Positive bearing = positive heading change (the brain must output bend > 0; turning also works at rest since P5).".to_string(),
         ],
         sets,
     }
@@ -1143,7 +1177,7 @@ pub fn probe_wall(opts: &ProbeOptions) -> WallReport {
     WallReport {
         notes: vec![
             "Standard chamber (1000 px); start at the top wall centre, 2 px gap, at rest, heading into the wall at the given angle to the wall surface.".to_string(),
-            "forced: thrust 1, turn 0 (heading can only change through bend, so it never changes); brain: real brain with Hebbian learning, food from the seeded standard initialisation, food fixed.".to_string(),
+            "forced: thrust 1, turn 0 (the heading changes only through wall contact, which reflects it, TCK-180); brain: real brain with Hebbian learning, food from the seeded standard initialisation, food fixed.".to_string(),
             "contact = step_creature_kinematics reports a wall hit that tick; contact_speed in px/tick.".to_string(),
         ],
         cells,

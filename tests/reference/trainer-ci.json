@@ -6,7 +6,7 @@
     "generations": 3,
     "trials": 3,
     "multi_trial": true,
-    "version": "1.12.17"
+    "version": "1.12.18"
   },
   "generations": [
     {
@@ -14,60 +14,60 @@
       "success_rate": 0.0,
       "mean_time_to_first_catch": null,
       "median_time_to_first_catch": null,
-      "best_fitness": 31.50836,
-      "median_fitness": 5.9140615,
-      "mean_fitness": 7.2384224,
+      "best_fitness": 18.68929,
+      "median_fitness": 0.8947823,
+      "mean_fitness": 3.2837045,
       "fitness_quantiles": [
-        0.20067705,
-        0.834624,
-        5.9140615,
-        8.012508,
-        18.903765
+        0.24856277,
+        0.69901574,
+        0.8947823,
+        1.696291,
+        11.544865
       ],
       "mean_genome_length": 299.5,
-      "immobile_share": 0.041666668
+      "immobile_share": 0.0
     },
     {
       "generation": 2,
-      "success_rate": 0.0,
-      "mean_time_to_first_catch": null,
-      "median_time_to_first_catch": null,
-      "best_fitness": 49.701305,
-      "median_fitness": 12.939032,
-      "mean_fitness": 18.393038,
+      "success_rate": 0.020833334,
+      "mean_time_to_first_catch": 100.0,
+      "median_time_to_first_catch": 100.0,
+      "best_fitness": 532.98645,
+      "median_fitness": 21.829594,
+      "mean_fitness": 52.171234,
       "fitness_quantiles": [
-        6.2630963,
-        8.402132,
-        12.939032,
-        24.162443,
-        36.176994
+        0.9902189,
+        1.9766128,
+        21.829594,
+        30.873743,
+        56.27056
       ],
-      "mean_genome_length": 286.8125,
+      "mean_genome_length": 279.5,
       "immobile_share": 0.0
     },
     {
       "generation": 3,
       "success_rate": 0.020833334,
-      "mean_time_to_first_catch": 290.0,
-      "median_time_to_first_catch": 290.0,
-      "best_fitness": 576.0834,
-      "median_fitness": 1.794005,
-      "mean_fitness": 46.922977,
+      "mean_time_to_first_catch": 145.0,
+      "median_time_to_first_catch": 145.0,
+      "best_fitness": 894.52075,
+      "median_fitness": 19.90134,
+      "mean_fitness": 72.26482,
       "fitness_quantiles": [
-        0.5829112,
-        0.8839209,
-        1.794005,
-        28.23145,
-        37.5426
+        0.55432963,
+        3.129663,
+        19.90134,
+        29.73511,
+        38.42218
       ],
-      "mean_genome_length": 264.1875,
+      "mean_genome_length": 292.1875,
       "immobile_share": 0.0
     }
   ],
   "perf": {
-    "ticks_per_second_total": 672818.5959584161,
-    "ticks_per_second_per_sandbox": 42051.16224740101,
-    "wall_seconds": 0.0642075,
-    "generation_end_seconds": 0.0124414
+    "ticks_per_second_total": 682383.6038384078,
+    "ticks_per_second_per_sandbox": 42648.97523990049,
+    "wall_seconds": 0.0633075,
+    "generation_end_seconds": 0.0129328
   }
 }

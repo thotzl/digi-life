@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
 ---
 
 # Genome Compiler
@@ -82,7 +82,7 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 | Letter-soup parents, `mutate_genome` mix | 0.979 | 0.906 | 0.757 |
 | Structured parents, legacy character mix | 0.985 | 0.916 | 0.792 |
 
-- Children with ≥ 2× terminal-speed change (structured parents): 0.7 % after 1 op, 3.0 % after 5, 8.1 % after 15 (before P3: 1.4 % / 7.0 % / 16.9 %).
+- Children with ≥ 2× terminal-speed change (structured parents): 0.7 % after 1 op, 3.0 % after 5, 8.1 % after 15 (before P3: 1.4 % / 7.0 % / 16.9 %). Measured with the pre-P5 speed model; the P5 speed band (1–5 px/tick, TCK-150) caps speed ratios at ×5, not re-measured.
 - Gene duplication and deletion keep 100 % of the keys and weights of synapses that neither belong to nor touch the mutated gene (except `SY`-owned synapses and `HOX` genes); test `test_gene_duplication_and_deletion_keep_unrelated_synapses`, measurement `measure_gene_operator_key_shift` (ignored test).
 - Most of the gain over the character mix comes from Brain v2 locality, not from the operator mix (legacy and new mix differ by ≤ 0.02 on structured parents).
 
@@ -108,4 +108,4 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 - Heredity after 15 trainer ops rose from 0.32 to 0.81 (TCK-179, TCK-184).
 - Any model change shows up in the golden master ([[wiki/quality/testing]]).
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-162, TCK-172, TCK-173, TCK-179, TCK-184, TCK-187, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-150, TCK-162, TCK-172, TCK-173, TCK-179, TCK-184, TCK-187, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.

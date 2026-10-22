@@ -1,7 +1,7 @@
 ---
 id: TCK-180
 title: Wall Contact Behaviour
-status: open
+status: closed
 priority: medium
 assigned: unassigned
 created_at: 2026-10-21
@@ -25,3 +25,9 @@ Hypothesis from 2026-10-21 (to be confirmed by the TCK-172 wall probe): wall con
 - TCK-172 wall probe: creatures with full thrust at an angle into a wall get free within N ticks (before/after).
 - Trainer report: wall collisions per trial drop; no regression in success rate.
 - `wiki/simulation/physics.md` updated.
+
+## Verification (P5, v1.12.19)
+- Chosen: reflect the heading at the contact normal (`reflect_heading`) when moving into the obstacle; same code path for the four walls and reefs; velocity reflection unchanged (`test_wall_contact_reflects_velocity_away_from_every_wall` green unmodified); new tests for forced thrust into all four walls at 30/60/90 deg and for reefs.
+- Wall probe (600 ticks): forced full thrust freed 0 % -> 100 % at 30/60/90 deg (p50 53/37/34 ticks; target >= 90 %); real brain freed letter soup 38/28/42 % -> 72/76/69 %, structured 33/24/36 % -> 79/85/74 %.
+- The runner report has no per-trial wall-collision count; the wall probe with the real brain stands in for "wall collisions per trial drop". Success: see TCK-150 (no regression on 10 seeds).
+- `dragLateralCoefficient` removed (lock-on heading leaves no lateral velocity; TCK-149).
