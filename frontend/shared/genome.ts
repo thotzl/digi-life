@@ -168,12 +168,13 @@ export function describeRole(role: NeuronRole, ctx: RoleContext): string {
   }
 }
 
-/** Synapse tooltip: source, target, weight and owner gene. */
+/** Synapse tooltip: source, target, weight, owner gene, and whether it is a fixed (non-learning) reflex. */
 export function describeSynapse(syn: CTRNNSynapse, brain: BrainTopology, ctx: RoleContext): string {
   const name = (id: number) => {
     const n = brain.neurons[id];
     return n ? describeRole(n.role, ctx) : `#${id}`;
   };
   const owner = ctx.genes[syn.owner] ? describeGene(ctx.genes, syn.owner, ctx.organelles) : `gene #${syn.owner}`;
-  return `${name(syn.fromNode)} → ${name(syn.toNode)}\nweight ${syn.weight.toFixed(3)}\nowner ${owner}`;
+  const fixed = syn.plastic ? "" : "\nfixed reflex (does not learn)";
+  return `${name(syn.fromNode)} → ${name(syn.toNode)}\nweight ${syn.weight.toFixed(3)}\nowner ${owner}${fixed}`;
 }

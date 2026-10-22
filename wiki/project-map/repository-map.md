@@ -1,5 +1,5 @@
 ---
-sources: [src/, frontend/, package.json, Cargo.toml, .github/workflows/, tickets/closed/TCK-101-initialize-workspace.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-187-gene-spans-from-backend.md]
+sources: [src/, frontend/, package.json, Cargo.toml, .github/workflows/, tickets/closed/TCK-101-initialize-workspace.md, tickets/closed/TCK-124-tauri-exclusive-consolidation.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
 ---
 
 # Repository Map
@@ -40,7 +40,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait, shared sandbox step, spawn and fitness functions | [[wiki/simulation/trainer]] |
 | `biology/trainer_report.rs` | headless trainer run and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
 | `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology) | [[wiki/simulation/analytics-and-balancing]] |
-| `shared/brain.rs` | CTRNN execution, Hebbian learning, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
+| `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |
 | `shared/map_generator.rs` | procedural worlds (Mulberry32) | [[wiki/simulation/ocean]] |

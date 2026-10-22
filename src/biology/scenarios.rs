@@ -155,8 +155,6 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
         &mut sb.agent.synapse_weights,
         &mut sb.agent.brain_runtime,
         app_config.rules.hebbian_learning_rate_base,
-        app_config.rules.hebbian_learning_stiffness_decay,
-        app_config.rules.hebbian_forgetting_decay,
     );
     let out_thrust = outputs[0];
     let out_left = outputs[1];

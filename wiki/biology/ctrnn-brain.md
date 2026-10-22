@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
 ---
 
 # CTRNN Brain
@@ -27,7 +27,7 @@ Only live structure is wired; every synapse has a stable `key` and exactly one `
 
 | Synapse | Weight | Owner |
 | :--- | :--- | :--- |
-| Sensor → thalamus `Sum` (L and R of a pair: +1 each) / `Diff` (L +1, R −1) | fixed reflex | organ gene |
+| Sensor → thalamus `Sum` (L and R of a pair: +1 each) / `Diff` (L +1, R −1) | fixed reflex (`plastic: false`) | organ gene |
 | Thalamus → each motor | tape | organ gene |
 | Thalamus → hidden, systemic → hidden | tape | `NEU` gene of the hidden neuron |
 | Hidden → each motor | tape | `NEU` gene |
@@ -39,6 +39,7 @@ Only live structure is wired; every synapse has a stable `key` and exactly one `
 - **Synapse key:** 53-bit FNV-1a over the canonical encodings of source and target role (gene identity `GeneRef`, side, channel, node, input, motor). Independent of neuron indices and genome positions: adding or removing a gene changes no key of a synapse that does not touch it (test `test_adding_an_organ_gene_keeps_unrelated_synapses`).
 - **Weight tape:** a tape weight is one letter of the owner gene's payload mapped `A..Z → [-0.5, 0.5]`; the slot is `hash(roles, owner identity left out) mod payload length`. An empty payload wires nothing. Slots of one owner can collide (same initial weight).
 - **`SY` genes** (at most 30): payload loci choose a source class (systemic/thalamus/hidden), an index modulo the class size, a target class (hidden/motor) and index; the first `SY` gene per pair wins. Class sizes change with organs and `NEU` genes, so `SY` addressing is not fully stable (TCK-168).
+- **`plastic` flag** (TCK-152): set by the compiler on every `CTRNNSynapse`. Sensor → thalamus reflexes (±1) are `plastic: false` — they never learn and are never pruned, so the sum/difference semantics of the thalamus hold for the whole life. Every other synapse is plastic. Test `test_reflexes_are_fixed_and_the_rest_plastic`. The inspector tooltip marks a fixed synapse "fixed reflex (does not learn)" (`describeSynapse`, `frontend/shared/genome.ts`).
 - Synapses are sorted by target for the single linear pass.
 - **Size** (TCK-172 topology probe, 1,000 genomes): synapses p10/p50/p90 52/142/249 before P3 → 14/41/103 on letter-soup genomes and 48/78/148 on structured genomes (mean 150 → 52 / 88); wildtype 249 → 118 synapses, 72 → 67 neurons.
 
@@ -48,16 +49,28 @@ Only live structure is wired; every synapse has a stable `key` and exactly one `
 - **Integration** (TCK-153): exact exponential step `y += α · (Σ w·a + θ − y)` with `α = 1 − exp(−1/τ)` (`dt = 1`, `integration_alpha`), state clamped to ±4, then the activation. `α ∈ (0, 1)` for every τ in `[0.1, 2.5]`, so the state never overshoots its target; the forward-Euler oscillation for `τ < 0.5` is gone (test `test_exponential_integration_is_bounded`).
 - Output ranges: `tanh`/`sin` `[-1, 1]`, `sigmoid` `[0, 1]`, `relu` `[0, 4]` (state clamp). Motor outputs are `[thrust, bend]`.
 - The ΔI input of distance senses is computed in the brain step from consecutive ticks ([[wiki/biology/sensing]]).
-- **`BrainRuntime`** (TCK-173): per-agent cache on `CreatureAgent.brain_runtime` (not serialized), built lazily on the first brain step: activation enum and `α` per neuron, input count, the ΔI organs (from roles, no label matching), motor indices and the list of active (non-zero) synapses. The signal pass and the Hebbian pass iterate only active synapses; a synapse pruned during the step is removed from the list. Rebuilt when the synapse-weight vector is re-initialized; code that replaces an agent's phenotype or weights in place resets it (`BrainRuntime::default()`).
+- **`BrainRuntime`** (TCK-173): per-agent cache on `CreatureAgent.brain_runtime` (not serialized), built lazily on the first brain step: activation enum and `α` per neuron, input count, the ΔI organs (from roles, no label matching), motor indices and the list of active (non-zero) synapses. The signal pass iterates only active synapses, the learning pass only the active plastic ones (`plastic_synapses`); a synapse pruned during the step is removed from both lists. Rebuilt when the synapse-weight vector is re-initialized; code that replaces an agent's phenotype or weights in place resets it (`BrainRuntime::default()`).
 - Transcendental functions (`tanh`, `exp`, `sin`) go through `src/shared/fmath.rs` (pure-Rust `libm`), identical on every platform (TCK-173).
 
-## Learning
+## Learning (TCK-152)
 
-- Hebbian update per step: `ΔW = η · a_pre · a_post − decay · W`, clamp `±4.0` (`hebbianLearning*`, `hebbianForgettingDecay` in config) (TCK-119).
-- **Active pruning:** `|w| < 0.015` → set to exactly 0 and frozen for the lifetime (TCK-121).
-- Learned weights stored as `synapse_weights` (synapse order of the phenotype); Lamarckian inheritance matches synapses by key, see [[wiki/biology/metabolism-and-reproduction]].
-- The rule has no normalization (Oja/BCM), so weights drift toward the clamp over long lives; reflex synapses are plastic and prunable as well; the `_hebbian_decay` parameter is ignored (RV-S04).
-- Measured effect in the trainer (TCK-172 Hebbian probe, before P3, 32 HoF genomes): inconclusive — success 2–3 % in all conditions.
+- **Oja rule** per tick for every active plastic synapse: `Δw = η · post · (pre − post · w)`, `η = hebbianLearningRateBase` (0.00015; 0 disables learning). The `−η · post² · w` term is activity-dependent forgetting that keeps weights bounded; there is no separate decay key. `±4` (`WEIGHT_CLAMP`) stays as a safety bound only.
+- **Active pruning** (TCK-121): a plastic weight with `|w| < 0.015` (`PRUNE_THRESHOLD`) is set to exactly 0 and frozen for the lifetime. Fixed reflexes are never pruned.
+- Learned weights are stored as `synapse_weights` (synapse order of the phenotype); Lamarckian inheritance passes them per synapse key with a probability, plastic synapses only, see [[wiki/biology/metabolism-and-reproduction]].
+- Test `test_oja_learning_stays_bounded_and_reflexes_stay_fixed`: 24 structured genomes, 36,000 ticks of slowly varying random inputs; all weights finite and within ±4, reflexes unchanged, under 5 % of plastic weights at `|w| ≥ 3.9`, mean `|w|` < 2.
+
+### Measured (P4, `probe hebbian`, learning on, best 14–15 elites of a seeded trainer run)
+
+| | Before P4 (unnormalized Hebbian + forgetting) | Oja + fixed reflexes |
+| :--- | :--- | :--- |
+| Long life 36,000 ticks: mean \|w\| (plastic) | 1.318 | 0.342 |
+| Long life: share at the clamp (\|w\| ≥ 3.9) | 10.3 % | 0.22 % |
+| Long life: share pruned | 39.7 % | 51.4 % |
+| Long life: reflex drift (mean \|learned − genome\|) | 0.097 | 0 |
+| 900-tick trial (standard room): mean \|w\| / pruned | 0.270 / 5.3 % | 0.258 / 8.7 % |
+
+- **Benefit of lifetime learning:** not measurable at the current success level. Paired fitness delta learning on − off (median): standard −1.4, exploration −8.4; the means are dominated by single genomes. Success is 0–2.4 % in all conditions.
+- Rejected variants (5-seed runs, see [[wiki/simulation/trainer]]): no pruning (lower success), pruning only with active presynaptic input (no measurable change).
 
 ## Measured behaviour (TCK-172 steering probe)
 
@@ -76,6 +89,6 @@ Food fixed at 300 px and ±45°, real brain with learning, heading change after 
 
 - Role-based CTRNN: sensors (6 per organ incl. ΔI) → 6 systemic inputs → thalamus → hidden → thrust/bend, evaluated in one pass with latency 1 and a stable exponential step.
 - Targeted wiring of live structure only; every synapse has a role key and one owner gene whose payload tape gives its weight.
-- Unnormalized Hebbian learning remains (RV-S04); random brains do not steer toward food.
+- Plastic synapses learn with Oja's rule (bounded, no drift to the clamp); sensor → thalamus reflexes are fixed (TCK-152). Lifetime learning has no measurable benefit yet; random brains do not steer toward food.
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, TCK-144, TCK-149, TCK-153, TCK-172, TCK-173, TCK-179, TCK-182, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-106, TCK-119, TCK-121, TCK-133, TCK-144, TCK-149, TCK-152, TCK-153, TCK-172, TCK-173, TCK-179, TCK-182, `docs/revisit/04-simulation-model.md`.

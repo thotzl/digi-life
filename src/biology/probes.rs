@@ -247,8 +247,6 @@ fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config:
         &mut agent.synapse_weights,
         &mut agent.brain_runtime,
         config.rules.hebbian_learning_rate_base,
-        config.rules.hebbian_learning_stiffness_decay,
-        config.rules.hebbian_forgetting_decay,
     );
     let hit_wall = step_creature_kinematics(agent, outputs[0], outputs[1], config, &[], size, size);
     (outputs, hit_wall)
@@ -1185,14 +1183,93 @@ pub struct HebbianReport {
     pub genomes: usize,
     pub trials: u32,
     pub hebbian_learning_rate_base: f32,
-    pub hebbian_forgetting_decay: f32,
     pub notes: Vec<String>,
     pub conditions: Vec<HebbianCondition>,
     pub paired: Vec<HebbianPaired>,
+    /// Learned weight distribution with learning on (TCK-152): after the evaluated trials (trainer lifetime) and
+    /// after a long life of `HEBBIAN_LONG_LIFE_TICKS` in the standard room
+    pub weights: Vec<WeightCondition>,
 }
 
-/// (gated fitness, successful trials, catches) of one genome in one scenario, as the trainer scores it.
-fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (f32, u32, u32) {
+/// Ticks of the long-life weight measurement (a long Ocean life, TCK-152 / RV-S04).
+const HEBBIAN_LONG_LIFE_TICKS: u32 = 36_000;
+/// Weights from here on count as "at the clamp" (clamp ±4).
+const CLAMP_SHARE_THRESHOLD: f32 = 3.9;
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WeightCondition {
+    pub scenario: Scenario,
+    /// Ticks per genome (trials × epoch, or the long life)
+    pub ticks: u32,
+    /// Synapses other than sensor → thalamus reflexes
+    pub learned: WeightStats,
+    /// Sensor → thalamus reflex synapses (genome weight ±1)
+    pub reflex: WeightStats,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WeightStats {
+    pub synapses: usize,
+    pub mean_abs_weight: f32,
+    /// Share with |w| ≥ 3.9
+    pub share_at_clamp: f32,
+    /// Share pruned to exactly 0
+    pub share_pruned: f32,
+    /// Mean |learned − genome weight|
+    pub mean_abs_change: f32,
+    pub abs_weight: Option<Distribution>,
+}
+
+/// (is reflex, genome weight, learned weight) per synapse of an agent.
+type WeightSample = (bool, f32, f32);
+
+fn weight_samples(agent: &CreatureAgent) -> Vec<WeightSample> {
+    let brain = &agent.phenotype.brain;
+    brain
+        .synapses
+        .iter()
+        .zip(&agent.synapse_weights)
+        .map(|(s, &w)| {
+            let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
+            (reflex, s.weight, w)
+        })
+        .collect()
+}
+
+fn weight_stats(samples: &[WeightSample], reflex: bool) -> WeightStats {
+    let class: Vec<&WeightSample> = samples.iter().filter(|s| s.0 == reflex).collect();
+    let n = class.len().max(1) as f32;
+    let abs: Vec<f32> = class.iter().map(|s| s.2.abs()).collect();
+    WeightStats {
+        synapses: class.len(),
+        mean_abs_weight: abs.iter().sum::<f32>() / n,
+        share_at_clamp: share(abs.iter().filter(|&&w| w >= CLAMP_SHARE_THRESHOLD).count(), class.len()),
+        share_pruned: share(class.iter().filter(|s| s.2 == 0.0).count(), class.len()),
+        mean_abs_change: class.iter().map(|s| (s.2 - s.1).abs()).sum::<f32>() / n,
+        abs_weight: Distribution::of(&abs),
+    }
+}
+
+/// Learned weights of one genome after `ticks` in `scenario` with consecutive trials (weights carried over).
+fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64], ticks: u32) -> Vec<WeightSample> {
+    let epoch = scenario.plugin().epoch_ticks();
+    let stream_for = |trial: u32| -> Vec<u64> { stream.iter().copied().chain([trial as u64]).collect() };
+    let mut rng = derive(seed, &stream_for(0));
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Elite, scenario, None, None, &mut rng);
+    for trial in 0..ticks.div_ceil(epoch) {
+        if trial > 0 {
+            rng = derive(seed, &stream_for(trial));
+            sb.reset_trial(&mut rng);
+        }
+        for _ in 0..epoch {
+            step_trainer_sandbox_physics_with_config(&mut sb, &mut rng, config);
+        }
+    }
+    weight_samples(&sb.agent)
+}
+
+/// (gated fitness, successful trials, catches, learned weights) of one genome in one scenario, as the trainer scores it.
+fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (f32, u32, u32, Vec<WeightSample>) {
     let epoch = scenario.plugin().epoch_ticks();
     let stream_for = |trial: u32| -> Vec<u64> { stream.iter().copied().chain([trial as u64]).collect() };
     let mut rng = derive(seed, &stream_for(0));
@@ -1214,7 +1291,7 @@ fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u
     }
     let avg = acc_fitness / HEBBIAN_TRIALS as f32;
     let fitness = if eaten == 0 { avg * 0.1 } else { avg + eaten as f32 * 150.0 };
-    (fitness, eaten, catches)
+    (fitness, eaten, catches, weight_samples(&sb.agent))
 }
 
 /// Best distinct genomes of a short seeded trainer run (standard room, population 32, 5 generations).
@@ -1250,11 +1327,12 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
 
     let mut conditions = Vec::new();
     let mut paired = Vec::new();
+    let mut weights = Vec::new();
     for (s_idx, &scenario) in [Scenario::Standard, Scenario::Exploration].iter().enumerate() {
         let mut per_condition = Vec::new();
         for (hebbian, config) in [(true, &on), (false, &off)] {
             // Identical RNG streams for on and off: the conditions differ only in the learning rate
-            let results: Vec<(f32, u32, u32)> = genomes
+            let results: Vec<(f32, u32, u32, Vec<WeightSample>)> = genomes
                 .par_iter()
                 .enumerate()
                 .map(|(g, genome)| evaluate_genome(genome, scenario, config, seed, &[STREAM_HEBBIAN, s_idx as u64, g as u64]))
@@ -1267,6 +1345,11 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
                 success_rate: results.iter().map(|r| r.1).sum::<u32>() as f32 / trials,
                 mean_catches_per_trial: results.iter().map(|r| r.2).sum::<u32>() as f32 / trials,
             });
+            if hebbian {
+                let samples: Vec<WeightSample> = results.iter().flat_map(|r| r.3.iter().copied()).collect();
+                let ticks = HEBBIAN_TRIALS * scenario.plugin().epoch_ticks();
+                weights.push(WeightCondition { scenario, ticks, learned: weight_stats(&samples, false), reflex: weight_stats(&samples, true) });
+            }
             per_condition.push(results);
         }
         let deltas: Vec<f32> = per_condition[0].iter().zip(&per_condition[1]).map(|(a, b)| a.0 - b.0).collect();
@@ -1277,18 +1360,25 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
             fitness_delta: Distribution::of(&deltas),
         });
     }
+    // Long life (learning on, standard room): bounded learning must not drift to the clamp (RV-S04)
+    let long: Vec<WeightSample> = genomes
+        .par_iter()
+        .enumerate()
+        .flat_map(|(g, genome)| long_life_weights(genome, Scenario::Standard, &on, seed, &[STREAM_HEBBIAN, 2, g as u64], HEBBIAN_LONG_LIFE_TICKS))
+        .collect();
+    weights.push(WeightCondition { scenario: Scenario::Standard, ticks: HEBBIAN_LONG_LIFE_TICKS, learned: weight_stats(&long, false), reflex: weight_stats(&long, true) });
     HebbianReport {
         genome_source: source,
         genomes: genomes.len(),
         trials: HEBBIAN_TRIALS,
         hebbian_learning_rate_base: on.rules.hebbian_learning_rate_base,
-        hebbian_forgetting_decay: on.rules.hebbian_forgetting_decay,
         notes: vec![
             "Each genome is evaluated like a trainer sandbox (multi-trial, weights carried across trials, viability gate); genome only, no Lamarckian methylations/weights.".to_string(),
-            "off = hebbian_learning_rate_base 0 (no weight update, no forgetting, no pruning); everything else identical, same RNG streams.".to_string(),
+            "off = hebbian_learning_rate_base 0 (no Oja update, no pruning); everything else identical, same RNG streams.".to_string(),
         ],
         conditions,
         paired,
+        weights,
     }
 }
 

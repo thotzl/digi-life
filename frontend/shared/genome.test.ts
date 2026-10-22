@@ -58,10 +58,12 @@ describe("neuron roles", () => {
         { id: 0, type: "hidden", label: "", role: { role: "hidden", gene: genes[3].gene }, tau: 1, bias: 0, activationType: null, x: null, y: null },
         { id: 1, type: "output", label: "", role: { role: "motor", motor: "thrust" }, tau: 1, bias: 0, activationType: null, x: null, y: null },
       ],
-      synapses: [{ fromNode: 0, toNode: 1, weight: 0.25, key: 7, owner: 3 }],
+      synapses: [{ fromNode: 0, toNode: 1, weight: 0.25, key: 7, owner: 3, plastic: true }],
     };
     expect(describeSynapse(brain.synapses[0], brain, ctx)).toBe(
       "Hidden neuron (NEU 1) → Motor: Thrust (fwd/bwd)\nweight 0.250\nowner NEU 1: Hidden neuron and its synapses (NEU)",
     );
+    const reflex = { ...brain.synapses[0], plastic: false };
+    expect(describeSynapse(reflex, brain, ctx)).toMatch(/\nfixed reflex \(does not learn\)$/);
   });
 });

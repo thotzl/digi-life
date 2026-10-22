@@ -8,4 +8,8 @@ key: number,
 /**
  * Index into `CreaturePhenotype::genes` of the gene that defines this synapse
  */
-owner: number, };
+owner: number, 
+/**
+ * Learns during life (Oja rule) and can be pruned; false for the fixed sensor → thalamus reflexes (TCK-152)
+ */
+plastic: boolean, };

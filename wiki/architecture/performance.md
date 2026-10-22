@@ -1,5 +1,5 @@
 ---
-sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md]
+sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
 ---
 
 # Performance
@@ -26,7 +26,7 @@ Context: the UI runs a ~60 Hz loop with up to 35 physics steps per frame (≈ 2,
 
 - Nearest-food search scans all spores twice plus all creatures, O(C × F + C²); the grid is not used for it (RV-P04). A grid ring search could change tie-breaking between equidistant spores.
 - The Ocean still calls the allocating `compute_sensory_inputs` per creature and tick (RV-P08); irrelevant below ~50 agents.
-- Brain step per creature and tick: one pass over the active synapses for signals, one for Hebbian learning. Synapse counts see [[wiki/biology/ctrnn-brain]].
+- Brain step per creature and tick: one pass over the active synapses for signals, one over the active plastic synapses for Oja learning (TCK-152). Synapse counts see [[wiki/biology/ctrnn-brain]].
 - Trainer generation end (final fitness, stats, sort, breeding incl. `parse_genome` for every new sandbox) dominates the headless wall time: standard pop 300 spends 22.9 of 26.2 s in generation-end ticks over 20 generations (P2 baseline).
 
 ## Trainer throughput (TCK-173)
@@ -39,7 +39,7 @@ Measured with the headless runner (release build), `perf` block of the report; m
 
 ## Equivalence safeguards
 
-- Golden master `test_parse_genome_golden_master` unchanged across TCK-140 and TCK-173 (`0xa7b82dc4fe552ac8`); the Brain v2 model change (TCK-171 P3) set it to `0x65f701a6937c1e71` on purpose ([[wiki/quality/testing]]).
+- Golden master `test_parse_genome_golden_master` unchanged across TCK-140 and TCK-173 (`0xa7b82dc4fe552ac8`); the Brain v2 model change (TCK-171 P3) set it to `0x65f701a6937c1e71`, the `plastic` flag (TCK-152, P4) to `0xe0a2bfd1c7310306`, both on purpose ([[wiki/quality/testing]]).
 - Trainer report bit-identical before/after the TCK-173 performance work; parallel == sequential tests ([[wiki/quality/testing]]); CI reference run ([[wiki/quality/ci-and-tooling]]).
 - `test_spore_push_from_snapshot_matches_full_agent` (TCK-139).
 - Engine changes preserve iteration order and data.

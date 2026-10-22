@@ -409,19 +409,21 @@ impl TrainerSim {
         }).collect();
 
         let (seed, generation, parents, lamarckian, scenario) = (self.seed, self.generation as u64, &self.parents, p.lamarckian, p.scenario);
+        let lamarck_chance = crate::shared::types::AppConfig::global().rules.lamarckian_assimilation_chance;
         // Lamarckian sources: each parent's synapses (keys and genome weights) for matching by key
         let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian { parents.iter().map(|r| parse_genome(&r.genome, None, None).brain.synapses).collect() } else { Vec::new() };
         let build_slot = |(idx, &(source, origin, mut_rate, parent_idx)): (usize, &(&str, SandboxOrigin, f32, Option<usize>))| {
             let mut breed_rng = derive(seed, &[generation, BREED_STREAM, idx as u64]);
             let genome = breed_genome(source, origin, mut_rate, &mut breed_rng);
 
-            // Lamarckian inheritance: the source parent's learned methylations, and its learned weight offsets
-            // matched to this sandbox's (possibly mutated) genome by synapse key (unchanged synapses: the learned weight)
+            // Lamarckian inheritance: the source parent's learned methylations, and per plastic synapse with the same key
+            // in this sandbox's (possibly mutated) genome, with probability `lamarckianAssimilationChance`, its learned
+            // weight offset (TCK-152; drawn from the slot's breed stream)
             let inherited = if lamarckian { parent_idx } else { None };
             let methylations = inherited.map(|i| &parents[i].methylations[..]).filter(|m| !m.is_empty());
             let synapse_weights = inherited.filter(|&i| !parents[i].synapse_weights.is_empty()).map(|i| {
                 let child = parse_genome(&genome, None, None).brain.synapses;
-                inherit_learned_weights(&parent_synapses[i], &parents[i].synapse_weights, &child, 1.0)
+                inherit_learned_weights(&parent_synapses[i], &parents[i].synapse_weights, &child, lamarck_chance, &mut breed_rng)
             });
 
             let mut rng = derive(seed, &[generation, 0, idx as u64]);
@@ -525,8 +527,15 @@ mod tests {
             assert_eq!(sb.agent.antisense, sb.agent.phenotype.antisense_strand);
             assert_eq!(sb.agent.neuron_states.len(), sb.agent.phenotype.brain.neurons.len());
         }
-        // Learned weights are inherited by the unmutated elite
-        assert_eq!(sim.sandboxes[0].agent.synapse_weights, parent.synapse_weights);
+        // The unmutated elite inherits each plastic learned weight with probability lamarckianAssimilationChance;
+        // the rest, and every fixed reflex, keep the genome weight (TCK-152)
+        let elite = &sim.sandboxes[0].agent;
+        let synapses = &elite.phenotype.brain.synapses;
+        let inherited = synapses.iter().zip(&elite.synapse_weights).filter(|(s, w)| **w != s.weight).count();
+        for ((s, &w), &learned) in synapses.iter().zip(&elite.synapse_weights).zip(&parent.synapse_weights) {
+            assert!(w == s.weight || (s.plastic && w == learned), "synapse {:?}: {}", s, w);
+        }
+        assert!(inherited > 0 && inherited < synapses.iter().filter(|s| s.plastic).count(), "{} inherited", inherited);
     }
 
     /// Structured parent genome with learned weights = genome weight + a distinct offset per synapse.
@@ -554,12 +563,14 @@ mod tests {
             let (parent, synapses, offsets) = learned_parent(seed);
             let Some(child_genome) = mutate_genome_with_kind(&parent.genome, MutationKind::GeneDuplication, ops, &mut crate::shared::rng::seeded(seed)) else { continue };
             let child = parse_genome(&child_genome, None, None).brain.synapses;
-            let inherited = inherit_learned_weights(&synapses, &parent.synapse_weights, &child, 1.0);
+            let inherited = inherit_learned_weights(&synapses, &parent.synapse_weights, &child, 1.0, &mut crate::shared::rng::seeded(seed));
             let child_offsets = offsets_by_key(&child_genome, &inherited);
-            // The duplication shifts synapse indices, but every parent offset lands on its own key
+            // The duplication shifts synapse indices, but every plastic parent offset lands on its own key; fixed reflexes
+            // are never inherited
             for (s, o) in synapses.iter().zip(&offsets) {
                 let c = child_offsets.get(&s.key).expect("parent synapse kept by the duplication");
-                assert!((c - o).abs() < 1e-5, "key {} offset {} -> {}", s.key, o, c);
+                let expected = if s.plastic { *o } else { 0.0 };
+                assert!((c - expected).abs() < 1e-5, "key {} offset {} -> {}", s.key, expected, c);
                 checked += 1;
             }
             // The copy's new synapses start at their genome weight
@@ -573,17 +584,21 @@ mod tests {
         let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.0, inflow_rate: 0.0, mutation_rate: 0.02, lamarckian: true, ..TrainerParams::default() };
         let (parent, synapses, offsets) = learned_parent(3);
         let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200);
-        assert_eq!(sim.sandboxes[0].agent.synapse_weights, parent.synapse_weights, "the unmutated elite keeps its learned weights exactly");
-        let parent_offsets: std::collections::BTreeMap<u64, f32> = synapses.iter().zip(&offsets).map(|(s, o)| (s.key, *o)).collect();
-        let mut matched = 0;
-        for sb in sim.sandboxes.iter().filter(|s| s.origin_type == SandboxOrigin::Mutant) {
+        // Plastic parent offsets only; each homologous child synapse takes the full offset or none (TCK-152)
+        let parent_offsets: std::collections::BTreeMap<u64, f32> = synapses.iter().zip(&offsets).filter(|(s, _)| s.plastic).map(|(s, o)| (s.key, *o)).collect();
+        let (mut matched, mut taken) = (0, 0);
+        for sb in &sim.sandboxes {
             for (key, o) in offsets_by_key(&sb.agent.genome, &sb.agent.synapse_weights) {
                 let expected = parent_offsets.get(&key).copied().unwrap_or(0.0);
-                assert!((o - expected).abs() < 1e-5, "sandbox {} key {}: offset {} expected {}", sb.id, key, o, expected);
+                assert!(o == 0.0 || (o - expected).abs() < 1e-5, "sandbox {} key {}: offset {} expected {} or 0", sb.id, key, o, expected);
                 matched += parent_offsets.contains_key(&key) as usize;
+                taken += (o != 0.0) as usize;
             }
         }
-        assert!(matched > 50, "{} homologous synapses", matched);
+        let share = taken as f32 / matched as f32;
+        let chance = crate::shared::types::AppConfig::global().rules.lamarckian_assimilation_chance;
+        assert!(matched > 200, "{} homologous synapses", matched);
+        assert!((share - chance).abs() < 0.08, "inherited share {} vs chance {}", share, chance);
     }
 
     #[test]

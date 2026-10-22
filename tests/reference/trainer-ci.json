@@ -6,7 +6,7 @@
     "generations": 3,
     "trials": 3,
     "multi_trial": true,
-    "version": "1.12.16"
+    "version": "1.12.17"
   },
   "generations": [
     {
@@ -14,15 +14,15 @@
       "success_rate": 0.0,
       "mean_time_to_first_catch": null,
       "median_time_to_first_catch": null,
-      "best_fitness": 31.778748,
-      "median_fitness": 5.9118843,
-      "mean_fitness": 7.2439933,
+      "best_fitness": 31.50836,
+      "median_fitness": 5.9140615,
+      "mean_fitness": 7.2384224,
       "fitness_quantiles": [
-        0.20082417,
-        0.8325379,
-        5.9118843,
-        8.017347,
-        18.808008
+        0.20067705,
+        0.834624,
+        5.9140615,
+        8.012508,
+        18.903765
       ],
       "mean_genome_length": 299.5,
       "immobile_share": 0.041666668
@@ -32,15 +32,15 @@
       "success_rate": 0.0,
       "mean_time_to_first_catch": null,
       "median_time_to_first_catch": null,
-      "best_fitness": 49.71238,
-      "median_fitness": 15.068205,
-      "mean_fitness": 18.707935,
+      "best_fitness": 49.701305,
+      "median_fitness": 12.939032,
+      "mean_fitness": 18.393038,
       "fitness_quantiles": [
-        6.262777,
-        8.405063,
-        15.068205,
-        23.91024,
-        36.271667
+        6.2630963,
+        8.402132,
+        12.939032,
+        24.162443,
+        36.176994
       ],
       "mean_genome_length": 286.8125,
       "immobile_share": 0.0
@@ -48,26 +48,26 @@
     {
       "generation": 3,
       "success_rate": 0.020833334,
-      "mean_time_to_first_catch": 289.0,
-      "median_time_to_first_catch": 289.0,
-      "best_fitness": 576.09753,
-      "median_fitness": 3.3648434,
-      "mean_fitness": 48.086926,
+      "mean_time_to_first_catch": 290.0,
+      "median_time_to_first_catch": 290.0,
+      "best_fitness": 576.0834,
+      "median_fitness": 1.794005,
+      "mean_fitness": 46.922977,
       "fitness_quantiles": [
-        0.5839381,
-        0.9263568,
-        3.3648434,
-        28.321484,
-        37.72314
+        0.5829112,
+        0.8839209,
+        1.794005,
+        28.23145,
+        37.5426
       ],
       "mean_genome_length": 264.1875,
       "immobile_share": 0.0
     }
   ],
   "perf": {
-    "ticks_per_second_total": 711431.9874313682,
-    "ticks_per_second_per_sandbox": 44464.49921446051,
-    "wall_seconds": 0.0607226,
-    "generation_end_seconds": 0.0128839
+    "ticks_per_second_total": 672818.5959584161,
+    "ticks_per_second_per_sandbox": 42051.16224740101,
+    "wall_seconds": 0.0642075,
+    "generation_end_seconds": 0.0124414
   }
 }

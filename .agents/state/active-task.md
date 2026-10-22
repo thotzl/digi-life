@@ -51,9 +51,10 @@ Training that works: creatures that really develop and improve across rooms, so 
 - P1 Config done (v1.12.15): TCK-149 implemented for P1; ticket stays ongoing for its P3/P5/P6 rests (see ticket).
 - P2 Sim lab done (v1.12.16): TCK-172/173/185/186 closed, TCK-183/188 ongoing (P3 rests). Runner `target/release/trainer_runner run|probe`; targets in TCK-171; UI smoke tooling `.agents/artifacts/uicheck/run-smoke.sh` (backs up and restores the app DB; local, gitignored).
 - P3 Brain v2 done (v1.12.17): TCK-179/182/144/153/184/187/183/188 closed, TCK-149 ongoing (P5/P6 keys). ADR-002 `wiki/decisions/adr-002-brain-v2.md`; golden `0x65f701a6937c1e71`; `MODEL_VERSION` 2; 5-seed success (pop 16, 30 gens, last 5 gens) small 0.122 / large 0.033 (P2 0.040 / 0.023). Open finding in `.agents/state/next-tasks.md` (thalamus sum offset).
+- P4 Learning done (v1.12.18): TCK-152 closed (Oja rule, plastic flag, Lamarck as probability; golden `0xe0a2bfd1c7310306`; MODEL_VERSION 3; 5-seed success small 0.207 / large 0.046).
 
 ## Next step
-P4 Learning (TCK-152: Oja rule, `plastic` flag, Lamarck as probability on the synapse-key structure), then P5 Locomotion v2 (TCK-150, TCK-180, steer/drag keys of TCK-149). All phases run without stops (TCK-171 `## Execution decisions`). Measure with `trainer_runner` on seeds b1..b5 (pop 16, 30 gens) plus probes; UI smoke `.agents/artifacts/uicheck/run-smoke.sh <out> [smoke.cjs|inspect.cjs|resetlat.cjs]` (backs up and restores the app DB).
+P5 Locomotion v2 (TCK-150, TCK-180, steer/drag keys of TCK-149); contract `.agents/artifacts/p5-design.md`. Then P6 Energy v2 (TCK-151, 178, 145). All phases run without stops (TCK-171 `## Execution decisions`). Measure with `trainer_runner` on seeds b1..b5 (pop 16, 30 gens) plus probes; UI smoke `.agents/artifacts/uicheck/run-smoke.sh <out> [smoke.cjs|inspect.cjs|resetlat.cjs]` (backs up and restores the app DB).
 
 ## Open points
 - Check `git status -sb` for unpushed commits.

@@ -1,5 +1,5 @@
 ---
-sources: [tickets/ongoing/TCK-171-training-track-epic.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/ongoing/TCK-149-dead-config-keys.md, src/biology/dna.rs, src/shared/brain.rs, src/database.rs, src/biology/creature_factory.rs]
+sources: [tickets/ongoing/TCK-171-training-track-epic.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-153-brain-evaluation-order.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, src/biology/dna.rs, src/shared/brain.rs, src/database.rs, src/biology/creature_factory.rs]
 ---
 
 # ADR-002: Brain v2 — Stable Synapse Identity, Compact Topology, Genome Operators
@@ -82,6 +82,12 @@ Reports in `.agents/artifacts/p3/` (local). "Structured" = `generate_structured_
 
 - TCK-171 targets for heredity (≥ 0.95 / 0.85 / 0.60) and for speed change after one op (≤ 2 %) are met; the success and steering targets are not (later phases P4–P8).
 
+### Follow-up P4 (TCK-152)
+
+- Synapses also carry a compiler-set `plastic` flag: sensor → thalamus reflexes are fixed (no learning, no pruning), all others learn with Oja's rule ([[wiki/biology/ctrnn-brain]]).
+- Lamarckian inheritance by key (point 11) is now a probability per plastic synapse (`lamarckianAssimilationChance`), the same in trainer and Ocean ([[wiki/biology/metabolism-and-reproduction]]).
+- Golden master `0x65f701a6937c1e71` → `0xe0a2bfd1c7310306` (only the flag); `MODEL_VERSION` 2 → 3 ([[wiki/architecture/persistence]]).
+
 ## Sources
 
 - Rothlauf, High Locality Representations: https://gpbib.pmacs.upenn.edu/gp-html/Rothlauf_2011_DMH_cp7.html
@@ -98,4 +104,4 @@ Reports in `.agents/artifacts/p3/` (local). "Structured" = `generate_structured_
 - The brain wires only live structure, evaluates in one pass with latency 1 and integrates stably for every τ.
 - Structured random genomes and gene-level/creep operators make heredity meet the TCK-171 targets; steering and success remain open for later phases.
 
-Sources: TCK-171, TCK-172, TCK-179, TCK-182, TCK-144, TCK-153, TCK-184, TCK-187, TCK-183, TCK-188, TCK-149.
+Sources: TCK-171, TCK-172, TCK-179, TCK-182, TCK-144, TCK-153, TCK-184, TCK-187, TCK-183, TCK-188, TCK-149, TCK-152.

@@ -10,6 +10,11 @@ use crate::shared::fmath;
 /// Gain of the ΔI channel: input = clamp(gain · (I_now − I_prev), −1, 1) (TCK-133, signed since TCK-144).
 const DELTA_GAIN: f32 = 2.5;
 
+/// Safety bound of learned weights (Oja keeps them well inside it, TCK-152).
+pub const WEIGHT_CLAMP: f32 = 4.0;
+/// A plastic weight learned below this magnitude is pruned: set to exactly 0 for the rest of the life (TCK-121).
+pub const PRUNE_THRESHOLD: f32 = 0.015;
+
 /// Neuron activation function, decoded once from `CTRNNNeuron::activation_type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Activation {
@@ -63,6 +68,8 @@ pub struct BrainRuntime {
     motors: [usize; OUTPUT_MOTOR_NODES_COUNT],
     /// Synapses with a non-zero weight, in synapse order (sorted by `to_node`); pruned ones are dropped
     active_synapses: Vec<ActiveSynapse>,
+    /// Indices into `active_synapses` of the plastic ones (the only ones that learn and can be pruned)
+    plastic_synapses: Vec<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -93,13 +100,23 @@ impl BrainRuntime {
             .filter(|(idx, _)| synapse_weights[*idx] != 0.0)
             .map(|(idx, s)| ActiveSynapse { idx, from: s.from_node, to: s.to_node })
             .collect();
+        self.index_plastic(brain);
         self.built = true;
+    }
+
+    fn index_plastic(&mut self, brain: &BrainTopology) {
+        self.plastic_synapses = self.active_synapses.iter().enumerate().filter(|(_, s)| brain.synapses[s.idx].plastic).map(|(i, _)| i).collect();
     }
 }
 
-/// One CTRNN tick with Hebbian learning. Neurons are integrated in index order, which `parse_genome` makes the
+/// One CTRNN tick with lifetime learning. Neurons are integrated in index order, which `parse_genome` makes the
 /// evaluation order Inputs → Thalamus → Hidden (by depth) → Motors: a synapse from a lower index reads this tick's
 /// activation, one from a higher index the previous tick's. Returns the motor outputs `[thrust, bend]`.
+///
+/// Learning (TCK-152): every plastic synapse follows Oja's rule `Δw = η · post · (pre − post · w)` with
+/// `η = hebbian_rate` (0 disables learning). The `−η · post² · w` term is activity-dependent forgetting that keeps the
+/// weights bounded (no drift to the clamp); `±WEIGHT_CLAMP` stays as a safety bound. A plastic weight that falls
+/// below `PRUNE_THRESHOLD` is pruned for the rest of the life. Fixed synapses (sensor → thalamus reflexes) never change.
 pub fn execute_brain_with_learning(
     brain: &BrainTopology,
     inputs: &[f32],
@@ -108,8 +125,6 @@ pub fn execute_brain_with_learning(
     synapse_weights: &mut Vec<f32>,
     runtime: &mut BrainRuntime,
     hebbian_rate: f32,
-    _hebbian_decay: f32, // stiffness decay
-    forgetting_decay: f32,
 ) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
     let total_nodes = brain.neurons.len();
     let total_synapses = brain.synapses.len();
@@ -177,35 +192,24 @@ pub fn execute_brain_with_learning(
         neuron_activations[i] = runtime.activations[i].apply(neuron_states[i]);
     }
 
-    // 3. Hebbian learning update with Active Lifetime Pruning!
+    // 3. Oja learning of the plastic synapses, with active lifetime pruning (pruned synapses are no longer active)
     if hebbian_rate > 0.0 {
-        // Permanently pruned synapses are not in the active list
         let mut pruned = false;
-        for syn in &runtime.active_synapses {
-            let syn_idx = syn.idx;
-            let act_pre = neuron_activations[syn.from];
-            let act_post = neuron_activations[syn.to];
-
-            // Hebbian Correlation delta
-            let correlation = act_pre * act_post;
-
-            // Weight update: dw = learning_rate * correlation - forgetting * weight
-            let delta = hebbian_rate * correlation;
-            let decay = forgetting_decay * synapse_weights[syn_idx];
-
-            synapse_weights[syn_idx] += delta - decay;
-
-            // Active Pruning: if weight drops below threshold, lock permanently at 0.0
-            if synapse_weights[syn_idx].abs() < 0.015 {
-                synapse_weights[syn_idx] = 0.0;
+        for &a in &runtime.plastic_synapses {
+            let syn = runtime.active_synapses[a];
+            let (pre, post) = (neuron_activations[syn.from], neuron_activations[syn.to]);
+            let w = &mut synapse_weights[syn.idx];
+            *w += hebbian_rate * post * (pre - post * *w);
+            if w.abs() < PRUNE_THRESHOLD {
+                *w = 0.0;
                 pruned = true;
             } else {
-                // Clamp active weights to avoid divergent explosions
-                synapse_weights[syn_idx] = synapse_weights[syn_idx].clamp(-4.0, 4.0);
+                *w = w.clamp(-WEIGHT_CLAMP, WEIGHT_CLAMP);
             }
         }
         if pruned {
             runtime.active_synapses.retain(|s| synapse_weights[s.idx] != 0.0);
+            runtime.index_plastic(brain);
         }
     }
 
@@ -422,7 +426,7 @@ pub fn execute_brain(
     neuron_activations: &mut Vec<f32>,
 ) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
     let mut temp_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, &mut BrainRuntime::default(), 0.0, 0.0, 0.0)
+    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, &mut BrainRuntime::default(), 0.0)
 }
 
 #[cfg(test)]
@@ -518,7 +522,7 @@ mod tests {
         let mut outputs = [0.0; OUTPUT_MOTOR_NODES_COUNT];
         for &v in ir {
             inputs[4] = v;
-            outputs = execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, 0.0, 0.0, 0.0);
+            outputs = execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, 0.0);
         }
         (activations, outputs)
     }
@@ -537,6 +541,73 @@ mod tests {
         // Inputs → Thalamus → Motors in one pass: a stimulus moves the motors in the same tick (TCK-153)
         let (_, out_none) = run_ir(&[0.0, 0.0]);
         assert_ne!(out_stimulus, out_none);
+    }
+
+    /// Runs `ticks` brain steps with Oja learning (η from config) on irregular inputs in [0, 1] (sensor slots per
+    /// organ + systemic inputs, the ΔI slots are filled by the brain); returns the learned weights.
+    fn learn_with_noise(genome: &str, ticks: u32, seed: u64) -> (crate::biology::dna::CreaturePhenotype, Vec<f32>) {
+        use rand::Rng;
+        let phenotype = parse_genome(genome, None, None);
+        let input_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
+        let mut rng = crate::shared::rng::seeded(seed);
+        let (mut states, mut activations) = (Vec::new(), Vec::new());
+        let mut weights = phenotype.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
+        let mut runtime = BrainRuntime::default();
+        let rate = crate::shared::types::AppConfig::global().rules.hebbian_learning_rate_base;
+        // Slowly varying random inputs (a new random level every 20 ticks), so pre and post correlate over time
+        let mut inputs = vec![0.0; input_count];
+        for tick in 0..ticks {
+            if tick % 20 == 0 {
+                inputs.iter_mut().for_each(|v| *v = rng.gen_range(0.0..1.0));
+            }
+            execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, rate);
+        }
+        (phenotype, weights)
+    }
+
+    #[test]
+    fn test_oja_learning_stays_bounded_and_reflexes_stay_fixed() {
+        let composition = &crate::shared::types::AppConfig::global().genome_composition;
+        let (mut plastic, mut at_clamp, mut changed, mut abs_sum) = (0usize, 0usize, 0usize, 0.0f32);
+        for seed in 0..24 {
+            let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            // A long Ocean life (36,000 ticks)
+            let (phenotype, weights) = learn_with_noise(&genome, 36_000, seed);
+            for (s, &w) in phenotype.brain.synapses.iter().zip(&weights) {
+                assert!(w.is_finite() && w.abs() <= WEIGHT_CLAMP);
+                if s.plastic {
+                    plastic += 1;
+                    at_clamp += (w.abs() >= 3.9) as usize;
+                    changed += (w != s.weight) as usize;
+                    abs_sum += w.abs();
+                } else {
+                    // Sensor → thalamus reflexes: never learned, never pruned (TCK-152)
+                    assert_eq!(w, s.weight, "reflex {:?} changed", s);
+                }
+            }
+        }
+        assert!(plastic > 500, "{} plastic synapses", plastic);
+        assert!(changed * 2 > plastic, "learning active: {} of {} plastic weights changed", changed, plastic);
+        let (clamp_share, mean_abs) = (at_clamp as f32 / plastic as f32, abs_sum / plastic as f32);
+        println!("plastic {} mean |w| {:.3} share at clamp {:.4}", plastic, mean_abs, clamp_share);
+        assert!(clamp_share < 0.05, "{:.3} of plastic weights at the clamp", clamp_share);
+        assert!(mean_abs < 2.0, "mean |w| {}", mean_abs);
+    }
+
+    #[test]
+    fn test_reflexes_are_fixed_and_the_rest_plastic() {
+        let composition = &crate::shared::types::AppConfig::global().genome_composition;
+        for seed in 0..20 {
+            let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            let brain = parse_genome(&genome, None, None).brain;
+            for s in &brain.synapses {
+                let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
+                assert_eq!(s.plastic, !reflex, "{:?}", s);
+                if reflex {
+                    assert_eq!(s.weight.abs(), 1.0);
+                }
+            }
+        }
     }
 
     #[test]

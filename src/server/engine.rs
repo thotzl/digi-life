@@ -891,8 +891,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             &mut agent.synapse_weights,
                             &mut agent.brain_runtime,
                             app_config.rules.hebbian_learning_rate_base,
-                            app_config.rules.hebbian_learning_stiffness_decay,
-                            app_config.rules.hebbian_forgetting_decay,
                         );
                         let out_thrust = outputs[0];
                         let out_left = outputs[1];
@@ -1068,34 +1066,41 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 agent.vx += recoil * (agent.heading_angle + std::f32::consts::PI).cos();
                                 agent.vy += recoil * (agent.heading_angle + std::f32::consts::PI).sin();
 
-                                let mut child = agent.clone();
-                                child.id = next_creature_id;
-                                child.age = 0;
-                                child.generation += 1;
-                                child.has_eaten = false;
-
-                                // Mutate child genome with 35% probability
+                                // Child (TCK-152): a fresh agent from the factory (fresh neuron states) at the parent's place,
+                                // with the parent's post-split energy. With 35 % probability the genome mutates.
                                 let mut rng = rand::thread_rng();
-                                if rng.gen_range(0.0..1.0) < 0.35 {
-                                    if let Some(mutation) = mutate_genome(&agent.genome, &app_config.mutation_operators, &mut rng) {
-                                        child.genome = mutation.genome;
-                                    }
-                                    child.species_id = child.genome.clone();
-                                    child.phenotype = parse_genome(&child.genome, None, None);
-                                    child.antisense = child.phenotype.antisense_strand.clone();
-                                    
-                                    // Lamarckian Epigenetic Assimilation: Pass parent's learned weights to child homologous synapses (same synapse key)
-                                    // (only from parents old enough to have learned something)
-                                    let assimilate = agent.age >= app_config.rules.lamarckian_assimilation_age_floor;
-                                    let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate { (&agent.phenotype.brain.synapses, &agent.synapse_weights) } else { (&[], &[]) };
-                                    child.synapse_weights = inherit_learned_weights(
-                                        parent_synapses,
-                                        parent_weights,
-                                        &child.phenotype.brain.synapses,
-                                        app_config.rules.lamarckian_assimilation_chance,
-                                    );
-                                    child.brain_runtime = Default::default();
-                                    
+                                let is_mutation = rng.gen_range(0.0..1.0) < 0.35;
+                                let (child_genome, child_phenotype) = if is_mutation {
+                                    let genome = mutate_genome(&agent.genome, &app_config.mutation_operators, &mut rng).map_or_else(|| agent.genome.clone(), |m| m.genome);
+                                    let phenotype = parse_genome(&genome, None, None);
+                                    (genome, phenotype)
+                                } else {
+                                    (agent.genome.clone(), agent.phenotype.clone())
+                                };
+                                // Lamarckian assimilation (TCK-152): per plastic synapse with the same key, with probability
+                                // `lamarckianAssimilationChance`, the parent's learned offset; only from parents old enough to
+                                // have learned something. Clones and mutants alike.
+                                let assimilate = agent.age >= app_config.rules.lamarckian_assimilation_age_floor;
+                                let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate { (&agent.phenotype.brain.synapses, &agent.synapse_weights) } else { (&[], &[]) };
+                                let child_weights = inherit_learned_weights(
+                                    parent_synapses,
+                                    parent_weights,
+                                    &child_phenotype.brain.synapses,
+                                    app_config.rules.lamarckian_assimilation_chance,
+                                    &mut rng,
+                                );
+                                let mut child = spawn_from_phenotype(&child_genome, child_phenotype, SpawnOptions {
+                                    id: next_creature_id,
+                                    px: agent.px,
+                                    py: agent.py,
+                                    heading_angle: agent.heading_angle,
+                                    generation: agent.generation + 1,
+                                    methylations: None,
+                                    synapse_weights: Some(child_weights),
+                                });
+                                child.energy = agent.energy;
+
+                                if is_mutation {
                                     // Save new mutated child species into SQLite database
                                     let now_millis = std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)

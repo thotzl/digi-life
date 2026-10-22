@@ -1,5 +1,5 @@
 ---
-sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md]
+sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
 ---
 
 # Glossary
@@ -26,7 +26,7 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 - **Synapse key / owner / weight tape** — role-based stable synapse identity, the one gene that defines a synapse, and that gene's payload letters as initial weights, see [[wiki/biology/ctrnn-brain]].
 - **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters.
 - **Creep mutation** — a letter moved 1–2 alphabet steps (small value change).
-- **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key.
+- **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key, per plastic synapse with probability `lamarckianAssimilationChance` (TCK-152).
 - **BMR** — basal metabolic rate.
 - **Golden master** — fingerprint test over 300 genomes guarding the compiler, see [[wiki/quality/testing]].
 - **Model version** — `MODEL_VERSION`; a bump resets the model tables of the DB, see [[wiki/architecture/persistence]].

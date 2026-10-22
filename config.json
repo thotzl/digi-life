@@ -57,8 +57,6 @@
     "receptorBallastScale": 0.18,
     "elasticWallRestitution": 0.5,
     "hebbianLearningRateBase": 0.00015,
-    "hebbianLearningStiffnessDecay": 0.85,
-    "hebbianForgettingDecay": 0.0000032,
     "decompositionSporeMin": 1,
     "decompositionSporeMax": 5,
     "decompositionSizeRatio": 1200,

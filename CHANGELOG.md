@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.18] - 2026-10-22
+
+Training track P4 "Learning" (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 3).
+
+### Changed
+- Lifetime learning uses the normalised Oja rule: weights stay bounded instead of drifting to the limit over long lives (share at the limit after 36,000 ticks 10 % -> 0.2 %) (ref TCK-152).
+- The hardwired sensory reflexes are fixed and no longer learn or get pruned, so the sum/difference processing of organ pairs stays intact (ref TCK-152).
+- Lamarckian inheritance is a real probability per synapse in trainer and Ocean: each learned weight is passed on with the configured chance instead of a scaled share of every offset; Ocean births always start with a fresh brain state (ref TCK-152).
+- Measured after this phase (5 seeds, population 16, last 5 of 30 generations): training success small room 0.12 -> 0.21, large room 0.033 -> 0.046; the probe shows no measurable benefit of lifetime learning itself at the current success level (ref TCK-152).
+
+### Removed
+- Config keys `hebbianLearningStiffnessDecay` (never read) and `hebbianForgettingDecay` (covered by the Oja rule) (ref TCK-152).
+
 ## [1.12.17] - 2026-10-22
 
 Training track P3 "Brain v2" (epic TCK-171). Intended model change: new golden master, new CI reference, and the app database's model tables (trainer genomes, catalogue, Ocean state and history, species) are reset once on first start.

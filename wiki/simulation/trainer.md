@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs]
 ---
 
 # Trainer
@@ -46,10 +46,10 @@ Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor
 - **Slot plan** of the next generation: elites (unmodified) | hall-of-fame copies (`round(N · hofRate)`, not mutated) | random immigrants (`round(N · inflowRate)`) | mutants of the parents round-robin. Missing parents/HoF entries fall back to mutants of parent 0.
 - **Random genomes** (generation 1, where every slot is random, and immigrants): `generate_structured_genome` with config `genomeComposition` (TCK-184): every genome has all body genes, an `OUT` gene and 1–3 organs; 99 % have a food-sensing organ, 31 % a `HOX` pair (before: letter soup with 21 % organless and 67 % food-sensing genomes, RV-S09) ([[wiki/biology/genome-compiler]]).
 - **Mutants:** `round(len · mutationRate)` calls of `mutate_genome` (default 0.06 → ≈ 15 at 256 bases); each call draws creep, point, insertion, deletion, gene duplication or gene deletion by config `mutationOperators` (TCK-184).
-- **Lamarckian toggle** (default off, TCK-128): elites and mutants receive the source parent's methylations and its learned weight offsets matched by synapse key onto the (possibly mutated) child genome (`inherit_learned_weights`, scale 1); an unmutated elite keeps its learned weights exactly, new synapses start at their genome weight (TCK-179, [[wiki/biology/metabolism-and-reproduction]]).
+- **Lamarckian toggle** (default off, TCK-128): elites and mutants receive the source parent's methylations and, per plastic synapse with the same key in the (possibly mutated) child genome, with probability `lamarckianAssimilationChance` (0.25) the parent's full learned offset, else the genome weight (`inherit_learned_weights`, TCK-179, TCK-152). The draws come from the slot's seeded breed stream, so runs stay deterministic. An unmutated elite also inherits only ~25 % of its parent's learned weights; fixed reflexes and new synapses start at their genome weight. Same rule as Ocean mitosis ([[wiki/biology/metabolism-and-reproduction]]).
 - Defaults (`TrainerParams::default`, same as the UI): population 16, elite 0.15, mutation 0.06, inflow 0.15, HoF 0.15, multi-trial on, 3 trials, Lamarck off.
 - Fixed while extracting (TCK-173): Lamarck source index underflow for fallback mutants; Lamarck mutants were built from the unmutated parent genome; catalogue assignment kept the old `antisense` and neuron buffers.
-- `trainer_genomes` rows from before Brain v2 are dropped by the model-version reset (TCK-183, [[wiki/architecture/persistence]]).
+- `trainer_genomes` rows from an older model version (before Brain v2, before Oja learning) are dropped by the model-version reset (TCK-183, `MODEL_VERSION` 3 since TCK-152, [[wiki/architecture/persistence]]).
 - Kept as is (TCK-173 equivalence): HoF slots are not mutated although a mutation rate is passed; `avg_fitness` divides by the population size.
 
 ## Determinism
@@ -97,6 +97,19 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 - Small room ×3 over the P2 baseline, large room ×1.4; both stay below the TCK-171 targets. Immobile share in the small room: 0.067 in generation 1, 0.009 at the end.
 - Throughput at pop 16 roughly doubled with the compact brain (seed b1, same machine: small 158k → 323k, large 425k → 763k sandbox-ticks/s after slice A).
 
+## After Oja learning (P4)
+
+Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generations, Lamarck off), reports kept locally in `.agents/artifacts/p4/` (TCK-152, [[wiki/biology/ctrnn-brain]]).
+
+| Setup | Success rate gen 1 | Success rate last 5 gens | Best gen | Mean time to first catch (last 5) |
+| :--- | :--- | :--- | :--- | :--- |
+| small, pop 16, 30 gens, 5 seeds | 0.008 | 0.207 (P3: 0.122) | 0.458 | ≈ 180 ticks |
+| large, pop 16, 30 gens, 5 seeds | 0.000 | 0.046 (P3: 0.033) | 0.125 | ≈ 890 ticks |
+
+- The gain comes with bounded learning and fixed reflexes; the Hebbian probe still shows no measurable benefit of lifetime learning per genome, so the effect is not attributed to better within-life learning.
+- Variants measured and rejected: no pruning (last 5 gens small 0.166, large 0.026); pruning only with active presynaptic input (no measurable change). Kept: Oja + pruning.
+- Immobile share in the small room: 0.067 in generation 1, 0.008 at the end (last 5 gens).
+
 ## Controls
 
 - Start/pause/reset, warp (capped 35), hyperparameters, sandbox selection/assignment, Lamarckian synapse inheritance toggle (TCK-128), `apply_champion`, add catalogue creatures to training.
@@ -105,7 +118,7 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 
 - `TrainerSim` is IO-free, seeded and parallel-safe; the engine and the headless runner drive the same code.
 - Two plugin rooms with multi-trial evaluation and elitist selection; spawn loops are bounded, spawn distances still differ per trial (RV-S08).
-- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033.
-- Generation 1 and immigrants are structured random genomes; Lamarckian weights follow synapse keys.
+- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033; after Oja learning (P4) 0.207 and 0.046.
+- Generation 1 and immigrants are structured random genomes; Lamarckian weights follow synapse keys and are inherited per plastic synapse with probability 0.25 (TCK-152).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-173, TCK-179, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-152, TCK-173, TCK-179, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.

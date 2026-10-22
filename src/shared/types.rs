@@ -142,9 +142,8 @@ pub struct SimulationRules {
     pub drag_lateral_coefficient: f32,
     pub receptor_ballast_scale: f32,
     pub elastic_wall_restitution: f32,
+    /// η of the Oja rule of plastic synapses (TCK-152)
     pub hebbian_learning_rate_base: f32,
-    pub hebbian_learning_stiffness_decay: f32,
-    pub hebbian_forgetting_decay: f32,
     pub decomposition_spore_min: i32,
     pub decomposition_spore_max: i32,
     pub decomposition_size_ratio: f32,

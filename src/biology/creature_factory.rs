@@ -1,5 +1,7 @@
+use rand::Rng;
+
 use crate::biology::dna::{parse_genome, CTRNNSynapse, CreaturePhenotype};
-use crate::shared::brain::BrainRuntime;
+use crate::shared::brain::{BrainRuntime, WEIGHT_CLAMP};
 use crate::shared::types::{AppConfig, CreatureAgent};
 
 /// What differs between spawn sites (Ocean seed/inject/clone/reset/restock, trainer sandbox).
@@ -16,22 +18,31 @@ pub struct SpawnOptions<'a> {
     pub synapse_weights: Option<Vec<f32>>,
 }
 
-/// Lamarckian inheritance by synapse key (TCK-179): each child synapse gets its genome weight plus `scale` × the
-/// learned offset (learned − genome weight) of the parent synapse with the same key, clamped to [-4, 4] like Hebbian
-/// learning; child synapses without a homologue keep their genome weight. `parent_weights` are the parent's learned
-/// weights in `parent_synapses` order; on a length mismatch nothing is inherited. With `scale` 1 a child with the
-/// parent's genome gets exactly the parent's learned weights.
-pub fn inherit_learned_weights(parent_synapses: &[CTRNNSynapse], parent_weights: &[f32], child_synapses: &[CTRNNSynapse], scale: f32) -> Vec<f32> {
+/// Lamarckian inheritance by synapse key (TCK-179), as a probability (TCK-152): each plastic child synapse whose key
+/// matches a plastic parent synapse takes, with probability `chance`, the parent's full learned offset
+/// (child genome weight + parent learned − parent genome weight, clamped to the learning clamp); otherwise, and for
+/// child synapses without a homologue or fixed ones, it keeps its genome weight. `parent_weights` are the parent's
+/// learned weights in `parent_synapses` order; on a length mismatch nothing is inherited. With `chance` 1 a child with
+/// the parent's genome gets exactly the parent's learned weights. One draw from `rng` per matched synapse.
+pub fn inherit_learned_weights<R: Rng + ?Sized>(
+    parent_synapses: &[CTRNNSynapse],
+    parent_weights: &[f32],
+    child_synapses: &[CTRNNSynapse],
+    chance: f32,
+    rng: &mut R,
+) -> Vec<f32> {
     let learned: std::collections::HashMap<u64, (f32, f32)> = if parent_weights.len() == parent_synapses.len() {
-        parent_synapses.iter().zip(parent_weights).map(|(s, &w)| (s.key, (s.weight, w))).collect()
+        parent_synapses.iter().zip(parent_weights).filter(|(s, _)| s.plastic).map(|(s, &w)| (s.key, (s.weight, w))).collect()
     } else {
         Default::default()
     };
     child_synapses
         .iter()
         .map(|c| match learned.get(&c.key) {
-            Some(&(genome_weight, learned_weight)) => (learned_weight * scale + (c.weight - genome_weight * scale)).clamp(-4.0, 4.0),
-            None => c.weight,
+            Some(&(genome_weight, learned_weight)) if c.plastic && rng.gen_range(0.0f32..1.0) < chance => {
+                (learned_weight + (c.weight - genome_weight)).clamp(-WEIGHT_CLAMP, WEIGHT_CLAMP)
+            }
+            _ => c.weight,
         })
         .collect()
 }
@@ -124,5 +135,52 @@ mod tests {
         let mut matching = opts(1, 0.0, 0.0, 0.0, 1);
         matching.synapse_weights = Some(learned.clone());
         assert_eq!(spawn_creature(BASE_DNA, matching).synapse_weights, learned);
+    }
+
+    /// Structured genome, its synapses and learned weights = genome weight + a distinct non-zero offset per synapse.
+    fn learned_parent(seed: u64) -> (Vec<CTRNNSynapse>, Vec<f32>) {
+        let genome = crate::biology::dna::generate_structured_genome(&AppConfig::global().genome_composition, &mut crate::shared::rng::seeded(seed));
+        let synapses = parse_genome(&genome, None, None).brain.synapses;
+        let learned = synapses.iter().enumerate().map(|(i, s)| s.weight + 0.01 * (i + 1) as f32).collect();
+        (synapses, learned)
+    }
+
+    #[test]
+    fn test_lamarck_chance_is_a_probability_per_synapse() {
+        let mut rng = crate::shared::rng::seeded(152);
+        let (mut plastic, mut taken) = (0usize, 0usize);
+        for seed in 0..60 {
+            let (synapses, learned) = learned_parent(seed);
+            let genome: Vec<f32> = synapses.iter().map(|s| s.weight).collect();
+            assert!(synapses.iter().any(|s| !s.plastic) && synapses.iter().any(|s| s.plastic));
+
+            // Chance 1: the learned parent on every plastic synapse; fixed reflexes keep their genome weight
+            let all = inherit_learned_weights(&synapses, &learned, &synapses, 1.0, &mut rng);
+            for ((s, &w), (&l, &g)) in synapses.iter().zip(&all).zip(learned.iter().zip(&genome)) {
+                assert_eq!(w, if s.plastic { l } else { g }, "{:?}", s);
+            }
+            // Chance 0: the genome weights
+            assert_eq!(inherit_learned_weights(&synapses, &learned, &synapses, 0.0, &mut rng), genome);
+
+            // Chance 0.25: each plastic synapse takes the full learned weight or its genome weight
+            let some = inherit_learned_weights(&synapses, &learned, &synapses, 0.25, &mut rng);
+            for ((s, &w), (&l, &g)) in synapses.iter().zip(&some).zip(learned.iter().zip(&genome)) {
+                assert!(w == g || (s.plastic && w == l), "{:?}: {}", s, w);
+                plastic += s.plastic as usize;
+                taken += (w != g) as usize;
+            }
+        }
+        // Binomial: n > 3000 plastic synapses, sd of the share < 0.008
+        let share = taken as f32 / plastic as f32;
+        assert!(plastic > 3000, "{} plastic synapses", plastic);
+        assert!((share - 0.25).abs() < 0.03, "inherited share {}", share);
+    }
+
+    #[test]
+    fn test_lamarck_draws_are_seeded() {
+        let (synapses, learned) = learned_parent(7);
+        let draw = |seed| inherit_learned_weights(&synapses, &learned, &synapses, 0.5, &mut crate::shared::rng::seeded(seed));
+        assert_eq!(draw(1), draw(1));
+        assert_ne!(draw(1), draw(2));
     }
 }

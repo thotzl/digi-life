@@ -324,6 +324,8 @@ pub struct CTRNNSynapse {
     pub key: u64,
     /// Index into `CreaturePhenotype::genes` of the gene that defines this synapse
     pub owner: usize,
+    /// Learns during life (Oja rule) and can be pruned; false for the fixed sensor → thalamus reflexes (TCK-152)
+    pub plastic: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, TS)]
@@ -1596,8 +1598,11 @@ fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[
     // Synapses
     let mut synapses: Vec<CTRNNSynapse> = Vec::new();
     let wire = |synapses: &mut Vec<CTRNNSynapse>, from: usize, to: usize, weight: f32, owner: usize| {
-        let key = synapse_key(&neurons[from].role, &neurons[to].role);
-        synapses.push(CTRNNSynapse { from_node: from, to_node: to, weight, key, owner });
+        let (source, target) = (&neurons[from].role, &neurons[to].role);
+        let key = synapse_key(source, target);
+        // Sensor → thalamus reflexes (fixed ±1 sum/difference relays) do not learn (TCK-152)
+        let plastic = !matches!((source, target), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
+        synapses.push(CTRNNSynapse { from_node: from, to_node: to, weight, key, owner, plastic });
     };
     let tape = |payload: &str, owner: &GeneRef, from: usize, to: usize| tape_weight(payload, owner, &neurons[from].role, &neurons[to].role);
 
@@ -2370,8 +2375,6 @@ mod tests {
                 &mut synapse_weights,
                 &mut crate::shared::brain::BrainRuntime::default(),
                 0.1, // high learning rate
-                0.0,
-                0.001, // small decay
             );
         }
 
@@ -2420,9 +2423,9 @@ mod tests {
         let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
         let mut states = vec![0.0; brain.neurons.len()];
         let mut activations = vec![0.0; brain.neurons.len()];
-        let inputs = vec![0.0, 0.0]; // Zero inputs to trigger pure forgetting decay
+        let inputs = vec![0.0, 0.0]; // Zero inputs: Oja's −η·post²·w term alone shrinks the synapses without input
 
-        // Run 50 steps of forgetting decay to prune weak connections
+        // Run 50 steps of a high learning rate to prune weak connections
         for _ in 0..50 {
             execute_brain_with_learning(
                 brain,
@@ -2431,9 +2434,7 @@ mod tests {
                 &mut activations,
                 &mut synapse_weights,
                 &mut crate::shared::brain::BrainRuntime::default(),
-                0.0001, // tiny learning rate to keep the learning block active!
-                0.0,
-                0.1, // high forgetting rate to prune quickly
+                0.5, // high learning rate to prune quickly
             );
         }
 
@@ -2509,9 +2510,7 @@ mod tests {
                     &mut activations,
                     &mut synapse_weights,
                     &mut crate::shared::brain::BrainRuntime::default(),
-                    0.05, // active Hebbian learning
-                    0.01, // active stiffness decay
-                    0.02, // active forgetting decay
+                    0.05, // active Oja learning
                 );
 
                 // Assert that all outputs, neuron states, activations and synapse weights are perfectly finite and NOT NaN
@@ -2957,7 +2956,8 @@ mod tests {
     }
 
     // Fingerprint of parse_genome output over golden_genomes(); Brain v2 model change (P3 slice A: TCK-179/182/144/153/149;
-    // slice C: gene identity by promoter spelling + occurrence, 0x0c404a33923c8dd9 -> 0x65f701a6937c1e71)
-    const GOLDEN_FINGERPRINT: u64 = 0x65f701a6937c1e71;
+    // slice C: gene identity by promoter spelling + occurrence, 0x0c404a33923c8dd9 -> 0x65f701a6937c1e71;
+    // P4 TCK-152: `plastic` flag per synapse, 0x65f701a6937c1e71 -> 0xe0a2bfd1c7310306, unchanged without the flag)
+    const GOLDEN_FINGERPRINT: u64 = 0xe0a2bfd1c7310306;
 
 }
