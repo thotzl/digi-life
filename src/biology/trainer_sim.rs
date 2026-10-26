@@ -8,8 +8,9 @@
 //! The respawn after the k-th catch of a trial draws its candidate points from `derive(respawn_seed, [k])`; the
 //! accepted point also depends on the creature's position at the catch (minimum respawn distance), so two candidates
 //! get the same respawn when they make their k-th catch at the same position, not in general. Not shared: food drift
-//! caused by the creature pushing it. The layout is kept across generations and advances (`layout_id + 1`) once every
-//! elite of a generation caught food in every trial (`elites_solved_layout`).
+//! caused by the creature pushing it. When the layout advances (`layout_id + 1`) depends on `TrainerParams::layout_policy`
+//! (config `trainerLayoutPolicy`): `Rotate` (default since P8) after every generation, so selection cannot reward
+//! memorising a layout; `Hold` once every elite of a generation caught food in every trial (`elites_solved_layout`).
 //!
 //! Fitness (TCK-175): every trial is scored by `scenarios::calculate_fitness` in catch units (1.0 = one catch, same
 //! scale in both rooms), per tick for the UI telemetry and at trial end; the generation fitness of a sandbox is the
@@ -19,23 +20,156 @@
 //! (`dna::classify_mutation`: body / brain / both / neutral); elites carry the channel of the last mutation in their
 //! lineage. `GenerationStats::mutation_channels` covers the mutant slots (origin `Mutant`, the population of the 1/5
 //! rule); `elite_last_mutation` covers the elites. Mode `TrainerParams::mutation_channels` (config `mutationChannels`).
+//!
+//! Curriculum (TCK-176): every trial runs in one room, a `LevelScenario` at a difficulty level `d` in [0, 1] (`room`).
+//! The fixed rooms are levels 0 (`Standard`) and 1 (`Exploration`). In `Scenario::Curriculum` the level
+//! (`TrainerParams::level`) changes only at generation ends: the gate (`gate_level`) compares the success rate of the
+//! generation's non-rehearsal trials with `upper` / `lower` and moves the level by `step`, clamped to [0, 1]; a manual
+//! level (`set_level`) turns the gate off, `set_scenario(Curriculum)` turns it on again. Rehearsal: `round(trials ·
+//! rehearsalShare)` trials (at most all but one) run at `min(rehearsalLevel, d)`; which ones is drawn per layout from
+//! the layout's stream (`rehearsal_trials`), so the choice is shared and fixed while the layout is. Rehearsal trials
+//! count for fitness and the layout rule; the gate ignores them. Metabolic ramp: all curriculum trials (rehearsal
+//! included) drain `metabolic_ramp(d)` times the configured trainer scale, `d` being the curriculum level.
+//! Room switches (`set_scenario`, `set_level`) requested during a generation wait for its end; requested at the start
+//! of a generation (no tick stepped yet) they apply at once by restarting trial 0 in the new room. Epoch ticks, trial
+//! index and the accumulated fitness therefore always restart with the switch.
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, SpawnOptions};
 use crate::biology::dna::{parse_genome, CTRNNSynapse, MutationChannel, MutationTouch, OrganKind, WILDTYPE_GENOME};
-use crate::biology::scenarios::{calculate_fitness, Scenario};
+use crate::biology::scenarios::{calculate_fitness, LevelScenario, Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{breed_genome_traced, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
 use crate::shared::rng::{derive, SimRng};
-use crate::shared::types::AppConfig;
-pub use crate::shared::types::{MutationChannelMode, TrialAggregation};
-use rand::RngCore;
+use crate::shared::types::{AppConfig, TrainerCurriculumConfig};
+pub use crate::shared::types::{LayoutPolicy, MutationChannelMode, TrialAggregation};
+use rand::Rng;
 
 /// Stream index of the breeding RNGs (`derive(seed, [generation, BREED_STREAM, slot])`).
 const BREED_STREAM: u64 = u64::MAX;
 /// Stream index of the shared trial layouts (`derive(seed, [LAYOUT_STREAM, layout_id, trial])`).
 const LAYOUT_STREAM: u64 = u64::MAX - 1;
+/// Index of the rehearsal choice in a layout's streams (`derive(seed, [LAYOUT_STREAM, layout_id, REHEARSAL_PICK])`;
+/// trial indices never reach it).
+const REHEARSAL_PICK: u64 = u64::MAX;
+/// Stream index of the evaluation layouts (`derive(seed, [EVAL_STREAM, trial])`, `evaluate_population`).
+const EVAL_STREAM: u64 = u64::MAX - 2;
+
+/// Curriculum settings of a run (TCK-176; defaults from config `trainerCurriculum`, the runner overrides them).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CurriculumParams {
+    pub upper: f32,
+    pub lower: f32,
+    pub step: f32,
+    pub start_level: f32,
+    pub rehearsal_share: f32,
+    pub rehearsal_level: f32,
+    pub metabolic_ramp_start: f32,
+}
+
+impl CurriculumParams {
+    pub fn from_config(c: &TrainerCurriculumConfig) -> Self {
+        Self {
+            upper: c.upper,
+            lower: c.lower,
+            step: c.step,
+            start_level: c.start_level,
+            rehearsal_share: c.rehearsal_share,
+            rehearsal_level: c.rehearsal_level,
+            metabolic_ramp_start: c.metabolic_ramp_start,
+        }
+    }
+}
+
+/// Decision of the curriculum gate at a generation end (`GenerationStats::level_move`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum LevelMove {
+    Up,
+    Down,
+    /// Success between the thresholds, or the level already at the bound it would move past
+    Hold,
+}
+
+/// Level clamped to [0, 1] and rounded to 1e-6, so repeated steps of 0.1 land on the same values both ways and
+/// reach the ends exactly.
+pub fn snap_level(level: f32) -> f32 {
+    if !level.is_finite() {
+        return 0.0;
+    }
+    (level.clamp(0.0, 1.0) * 1e6).round() / 1e6
+}
+
+/// Curriculum gate (TCK-176): success above `upper` → `level + step`, below `lower` → `level − step`, else unchanged;
+/// clamped to [0, 1]. Returns the new level and whether it moved.
+pub fn gate_level(level: f32, success_rate: f32, c: &CurriculumParams) -> (f32, LevelMove) {
+    let target = if success_rate > c.upper {
+        level + c.step
+    } else if success_rate < c.lower {
+        level - c.step
+    } else {
+        level
+    };
+    let next = snap_level(target);
+    let movement = if next > level {
+        LevelMove::Up
+    } else if next < level {
+        LevelMove::Down
+    } else {
+        LevelMove::Hold
+    };
+    (next, movement)
+}
+
+/// Metabolic pressure ramp of the curriculum: factor `ramp_start + (1 − ramp_start) · level` on the trainer
+/// metabolic scale (1 at level 1; constant 1 for `ramp_start` = 1).
+pub fn metabolic_ramp(level: f32, ramp_start: f32) -> f32 {
+    ramp_start + (1.0 - ramp_start) * level
+}
+
+/// Rehearsal trials of a layout (sorted): `round(trials · share)` of them, at most `trials − 1` so at least one trial
+/// runs at the current level; drawn without replacement from the layout's stream `derive(seed, [LAYOUT_STREAM,
+/// layout_id, REHEARSAL_PICK])`, so every sandbox and every generation on that layout has the same choice.
+pub fn rehearsal_trials(seed: u64, layout_id: u64, trials: u32, share: f32) -> Vec<u32> {
+    let count = if share > 0.0 { ((trials as f32 * share).round() as u32).min(trials.saturating_sub(1)) } else { 0 };
+    if count == 0 {
+        return Vec::new();
+    }
+    let mut rng = derive(seed, &[LAYOUT_STREAM, layout_id, REHEARSAL_PICK]);
+    let mut order: Vec<u32> = (0..trials).collect();
+    for i in 0..count as usize {
+        let j = rng.gen_range(i..order.len());
+        order.swap(i, j);
+    }
+    let mut picked = order[..count as usize].to_vec();
+    picked.sort_unstable();
+    picked
+}
+
+/// Room switch requested by `set_scenario` / `set_level` (`level`: manual level, gate off).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RoomSwitch {
+    scenario: Scenario,
+    level: Option<f32>,
+}
+
+/// Success rate and mean generation fitness of a population evaluated in one room without breeding
+/// (`TrainerSim::evaluate_population`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PopulationEval {
+    pub level: f32,
+    pub trials: u32,
+    /// Share of sandbox-trials with at least one catch
+    pub success_rate: f32,
+    /// Mean over the sandboxes of their aggregated trial fitness
+    pub mean_fitness: f32,
+    /// The same over the unmodified elite slots (`None` without elites, e.g. generation 1)
+    pub elite_success_rate: Option<f32>,
+    pub elite_mean_fitness: Option<f32>,
+}
 
 /// A trial counts as immobile if the creature travelled less than this in total (px over the trial).
 pub const IMMOBILE_DISTANCE_PX: f32 = 5.0;
@@ -63,6 +197,14 @@ pub struct TrainerParams {
     pub minimal_criterion: bool,
     /// Body/brain mutation channels of mutated children (TCK-181, `trainer_engine::breed_genome_traced`)
     pub mutation_channels: MutationChannelMode,
+    /// When the shared trial layout changes (config `trainerLayoutPolicy`)
+    pub layout_policy: LayoutPolicy,
+    /// Gate, rehearsal and metabolic ramp of the curriculum (TCK-176)
+    pub curriculum: CurriculumParams,
+    /// Difficulty level of the curriculum room; moved by the gate at generation ends (module doc)
+    pub level: f32,
+    /// Curriculum gate on (automatic level); off after a manual level (`TrainerSim::set_level`)
+    pub level_auto: bool,
 }
 
 impl Default for TrainerParams {
@@ -84,6 +226,10 @@ impl Default for TrainerParams {
             scenario: Scenario::Standard,
             minimal_criterion: config.trainer_minimal_criterion.enabled,
             mutation_channels: config.mutation_channels,
+            layout_policy: config.trainer_layout_policy,
+            curriculum: CurriculumParams::from_config(&config.trainer_curriculum),
+            level: snap_level(config.trainer_curriculum.start_level),
+            level_auto: true,
         }
     }
 }
@@ -108,6 +254,8 @@ struct TrialRecord {
     end_energy: f32,
     /// The creature ran out of energy during the trial (TCK-178)
     starved: bool,
+    /// Rehearsal trial of the curriculum (excluded from the gate, TCK-176)
+    rehearsal: bool,
 }
 
 /// Generation summary, computed at epoch end over the final fitness, before breeding.
@@ -147,6 +295,19 @@ pub struct GenerationStats {
     /// Channel of the last mutation in each elite's lineage, elites in rank order (an unmodified elite copy keeps its
     /// parent's); `None` for a lineage without any mutation (random immigrant or generation 1) or a restored parent
     pub elite_last_mutation: Vec<Option<MutationChannel>>,
+    /// Training mode of this generation (TCK-176)
+    pub scenario: Scenario,
+    /// Difficulty level of the generation's non-rehearsal trials (fixed rooms: 0 / 1)
+    pub level: f32,
+    /// Success rate of the non-rehearsal trials (the gate input); equals `success_rate` without rehearsal
+    pub level_success_rate: f32,
+    /// Trials of each sandbox run at the rehearsal level
+    pub rehearsal_trials: u32,
+    /// Success rate of the rehearsal trials; `None` without rehearsal
+    pub rehearsal_success_rate: Option<f32>,
+    /// Gate decision after this generation; `None` when the gate is off (fixed room, manual level, or a pending
+    /// manual switch)
+    pub level_move: Option<LevelMove>,
 }
 
 /// Mutant children (origin `Mutant`) of one mutation channel in one generation (TCK-181).
@@ -238,6 +399,12 @@ pub struct TrainerSim {
     hof: Vec<GenomeRecord>,
     hof_retention: usize,
     seed: u64,
+    /// Room of the current trial (all sandboxes run the same room)
+    room: LevelScenario,
+    /// Rehearsal trials of the current generation (curriculum only, sorted)
+    rehearsal: Vec<u32>,
+    /// Room switch requested during the current generation; applied at its end
+    pending: Option<RoomSwitch>,
 }
 
 /// Linear-interpolated quantile of an ascending slice (non-empty).
@@ -296,6 +463,12 @@ pub fn elites_solved_layout(ranked_solved: &[bool], elite_count: usize) -> bool 
 impl GenerationStats {
     fn compute(generation: u32, trials: &[TrialRecord], sandboxes: &[TrainerSandbox]) -> Self {
         let trial_count = trials.len().max(1) as f32;
+        let success_of = |rehearsal: bool| {
+            let selected: Vec<&TrialRecord> = trials.iter().filter(|t| t.rehearsal == rehearsal).collect();
+            (!selected.is_empty()).then(|| selected.iter().filter(|t| t.finish_tick.is_some()).count() as f32 / selected.len() as f32)
+        };
+        let (level_success, rehearsal_success) = (success_of(false), success_of(true));
+        let rehearsal_trials = trials.iter().filter(|t| t.rehearsal).count() as u32 / (sandboxes.len().max(1) as u32);
         let mut catch_ticks: Vec<f32> = trials.iter().filter_map(|t| t.finish_tick).map(|t| t as f32).collect();
         catch_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let (mean_catch, median_catch) = if catch_ticks.is_empty() {
@@ -333,6 +506,12 @@ impl GenerationStats {
             child_success_share: None,
             mutation_channels: MutationChannelStats::default(),
             elite_last_mutation: Vec::new(),
+            scenario: Scenario::Standard,
+            level: 0.0,
+            level_success_rate: level_success.unwrap_or(catch_ticks.len() as f32 / trial_count),
+            rehearsal_trials,
+            rehearsal_success_rate: rehearsal_success,
+            level_move: None,
         }
     }
 }
@@ -347,9 +526,14 @@ impl TrainerSim {
     /// The shared layout restarts at layout 0 (it is not persisted).
     pub fn restore(mut params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
         params.population = params.population.max(1);
+        params.level = snap_level(params.level);
         sort_desc_by_fitness(&mut hof);
         hof.truncate(hof_retention);
+        let room = params.scenario.plugin();
         let mut sim = Self {
+            room,
+            rehearsal: Vec::new(),
+            pending: None,
             params,
             generation,
             epoch_ticks: 0,
@@ -382,7 +566,7 @@ impl TrainerSim {
     /// its own RNG streams) on the rayon pool; results never depend on it.
     pub fn step(&mut self, parallel: bool) -> Option<TrainerEvent> {
         self.epoch_ticks += 1;
-        let epoch_duration = self.params.scenario.plugin().epoch_ticks();
+        let epoch_duration = self.room.epoch_ticks();
 
         let live_fitness = self.track_live_fitness;
         let weights = &AppConfig::global().trainer_fitness;
@@ -404,36 +588,137 @@ impl TrainerSim {
         None
     }
 
-    /// Switches the room; on a change every sandbox restarts its trial in the new chamber
-    /// (genomes, epoch tick counter and trial accumulators are kept, as in the UI before). Food positions and the
-    /// respawn seed come from the current trial's shared layout stream, so they stay identical for all sandboxes;
-    /// headings are kept.
+    /// Room of the current trial.
+    pub fn room(&self) -> LevelScenario {
+        self.room
+    }
+
+    /// Training mode of a requested switch that waits for the end of the current generation.
+    pub fn pending_scenario(&self) -> Option<Scenario> {
+        self.pending.map(|s| s.scenario)
+    }
+
+    /// Switches the training mode (fixed room or curriculum; `Curriculum` turns the gate on and keeps the level).
+    /// Takes effect at the next generation (module doc).
     pub fn set_scenario(&mut self, scenario: Scenario) {
-        if scenario == self.params.scenario {
+        self.request(RoomSwitch { scenario, level: None });
+    }
+
+    /// Manual difficulty level: curriculum mode at `level` with the gate off. Takes effect at the next generation.
+    pub fn set_level(&mut self, level: f32) {
+        self.request(RoomSwitch { scenario: Scenario::Curriculum, level: Some(snap_level(level)) });
+    }
+
+    fn request(&mut self, switch: RoomSwitch) {
+        self.pending = Some(switch);
+        // Nothing of this generation stepped yet: its start is the generation boundary
+        if self.epoch_ticks == 0 && self.trial_index == 0 {
+            self.apply_pending();
+            self.restart_generation();
+        }
+    }
+
+    /// Applies a pending switch to the params; returns whether there was one.
+    fn apply_pending(&mut self) -> bool {
+        let Some(switch) = self.pending.take() else { return false };
+        self.params.scenario = switch.scenario;
+        match switch.level {
+            Some(level) => {
+                self.params.level = level;
+                self.params.level_auto = false;
+            }
+            None if switch.scenario == Scenario::Curriculum => self.params.level_auto = true,
+            None => {}
+        }
+        true
+    }
+
+    /// Restarts trial 0 of the current generation in the room the params now select (same shared layout stream as a
+    /// freshly bred generation); nothing happens if the room did not change.
+    fn restart_generation(&mut self) {
+        self.plan_rehearsal();
+        let room = self.trial_room(0);
+        if room == self.room && self.sandboxes.iter().all(|sb| sb.room == room) {
             return;
         }
-        self.params.scenario = scenario;
-        let center = scenario.plugin().chamber_size() / 2.0;
+        self.room = room;
         for sb in self.sandboxes.iter_mut() {
-            let mut rng = layout_rng(self.seed, self.layout_id, self.trial_index);
-            sb.scenario = scenario;
-            sb.finished = false;
-            sb.finish_tick = None;
-            sb.agent.px = center;
-            sb.agent.py = center;
-            sb.agent.vx = 0.0;
-            sb.agent.vy = 0.0;
-            sb.agent.age = 0;
-            sb.distance_traveled = 0.0;
-            sb.epoch_ticks = 0;
-            sb.wall_collisions = 0;
-            sb.wall_collision_cooldown = 0;
-            sb.consumed_count = 0;
-            sb.accumulated_yield = 0.0;
-            sb.coverage_mask = 0;
-            sb.starved = false;
-            scenario.plugin().initialize(sb, &mut rng);
-            sb.respawn_seed = rng.next_u64();
+            sb.room = room;
+            sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, 0));
+        }
+    }
+
+    /// Trials per generation.
+    fn trial_count(&self) -> u32 {
+        if self.params.multi_trial { self.params.trials.max(1) } else { 1 }
+    }
+
+    /// Chooses the rehearsal trials of the current layout (curriculum only).
+    fn plan_rehearsal(&mut self) {
+        self.rehearsal = if self.params.scenario == Scenario::Curriculum {
+            rehearsal_trials(self.seed, self.layout_id, self.trial_count(), self.params.curriculum.rehearsal_share)
+        } else {
+            Vec::new()
+        };
+    }
+
+    /// Room of `trial` of the current generation: the fixed room, or in curriculum mode the room at the current level
+    /// (rehearsal trials: `min(rehearsalLevel, level)`) with the metabolic ramp of the current level.
+    fn trial_room(&self, trial: u32) -> LevelScenario {
+        let p = &self.params;
+        if p.scenario.fixed_level().is_some() {
+            return p.scenario.plugin();
+        }
+        let c = &p.curriculum;
+        let level = if self.rehearsal.contains(&trial) { c.rehearsal_level.min(p.level) } else { p.level };
+        LevelScenario::at(level).with_metabolic_scale(metabolic_ramp(p.level, c.metabolic_ramp_start))
+    }
+
+    /// Level of the generation's non-rehearsal trials.
+    fn current_level(&self) -> f32 {
+        self.params.scenario.fixed_level().unwrap_or(self.params.level)
+    }
+
+    /// Evaluates the current population in `room` without breeding or changing the sim (TCK-176 measurement): every
+    /// sandbox (a clone, starting from its bred state) runs `trials` trials (`None`: the run's trial count) on the evaluation layouts
+    /// `derive(seed, [EVAL_STREAM, trial])`, learned weights carried across its trials as in training; fitness is
+    /// aggregated like the generation fitness. Deterministic; `parallel` does not change the result.
+    pub fn evaluate_population(&self, room: LevelScenario, trials: Option<u32>, parallel: bool) -> PopulationEval {
+        let trials = trials.unwrap_or_else(|| self.trial_count()).max(1);
+        let epoch = room.epoch_ticks();
+        let weights = &AppConfig::global().trainer_fitness;
+        let (seed, aggregation) = (self.seed, self.params.trial_aggregation);
+        let evaluate = |sb: &TrainerSandbox| -> (f32, u32, bool) {
+            let mut sb = sb.clone();
+            sb.room = room;
+            let mut fitness = Vec::with_capacity(trials as usize);
+            let mut successes = 0;
+            for trial in 0..trials {
+                sb.reset_trial(&mut derive(seed, &[EVAL_STREAM, trial as u64]));
+                for _ in 0..epoch {
+                    step_trainer_sandbox_physics(&mut sb);
+                }
+                fitness.push(calculate_fitness(&sb, epoch, weights));
+                successes += sb.finished as u32;
+            }
+            (aggregate_trials(&fitness, aggregation), successes, sb.origin_type == SandboxOrigin::Elite)
+        };
+        let results: Vec<(f32, u32, bool)> = if parallel { self.sandboxes.par_iter().map(evaluate).collect() } else { self.sandboxes.iter().map(evaluate).collect() };
+        let summary = |selected: Vec<&(f32, u32, bool)>| {
+            (!selected.is_empty()).then(|| {
+                let n = selected.len() as f32;
+                (selected.iter().map(|r| r.1).sum::<u32>() as f32 / (n * trials as f32), selected.iter().map(|r| r.0).sum::<f32>() / n)
+            })
+        };
+        let all = summary(results.iter().collect()).unwrap_or((0.0, 0.0));
+        let elites = summary(results.iter().filter(|r| r.2).collect());
+        PopulationEval {
+            level: room.level(),
+            trials,
+            success_rate: all.0,
+            mean_fitness: all.1,
+            elite_success_rate: elites.map(|e| e.0),
+            elite_mean_fitness: elites.map(|e| e.1),
         }
     }
 
@@ -481,6 +766,7 @@ impl TrainerSim {
             self.acc_eaten = vec![0; n];
         }
         let weights = &AppConfig::global().trainer_fitness;
+        let rehearsal = self.rehearsal.contains(&self.trial_index);
         for (idx, sb) in self.sandboxes.iter_mut().enumerate() {
             sb.current_fitness = calculate_fitness(sb, epoch_duration, weights);
             self.trial_records.push(TrialRecord {
@@ -488,6 +774,7 @@ impl TrainerSim {
                 distance_traveled: sb.distance_traveled,
                 end_energy: sb.agent.energy,
                 starved: sb.starved,
+                rehearsal,
             });
             self.acc_fitness[idx].push(sb.current_fitness);
             if sb.finished {
@@ -495,11 +782,14 @@ impl TrainerSim {
             }
         }
 
-        let trials = if self.params.multi_trial { self.params.trials.max(1) } else { 1 };
+        let trials = self.trial_count();
         if self.trial_index + 1 < trials {
             self.trial_index += 1;
             self.epoch_ticks = 0;
+            let room = self.trial_room(self.trial_index);
+            self.room = room;
             for sb in self.sandboxes.iter_mut() {
+                sb.room = room;
                 sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, self.trial_index));
             }
             return None;
@@ -544,6 +834,8 @@ impl TrainerSim {
         stats.layout_id = self.layout_id;
         stats.mutation_ops_max = self.params.mutation_ops_max;
         stats.child_success_share = (total > 0).then(|| better as f32 / total as f32);
+        stats.scenario = self.params.scenario;
+        stats.level = self.current_level();
 
         // Rank by fitness (stable) together with the solved flags and the breeding slot
         let mut ranked: Vec<(TrainerSandbox, bool, usize)> =
@@ -591,7 +883,11 @@ impl TrainerSim {
             })
             .collect();
 
-        if elites_solved_layout(&ranked_solved, elite_count) {
+        let advance = match self.params.layout_policy {
+            LayoutPolicy::Hold => elites_solved_layout(&ranked_solved, elite_count),
+            LayoutPolicy::Rotate => true,
+        };
+        if advance {
             self.layout_id += 1;
         }
         if self.params.one_fifth_rule {
@@ -599,6 +895,13 @@ impl TrainerSim {
             let p = &mut self.params;
             p.mutation_ops_max = one_fifth_update(p.mutation_ops_max, better, total, p.mutation_ops_min.max(1), config.mutation_ops_limit);
         }
+        // Curriculum gate on the non-rehearsal trials; a pending manual switch replaces it (module doc)
+        if self.params.scenario == Scenario::Curriculum && self.params.level_auto && self.pending.is_none() {
+            let (level, movement) = gate_level(self.params.level, stats.level_success_rate, &self.params.curriculum);
+            self.params.level = level;
+            stats.level_move = Some(movement);
+        }
+        self.apply_pending();
 
         let generation = self.generation;
         self.parents = elites.clone();
@@ -620,6 +923,10 @@ impl TrainerSim {
     /// Every slot breeds with its own RNG stream and starts on the shared layout of trial 0, so `parallel` (rayon)
     /// never changes the result.
     fn breed(&mut self, parallel: bool) {
+        // Room of trial 0 (curriculum: level and rehearsal choice of this generation)
+        self.plan_rehearsal();
+        let room = self.trial_room(0);
+        self.room = room;
         let n = self.params.population;
         let p = &self.params;
 
@@ -652,7 +959,7 @@ impl TrainerSim {
             }
         }).collect();
 
-        let (seed, generation, parents, lamarckian, scenario) = (self.seed, self.generation as u64, &self.parents, p.lamarckian, p.scenario);
+        let (seed, generation, parents, lamarckian) = (self.seed, self.generation as u64, &self.parents, p.lamarckian);
         let (ops_min, ops_max, layout_id, minimal_criterion) = (p.mutation_ops_min, p.mutation_ops_max, self.layout_id, p.minimal_criterion);
         let (channel_mode, parent_last_mutation) = (p.mutation_channels, &self.parent_last_mutation);
         let lamarck_chance = AppConfig::global().rules.lamarckian_assimilation_chance;
@@ -679,7 +986,7 @@ impl TrainerSim {
             });
 
             // Shared layout of trial 0: heading, food and respawn seed identical for every slot
-            let sandbox = init_rust_sandbox((idx + 1) as u32, &genome, generation as u32, origin, scenario, methylations, synapse_weights, &mut layout_rng(seed, layout_id, 0));
+            let sandbox = init_rust_sandbox((idx + 1) as u32, &genome, generation as u32, origin, room, methylations, synapse_weights, &mut layout_rng(seed, layout_id, 0));
             (sandbox, lineage)
         };
         let (sandboxes, lineage): (Vec<TrainerSandbox>, Vec<SlotLineage>) = if parallel {
@@ -947,7 +1254,7 @@ mod tests {
 
     #[test]
     fn test_layout_persists_across_generations_until_solved() {
-        let params = TrainerParams { population: 6, trials: 2, ..TrainerParams::default() };
+        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Hold, ..TrainerParams::default() };
         let epoch = params.scenario.plugin().epoch_ticks();
         let mut sim = TrainerSim::new(params, 32, 200);
         let layout0 = trial_start(&sim.sandboxes[0]);
@@ -1162,5 +1469,229 @@ mod tests {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------- curriculum (TCK-176)
+
+    /// Curriculum params independent of the calibrated config defaults: no rehearsal, no ramp.
+    fn plain_curriculum() -> CurriculumParams {
+        CurriculumParams { upper: 0.6, lower: 0.3, step: 0.1, start_level: 0.0, rehearsal_share: 0.0, rehearsal_level: 0.0, metabolic_ramp_start: 1.0 }
+    }
+
+    fn curriculum_params(population: usize, level: f32, level_auto: bool) -> TrainerParams {
+        TrainerParams { population, scenario: Scenario::Curriculum, curriculum: plain_curriculum(), level, level_auto, ..TrainerParams::default() }
+    }
+
+    /// Events with the training mode blanked (the only field that names the mode).
+    fn without_mode(events: Vec<TrainerEvent>) -> Vec<TrainerEvent> {
+        events
+            .into_iter()
+            .map(|TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, mut stats }| {
+                stats.scenario = Scenario::Standard;
+                TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats }
+            })
+            .collect()
+    }
+
+    fn events(sim: &mut TrainerSim, generations: usize, parallel: bool) -> Vec<TrainerEvent> {
+        let mut out = Vec::new();
+        while out.len() < generations {
+            out.extend(sim.step(parallel));
+        }
+        out
+    }
+
+    #[test]
+    fn test_curriculum_levels_zero_and_one_reproduce_the_fixed_rooms() {
+        for (level, fixed) in [(0.0, Scenario::Standard), (1.0, Scenario::Exploration)] {
+            let mut room = TrainerSim::new(TrainerParams { population: 4, scenario: fixed, ..TrainerParams::default() }, 61, 200);
+            let mut curriculum = TrainerSim::new(curriculum_params(4, level, false), 61, 200);
+            assert_eq!(curriculum.room(), fixed.plugin(), "level {} is the {:?} room", level, fixed);
+            assert!(curriculum.sandboxes.iter().zip(&room.sandboxes).all(|(a, b)| trial_start(a) == trial_start(b)), "same layouts");
+            let (a, b) = (events(&mut room, 2, false), events(&mut curriculum, 2, false));
+            assert_eq!(without_mode(a), without_mode(b), "level {} differs from {:?}", level, fixed);
+        }
+    }
+
+    #[test]
+    fn test_gate_moves_up_down_and_clamps() {
+        let c = plain_curriculum();
+        assert_eq!(gate_level(0.5, 0.7, &c), (0.6, LevelMove::Up));
+        assert_eq!(gate_level(0.5, 0.2, &c), (0.4, LevelMove::Down));
+        assert_eq!(gate_level(0.5, 0.45, &c), (0.5, LevelMove::Hold));
+        assert_eq!(gate_level(0.5, 0.6, &c), (0.5, LevelMove::Hold), "the thresholds themselves hold");
+        assert_eq!(gate_level(0.5, 0.3, &c), (0.5, LevelMove::Hold));
+        assert_eq!(gate_level(1.0, 0.9, &c), (1.0, LevelMove::Hold), "clamped at 1");
+        assert_eq!(gate_level(0.0, 0.0, &c), (0.0, LevelMove::Hold), "clamped at 0");
+        // Ten steps reach both ends exactly and retrace the same levels
+        let mut up = vec![0.0f32];
+        for _ in 0..10 {
+            up.push(gate_level(*up.last().unwrap(), 1.0, &c).0);
+        }
+        assert_eq!(*up.last().unwrap(), 1.0);
+        let mut down = vec![1.0f32];
+        for _ in 0..10 {
+            down.push(gate_level(*down.last().unwrap(), 0.0, &c).0);
+        }
+        down.reverse();
+        assert_eq!(up, down);
+    }
+
+    /// Runs one generation; at the end of every trial all sandboxes are marked as (not) having caught food.
+    fn forced_generation(sim: &mut TrainerSim, caught: bool) -> GenerationStats {
+        loop {
+            let epoch = sim.room().epoch_ticks();
+            for _ in 0..epoch - 1 {
+                assert!(sim.step(false).is_none());
+            }
+            sim.epoch_ticks = epoch;
+            sim.sandboxes.iter_mut().for_each(|sb| {
+                sb.finished = caught;
+                sb.finish_tick = caught.then_some(1);
+            });
+            if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.end_epoch(epoch, false) {
+                return stats;
+            }
+        }
+    }
+
+    #[test]
+    fn test_curriculum_gate_moves_the_level_of_the_next_generation() {
+        let mut sim = TrainerSim::new(TrainerParams { trials: 1, ..curriculum_params(4, 0.0, true) }, 62, 200);
+        let stats = forced_generation(&mut sim, true);
+        assert_eq!((stats.level, stats.level_move), (0.0, Some(LevelMove::Up)));
+        assert_eq!(sim.params.level, 0.1);
+        assert!(sim.sandboxes.iter().all(|sb| sb.room == LevelScenario::at(0.1)), "next generation runs at the new level");
+        assert_eq!(forced_generation(&mut sim, true).level, 0.1);
+        let stats = forced_generation(&mut sim, false);
+        assert_eq!((stats.level, stats.level_move), (0.2, Some(LevelMove::Down)));
+        assert_eq!(sim.room(), LevelScenario::at(0.1));
+        // Manual level: gate off, level fixed; curriculum mode again turns it back on
+        sim.set_level(0.7);
+        assert_eq!((sim.params.level, sim.params.level_auto, sim.room()), (0.7, false, LevelScenario::at(0.7)));
+        let stats = forced_generation(&mut sim, true);
+        assert_eq!((stats.level, stats.level_move, sim.params.level), (0.7, None, 0.7));
+        sim.set_scenario(Scenario::Curriculum);
+        assert!(sim.params.level_auto);
+        assert_eq!(forced_generation(&mut sim, true).level_move, Some(LevelMove::Up));
+        assert_eq!(sim.params.level, 0.8);
+        // Fixed rooms have no gate
+        let mut fixed = TrainerSim::new(TrainerParams { population: 4, trials: 1, ..TrainerParams::default() }, 62, 200);
+        assert_eq!(forced_generation(&mut fixed, true).level_move, None);
+    }
+
+    #[test]
+    fn test_room_switch_waits_for_the_generation_boundary() {
+        let mut sim = TrainerSim::new(TrainerParams { population: 4, trials: 2, ..TrainerParams::default() }, 63, 200);
+        let standard = Scenario::Standard.plugin();
+        for _ in 0..10 {
+            sim.step(false);
+        }
+        sim.set_scenario(Scenario::Exploration);
+        assert_eq!(sim.pending_scenario(), Some(Scenario::Exploration));
+        assert_eq!((sim.params.scenario, sim.room()), (Scenario::Standard, standard));
+        // The rest of the generation (both trials) still runs in the old room
+        let mut completed = None;
+        while completed.is_none() {
+            assert!(sim.sandboxes.iter().all(|sb| sb.room == standard));
+            completed = sim.step(false);
+        }
+        let Some(TrainerEvent::GenerationCompleted { stats, .. }) = completed else { unreachable!() };
+        assert_eq!(stats.scenario, Scenario::Standard);
+        let exploration = Scenario::Exploration.plugin();
+        assert_eq!((sim.params.scenario, sim.room(), sim.pending_scenario(), sim.epoch_ticks), (Scenario::Exploration, exploration, None, 0));
+        assert!(sim.sandboxes.iter().all(|sb| sb.room == exploration && sb.epoch_ticks == 0 && sb.agent.px == exploration.chamber_size() / 2.0));
+    }
+
+    #[test]
+    fn test_room_switch_at_a_generation_start_applies_at_once() {
+        // A fresh generation is at its boundary: switching equals starting in the new room
+        let mut switched = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::default() }, 64, 200);
+        switched.set_scenario(Scenario::Exploration);
+        assert_eq!(switched.pending_scenario(), None);
+        let mut direct = TrainerSim::new(TrainerParams { population: 4, scenario: Scenario::Exploration, ..TrainerParams::default() }, 64, 200);
+        assert!(switched.sandboxes.iter().zip(&direct.sandboxes).all(|(a, b)| trial_start(a) == trial_start(b) && a.room == b.room));
+        assert_eq!(events(&mut switched, 1, false), events(&mut direct, 1, false));
+    }
+
+    #[test]
+    fn test_rehearsal_trial_selection_is_deterministic() {
+        assert_eq!(rehearsal_trials(5, 0, 3, 0.0), Vec::<u32>::new());
+        assert_eq!(rehearsal_trials(5, 0, 1, 1.0), Vec::<u32>::new(), "a single trial never rehearses");
+        assert_eq!(rehearsal_trials(5, 0, 3, 1.0).len(), 2, "at least one trial stays at the level");
+        let mut picks = std::collections::BTreeSet::new();
+        for layout in 0..20 {
+            let picked = rehearsal_trials(5, layout, 3, 1.0 / 3.0);
+            assert_eq!(picked, rehearsal_trials(5, layout, 3, 1.0 / 3.0));
+            assert_eq!(picked.len(), 1);
+            assert!(picked[0] < 3);
+            picks.insert(picked[0]);
+        }
+        assert!(picks.len() > 1, "the choice varies between layouts: {:?}", picks);
+    }
+
+    #[test]
+    fn test_layout_rotates_every_generation_with_rotate_policy() {
+        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Rotate, ..TrainerParams::default() };
+        let mut sim = TrainerSim::new(params, 21, 200);
+        for expected in 1..=3u64 {
+            while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
+            assert_eq!(sim.layout_id(), expected, "a new layout after every generation");
+        }
+    }
+
+    #[test]
+    fn test_rehearsal_trials_run_at_the_rehearsal_level_and_skip_the_gate() {
+        let c = CurriculumParams { rehearsal_share: 1.0 / 3.0, rehearsal_level: 0.0, ..plain_curriculum() };
+        let params = TrainerParams { curriculum: c, trials: 3, ..curriculum_params(4, 0.5, false) };
+        let mut sim = TrainerSim::new(params.clone(), 65, 200);
+        let rehearsal = rehearsal_trials(65, 0, 3, c.rehearsal_share);
+        assert_eq!(rehearsal.len(), 1);
+        let mut levels = Vec::new();
+        let stats = loop {
+            if sim.epoch_ticks == 0 {
+                levels.push(sim.room().level());
+                assert!(sim.sandboxes.iter().all(|sb| sb.room == sim.room()));
+            }
+            if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.step(false) {
+                break stats;
+            }
+        };
+        let expected: Vec<f32> = (0..3).map(|t| if rehearsal.contains(&t) { 0.0 } else { 0.5 }).collect();
+        assert_eq!(levels, expected);
+        assert_eq!((stats.level, stats.rehearsal_trials), (0.5, 1));
+        assert!(stats.rehearsal_success_rate.is_some());
+        // Same run, parallel: identical
+        let mut par = TrainerSim::new(params, 65, 200);
+        let mut seq = TrainerSim::new(sim.params.clone(), 65, 200);
+        assert_eq!(events(&mut par, 2, true), events(&mut seq, 2, false));
+    }
+
+    #[test]
+    fn test_metabolic_ramp_scales_curriculum_rooms_only() {
+        assert_eq!(metabolic_ramp(0.0, 0.5), 0.5);
+        assert_eq!(metabolic_ramp(1.0, 0.0), 1.0);
+        assert_eq!(metabolic_ramp(0.3, 1.0), 1.0, "ramp start 1 = no ramp");
+        let c = CurriculumParams { metabolic_ramp_start: 0.0, ..plain_curriculum() };
+        let sim = TrainerSim::new(TrainerParams { curriculum: c, ..curriculum_params(2, 0.4, false) }, 66, 200);
+        assert!((sim.room().metabolic_scale() - 0.4).abs() < 1e-6);
+        assert!(sim.sandboxes.iter().all(|sb| sb.room.metabolic_scale() == sim.room().metabolic_scale()));
+        let fixed = TrainerSim::new(TrainerParams { population: 2, curriculum: c, ..TrainerParams::default() }, 66, 200);
+        assert_eq!(fixed.room().metabolic_scale(), 1.0);
+    }
+
+    #[test]
+    fn test_evaluate_population_is_deterministic_and_leaves_the_sim_unchanged() {
+        let mut sim = TrainerSim::new(TrainerParams { population: 6, trials: 2, ..TrainerParams::default() }, 67, 200);
+        run(&mut sim, 1);
+        let before = serde_json::to_string(&sim.sandboxes).unwrap();
+        let room = Scenario::Standard.plugin();
+        let a = sim.evaluate_population(room, None, false);
+        assert_eq!(a, sim.evaluate_population(room, None, true));
+        assert_eq!(serde_json::to_string(&sim.sandboxes).unwrap(), before);
+        assert_eq!((a.trials, a.level), (2, 0.0));
+        assert!((0.0..=1.0).contains(&a.success_rate));
+        assert!(a.elite_success_rate.is_some(), "generation 2 has elite slots");
+        assert_eq!(sim.evaluate_population(room, Some(4), false).trials, 4);
     }
 }

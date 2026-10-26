@@ -1,5 +1,5 @@
 ---
-sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md]
+sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-176-automatic-training-curriculum.md]
 ---
 
 # Glossary
@@ -7,8 +7,13 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 - **Ocean** — open-world simulation mode with a free population, see [[wiki/simulation/ocean]].
 - **Trainer** — neuroevolution mode with isolated sandboxes, see [[wiki/simulation/trainer]].
 - **Sandbox / chamber** — one isolated trainer arena with one candidate and target spores.
-- **Epoch** — fixed tick budget of one trainer evaluation; **trial** — one of the `trainerTrials` (3) epochs per generation (multi-trial).
-- **Layout** — shared trainer task of one trial (start heading, food positions, respawn seed), the same for every sandbox of a generation; `layout_id` advances once all elites solve it (TCK-174), see [[wiki/simulation/trainer]].
+- **Epoch** — fixed tick budget of one trainer evaluation; **trial** — one of the `trainerTrials` (8 since P8) epochs per generation (multi-trial).
+- **Layout** — shared trainer task of one trial (start heading, food positions, respawn seed), the same for every sandbox of a generation (TCK-174), see [[wiki/simulation/trainer]].
+- **Layout policy** — when the shared layout changes (`trainerLayoutPolicy`): `rotate` = every generation (default since P8), `hold` = until all elites solve it (P7; memorised layouts) (TCK-174 post-fix).
+- **Level / difficulty** — `d` in [0, 1] of the one room plugin `LevelScenario`: chamber, epoch and spawn distance geometric, food per type linear between the small room (0, `standard`) and the large room (1, `exploration`) (TCK-176).
+- **Curriculum / curriculum gate** — training mode that moves the level at generation ends: success of the non-rehearsal trials above `upper` (0.3) → +`step` (0.1), below `lower` (0.1) → −`step` (`trainerCurriculum`, `gate_level`, TCK-176); a manual level turns the gate off.
+- **Rehearsal** — curriculum trials run at an easier level (`rehearsalLevel`) so earlier skills are kept; counted for fitness, ignored by the gate; off by default (`rehearsalShare` 0) (TCK-176).
+- **Unseen-layout evaluation** — the final population run on layouts no training generation used (`EVAL_STREAM`, runner `--eval-final`, report `final_eval`); the capability measure for epic targets from P8 on, because training success overstates it (TCK-174 post-fix, TCK-176).
 - **Catch unit** — scale of the trainer fitness since P7: 1.0 = one catch at full diet fit; time and approach bonuses stay below 1 (TCK-175).
 - **Minimal criterion** — filter for random trainer genomes (generation 1, immigrants): eye or nose and moves ≥ 5 px within 100 ticks (`trainerMinimalCriterion`, RV-S09, TCK-175).
 - **1/5 rule** — population-level step-size rule: more than 1/5 of the mutants beat their parent → one more max mutation op per child, fewer → one less (`mutationOneFifthRule`, TCK-174).

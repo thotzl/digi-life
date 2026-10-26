@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-176-automatic-training-curriculum.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, src/server/trainer_ipc.rs]
 ---
 
 # Simulation Engine
@@ -24,6 +24,12 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - `emit_state` only buffers; `flush_events()` sends the buffer once per frame in original order and coalesces repeated `DATABASE_CHANGED` (TCK-139, RV-P05).
 - One Tauri event channel `simulation-state` for everything, see [[wiki/architecture/ipc-protocol]].
 
+## Trainer actions and events (TCK-177)
+
+- The action loop first tries `serde_json::from_value::<TrainerAction>` (`src/server/trainer_ipc.rs`); a trainer action is handled in one typed `match`, everything else falls through to the string match on `type`. A malformed trainer action matches neither and is logged as "unknown or malformed client action type".
+- `SET_TRAINER_MODE` and the new `SET_TRAINER_LEVEL` only request a room switch (`TrainerSim::set_scenario` / `set_level`); it applies at the next generation boundary, or at once if no tick of the current generation has run ([[wiki/simulation/trainer]]). `SET_TRAINER_MODE` with the current mode and nothing pending is a no-op; every request answers `TRAINER_STATE_CHANGED` with `pendingMode`.
+- Trainer events are built as `TrainerUiEvent` values and buffered via `to_payload`: `TRAINER_TELEMETRY_TICK` (25 Hz, chamber size and level per sandbox from `sb.room`), `TRAINER_GENERATION_COMPLETED` (with the generation's `GenerationStats` as `TrainerGenerationStats`), then **`TRAINER_STATE_CHANGED` after every generation** (applied switch, gate level, adapted mutation ops). `trainer_state` builds the one `TrainerState` for state changes and resets.
+
 ## Creature spawning and RNG
 
 - All Ocean spawn sites (seed, inject, clone, reset, restock) and the trainer build agents through `CreatureFactory` (`src/biology/creature_factory.rs`: `spawn_creature`, `spawn_from_phenotype`, `start_energy`) with the same start energy, `antisense` and neuron buffers (TCK-185). Ocean mitosis children (clones and mutants) are built by `spawn_from_phenotype` too, with fresh neuron states and the parent's post-split energy (TCK-152, [[wiki/biology/metabolism-and-reproduction]]).
@@ -40,7 +46,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 
 ## Known limitations
 
-- Spore spawn with nutrient centers 3×; `base_dna` literal 1× (fresh-start seeding) in `engine.rs` besides `dna::WILDTYPE_GENOME`; the `RESET_EVOLUTION` copy was replaced by structured random founders (TCK-184) (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185).
+- Spore spawn with nutrient centers 3×; `base_dna` literal 1× (fresh-start seeding) in `engine.rs` besides `dna::WILDTYPE_GENOME`; the `RESET_EVOLUTION` copy was replaced by structured random founders (TCK-184) (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185); trainer events and actions are typed (TCK-177).
 - Not unit-testable (needs a Tauri window); logic is tested through extracted pure functions ([[wiki/quality/testing]]).
 - World size `19200 × 10800` hardcoded in Rust and TS (RV-A05); trainer chamber size and epoch length come from the scenario plugin (TCK-173).
 - Ocean RNG is `thread_rng` (RV-T04, above).
@@ -50,6 +56,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - One thread, ~60 Hz, max 35 steps per frame, events flushed once per frame.
 - The hot loop is free of per-step SQL, grid allocations and agent clones (TCK-139).
 - Trainer state, RNG and breeding are in the IO-free `TrainerSim`; one `CreatureFactory` for all spawns.
+- Trainer IPC is typed (`trainer_ipc.rs`); room switches are deferred to the generation boundary and every generation ends with `TRAINER_STATE_CHANGED`.
 - Ocean engine structure, world-size constants and Ocean RNG are known limitations (RV-A01, RV-A05, RV-T04).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-185, TCK-184, TCK-186.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-176, TCK-177, TCK-185, TCK-184, TCK-186.

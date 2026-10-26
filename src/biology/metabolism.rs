@@ -139,6 +139,7 @@ pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &SimulationRu
 /// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration.
 pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::scenarios::Scenario, config: &crate::shared::types::AppConfig, rng: &mut crate::shared::rng::SimRng) -> (f32, f32) {
     use crate::biology::dna::Motor;
+    use crate::biology::scenarios::TrainingScenarioPlugin;
     use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics_with_config, SandboxOrigin};
     let mut config = config.clone();
     config.metabolism.trainer_metabolic_scale = 0.0;

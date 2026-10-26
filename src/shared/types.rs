@@ -185,6 +185,42 @@ pub struct TrainerSpawnMinDistance {
     pub exploration: f32,
 }
 
+/// One value per fixed trainer room: `standard` = difficulty level 0, `exploration` = level 1 (TCK-176).
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RoomPair<T> {
+    pub standard: T,
+    pub exploration: T,
+}
+
+/// Automatic training curriculum (TCK-176): one difficulty level `d` in [0, 1] whose room interpolates between the
+/// small room (`standard`, d = 0) and the large room (`exploration`, d = 1); see `scenarios::LevelScenario`.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrainerCurriculumConfig {
+    /// Gate: success rate of the non-rehearsal trials above this raises the level by `step`
+    pub upper: f32,
+    /// Gate: success rate below this lowers the level by `step`
+    pub lower: f32,
+    pub step: f32,
+    /// Level of a new run in curriculum mode
+    pub start_level: f32,
+    /// Share of the trials per generation run at the rehearsal level (rounded to whole trials, at least one trial
+    /// stays at the current level); 0 = off
+    pub rehearsal_share: f32,
+    /// Level of the rehearsal trials (capped at the current level)
+    pub rehearsal_level: f32,
+    /// Metabolic pressure ramp in curriculum mode: drain scale `rampStart + (1 − rampStart) · d` times
+    /// `metabolism.trainerMetabolicScale`; 1 = no ramp
+    pub metabolic_ramp_start: f32,
+    /// Chamber edge length (px) of the fixed rooms; geometric in d between them
+    pub chamber_size: RoomPair<f32>,
+    /// Ticks per trial of the fixed rooms; geometric in d between them
+    pub epoch_ticks: RoomPair<u32>,
+    /// Plants and meatballs per trial of the fixed rooms; linear in d, rounded
+    pub food_per_type: RoomPair<u32>,
+}
+
 /// Minimal criterion for random trainer genomes (generation 1 and immigrants, RV-S09): at least one food-sensing
 /// organ (eye or nose) and able to move (`trainer_engine::meets_minimal_criterion`).
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
@@ -219,6 +255,16 @@ pub enum MutationChannelMode {
     Separate,
 }
 
+/// When the shared trial layout of the trainer changes (TCK-174, revisited in P8). `Hold` keeps a layout until every
+/// elite solves it; `Rotate` uses a new layout every generation, so selection cannot reward memorising one layout.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutPolicy {
+    Hold,
+    #[default]
+    Rotate,
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfig {
@@ -241,10 +287,14 @@ pub struct AppConfig {
     pub mutation_ops_limit: u32,
     /// Body/brain mutation channels of trainer children: "mixed" (default) or "separate" (TCK-181, experimental)
     pub mutation_channels: MutationChannelMode,
+    /// When the shared trial layout changes: "hold" (until all elites solve it) or "rotate" (every generation)
+    pub trainer_layout_policy: LayoutPolicy,
     /// Trainer fitness weights (TCK-175)
     pub trainer_fitness: TrainerFitnessConfig,
     /// Minimum food distance per room, trial starts and respawns (TCK-154)
     pub trainer_spawn_min_distance: TrainerSpawnMinDistance,
+    /// Difficulty level, gate, rehearsal and metabolic ramp of the training curriculum (TCK-176)
+    pub trainer_curriculum: TrainerCurriculumConfig,
     /// Minimal criterion for random trainer genomes (RV-S09; on in config.json since P7)
     pub trainer_minimal_criterion: TrainerMinimalCriterion,
     /// Random genomes of trainer generation 1, immigrants and Ocean founders (TCK-184)

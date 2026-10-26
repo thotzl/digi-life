@@ -7,7 +7,7 @@ use crate::biology::dna::{
     classify_mutation, generate_structured_genome, mutate_genome, mutate_genome_in_channel, parse_genome, GeneChannel, GenomeComposition, MutationTouch, OrganKind,
 };
 use crate::biology::creature_factory::{spawn_creature, start_energy, SpawnOptions};
-use crate::biology::scenarios::{spawn_at_min_distance, target_distance_by_diet, Scenario, SPAWN_MAX_TRIES};
+use crate::biology::scenarios::{spawn_at_min_distance, target_distance_by_diet, LevelScenario, Scenario, TrainingScenarioPlugin, SPAWN_MAX_TRIES};
 use crate::shared::brain::food_sense_range;
 use crate::shared::rng::seeded;
 use rand::{Rng, RngCore};
@@ -44,7 +44,8 @@ pub struct TrainerSandbox {
     pub approach_min_distance: f32,
     pub accumulated_yield: f32,
     pub consumed_count: u32,
-    pub scenario: Scenario,
+    /// Room of the current trial (scenario plugin at a difficulty level, TCK-176)
+    pub room: LevelScenario,
     pub cumulative_rotation: f32,
     pub coverage_mask: u64,
     /// Energy ran out during the current trial: the creature stops and cannot eat until the trial ends (TCK-178)
@@ -87,7 +88,10 @@ pub struct TrainerTelemetrySandbox {
     pub age: u32,
     pub generation: u32,
     pub genome: String,
+    /// Training mode of the trainer (fixed room or curriculum)
     pub scenario: Scenario,
+    /// Difficulty level of this sandbox's current trial room (TCK-176; 0 = small room, 1 = large room)
+    pub level: f32,
     pub cumulative_rotation: f32,
     pub coverage_mask: u64,
 }
@@ -193,7 +197,8 @@ pub fn meets_minimal_criterion(genome: &str, config: &AppConfig) -> bool {
     false
 }
 
-/// Fresh sandbox in the chamber centre with a random heading and scenario food layout; draws heading, food positions
+/// Fresh sandbox in the chamber centre of `room` (a `Scenario` converts to its fixed room) with a random heading and the
+/// room's food layout; draws heading, food positions
 /// and the respawn seed from `rng` in this order (the trainer passes the trial's shared layout stream, TCK-174).
 /// `methylations` / `synapse_weights` carry Lamarckian inheritance into the factory.
 pub fn init_rust_sandbox(
@@ -201,12 +206,13 @@ pub fn init_rust_sandbox(
     genome: &str,
     current_generation: u32,
     origin_type: SandboxOrigin,
-    scenario: Scenario,
+    room: impl Into<LevelScenario>,
     methylations: Option<&[f32]>,
     synapse_weights: Option<Vec<f32>>,
     rng: &mut SimRng,
 ) -> TrainerSandbox {
-    let size = scenario.plugin().chamber_size();
+    let room: LevelScenario = room.into();
+    let size = room.chamber_size();
     let agent = spawn_creature(genome, SpawnOptions {
         id,
         px: size / 2.0,
@@ -234,7 +240,7 @@ pub fn init_rust_sandbox(
         approach_min_distance: f32::MAX,
         accumulated_yield: 0.0,
         consumed_count: 0,
-        scenario,
+        room,
         cumulative_rotation: 0.0,
         coverage_mask: 0,
         starved: false,
@@ -243,7 +249,7 @@ pub fn init_rust_sandbox(
         visible_scratch: Vec::new(),
     };
 
-    scenario.plugin().initialize(&mut sb, rng);
+    room.initialize(&mut sb, rng);
     sb.respawn_seed = rng.next_u64();
 
     sb
@@ -255,7 +261,7 @@ impl TrainerSandbox {
     /// Draws heading, food positions and the respawn seed from `rng` in this order (the trainer passes the trial's
     /// shared layout stream, TCK-174).
     pub fn reset_trial(&mut self, rng: &mut SimRng) {
-        let plugin = self.scenario.plugin();
+        let plugin = self.room;
         let size = plugin.chamber_size();
 
         self.agent.px = size / 2.0;
@@ -327,7 +333,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox) {
 /// `step_trainer_sandbox_physics` with an explicit config (probes, e.g. Hebbian learning off; TCK-172).
 pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, app_config: &crate::shared::types::AppConfig) {
     sb.epoch_ticks += 1;
-    let plugin = sb.scenario.plugin();
+    let plugin = sb.room;
     let size = plugin.chamber_size();
     let hit_wall = crate::biology::scenarios::step_physics(sb, app_config);
     // Age per trainer tick after the brain step, as in the Ocean (drives the clock input; reset per trial, TCK-174)
@@ -473,6 +479,25 @@ mod tests {
             assert!(drain > 0.0);
             assert_eq!(sb.agent.energy.to_bits(), ocean.energy.to_bits(), "trainer drain {} vs ocean drain {}", start - sb.agent.energy, drain);
         }
+    }
+
+    #[test]
+    fn test_room_metabolic_scale_multiplies_the_trainer_drain() {
+        // Curriculum ramp (TCK-176): the room factor scales the drain; 0 = no drain, fixed rooms 1
+        let mut config = AppConfig::global().clone();
+        config.metabolism.trainer_metabolic_scale = 1.0;
+        let drain = |factor: f32| {
+            let room = Scenario::Standard.plugin().with_metabolic_scale(factor);
+            let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room, None, None, &mut seeded(13));
+            let start = sb.agent.energy;
+            crate::biology::scenarios::step_physics(&mut sb, &config);
+            start - sb.agent.energy
+        };
+        let (full, half, none) = (drain(1.0), drain(0.5), drain(0.0));
+        assert!(full > 0.0);
+        assert_eq!(none, 0.0);
+        assert!((half - 0.5 * full).abs() <= 1e-5 * full.max(1.0), "half {} vs full {}", half, full);
+        assert_eq!(Scenario::Standard.plugin().metabolic_scale(), 1.0);
     }
 
     #[test]
@@ -622,7 +647,7 @@ mod tests {
             let min_dist = scenario.plugin().spawn_min_distance();
             let expected = match scenario {
                 Scenario::Standard => AppConfig::global().trainer_spawn_min_distance.standard,
-                Scenario::Exploration => AppConfig::global().trainer_spawn_min_distance.exploration,
+                _ => AppConfig::global().trainer_spawn_min_distance.exploration,
             };
             assert_eq!(min_dist, expected);
             for seed in 0..20 {

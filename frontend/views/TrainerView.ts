@@ -170,6 +170,37 @@ const StatsValue = styled("span")`
   &.val-red { color: #ef4444; }
 `;
 
+const ProgressCard = styled("div")`
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 4px;
+  padding: 8px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+`;
+
+const ProgressCanvas = styled("canvas")`
+  width: 100%;
+  height: 90px;
+  display: block;
+`;
+
+const ProgressLegend = styled("div")`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.55rem;
+  color: #64748b;
+`;
+
+const PendingNote = styled("span")`
+  font-size: 0.58rem;
+  color: #f59e0b;
+  min-height: 0.7rem;
+`;
+
 const ButtonRow = styled("div")`
   display: flex;
   gap: 6px;
@@ -480,8 +511,47 @@ export function createTrainerView(): HTMLElement {
           }),
           StatsItem({
             children: [
+              StatsLabel({ children: "Success Rate:" }),
+              StatsValue({ id: "stat-success", class: "val-green", children: "–" })
+            ]
+          }),
+          StatsItem({
+            children: [
+              StatsLabel({ children: "Median Fitness:" }),
+              StatsValue({ id: "stat-median-fit", class: "val-blue", children: "–" })
+            ]
+          }),
+          StatsItem({
+            children: [
+              StatsLabel({ children: "First Catch (median):" }),
+              StatsValue({ id: "stat-first-catch", class: "val-gold", children: "–" })
+            ]
+          }),
+          StatsItem({
+            children: [
+              StatsLabel({ children: "Difficulty Level:" }),
+              StatsValue({ id: "stat-level", class: "val-blue", children: "0 % (fixed)" })
+            ]
+          }),
+          StatsItem({
+            children: [
               StatsLabel({ children: "Time Remaining:" }),
               StatsValue({ id: "stat-timer", class: "val-red", children: "5.0s" })
+            ]
+          })
+        ]
+      }),
+      // Progress over the generations of the current run (TCK-177)
+      ProgressCard({
+        children: [
+          StatsLabel({ style: { fontSize: "0.6rem" }, children: "Progress (current run)" }),
+          ProgressCanvas({ id: "canvas-progress", width: "520", height: "180" }),
+          ProgressLegend({
+            children: [
+              styled("span")``({ style: { color: "#10b981" }, children: "■ success %" }),
+              styled("span")``({ style: { color: "#f59e0b" }, children: "■ best fit" }),
+              styled("span")``({ style: { color: "#00f2fe" }, children: "■ median fit" }),
+              styled("span")``({ style: { color: "#c084fc" }, children: "■ level %" }),
             ]
           })
         ]
@@ -543,9 +613,24 @@ export function createTrainerView(): HTMLElement {
                 id: "select-trainer-mode",
                 children: [
                   styled("option")``({ value: "standard", children: "Standard Chamber (1000x1000)" }),
-                  styled("option")``({ value: "exploration", children: "Exploration (3500x3500)" })
+                  styled("option")``({ value: "exploration", children: "Exploration (3500x3500)" }),
+                  styled("option")``({ value: "curriculum", children: "Curriculum (auto)" }),
+                  styled("option")``({ value: "manual", children: "Manual Level (slider)" })
                 ]
-              })
+              }),
+              PendingNote({ id: "lbl-pending-switch" })
+            ]
+          }),
+          // Difficulty level 0 = small room .. 100 % = large room; moving it sets a manual level (TCK-176)
+          SliderControl({
+            children: [
+              SliderLabelRow({
+                children: [
+                  styled("span")``({ children: "Difficulty Level (manual)" }),
+                  styled("span")``({ id: "lbl-level", children: "0%" })
+                ]
+              }),
+              SliderInput({ id: "slider-level", type: "range", min: "0", max: "100", value: "0", step: "5" })
             ]
           }),
           SliderControl({

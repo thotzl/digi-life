@@ -14,7 +14,7 @@ use crate::biology::dna::{
     parse_genome, read_evolution_rates, CreaturePhenotype, MutationKind, MutationOperators, NeuronRole, OrganSide, CHANNELS_PER_ORGANELLE,
     OUTPUT_MOTOR_NODES_COUNT, WILDTYPE_GENOME,
 };
-use crate::biology::scenarios::Scenario;
+use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics_with_config, SandboxOrigin};
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim, IMMOBILE_DISTANCE_PX};
 use crate::shared::brain::{compute_sensory_inputs_into, execute_brain_with_learning};
@@ -602,7 +602,7 @@ fn heredity_with_counts(opts: &ProbeOptions, counts: &[usize]) -> HeredityReport
             "Homologous synapse = same synapse key (source and target role) in parent and child; reflex synapses (sensor sources) are excluded.".to_string(),
             "explicit = synapse owned by an SY gene; exuberant = all other non-reflex synapses (gene-tape weights).".to_string(),
             "terminal_speed: straight run at full thrust for 1800 ticks (see speed probe).".to_string(),
-            "The trainer applies round(len * 0.06) mixed ops per mutant child (15 at 256 bases).".to_string(),
+            "The trainer applies 1 to mutationOpsMax mixed ops per mutant child (config mutationOpsMin/mutationOpsMax, adapted by the 1/5 rule; TCK-174).".to_string(),
             "mixed = mutate_genome (TCK-184 operator mix, config mutationOperators; EVO scales the indel weights); legacy = the pre-TCK-184 character mix (EVO-rate indels, otherwise a random point mutation).".to_string(),
             "Forced kinds skip ops that are not applicable (length bounds, no suitable gene); mixed falls back to creep instead.".to_string(),
         ],

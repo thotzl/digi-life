@@ -7,16 +7,21 @@ use std::process::ExitCode;
 
 use src_tauri::biology::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
 use src_tauri::biology::scenarios::Scenario;
-use src_tauri::biology::trainer_report::{run_trainer, RunConfig};
-use src_tauri::biology::trainer_sim::{MutationChannelMode, TrainerEvent, TrialAggregation};
+use src_tauri::biology::trainer_report::{run_trainer, RunConfig, ScheduleSpan};
+use src_tauri::biology::trainer_sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrialAggregation};
 use src_tauri::database::{init_db, save_trainer_elites};
 use src_tauri::shared::types::AppConfig;
 
 const USAGE: &str = "Usage:
-  trainer_runner run --seed <str> --generations <N> --scenario standard|exploration --population <N>
+  trainer_runner run --seed <str> --generations <N> --scenario standard|exploration|curriculum --population <N>
+                     [--schedule <room>:<gens>,... (rooms standard|exploration|curriculum; replaces --scenario,
+                      sets --generations)] [--eval-final standard,exploration] [--eval-trials <N; default --trials>]
+                     [--curriculum-upper <x>] [--curriculum-lower <x>] [--curriculum-step <x>] [--start-level <0..1>]
+                     [--rehearsal <share 0..1>] [--ramp-start <x>] (defaults: config trainerCurriculum)
                      [--trials <N; default config trainerTrials>] [--aggregation mean|median]
                      [--one-fifth true|false] [--elite-ratio <0..1; default 0.25>]
                      [--minimal-criterion true|false; default config trainerMinimalCriterion.enabled]
+                     [--layout-policy hold|rotate; default config trainerLayoutPolicy]
                      [--mutation-channels mixed|separate; default config mutationChannels]
                      [--multi-trial true|false] [--parallel true|false]
                      [--persist --db <path>] [--run-id <id>] [--out <file>]
@@ -79,19 +84,57 @@ fn parse<T: std::str::FromStr>(flags: &HashMap<String, String>, key: &str, defau
 
 fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     const KNOWN: &[&str] = &[
-        "seed", "generations", "scenario", "population", "trials", "aggregation", "one-fifth", "elite-ratio", "minimal-criterion", "mutation-channels", "multi-trial", "parallel", "persist", "db",
-        "run-id", "out",
+        "seed", "generations", "scenario", "population", "trials", "aggregation", "one-fifth", "elite-ratio", "minimal-criterion", "mutation-channels", "layout-policy", "multi-trial", "parallel", "persist", "db",
+        "run-id", "out", "schedule", "eval-final", "curriculum-upper", "curriculum-lower", "curriculum-step", "start-level", "rehearsal", "ramp-start", "eval-trials",
     ];
     if let Some(unknown) = flags.keys().find(|k| !KNOWN.contains(&k.as_str())) {
         return Err(format!("unknown flag --{}", unknown));
     }
 
-    let scenario = match required(flags, "scenario")? {
-        "standard" => Scenario::Standard,
-        "exploration" => Scenario::Exploration,
-        other => return Err(format!("unknown scenario '{}'", other)),
+    let schedule = match flags.get("schedule") {
+        Some(spec) => parse_schedule(spec)?,
+        None => Vec::new(),
     };
-    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", None)?, parse(flags, "generations", None)?);
+    let scenario = match (flags.get("scenario"), schedule.first()) {
+        (Some(name), first) => {
+            let scenario = parse_room(name)?;
+            if first.is_some_and(|span| span.scenario != scenario) {
+                return Err("--scenario differs from the first --schedule room".to_string());
+            }
+            scenario
+        }
+        (None, Some(span)) => span.scenario,
+        (None, None) => return Err("--scenario or --schedule is required".to_string()),
+    };
+    let scheduled: Option<u32> = (!schedule.is_empty()).then(|| schedule.iter().map(|span| span.generations).sum());
+    let generations: u32 = parse(flags, "generations", scheduled)?;
+    if let Some(total) = scheduled.filter(|&total| total != generations) {
+        return Err(format!("--generations {} differs from the --schedule total {}", generations, total));
+    }
+    let eval_final = match flags.get("eval-final") {
+        Some(list) => list.split(',').map(|name| parse_room(name.trim())).collect::<Result<Vec<_>, _>>()?,
+        None => Vec::new(),
+    };
+    if eval_final.contains(&Scenario::Curriculum) {
+        return Err("--eval-final takes fixed rooms (standard, exploration)".to_string());
+    }
+    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", None)?, generations);
+    let c = defaults.curriculum;
+    let curriculum = CurriculumParams {
+        upper: parse(flags, "curriculum-upper", Some(c.upper))?,
+        lower: parse(flags, "curriculum-lower", Some(c.lower))?,
+        step: parse(flags, "curriculum-step", Some(c.step))?,
+        start_level: parse(flags, "start-level", Some(c.start_level))?,
+        rehearsal_share: parse(flags, "rehearsal", Some(c.rehearsal_share))?,
+        metabolic_ramp_start: parse(flags, "ramp-start", Some(c.metabolic_ramp_start))?,
+        ..c
+    };
+    if !(0.0..=1.0).contains(&curriculum.start_level) || !(0.0..=1.0).contains(&curriculum.rehearsal_share) {
+        return Err("--start-level and --rehearsal must be in [0, 1]".to_string());
+    }
+    if !(curriculum.step > 0.0 && curriculum.step <= 1.0) || curriculum.lower > curriculum.upper {
+        return Err("--curriculum-step must be in (0, 1] and --curriculum-lower <= --curriculum-upper".to_string());
+    }
     let trial_aggregation = match flags.get("aggregation").map(String::as_str) {
         None => defaults.trial_aggregation,
         Some("mean") => TrialAggregation::Mean,
@@ -103,6 +146,12 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         Some("mixed") => MutationChannelMode::Mixed,
         Some("separate") => MutationChannelMode::Separate,
         Some(other) => return Err(format!("unknown mutation channel mode '{}'", other)),
+    };
+    let layout_policy = match flags.get("layout-policy").map(String::as_str) {
+        None => defaults.layout_policy,
+        Some("hold") => LayoutPolicy::Hold,
+        Some("rotate") => LayoutPolicy::Rotate,
+        Some(other) => return Err(format!("unknown layout policy '{}'", other)),
     };
     let elite_ratio: f32 = parse(flags, "elite-ratio", Some(defaults.elite_ratio))?;
     if !(elite_ratio > 0.0 && elite_ratio <= 1.0) {
@@ -116,6 +165,11 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         elite_ratio,
         minimal_criterion: parse(flags, "minimal-criterion", Some(defaults.minimal_criterion))?,
         mutation_channels,
+        layout_policy,
+        curriculum,
+        schedule,
+        eval_final,
+        eval_trials: if flags.contains_key("eval-trials") { Some(parse(flags, "eval-trials", None)?) } else { None },
         parallel: parse(flags, "parallel", Some(false))?,
         ..defaults
     };
@@ -149,16 +203,32 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         config.mutation_channels,
         config.parallel
     );
+    if config.scenario == Scenario::Curriculum || config.schedule.iter().any(|span| span.scenario == Scenario::Curriculum) {
+        eprintln!("[runner] curriculum {:?}", config.curriculum);
+    }
+    if !config.schedule.is_empty() {
+        eprintln!("[runner] schedule {:?}", config.schedule);
+    }
     let report = run_trainer(&config, |event| {
         let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
         eprintln!(
-            "[runner] generation {}/{}: best {:.2}, median {:.2}, success {:.2}",
-            generation, config.generations, stats.best_fitness, stats.median_fitness, stats.success_rate
+            "[runner] generation {}/{}: {:?} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
+            generation,
+            config.generations,
+            stats.scenario,
+            stats.level,
+            stats.best_fitness,
+            stats.median_fitness,
+            stats.success_rate,
+            stats.level_move.map(|m| format!(", gate {:?}", m)).unwrap_or_default()
         );
         if let Some(conn) = &conn {
             save_trainer_elites(conn, &run_id, *generation, elites, retention);
         }
     });
+    for eval in &report.final_eval {
+        eprintln!("[runner] final eval {:?}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
+    }
     eprintln!(
         "[runner] done in {:.2} s ({:.0} ticks/s total, {:.0} per sandbox; generation ends {:.2} s)",
         report.perf.wall_seconds, report.perf.ticks_per_second_total, report.perf.ticks_per_second_per_sandbox, report.perf.generation_end_seconds
@@ -172,6 +242,30 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// Room name of `--scenario`, `--schedule` and `--eval-final`.
+fn parse_room(name: &str) -> Result<Scenario, String> {
+    match name {
+        "standard" => Ok(Scenario::Standard),
+        "exploration" => Ok(Scenario::Exploration),
+        "curriculum" => Ok(Scenario::Curriculum),
+        other => Err(format!("unknown scenario '{}'", other)),
+    }
+}
+
+/// `room:gens,room:gens,...` (e.g. `standard:30,exploration:30,standard:10`).
+fn parse_schedule(spec: &str) -> Result<Vec<ScheduleSpan>, String> {
+    spec.split(',')
+        .map(|part| {
+            let (room, gens) = part.trim().split_once(':').ok_or_else(|| format!("schedule span '{}' is not room:generations", part))?;
+            let generations: u32 = gens.parse().map_err(|_| format!("invalid generation count in schedule span '{}'", part))?;
+            if generations == 0 {
+                return Err(format!("schedule span '{}' has no generations", part));
+            }
+            Ok(ScheduleSpan { scenario: parse_room(room)?, generations })
+        })
+        .collect()
 }
 
 fn write_file(path: &str, json: String) -> Result<(), String> {

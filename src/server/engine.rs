@@ -11,9 +11,10 @@ use crate::shared::spatial_grid::SpatialGrid;
 use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
-use crate::biology::scenarios::Scenario;
+use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::TrainerTelemetrySandbox;
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
+use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerSelectedBrain, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
 use crate::database::{init_db, load_trainer_genomes, save_trainer_elites, LogDbError};
 use crate::shared::rng::seed_from_str;
 
@@ -67,25 +68,28 @@ fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, &'static str) 
 }
 
 /// TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED payload: the trainer settings as the UI shows them.
-fn trainer_state_payload(event_type: &str, is_running: bool, params: &TrainerParams, warp_speed: usize, is_headless: bool, run_id: &str) -> serde_json::Value {
-    json!({
-        "type": event_type,
-        "isRunning": is_running,
-        "N": params.population,
-        "warpSpeed": warp_speed,
-        "eliteRatio": params.elite_ratio,
-        // Kept field name: since TCK-174 the max mutation operator calls per child (`mutation_ops_max`), slider range
-        // [max(1, mutationOpsMin), mutationOpsLimit]
-        "mutationRate": params.mutation_ops_max,
-        "mutationOpsMin": params.mutation_ops_min.max(1),
-        "mutationOpsLimit": crate::shared::types::AppConfig::global().mutation_ops_limit,
-        "inflowRate": params.inflow_rate,
-        "hofRate": params.hof_rate,
-        "multiTrial": params.multi_trial,
-        "isHeadless": is_headless,
-        "runId": run_id,
-        "lamarckian": params.lamarckian
-    })
+fn trainer_state(is_running: bool, trainer: &TrainerSim, warp_speed: usize, is_headless: bool, run_id: &str) -> TrainerState {
+    let params = &trainer.params;
+    TrainerState {
+        is_running,
+        population: params.population,
+        warp_speed,
+        elite_ratio: params.elite_ratio,
+        mutation_rate: params.mutation_ops_max,
+        mutation_ops_min: params.mutation_ops_min.max(1),
+        mutation_ops_limit: crate::shared::types::AppConfig::global().mutation_ops_limit,
+        inflow_rate: params.inflow_rate,
+        hof_rate: params.hof_rate,
+        multi_trial: params.multi_trial,
+        is_headless,
+        run_id: run_id.to_string(),
+        lamarckian: params.lamarckian,
+        training_mode: params.scenario,
+        level: params.scenario.fixed_level().unwrap_or(params.level),
+        level_auto: params.level_auto,
+        pending_mode: trainer.pending_scenario(),
+        generation: trainer.generation,
+    }
 }
 
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
@@ -297,6 +301,146 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             while let Ok(action_str) = rx.try_recv() {
                 if let Ok(action) = serde_json::from_str::<serde_json::Value>(&action_str) {
                     if let Some(act_type) = action["type"].as_str() {
+                        // Trainer actions are typed (TCK-177); the other action types are matched on the raw JSON
+                        if let Ok(trainer_action) = serde_json::from_value::<TrainerAction>(action.clone()) {
+                            let state_changed = |is_running: bool, trainer: &TrainerSim, warp: usize, headless: bool, run_id: &str| {
+                                TrainerUiEvent::TrainerStateChanged(trainer_state(is_running, trainer, warp, headless, run_id)).to_payload()
+                            };
+                            match trainer_action {
+                                // Room switches take effect at the next generation (at once at a generation start; TCK-176)
+                                TrainerAction::SetTrainerMode { mode: scenario } => {
+                                    if scenario != trainer.params.scenario || trainer.pending_scenario().is_some() || (scenario == Scenario::Curriculum && !trainer.params.level_auto) {
+                                        trainer.set_scenario(scenario);
+                                        let size = trainer.room().chamber_size();
+                                        println!("[TRAINER] Training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
+                                    }
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                }
+                                TrainerAction::SetTrainerLevel { level } => {
+                                    trainer.set_level(level);
+                                    println!("[TRAINER] Manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                }
+                                TrainerAction::StartTraining => {
+                                    trainer_is_running = true;
+                                    emit_state(state_changed(true, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                }
+                                TrainerAction::PauseTraining => {
+                                    trainer_is_running = false;
+                                    emit_state(state_changed(false, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                }
+                                TrainerAction::TrainerReset => {
+                                    trainer_is_running = false;
+
+                                    // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
+                                    conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]).log_db_err("DELETE FROM trainer_genomes");
+                                    // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
+                                    let mut fresh_params = trainer.params.clone();
+                                    if fresh_params.level_auto {
+                                        fresh_params.level = fresh_params.curriculum.start_level;
+                                    }
+                                    trainer = TrainerSim::new(fresh_params, trainer_seed(&trainer_run_id), trainer_retention);
+
+                                    let state = trainer_state(false, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
+                                    emit_state(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..state }).to_payload());
+                                }
+                                TrainerAction::SelectTrainerSandbox { id } => {
+                                    trainer_selected_sandbox_id = id;
+                                }
+                                TrainerAction::AssignSandboxCreature(assign) => {
+                                    let sb_id = assign.sandbox_id;
+                                    let m_vec = assign.methylations.unwrap_or_default();
+                                    let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
+                                    // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
+                                    let s_opt = if assign.load_learned_synapses.unwrap_or(false) {
+                                        Some(assign.synapse_weights.unwrap_or_default())
+                                    } else {
+                                        None
+                                    };
+
+                                    let generation = trainer.generation;
+                                    if let Some(sb) = trainer.assign_creature(sb_id, &assign.genome, m_opt, s_opt) {
+                                        // Also save this assigned creature as active in trainer_genomes SQLite database for this run!
+                                        let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, generation, sb_id);
+                                        let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
+                                        let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
+                                        let now_millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+
+                                        conn.execute(
+                                            "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
+                                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
+                                            params![
+                                                unique_id,
+                                                trainer_run_id,
+                                                generation as i32,
+                                                sb.agent.phenotype.latin_name,
+                                                sb.agent.genome,
+                                                0.0,
+                                                now_millis,
+                                                methylations_json,
+                                                synapse_weights_json
+                                            ],
+                                        ).log_db_err("INSERT OR REPLACE INTO trainer_genomes");
+                                    }
+                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                                }
+                                TrainerAction::UpdateTrainerHyperparams(update) => {
+                                    let mut grid_changed = false;
+                                    let mut generation_base = trainer.generation;
+                                    let p = &mut trainer.params;
+                                    if let Some(n) = update.population {
+                                        if n != p.population {
+                                            p.population = n;
+                                            grid_changed = true;
+                                        }
+                                    }
+                                    if let Some(warp) = update.warp_speed {
+                                        trainer_warp_speed = warp;
+                                    }
+                                    if let Some(e_r) = update.elite_ratio {
+                                        p.elite_ratio = e_r;
+                                    }
+                                    // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
+                                    if let Some(ops) = update.mutation_rate {
+                                        let lo = p.mutation_ops_min.max(1);
+                                        p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.mutation_ops_limit.max(lo));
+                                    }
+                                    if let Some(i_r) = update.inflow_rate {
+                                        p.inflow_rate = i_r;
+                                    }
+                                    if let Some(h_r) = update.hof_rate {
+                                        p.hof_rate = h_r;
+                                    }
+                                    if let Some(mt) = update.multi_trial {
+                                        p.multi_trial = mt;
+                                    }
+                                    if let Some(hl) = update.is_headless {
+                                        trainer_is_headless = hl;
+                                    }
+                                    if let Some(lam) = update.lamarckian {
+                                        if lam != p.lamarckian {
+                                            p.lamarckian = lam;
+                                            grid_changed = true;
+                                        }
+                                    }
+                                    if let Some(r_id) = update.run_id {
+                                        if r_id != trainer_run_id {
+                                            trainer_run_id = r_id;
+                                            generation_base = 1;
+                                            grid_changed = true;
+                                        }
+                                    }
+
+                                    if grid_changed {
+                                        trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, generation_base, &conn);
+                                    }
+
+                                    // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                }
+                            }
+                            continue;
+                        }
                         match act_type {
                             "CLIENT_READY" => {
                                 // The mode stays with the router (SET_MODE): forcing Ocean here raced a fast
@@ -622,16 +766,6 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     ocean_warp_factor = speed as usize;
                                 }
                             }
-                            "SET_TRAINER_MODE" => {
-                                if let Some(m) = action["mode"].as_str() {
-                                    let scenario = Scenario::from_mode(m);
-                                    if scenario != trainer.params.scenario {
-                                        trainer.set_scenario(scenario);
-                                        let size = scenario.plugin().chamber_size();
-                                        println!("[TRAINER] Switched training mode to '{}' (Chamber size: {}x{})", m, size, size);
-                                    }
-                                }
-                            }
                             "SET_MODE" => {
                                 if let Some(mode) = action["mode"].as_str() {
                                     if mode == "trainer" {
@@ -641,136 +775,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
                                         // Broadcast full hyperparams truth back to the UI!
-                                        emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", trainer_is_running, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                        emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
                                     } else {
                                         is_trainer_active = false;
                                         println!("[TRAINER] Leaving trainer mode. Resuming Ocean substrate.");
                                     }
                                 }
                             }
-                            "START_TRAINING" => {
-                                trainer_is_running = true;
-                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", true, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                            }
-                            "PAUSE_TRAINING" => {
-                                trainer_is_running = false;
-                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", false, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                            }
-                            "TRAINER_RESET" => {
-                                trainer_is_running = false;
-
-                                // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
-                                conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]).log_db_err("DELETE FROM trainer_genomes");
-                                trainer = TrainerSim::new(trainer.params.clone(), trainer_seed(&trainer_run_id), trainer_retention);
-
-                                let mut payload = trainer_state_payload("TRAINER_RESET_COMPLETED", false, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
-                                payload["generation"] = json!(1);
-                                emit_state(payload);
-                            }
-                            "SELECT_TRAINER_SANDBOX" => {
-                                if let Some(sb_id) = action["id"].as_u64() {
-                                    trainer_selected_sandbox_id = Some(sb_id as u32);
-                                } else {
-                                    trainer_selected_sandbox_id = None;
-                                }
-                            }
-                            "ASSIGN_SANDBOX_CREATURE" => {
-                                if let Some(sb_id) = action["sandbox_id"].as_u64() {
-                                    if let Some(genome) = action["genome"].as_str() {
-                                        let load_syn = action["load_learned_synapses"].as_bool().unwrap_or(false);
-                                        let m_vec: Vec<f32> = serde_json::from_value(action["methylations"].clone()).unwrap_or_default();
-                                        let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
-                                        // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
-                                        let s_opt = if load_syn {
-                                            Some(serde_json::from_value::<Vec<f32>>(action["synapse_weights"].clone()).unwrap_or_default())
-                                        } else {
-                                            None
-                                        };
-
-                                        let generation = trainer.generation;
-                                        if let Some(sb) = trainer.assign_creature(sb_id as u32, genome, m_opt, s_opt) {
-                                            // Also save this assigned creature as active in trainer_genomes SQLite database for this run!
-                                            let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, generation, sb_id);
-                                            let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
-                                            let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
-                                            let now_millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
-
-                                            conn.execute(
-                                                "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
-                                                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
-                                                params![
-                                                    unique_id,
-                                                    trainer_run_id,
-                                                    generation as i32,
-                                                    sb.agent.phenotype.latin_name,
-                                                    sb.agent.genome,
-                                                    0.0,
-                                                    now_millis,
-                                                    methylations_json,
-                                                    synapse_weights_json
-                                                ],
-                                            ).log_db_err("INSERT OR REPLACE INTO trainer_genomes");
-                                        }
-                                    }
-                                }
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                            }
-                            "UPDATE_TRAINER_HYPERPARAMS" => {
-                                let mut grid_changed = false;
-                                let mut generation_base = trainer.generation;
-                                let p = &mut trainer.params;
-                                if let Some(n) = action["N"].as_u64() {
-                                    if n as usize != p.population {
-                                        p.population = n as usize;
-                                        grid_changed = true;
-                                    }
-                                }
-                                if let Some(warp) = action["warpSpeed"].as_u64() {
-                                    trainer_warp_speed = warp as usize;
-                                }
-                                if let Some(e_r) = action["eliteRatio"].as_f64() {
-                                    p.elite_ratio = e_r as f32;
-                                }
-                                // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
-                                if let Some(ops) = action["mutationRate"].as_f64() {
-                                    let lo = p.mutation_ops_min.max(1);
-                                    p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.mutation_ops_limit.max(lo));
-                                }
-                                if let Some(i_r) = action["inflowRate"].as_f64() {
-                                    p.inflow_rate = i_r as f32;
-                                }
-                                if let Some(h_r) = action["hofRate"].as_f64() {
-                                    p.hof_rate = h_r as f32;
-                                }
-                                if let Some(mt) = action["multiTrial"].as_bool() {
-                                    p.multi_trial = mt;
-                                }
-                                if let Some(hl) = action["isHeadless"].as_bool() {
-                                    trainer_is_headless = hl;
-                                }
-                                if let Some(lam) = action["lamarckian"].as_bool() {
-                                    if lam != p.lamarckian {
-                                        p.lamarckian = lam;
-                                        grid_changed = true;
-                                    }
-                                }
-                                if let Some(r_id) = action["runId"].as_str() {
-                                    if r_id != trainer_run_id {
-                                        trainer_run_id = r_id.to_string();
-                                        generation_base = 1;
-                                        grid_changed = true;
-                                    }
-                                }
-
-                                if grid_changed {
-                                    trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, generation_base, &conn);
-                                }
-
-                                // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
-                                emit_state(trainer_state_payload("TRAINER_STATE_CHANGED", trainer_is_running, &trainer.params, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                            }
                             other => {
-                                eprintln!("[SIMULATION] Ignoring unknown client action type '{}'", other);
+                                eprintln!("[SIMULATION] Ignoring unknown or malformed client action type '{}'", other);
                             }
                         }
                     }
@@ -1462,19 +1475,22 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     let steps_this_frame = if trainer_warp_speed > 35 { 35 } else { trainer_warp_speed };
                     for _step in 0..steps_this_frame {
                         if let Some(event) = trainer.step(true) { // parallel == sequential (seeded per-sandbox and per-slot streams)
-                            let TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, .. } = event;
+                            let TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats } = event;
                             println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.2}, Avg Fit: {:.2}", generation, best_fitness, avg_fitness);
 
                             // Broadcast completion metadata back to UI instantly
-                            emit_state(json!({
-                                "type": "TRAINER_GENERATION_COMPLETED",
-                                "generation": generation,
-                                "bestFitness": best_fitness,
-                                "avgFitness": avg_fitness,
-                                "bestGenome": best_genome,
-                                // Max mutation ops per child after this generation (adapted by the 1/5 rule, TCK-174)
-                                "mutationOpsMax": trainer.params.mutation_ops_max,
-                            }));
+                            emit_state(TrainerUiEvent::TrainerGenerationCompleted(TrainerGenerationCompleted {
+                                generation,
+                                best_fitness,
+                                avg_fitness,
+                                best_genome,
+                                mutation_ops_max: trainer.params.mutation_ops_max,
+                                training_mode: trainer.params.scenario,
+                                next_level: trainer.params.scenario.fixed_level().unwrap_or(trainer.params.level),
+                                stats: (&stats).into(),
+                            }).to_payload());
+                            // Settings after the generation boundary (applied room switch, gate level, adapted mutation ops)
+                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes
                             save_trainer_elites(&conn, &trainer_run_id, generation, &elites, trainer_retention);
@@ -1485,14 +1501,14 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                 // C. Stream Trainer Telemetry to UI at 25Hz (lightweight frames)
                 if last_emit_time.elapsed() >= emit_interval {
-                    let plugin = trainer.params.scenario.plugin();
+                    let plugin = trainer.room();
                     let telemetry_sandboxes: Vec<TrainerTelemetrySandbox> = trainer
                         .sandboxes
                         .iter()
                         .map(|sb| {
                             TrainerTelemetrySandbox {
                                 id: sb.id,
-                                chamber_size: plugin.chamber_size(),
+                                chamber_size: sb.room.chamber_size(),
                                 px: sb.agent.px,
                                 py: sb.agent.py,
                                 vx: sb.agent.vx,
@@ -1512,7 +1528,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 age: sb.agent.age,
                                 generation: sb.agent.generation,
                                 genome: sb.agent.genome.clone(),
-                                scenario: sb.scenario,
+                                scenario: trainer.params.scenario,
+                                level: sb.room.level(),
                                 cumulative_rotation: sb.cumulative_rotation,
                                 coverage_mask: sb.coverage_mask,
                             }
@@ -1521,28 +1538,21 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                     let time_str = format!("{:.1}s", ((plugin.epoch_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
 
-                    // Compute selected sandbox live neural activations for real-time brain rendering
-                    let selected_brain_json = if let Some(sel_id) = trainer_selected_sandbox_id {
-                        if let Some(sel_sb) = trainer.sandboxes.iter().find(|s| s.id == sel_id) {
-                            json!({
-                                "id": sel_id,
-                                "activations": sel_sb.agent.neuron_activations
-                            })
-                        } else {
-                            json!(null)
-                        }
-                    } else {
-                        json!(null)
-                    };
+                    // Live neural activations of the selected sandbox for the brain view
+                    let selected_brain = trainer_selected_sandbox_id.and_then(|sel_id| {
+                        trainer.sandboxes.iter().find(|s| s.id == sel_id).map(|sel_sb| TrainerSelectedBrain {
+                            id: sel_id,
+                            activations: sel_sb.agent.neuron_activations.clone(),
+                        })
+                    });
 
-                    emit_state(json!({
-                        "type": "TRAINER_TELEMETRY_TICK",
-                        "generation": trainer.generation,
-                        "isRunning": trainer_is_running,
-                        "timeStr": time_str,
-                        "sandboxes": telemetry_sandboxes,
-                        "selectedBrain": selected_brain_json
-                    }));
+                    emit_state(TrainerUiEvent::TrainerTelemetryTick(TrainerTelemetryTick {
+                        generation: trainer.generation,
+                        is_running: trainer_is_running,
+                        time_str,
+                        sandboxes: telemetry_sandboxes,
+                        selected_brain,
+                    }).to_payload());
 
                     last_emit_time = Instant::now();
                 }

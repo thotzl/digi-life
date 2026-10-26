@@ -49,3 +49,19 @@ Confirmation on 10 seeds (b1..b10): 3 trials mean 0.338 / 0.193 vs. with 1/5 rul
 Population size (seeds b1..b3, chosen settings): 16 → 0.444 / 0.260, 100 → 0.333 / 0.300, 300 → 0.521 / 0.297 at ~7.5× wall time (8.2 s vs. 1.1 s per 30 gens; 883k ticks/s at pop 300). Protocol and UI default stay at 16 (each UI sandbox is a visible tile); pop 300 is the option for headless/curriculum training (P8, TCK-176).
 
 Known limit: `layout_id` is not persisted (a restored run starts at layout 0). UI: with the 1/5 rule on, the mutation slider is sent only on its own change and shows the adapted value after each generation (`mutationOpsMax` in `TRAINER_GENERATION_COMPLETED`).
+
+## Post-fix (P8, 2026-10-26): memorisation of held layouts
+The P7 measurement above used the training success rate, which is measured on the layouts the population is selected on. With layout policy "hold" a layout is only replaced once every elite solves it; on seeds b1/b2 that never happened in 30 gens, so the population specialised on three fixed layouts (b1 standard: 0.52 on its training layout, 0.02–0.25 on unseen layouts). The runner now evaluates the final population on unseen layouts (`--eval-final standard,exploration --eval-trials 10`, stream `EVAL_STREAM`, TCK-176) and the layout policy is configurable (`trainerLayoutPolicy` hold | rotate, runner `--layout-policy`).
+
+Final population on 10 unseen layouts (pop 16, 30 gens, seeds b1..b10; population / elites):
+
+| Training room, policy, trials | training success (last 5) | unseen small | unseen large |
+| :--- | :--- | :--- | :--- |
+| small, hold, 3 (P7 default) | 0.438 | 0.149 / 0.170 | 0.039 / 0.048 |
+| small, rotate, 3 | 0.232 | 0.126 / 0.193 | 0.026 / 0.035 |
+| small, hold, 8 | 0.406 | 0.253 / 0.315 | 0.032 / 0.040 |
+| small, rotate, 8 | 0.313 | 0.266 / 0.355 | 0.044 / 0.053 |
+| large, hold, 3 | 0.283 | 0.115 / 0.158 | 0.051 / 0.065 |
+| large, rotate, 8 | 0.045 | 0.076 / 0.092 | 0.028 / 0.035 |
+
+Corrected decision: **8 trials, layout policy rotate** (a new shared layout every generation): best generalisation in the small room, and the training success then equals performance on unseen layouts instead of overstating it. Shared layouts within a generation stay (fair comparison). The P7 success numbers (small 0.434 / large 0.306) overstate the real capability; from P8 on, epic targets are read on unseen layouts.

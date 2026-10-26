@@ -5,9 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.22] - 2026-10-26
+
+Training track P8 "Curriculum and UI" (epic TCK-171, final phase). New CI reference; golden master unchanged. From this release on, training results are measured on unseen layouts (final population, 10 evaluation trials per room): small room 0.383, large room 0.096 with the curriculum (pop 16, 60 gens, 10 seeds).
+
+### Added
+- Curriculum training mode: one difficulty level from the small room (0) to the large room (1) interpolates chamber size, trial length, food distance and food count; a gate raises the level when the success rate is above 0.3 and lowers it below 0.1 (config `trainerCurriculum`). Optional rehearsal trials at an easier level and a metabolic ramp exist but are off (measured without benefit) (ref TCK-176).
+- Manual difficulty: "Manual Level" mode with a level slider; room and level switches take effect at the next generation boundary and are shown as pending (ref TCK-176).
+- Trainer UI metrics: success rate, median fitness, median time to first catch and level per generation, plus a progress curve over the run; values come from the same per-generation statistics as the headless report (ref TCK-177).
+- Headless runner: `--scenario curriculum`, `--schedule room:gens,...`, `--eval-final <rooms>` and `--eval-trials` (final population on unseen layouts), `--layout-policy`, curriculum gate/rehearsal/ramp overrides; report fields for level, gate moves, rehearsal and final evaluation (ref TCK-176).
+
+### Changed
+- Trainer evaluation, correcting P7: 8 trials per generation and a new shared layout every generation (`trainerTrials` 8, `trainerLayoutPolicy` "rotate"). With P7's "hold" policy and 3 trials the population memorised its few training layouts; the P7 success rates (0.434 / 0.306) overstated the real capability (0.149 / 0.039 on unseen layouts). On unseen layouts the small room improves from 0.149 to 0.266 at 30 gens (ref TCK-174).
+- Both training rooms are levels of one scenario plugin (`LevelScenario`); room parameters moved to config (`trainerCurriculum.chamberSize`, `epochTicks`, `foodPerType`) (ref TCK-176).
+- Typed trainer IPC: telemetry, generation-completed, state and reset events and the trainer actions are ts-rs types (`src/server/trainer_ipc.rs`, `bindings/`) instead of untyped JSON; malformed trainer actions are logged and ignored (ref TCK-177).
+- Trainer rendering: a `requestAnimationFrame` loop draws the sandboxes while the trainer view is active and stops when it is left; telemetry only stores snapshots (ref TCK-177).
+
+### Fixed
+- The heredity probe still described the pre-P7 mutation strength (`round(len · 0.06)` ops per child).
+- Trainer view: in the large room spores and creatures shrank to about one pixel on the 360 px tiles; they now keep a minimum drawn size (positions stay true to scale).
+
 ## [1.12.21] - 2026-10-26
 
-Training track P7 "Evaluation and fitness" (epic TCK-171). Intended model change: new CI reference, model tables reset once on first start (model version 5, fitness scale changed); golden master unchanged. Success (pop 16, 30 gens, last 5 gens, 20 seeds) small 0.223 → 0.434, large 0.050 → 0.306.
+Training track P7 "Evaluation and fitness" (epic TCK-171). Intended model change: new CI reference, model tables reset once on first start (model version 5, fitness scale changed); golden master unchanged. Training success (pop 16, 30 gens, last 5 gens, 20 seeds) small 0.223 → 0.434, large 0.050 → 0.306; these numbers overstate the real capability because the population memorised its training layouts, corrected in 1.12.22.
 
 ### Changed
 - Trainer evaluation: all sandboxes of a generation share one layout per trial (food positions, start heading, respawn seed), derived from the run seed; the layout advances once every elite caught food in every trial. 3 trials, mean aggregation (configurable `trainerTrials`, `trainerTrialAggregation`) (ref TCK-174).

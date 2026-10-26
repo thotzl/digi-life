@@ -1,4 +1,6 @@
+import { effect } from "@preact/signals-core";
 import { CreatureRenderer } from './render/creatureRenderer';
+import { currentView } from "./core/router";
 import { safeInvoke, getPhenotype, phenotypeCache } from './api';
 import { IconElite, IconTrophy, IconMutant, IconPlant, IconSuccess, IconActive } from './components/Icons';
 import {
@@ -6,11 +8,23 @@ import {
   selectedMaxEnergy, selectedAge, selectedGenome,
   selectedMethylations, selectedPhenotype, selectedBrainActivations
 } from "./signals";
+import { drawProgressChart } from "./render/progressChart";
+import {
+  ProgressHistory, TRAINING_MODE_LABELS, formatFirstCatch, formatLevel, formatRate, modeChoice, pendingSwitchLabel,
+  type TrainingModeChoice,
+} from "./trainerMetrics";
+import type { TrainerAction } from "../bindings/TrainerAction";
+import type { TrainerGenerationCompleted } from "../bindings/TrainerGenerationCompleted";
+import type { TrainerState } from "../bindings/TrainerState";
+import type { TrainerTelemetrySandbox } from "../bindings/TrainerTelemetrySandbox";
+import type { TrainerUiEvent } from "../bindings/TrainerUiEvent";
 
 // Backing-store size of the mini-canvases: tiles show at ~130-160 CSS px, so 360 px covers DPR 2;
 // a 1000 px store per tile made 16 tiles at 25 Hz GPU-bound and backed up the webview
 const canvasWidth = 360;
 const canvasHeight = 360;
+// Minimum drawn size of spores and creatures in canvas px per world unit (the small room draws at 0.36)
+const MIN_PX_PER_UNIT = 0.3;
 
 // DOM Elements
 const gridContainer = document.getElementById("sandbox-grid") as HTMLDivElement;
@@ -18,6 +32,11 @@ const statGen = document.getElementById("stat-gen") as HTMLSpanElement;
 const statBestFit = document.getElementById("stat-best-fit") as HTMLSpanElement;
 const statAvgFit = document.getElementById("stat-avg-fit") as HTMLSpanElement;
 const statTimer = document.getElementById("stat-timer") as HTMLSpanElement;
+const statSuccess = document.getElementById("stat-success") as HTMLSpanElement;
+const statMedianFit = document.getElementById("stat-median-fit") as HTMLSpanElement;
+const statFirstCatch = document.getElementById("stat-first-catch") as HTMLSpanElement;
+const statLevel = document.getElementById("stat-level") as HTMLSpanElement;
+const canvasProgress = document.getElementById("canvas-progress") as HTMLCanvasElement;
 
 const btnStart = document.getElementById("btn-start") as HTMLButtonElement;
 const btnReset = document.getElementById("btn-reset-train") as HTMLButtonElement;
@@ -33,6 +52,7 @@ const chkMultiTrial = document.getElementById("chk-multi-trial") as HTMLInputEle
 const chkLamarck = document.getElementById("chk-lamarck-syn") as HTMLInputElement;
 const selectTrainerMode = document.getElementById("select-trainer-mode") as HTMLSelectElement;
 const sliderZoomTiles = document.getElementById("slider-zoom-tiles") as HTMLInputElement;
+const sliderLevel = document.getElementById("slider-level") as HTMLInputElement;
 
 const lblGridSize = document.getElementById("lbl-grid-size") as HTMLSpanElement;
 const lblSpeedup = document.getElementById("lbl-speedup") as HTMLSpanElement;
@@ -42,6 +62,8 @@ const lblInflow = document.getElementById("lbl-inflow-rate") as HTMLSpanElement;
 const lblHof = document.getElementById("lbl-hof-rate") as HTMLSpanElement;
 const lblTrainerMode = document.getElementById("lbl-trainer-mode") as HTMLSpanElement;
 const lblZoomTiles = document.getElementById("lbl-zoom-tiles") as HTMLSpanElement;
+const lblLevel = document.getElementById("lbl-level") as HTMLSpanElement;
+const lblPendingSwitch = document.getElementById("lbl-pending-switch") as HTMLSpanElement;
 
 const txtDna = document.getElementById("txt-dna") as HTMLTextAreaElement;
 
@@ -51,7 +73,14 @@ interface Sandbox {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   renderer: CreatureRenderer;
-  lastTelemetry: any | null;
+  lastTelemetry: TrainerTelemetrySandbox | null;
+}
+
+// Trainer actions are typed by the generated bindings (TCK-177)
+function sendTrainerAction(action: TrainerAction) {
+  return safeInvoke("handle_client_action", { action: JSON.stringify(action) }).catch((err) => {
+    console.error(`Tauri invoke error ${action.type}:`, err);
+  });
 }
 
 let isRunning = false;
@@ -70,7 +99,7 @@ function updateStartButtonUI() {
   }
 }
 
-function syncSlidersFromBackend(data: any) {
+function syncSlidersFromBackend(data: TrainerState) {
   if (data.N !== undefined) {
     N = data.N;
     sliderGridSize.value = N.toString();
@@ -126,8 +155,57 @@ function syncSlidersFromBackend(data: any) {
     chkLamarck.checked = isLamarckian;
   }
   if (data.runId !== undefined) {
+    if (data.runId !== runId) progress.clear();
     runId = data.runId;
   }
+  syncTrainingMode(data);
+}
+
+// Training mode, difficulty level and a pending room switch (TCK-176); switches apply at the next generation
+function syncTrainingMode(data: TrainerState) {
+  const choice = modeChoice(data.trainingMode, data.levelAuto);
+  selectTrainerMode.value = choice;
+  lblTrainerMode.innerText = TRAINING_MODE_LABELS[choice];
+  statLevel.innerText = formatLevel(data.level, data.trainingMode, data.levelAuto);
+  statLevel.title = String(data.level);
+  if (document.activeElement !== sliderLevel) {
+    sliderLevel.value = Math.round(data.level * 100).toString();
+    lblLevel.innerText = `${sliderLevel.value}%`;
+  }
+  lblPendingSwitch.innerText = pendingSwitchLabel(data.pendingMode);
+}
+
+// Progress curve of the current run; cleared on reset and run switch
+const progress = new ProgressHistory();
+function redrawProgress() {
+  drawProgressChart(canvasProgress, progress.points);
+}
+
+function resetGenerationStats() {
+  for (const el of [statSuccess, statMedianFit, statFirstCatch]) {
+    el.innerText = "–";
+    el.title = "";
+  }
+  progress.clear();
+  redrawProgress();
+}
+
+// Report stats of a completed generation (same values as the headless report's `generations[]`); exact values in `title`
+function showGenerationStats(data: TrainerGenerationCompleted) {
+  const s = data.stats;
+  statSuccess.innerText = formatRate(s.successRate);
+  statSuccess.title = String(s.successRate);
+  statMedianFit.innerText = s.medianFitness.toFixed(2);
+  statMedianFit.title = String(s.medianFitness);
+  statFirstCatch.innerText = formatFirstCatch(s.medianTimeToFirstCatch);
+  statFirstCatch.title = s.medianTimeToFirstCatch === null ? "" : `${s.medianTimeToFirstCatch} ticks (mean ${s.meanTimeToFirstCatch})`;
+  progress.add(s);
+  redrawProgress();
+}
+
+function switchRun(id: string) {
+  if (id !== runId) resetGenerationStats();
+  runId = id;
 }
 
 let N = 16;
@@ -143,6 +221,8 @@ let isMultiTrial = true;
 let isLamarckian = false;
 let runId = "default_run";
 let currentGeneration = 1;
+
+redrawProgress();
 
 function getSandboxTaxaString(id: number, gen: number, pheno: any): string {
   const carn = pheno.carnivory;
@@ -188,17 +268,21 @@ function drawSandbox(sb: Sandbox) {
   }
   ctx.stroke();
 
+  // Large rooms shrink the world to ~0.1 px per unit on a 360 px tile; spores and the creature keep a minimum
+  // on-screen size (MIN_PX_PER_UNIT) so they stay visible, the positions stay true to scale
+  const markerZoom = Math.max(1, MIN_PX_PER_UNIT / scale);
+
   // Glow as a translucent halo instead of shadowBlur (a blur pass per spore is expensive on the GPU)
   tele.foods.forEach((spore: any) => {
     const color = spore.typeId === 2 ? '#ef4444' : '#10b981';
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.25;
     ctx.beginPath();
-    ctx.arc(spore.x, spore.y, 12, 0, Math.PI * 2);
+    ctx.arc(spore.x, spore.y, 12 * markerZoom, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.beginPath();
-    ctx.arc(spore.x, spore.y, 8, 0, Math.PI * 2);
+    ctx.arc(spore.x, spore.y, 8 * markerZoom, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -209,6 +293,9 @@ function drawSandbox(sb: Sandbox) {
     return;
   }
 
+  ctx.translate(tele.px, tele.py);
+  ctx.scale(markerZoom, markerZoom);
+  ctx.translate(-tele.px, -tele.py);
   sb.renderer.render(
     pheno,
     Date.now() * 0.05,
@@ -221,20 +308,30 @@ function drawSandbox(sb: Sandbox) {
   ctx.restore();
 }
 
-// Telemetry only marks sandboxes dirty; drawing happens at most once per animation frame, so a slow
-// GPU drops frames instead of queueing draws behind the 25 Hz telemetry
+// Render loop (TCK-177): telemetry (25 Hz) only stores the latest snapshot and marks the sandbox dirty; while the
+// trainer view is active a requestAnimationFrame loop draws the dirty sandboxes once per frame, so a slow GPU drops
+// frames instead of queueing draws. Unchanged snapshots are not redrawn.
 const dirtySandboxes = new Set<Sandbox>();
-let drawScheduled = false;
+let renderLoopId = 0;
 function scheduleDraw(sb: Sandbox) {
   dirtySandboxes.add(sb);
-  if (drawScheduled) return;
-  drawScheduled = true;
-  requestAnimationFrame(() => {
-    drawScheduled = false;
-    dirtySandboxes.forEach(drawSandbox);
-    dirtySandboxes.clear();
-  });
 }
+function renderFrame() {
+  dirtySandboxes.forEach(drawSandbox);
+  dirtySandboxes.clear();
+  renderLoopId = requestAnimationFrame(renderFrame);
+}
+effect(() => {
+  if (currentView.value === "trainer") {
+    if (!renderLoopId) {
+      sandboxes.forEach((sb) => dirtySandboxes.add(sb));
+      renderLoopId = requestAnimationFrame(renderFrame);
+    }
+  } else if (renderLoopId) {
+    cancelAnimationFrame(renderLoopId);
+    renderLoopId = 0;
+  }
+});
 
 async function rebuildSandboxGrid() {
   dirtySandboxes.clear();
@@ -280,7 +377,7 @@ async function rebuildSandboxGrid() {
       box.classList.add("selected");
       selectedSandboxIdx = idx;
       
-      safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SELECT_TRAINER_SANDBOX", id }) }).catch(() => {});
+      sendTrainerAction({ type: "SELECT_TRAINER_SANDBOX", id });
       
       const lastTele = sandboxes[selectedSandboxIdx]?.lastTelemetry;
       if (lastTele) {
@@ -322,21 +419,19 @@ async function rebuildSandboxGrid() {
 // `mutationRate` is sent only when the mutation slider itself changed: with the 1/5 rule the backend adapts the
 // max ops per generation, and other sliders must not overwrite it with the slider's stale value
 function pushHyperparamsToRust(includeMutation = false) {
-  safeInvoke("handle_client_action", {
-    action: JSON.stringify({
-      type: "UPDATE_TRAINER_HYPERPARAMS",
-      N,
-      warpSpeed,
-      eliteRatio,
-      ...(includeMutation ? { mutationRate: mutationOpsMax } : {}),
-      inflowRate,
-      hofRate,
-      multiTrial: isMultiTrial,
-      isHeadless: false,
-      runId,
-      lamarckian: isLamarckian
-    })
-  }).catch(() => {});
+  sendTrainerAction({
+    type: "UPDATE_TRAINER_HYPERPARAMS",
+    N,
+    warpSpeed,
+    eliteRatio,
+    ...(includeMutation ? { mutationRate: mutationOpsMax } : {}),
+    inflowRate,
+    hofRate,
+    multiTrial: isMultiTrial,
+    isHeadless: false,
+    runId,
+    lamarckian: isLamarckian
+  });
 }
 
 btnStart.addEventListener("click", () => {
@@ -344,9 +439,9 @@ btnStart.addEventListener("click", () => {
   updateStartButtonUI();
   
   if (isRunning) {
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "START_TRAINING" }) }).catch(() => {});
+    sendTrainerAction({ type: "START_TRAINING" });
   } else {
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "PAUSE_TRAINING" }) }).catch(() => {});
+    sendTrainerAction({ type: "PAUSE_TRAINING" });
   }
 });
 
@@ -355,7 +450,7 @@ btnReset.addEventListener("click", async () => {
   if (confirmReset) {
     isRunning = false;
     updateStartButtonUI();
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "TRAINER_RESET" }) }).catch(() => {});
+    sendTrainerAction({ type: "TRAINER_RESET" });
   }
 });
 
@@ -420,7 +515,7 @@ async function populateRunSelector() {
     labelSpan.style.whiteSpace = "nowrap";
 
     labelSpan.addEventListener("click", () => {
-      runId = item.id;
+      switchRun(item.id);
       dropdownTrigger.click();
       rebuildSandboxGrid();
       populateRunSelector();
@@ -446,7 +541,7 @@ async function populateRunSelector() {
           }
 
           if (wasActive) {
-            runId = "default_run";
+            switchRun("default_run");
           }
 
           await rebuildSandboxGrid();
@@ -477,7 +572,7 @@ document.addEventListener("click", () => {
 btnCreateTraining.addEventListener("click", () => {
   const name = txtNewTraining.value.trim().replace(/[^a-zA-Z0-9_-]/g, "_");
   if (name.length > 0) {
-    runId = name;
+    switchRun(name);
     txtNewTraining.value = "";
     rebuildSandboxGrid();
     populateRunSelector();
@@ -568,13 +663,23 @@ chkLamarck.addEventListener("change", () => {
   pushHyperparamsToRust();
 });
 
-selectTrainerMode?.addEventListener("change", () => {
-  const m = selectTrainerMode.value;
-  if (lblTrainerMode) {
-    lblTrainerMode.innerText = m === "exploration" ? "Erkundung" : "Standard";
+// The backend answers with TRAINER_STATE_CHANGED (mode, level, pending switch); "manual" sets the slider's level
+selectTrainerMode.addEventListener("change", () => {
+  const choice = selectTrainerMode.value as TrainingModeChoice;
+  lblTrainerMode.innerText = TRAINING_MODE_LABELS[choice];
+  if (choice === "manual") {
+    sendTrainerAction({ type: "SET_TRAINER_LEVEL", level: parseInt(sliderLevel.value) / 100 });
+  } else {
+    sendTrainerAction({ type: "SET_TRAINER_MODE", mode: choice });
   }
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_TRAINER_MODE", mode: m }) })
-    .catch(err => console.error("Tauri invoke error SET_TRAINER_MODE:", err));
+});
+
+sliderLevel.addEventListener("input", () => {
+  lblLevel.innerText = `${sliderLevel.value}%`;
+});
+sliderLevel.addEventListener("change", () => {
+  sendTrainerAction({ type: "SET_TRAINER_LEVEL", level: parseInt(sliderLevel.value) / 100 });
+  sliderLevel.blur();
 });
 
 sliderZoomTiles?.addEventListener("input", () => {
@@ -591,7 +696,7 @@ async function setupTauriListeners() {
   if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
     const { listen } = await import("@tauri-apps/api/event");
     
-    await listen("simulation-state", (event: any) => {
+    await listen<TrainerUiEvent | { type: "DATABASE_CHANGED" }>("simulation-state", (event) => {
       const data = event.payload;
 
       if (data.type === "TRAINER_TELEMETRY_TICK") {
@@ -599,7 +704,7 @@ async function setupTauriListeners() {
         statGen.innerText = currentGeneration.toString();
         statTimer.innerText = data.timeStr;
 
-        data.sandboxes.forEach((tele: any) => {
+        data.sandboxes.forEach((tele) => {
           const sb = sandboxes.find(s => s.id === tele.id);
           if (sb) {
             sb.lastTelemetry = tele;
@@ -667,11 +772,10 @@ async function setupTauriListeners() {
         statBestFit.innerText = data.bestFitness.toFixed(2);
         statAvgFit.innerText = data.avgFitness.toFixed(2);
         txtDna.value = data.bestGenome;
-        if (data.mutationOpsMax !== undefined) {
-          mutationOpsMax = data.mutationOpsMax;
-          sliderMutation.value = mutationOpsMax.toString();
-          lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
-        }
+        mutationOpsMax = data.mutationOpsMax;
+        sliderMutation.value = mutationOpsMax.toString();
+        lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
+        showGenerationStats(data);
         populateRunSelector();
       }
       else if (data.type === "TRAINER_RESET_COMPLETED") {
@@ -680,6 +784,7 @@ async function setupTauriListeners() {
         statAvgFit.innerText = "0.00";
         statTimer.innerText = "5.0s";
         txtDna.value = "";
+        resetGenerationStats();
         isRunning = false;
         updateStartButtonUI();
         syncSlidersFromBackend(data);

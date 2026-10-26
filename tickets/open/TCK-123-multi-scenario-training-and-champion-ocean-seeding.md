@@ -68,3 +68,6 @@ Eliminate the simulation gap where search exploration is penalized as distance w
 - Write Rust unit tests for `prepared_creatures` CRUD operations.
 - Write unit tests for scenario-specific fitness calculations, asserting Standard vs. Exploration scoring differences.
 - Verify full TypeScript compilation and Vite build with zero errors.
+
+## Note (epic TCK-171 P8, 2026-10-26)
+The small core of this ticket is implemented in TCK-176: both rooms are levels of one plugin (`LevelScenario`), a curriculum mode moves the level by success, manual level setting, switches at generation boundaries, runner schedules (`--schedule`). Still open here: further rooms/scenarios, playlists and champion seeding into the Ocean — to be re-scoped with the after-epic plan (arenas, active traits, rooms/modes as plugins; `.agents/state/next-tasks.md`).

@@ -32,14 +32,15 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `main.rs`, `lib.rs` | Tauri setup, command registration, DB setup, starts the engine; module tree | [[wiki/architecture/system-overview]] |
 | `server/engine.rs` | simulation thread: Ocean + Trainer loop, actions, events, auto-save, restock | [[wiki/architecture/simulation-engine]] |
 | `server/api.rs` | Tauri commands (species, trainer, catalogue, phenotype) | [[wiki/architecture/ipc-protocol]] |
+| `server/trainer_ipc.rs` | typed trainer events (`TrainerUiEvent`) and actions (`TrainerAction`), ts-rs exported (TCK-177) | [[wiki/architecture/ipc-protocol]] |
 | `database.rs` | SQLite path, schema, model-version reset, WAL, shared connection, error logging, trainer genome IO | [[wiki/architecture/persistence]] |
 | `biology/dna.rs` | genome compiler (gene table and identity, traits, organs), Brain v2 topology (roles, keys, owners, weight tapes), structured genome generator, mutation operators, Latin names | [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]] |
 | `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers); Lamarckian weight inheritance by synapse key | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig`, cost-calibration helper | [[wiki/biology/metabolism-and-reproduction]] |
-| `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, breeding, hall of fame, generation stats | [[wiki/simulation/trainer]] |
+| `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, layout policy, curriculum gate, rehearsal, pending room switches, breeding, hall of fame, generation stats, population evaluation | [[wiki/simulation/trainer]] |
 | `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox physics step | [[wiki/simulation/trainer]] |
-| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait, shared sandbox step, spawn distance per room, shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
-| `biology/trainer_report.rs` | headless trainer run and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
+| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait and its one implementation `LevelScenario` (room at a difficulty level), shared sandbox step, shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
+| `biology/trainer_report.rs` | headless trainer run (room schedule, final evaluation) and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
 | `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology, metabolism) | [[wiki/simulation/analytics-and-balancing]] |
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
@@ -61,7 +62,8 @@ Largest files: `dna.rs` (~3,000 lines, ~900 of them tests), `engine.rs` (~1,500)
 | `api.ts` | `invoke` wrapper, phenotype cache | [[wiki/architecture/ipc-protocol]] |
 | `signals.ts` | selection/telemetry signals | [[wiki/frontend/structure]] |
 | `views/` | MainMenu, OceanView, TrainerView, CatalogueView, UnifiedDiagnosticsPanel | [[wiki/frontend/structure]] |
-| `render/` | creature and brain renderers | [[wiki/frontend/structure]] |
+| `render/` | creature and brain renderers, trainer progress chart | [[wiki/frontend/structure]] |
+| `trainerMetrics.ts`, `trainerMetrics.test.ts` | trainer metric formatting, mode labels, progress history; Vitest tests | [[wiki/frontend/structure]] |
 | `core/` | camera, `styled` engine, HTML escaping | [[wiki/frontend/structure]] |
 | `components/` | icons | — |
 | `shared/types.ts` | IPC types: brain/gene types re-exported from `bindings/`, the rest handwritten | [[wiki/architecture/ipc-protocol]] |
