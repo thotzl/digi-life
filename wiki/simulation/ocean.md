@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md]
 ---
 
 # Ocean
@@ -21,6 +21,14 @@ The open-world mode: a closed basin with a free-living population.
 - Catalogue releases are scattered randomly to avoid stacking (TCK-129).
 - Mitosis, death, decomposition and predation: [[wiki/biology/metabolism-and-reproduction]].
 
+## Energy economy (P6)
+
+- Drain per tick: the shared energy function `metabolism::drain_energy` (body, organs, neurons, synaptic activity, thrust; TCK-151), right after the brain step, plus thermal stress outside the thermal tolerance. The former BMR drain with the `* 0.45` literal is gone; the median typical total cost of structured genomes (resting + movement at the mean |thrust| of a standard trial) equals that old drain (0.0243 per tick), resting alone is ≈ 0.0152, full thrust about doubles the resting cost ([[wiki/biology/metabolism-and-reproduction]]).
+- Income: plant and meat spores (`metabolism::food_energy`, `foodSporeEnergy` 15 · diet efficiency), photosynthesis in the light zone (`photosynthesisEnergyGain`), and bites.
+- **Predation** (TCK-145): one bite per attacker and tick on the nearest eligible victim, per-pair cooldown `biteCooldownTicks` (60); the attacker gains `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`, capped by the 35 damage and by what the victim still has after earlier bites in the same tick, and the bite counts as eating for mitosis (`has_eaten`). Predators can now live from biting; before P6 a bite gave no energy and the same victim could be bitten every tick (RV-B07 resolved). The `[BITE ATTACK]` log event shows damage and gain.
+- Death log: "hunted down by predators" only for an agent that took bite damage in that tick, otherwise starvation/senescence (`death_log`); before P6 every death in the damage pass was reported as predation (P5: 101 "hunted" deaths with 0 bites in 90 s).
+- **Measured economy check** (UI, 90 s at maximum warp, single run, `thread_rng`): total deaths P5 ≈ 149 vs. P6 ≈ 147; P6: 13 bites, 5 predation deaths, 142 starvation/senescence deaths, 157 restocks; the population stays at the target 25. The death turnover is unchanged against P5 and is held by restocking (RV-B01); predation is rare. No headless Ocean runner, so there are no seeded multi-run numbers.
+
 ## Auto-save
 
 - Every 10 s `simulation_state` (`current_state`) and a `simulation_history` row; loaded on startup ([[wiki/architecture/persistence]]).
@@ -37,5 +45,6 @@ The open-world mode: a closed basin with a free-living population.
 - Rust-generated world, rendered by the client; biomes are cosmetic.
 - Population is held by restocking only (RV-B01).
 - Locomotion is fixed for every genome (1–5 px/tick, turning at rest; RV-S02, TCK-150); sparse food remains unmeasured (RV-S07).
+- Energy uses the shared activity-based cost (TCK-151); bites transfer energy with a cooldown (TCK-145); a 90 s UI check shows P5-level death turnover (≈ 147 deaths, 5 by predation) at a stable population of 25.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`, TCK-150, TCK-172, TCK-180, TCK-184.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`, `HANDOFF.md`, TCK-145, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.

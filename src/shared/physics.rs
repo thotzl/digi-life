@@ -123,10 +123,15 @@ pub fn target_terminal_speed(phenotype: &crate::biology::dna::CreaturePhenotype,
     min + (max - min) * locomotion_drive(phenotype)
 }
 
+/// Body mass `r^1.5 · L / 25` (also the body term of the metabolic cost, TCK-151).
+pub fn body_mass(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
+    fmath::powf(phenotype.spinal_harmonics.mean_radius, 1.5) * (phenotype.spinal_harmonics.base_length / 25.0)
+}
+
 /// Mass and forward drag coefficient of a body (receptor ballast raises drag, stiffness lowers it).
 fn mass_and_drag(phenotype: &crate::biology::dna::CreaturePhenotype, app_config: &AppConfig) -> (f32, f32) {
     let mean_radius = phenotype.spinal_harmonics.mean_radius;
-    let mass = fmath::powf(mean_radius, 1.5) * (phenotype.spinal_harmonics.base_length / 25.0);
+    let mass = body_mass(phenotype);
     let receptor_ballast = phenotype.organelles.len() as f32 * app_config.rules.receptor_ballast_scale;
     let drag_forward = (mean_radius * app_config.rules.drag_forward_coefficient + receptor_ballast)
         * (1.0 - phenotype.stiffness * app_config.rules.drag_forward_stiffness_decay);

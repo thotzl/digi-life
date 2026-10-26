@@ -15,7 +15,9 @@ static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 /// 2 = Brain v2 (TCK-171 P3: role keys, gene identity by promoter spelling, weight tapes).
 /// 3 = Oja learning with fixed reflexes (TCK-152: `plastic` flag in stored phenotypes; weights learned under the
 ///     old rule, incl. drifted reflexes, are not valid under the new one).
-pub const MODEL_VERSION: u32 = 3;
+/// 4 = Energy v2 (TCK-151/178: `basalMetabolicRate` removed from stored phenotypes; trainer fitness and weights were
+///     selected and learned without an energy budget).
+pub const MODEL_VERSION: u32 = 4;
 
 /// Tables whose rows depend on the model version; dropped (and recreated empty) on a version change. No migration.
 const MODEL_TABLES: [&str; 5] = ["trainer_genomes", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];

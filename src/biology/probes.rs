@@ -23,7 +23,7 @@ use crate::shared::physics::step_creature_kinematics;
 use crate::shared::rng::{derive, seed_from_str, SimRng};
 use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
 
-pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology"];
+pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology", "metabolism"];
 
 /// Length of the letter-soup genomes (the random immigrants before TCK-184).
 const LETTER_SOUP_LENGTH: usize = 256;
@@ -41,6 +41,7 @@ const STREAM_EQUIPMENT: u64 = 3;
 const STREAM_WALL: u64 = 5;
 const STREAM_HEBBIAN: u64 = 6;
 const STREAM_STRUCTURED_GENOMES: u64 = 7;
+const STREAM_METABOLISM: u64 = 8;
 
 /// Population labels: random letters (no gene structure) vs `generate_structured_genome` (trainer generation 1).
 const LETTER_SOUP: &str = "letter_soup";
@@ -85,6 +86,7 @@ pub fn run_probe(name: &str, opts: &ProbeOptions) -> Result<serde_json::Value, S
         "wall" => serde_json::to_value(probe_wall(opts)),
         "hebbian" => serde_json::to_value(probe_hebbian(opts)),
         "topology" => serde_json::to_value(probe_topology(opts)),
+        "metabolism" => serde_json::to_value(probe_metabolism(opts)),
         other => return Err(format!("unknown probe '{}' (known: {}, all)", other, PROBE_NAMES.join(", "))),
     }
     .map_err(|e| e.to_string())?;
@@ -1461,6 +1463,82 @@ pub fn probe_topology(opts: &ProbeOptions) -> TopologyReport {
         sets,
         wildtype_synapses: wildtype.brain.synapses.len(),
         wildtype_neurons: wildtype.brain.neurons.len(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetabolismSet {
+    pub genomes: String,
+    pub n: usize,
+    /// Body mass `r^1.5 · L / 25`
+    pub body_mass: Option<Distribution>,
+    /// `Σ scale² · (1.1 − bandwidth)`
+    pub organ_load: Option<Distribution>,
+    /// Thalamus + hidden + motor neurons
+    pub neurons: Option<Distribution>,
+    /// Mean `Σ |w · a_source|` per tick over one standard-room trial
+    pub activity: Option<Distribution>,
+    /// Resting cost per tick at the genome's own trial activity (`metabolism::tick_cost`, no movement)
+    pub resting_cost: Option<Distribution>,
+    /// Brain + senses share of the resting cost per genome
+    pub brain_senses_share: Option<Distribution>,
+    /// Movement cost at full thrust / resting cost per genome
+    pub full_thrust_ratio: Option<Distribution>,
+    /// Mean |out_thrust| per tick over the same trial
+    pub thrust: Option<Distribution>,
+    /// Typical total cost per tick: resting at the trial activity + movement at the trial mean |thrust|
+    pub typical_total_cost: Option<Distribution>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MetabolismReport {
+    pub notes: Vec<String>,
+    pub sets: Vec<MetabolismSet>,
+}
+
+/// Inputs of the metabolic cost calibration (TCK-151): distributions of the cost terms over random genomes.
+pub fn probe_metabolism(opts: &ProbeOptions) -> MetabolismReport {
+    use crate::biology::metabolism::{body_mass, brain_neurons, mean_trial_activity_and_thrust, organ_load, tick_cost};
+    let seed = seed_from_str(&opts.seed);
+    let config = AppConfig::global();
+    let sets = random_populations(seed, opts.samples.unwrap_or(1000))
+        .iter()
+        .enumerate()
+        .map(|(set_id, (label, genomes))| {
+            let rows: Vec<[f32; 9]> = genomes
+                .par_iter()
+                .enumerate()
+                .map(|(i, g)| {
+                    let p = parse_genome(g, None, None);
+                    let (activity, thrust) = mean_trial_activity_and_thrust(g, Scenario::Standard, config, &mut derive(seed, &[STREAM_METABOLISM, set_id as u64, i as u64]));
+                    let cost = tick_cost(&p, activity, 1.0, &config.metabolism);
+                    let share = (cost.senses + cost.brain()) / cost.resting();
+                    let typical_total = tick_cost(&p, activity, thrust, &config.metabolism).total();
+                    [body_mass(&p), organ_load(&p), brain_neurons(&p) as f32, activity, cost.resting(), share, cost.movement / cost.resting(), thrust, typical_total]
+                })
+                .collect();
+            let column = |i: usize| Distribution::of(&rows.iter().map(|c| c[i]).collect::<Vec<_>>());
+            MetabolismSet {
+                genomes: label.to_string(),
+                n: genomes.len(),
+                body_mass: column(0),
+                organ_load: column(1),
+                neurons: column(2),
+                activity: column(3),
+                resting_cost: column(4),
+                brain_senses_share: column(5),
+                full_thrust_ratio: column(6),
+                thrust: column(7),
+                typical_total_cost: column(8),
+            }
+        })
+        .collect();
+    MetabolismReport {
+        notes: vec![
+            "activity / thrust = mean Σ|w·a| / mean |out_thrust| per tick over one standard-room trial (fresh sandbox, config learning rate, no drain).".to_string(),
+            "Pre-P6 median Ocean drain of the structured set (basal_metabolic_rate · 0.002 · 1.0 · 0.45): 0.0243 per tick (BMR 27); derivation in src/biology/metabolism.rs.".to_string(),
+        ],
+        sets,
     }
 }
 

@@ -70,6 +70,8 @@ pub struct BrainRuntime {
     active_synapses: Vec<ActiveSynapse>,
     /// Indices into `active_synapses` of the plastic ones (the only ones that learn and can be pruned)
     plastic_synapses: Vec<usize>,
+    /// Synaptic activity of the last brain step: `Σ |w · a_source|` over the active synapses (metabolic cost, TCK-151)
+    activity: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +104,12 @@ impl BrainRuntime {
             .collect();
         self.index_plastic(brain);
         self.built = true;
+    }
+
+    /// Synaptic activity `Σ |w · a_source|` of the last brain step (0 before the first step); accumulated in the
+    /// signal pass, so pruned and zero weights cost nothing (TCK-151).
+    pub fn activity(&self) -> f32 {
+        self.activity
     }
 
     fn index_plastic(&mut self, brain: &BrainTopology) {
@@ -173,12 +181,15 @@ pub fn execute_brain_with_learning(
     }
 
     // 2. Exact exponential integration of thalamus, hidden and motor neurons (dt = 1)
+    let mut activity = 0.0;
     for i in input_count..total_nodes {
         // Sum synaptic weights from all active connections in a single linear O(S) pass!
         let mut sum = 0.0;
         while syn_idx < active.len() && active[syn_idx].to == i {
             let syn = active[syn_idx];
-            sum += neuron_activations[syn.from] * synapse_weights[syn.idx];
+            let signal = neuron_activations[syn.from] * synapse_weights[syn.idx];
+            sum += signal;
+            activity += signal.abs();
             syn_idx += 1;
         }
 
@@ -191,6 +202,8 @@ pub fn execute_brain_with_learning(
         // Heterogeneous Activation Mapping
         neuron_activations[i] = runtime.activations[i].apply(neuron_states[i]);
     }
+
+    runtime.activity = activity;
 
     // 3. Oja learning of the plastic synapses, with active lifetime pruning (pruned synapses are no longer active)
     if hebbian_rate > 0.0 {

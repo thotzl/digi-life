@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/state/active-task.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
 ---
 
 # Physics

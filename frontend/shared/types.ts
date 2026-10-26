@@ -50,7 +50,6 @@ export interface CreaturePhenotype {
   wiggleAmplitude: number;
   stiffness: number;
   stomachCapacity: number;
-  basalMetabolicRate: number;
   matureAge: number;
   reproThreshold: number;
   splitLoss: number;

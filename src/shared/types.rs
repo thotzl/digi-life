@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use crate::biology::dna::{CreaturePhenotype, GenomeComposition, MutationOperators};
+use crate::biology::metabolism::MetabolismConfig;
 use crate::shared::brain::BrainRuntime;
 use ts_rs::TS;
 
@@ -120,7 +121,6 @@ pub struct SimulationRules {
     pub creature_mature_age_floor: u32,
     pub lamarckian_assimilation_age_floor: u32,
     pub lamarckian_assimilation_chance: f32,
-    pub bmr_base_scale: f32,
     pub thermal_stress_penalty_scale: f32,
     pub photosynthesis_energy_gain: f32,
     pub grazing_radius_multiplier: f32,
@@ -132,6 +132,11 @@ pub struct SimulationRules {
     pub biting_energy_damage: f32,
     pub biting_base_energy_gain: f32,
     pub biting_efficiency_carnivore_scale: f32,
+    /// Ticks before the same attacker can bite the same victim again (TCK-145)
+    pub bite_cooldown_ticks: u32,
+    /// Energy of one food spore before diet efficiency and scale; the one source of food energy for Ocean and
+    /// trainer (`metabolism::food_energy`, TCK-178)
+    pub food_spore_energy: f32,
     pub reproduction_stomach_threshold_floor: f32,
     pub reproduction_split_loss_ratio: f32,
     pub reproduction_recoil_velocity_scale: f32,
@@ -159,13 +164,14 @@ pub struct AppConfig {
     pub target_population: usize,
     pub food_spore_count: usize,
     pub max_creatures: usize,
-    pub basal_metabolic_rate_multiplier: f32,
     /// Trainer genomes kept per run in the DB and in the in-memory hall of fame (best by fitness)
     pub trainer_genome_retention_per_run: usize,
     /// Random genomes of trainer generation 1, immigrants and Ocean founders (TCK-184)
     pub genome_composition: GenomeComposition,
     /// Operator weights of `mutate_genome` (TCK-184)
     pub mutation_operators: MutationOperators,
+    /// Constants of the shared energy function (`biology::metabolism`, TCK-151)
+    pub metabolism: MetabolismConfig,
     pub rules: SimulationRules,
 }
 
@@ -214,11 +220,6 @@ mod tests {
         assert!((embedded.rules.locomotion_speed_max as f64 - on_disk["rules"]["locomotionSpeedMax"].as_f64().unwrap()).abs() < 1e-6);
     }
 
-    /// Keys kept on purpose without a read site, each with the ticket that wires it up.
-    const KEYS_WITHOUT_READ_SITE: [(&str, &str); 1] = [
-        ("biting_base_energy_gain", "TCK-145"),
-    ];
-
     fn camel_to_snake(key: &str) -> String {
         let mut out = String::new();
         for c in key.chars() {
@@ -243,6 +244,7 @@ mod tests {
         }
     }
 
+    /// Every config key must be read somewhere in `src/` (no exemptions since TCK-145 wired `bitingBaseEnergyGain`).
     #[test]
     fn test_every_config_key_has_read_site() {
         let on_disk: serde_json::Value = serde_json::from_str(include_str!("../../config.json")).unwrap();
@@ -264,7 +266,6 @@ mod tests {
         let unread: Vec<String> = keys
             .iter()
             .map(|k| camel_to_snake(k))
-            .filter(|field| !KEYS_WITHOUT_READ_SITE.iter().any(|(exempt, _)| exempt == field))
             .filter(|field| !sources.contains(&format!(".{}", field)))
             .collect();
         assert!(unread.is_empty(), "config keys without a read site in src/: {:?}", unread);

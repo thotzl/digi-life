@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
 ---
 
 # Simulation Engine
@@ -34,7 +34,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 
 - No SQL per step except on actual changes. `species_records` is mirrored in `species_cache`; it is re-read only after species inserts/resets (`species_cache_dirty`), per-species counts come from one `HashMap` pass (RV-P01).
 - Spatial grid allocated once (240 × 135 cells of 80 px) and `clear()`ed per step; buckets store vector indices (RV-P02).
-- Spore pushes use `SporePusher` kinematic snapshots, prey/bite lookups use `PeerSnapshot` (id, species, position, velocity) — no agent clones (RV-P03).
+- Spore pushes use `SporePusher` kinematic snapshots, prey/bite lookups use `PeerSnapshot` (id, species, position, velocity, energy for the bite gain cap, TCK-145) — no agent clones (RV-P03).
 - Catalogue loaded once per restock pass (RV-P07).
 - Details: [[wiki/architecture/performance]].
 

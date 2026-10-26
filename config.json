@@ -3,7 +3,6 @@
   "targetPopulation": 25,
   "foodSporeCount": 300,
   "maxCreatures": 45,
-  "basalMetabolicRateMultiplier": 1.0,
   "trainerGenomeRetentionPerRun": 200,
   "genomeComposition": {
     "targetLength": 256,
@@ -28,13 +27,20 @@
     "geneDeletion": 0.075,
     "creepMaxStep": 2
   },
+  "metabolism": {
+    "bodyCostPerMass": 2.171e-5,
+    "organCostPerLoad": 6.369e-4,
+    "neuronCost": 1.589e-5,
+    "activityCost": 9.26e-5,
+    "movementCostPerMass": 2.554e-5,
+    "trainerMetabolicScale": 1.0
+  },
   "rules": {
     "creatureMaxAgeTicks": 36000,
     "creatureLifespanMatureAgeMultiplier": 12,
     "creatureMatureAgeFloor": 600,
     "lamarckianAssimilationAgeFloor": 1200,
     "lamarckianAssimilationChance": 0.25,
-    "bmrBaseScale": 0.002,
     "thermalStressPenaltyScale": 0.0012,
     "photosynthesisEnergyGain": 0.20,
     "grazingRadiusMultiplier": 1.5,
@@ -46,6 +52,8 @@
     "bitingEnergyDamage": 35.0,
     "bitingBaseEnergyGain": 35.0,
     "bitingEfficiencyCarnivoreScale": 1.25,
+    "biteCooldownTicks": 60,
+    "foodSporeEnergy": 15.0,
     "reproductionStomachThresholdFloor": 0.60,
     "reproductionSplitLossRatio": 0.4,
     "reproductionRecoilVelocityScale": 15.0,

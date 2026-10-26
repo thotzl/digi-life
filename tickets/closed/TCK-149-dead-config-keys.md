@@ -1,7 +1,7 @@
 ---
 id: TCK-149
 title: Dead Config Keys: Implement or Remove
-status: ongoing
+status: closed
 priority: high
 decision: accepted
 assigned: unassigned
@@ -55,3 +55,6 @@ Decisions (user, 2026-10-21): groups A–E as proposed; values introduced by the
 
 ## Progress P5 (v1.12.19)
 - `steerTorqueBaseMultiplier` replaced by `turnRateAtRest` (TCK-150), `dragLateralCoefficient` removed (TCK-180). Remaining: `bitingBaseEnergyGain` (P6, TCK-145).
+
+## Verification (P6, v1.12.20)
+- `bitingBaseEnergyGain` read by the predation rule (TCK-145). Every config key now has a read site; the exemption list `KEYS_WITHOUT_READ_SITE` is removed. All keys of RV-S01 are implemented or removed (P1, P3, P5, P6).

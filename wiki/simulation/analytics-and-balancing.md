@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
+sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md]
 ---
 
 # Analytics and Balancing
@@ -13,7 +13,7 @@ Trainer measurements run headless with `trainer_runner` (TCK-173): reproducible,
 ```
 cargo run --release --bin trainer_runner -- run --seed <text> --generations <N> --scenario standard|exploration --population <N>
     [--trials 3] [--multi-trial true|false] [--parallel true|false] [--persist --db <path>] [--run-id <id>] [--out <file>]
-cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|all --seed <text>
+cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <text>
     [--out <file; directory for all>] [--db <path>] [--hof-limit 64] [--samples <N>]
 ```
 
@@ -33,9 +33,13 @@ cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steer
 `GenerationStats` (computed at generation end over the final fitness, before breeding):
 - `success_rate` — share of sandbox-trials with at least one catch (population × trials).
 - `mean_time_to_first_catch`, `median_time_to_first_catch` — ticks from trial start to the first catch over successful trials; `null` without any catch.
-- `best_fitness`, `median_fitness`, `mean_fitness`, `fitness_quantiles` (p10, p25, p50, p75, p90, linear interpolation) — over the generation's final fitness (multi-trial average incl. starvation filter and +150 per successful trial).
+- `best_fitness`, `median_fitness`, `mean_fitness`, `fitness_quantiles` (p10, p25, p50, p75, p90, linear interpolation) — over the generation's final fitness (multi-trial average incl. the no-catch factor × 0.1 and +150 per successful trial).
 - `mean_genome_length` — over the generation's sandboxes.
 - `immobile_share` — share of sandbox-trials with less than 5 px travelled.
+- `mean_end_energy` — mean energy at trial end over the sandbox-trials (TCK-178).
+- `starved_share` — share of sandbox-trials in which the creature ran out of energy (TCK-178).
+- `mean_organ_count` — mean organ count of the generation's sandboxes.
+- `food_organ_share` — share of the generation's sandboxes with at least one eye or nose (sensor-equipment check under the energy budget, TCK-178).
 
 ## Probes (TCK-172)
 
@@ -52,6 +56,7 @@ Genome sets (since TCK-184): `letter_soup` = random 256-base genomes (the former
 | `wall` | getting free from a wall within 600 ticks, forced thrust (heading changes only through wall contact) vs. real brain | [[wiki/simulation/physics]] |
 | `hebbian` | trainer evaluation of the same genomes with and without Hebbian learning, both rooms | [[wiki/biology/ctrnn-brain]] |
 | `topology` | synapse, neuron, organ count and genome length distributions per set, wildtype synapse/neuron count (TCK-182) | [[wiki/biology/ctrnn-brain]] |
+| `metabolism` | inputs of the energy-cost calibration per set: body mass, organ load, neurons, mean synaptic activity and mean |thrust| over one standard-room trial (no drain), resting cost, typical total cost (resting + movement at that thrust), brain + senses share, full-thrust / resting cost (TCK-151); `--samples` default 1000 | [[wiki/biology/metabolism-and-reproduction]] |
 
 ## Comparing runs
 
@@ -66,7 +71,8 @@ Genome sets (since TCK-184): `letter_soup` = random 256-base genomes (the former
 - **Fitness is not comparable** across rooms, across fitness-function changes or with HoF entries from before TCK-135/136; `success_rate` and time to first catch are the comparable metrics.
 - **Different food layouts per sandbox:** candidates of one generation solve different tasks, which adds noise to all per-generation numbers ([[wiki/simulation/trainer]]).
 - **HoF-based probes depend on the local DB** (`--db`): their numbers are reproducible only with the same DB content.
-- **Unread keys:** every config key has a test-enforced read site except `bitingBaseEnergyGain` (TCK-149, TCK-145, [[wiki/architecture/configuration]]); tuning it has no effect.
+- **Config keys:** every key has a test-enforced read site, without exemptions (TCK-149, TCK-145, [[wiki/architecture/configuration]]), so every tuning has an effect.
+- **Energy metrics depend on the room length:** the 300-tick small room hardly drains the budget (`starved_share` 0 after P6), the 1800-tick large room does (≈ 0.18); compare energy metrics only within one room.
 - **Ocean:** no headless runner and no seeded RNG (`thread_rng`, RV-T03/RV-T04); no Ocean offspring (RV-B01), so Ocean lineage analysis is meaningless; species = genome string (RV-B10), so species counts measure mutation volume, not cladogenesis.
 
 ## DB data (Ocean, persisted trainer runs)
@@ -83,7 +89,7 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 - Ancestry via `species_records.parent_name → latin_name`.
 - Rows from an older model version are gone: the first start after a `MODEL_VERSION` bump resets all model tables (TCK-183, [[wiki/architecture/persistence]]).
-- Ocean heuristics: herbivore/predator ratio ~75 % with `carnivory < bitingCarnivoryThreshold`; BMR drain (`bmrBaseScale`) vs. spore availability (`foodSporeCount`); `reproductionSplitLossRatio` must keep growth bounded; `maxCreatures` caps spawn actions and mitosis (TCK-149).
+- Ocean heuristics: herbivore/predator ratio ~75 % with `carnivory < bitingCarnivoryThreshold`; energy drain (`metabolism` block, derived constants, [[wiki/biology/metabolism-and-reproduction]]) vs. spore availability (`foodSporeCount`, `foodSporeEnergy`) and predator income (`bitingBaseEnergyGain`, `biteCooldownTicks`); `reproductionSplitLossRatio` must keep growth bounded; `maxCreatures` caps spawn actions and mitosis (TCK-149).
 
 ## Key Takeaways
 
@@ -91,4 +97,4 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 - Compare reports minus `perf`, over fixed seed sets, against the TCK-171 targets.
 - The Ocean has no reproducible measurement path yet; trainer data is the evolution signal.
 
-Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-150, TCK-172, TCK-173, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.
+Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-150, TCK-151, TCK-172, TCK-173, TCK-178, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.

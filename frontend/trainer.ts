@@ -7,9 +7,10 @@ import {
   selectedMethylations, selectedPhenotype, selectedBrainActivations
 } from "./signals";
 
-// Dimensions for the mini-canvases
-const canvasWidth = 1000;
-const canvasHeight = 1000;
+// Backing-store size of the mini-canvases: tiles show at ~130-160 CSS px, so 360 px covers DPR 2;
+// a 1000 px store per tile made 16 tiles at 25 Hz GPU-bound and backed up the webview
+const canvasWidth = 360;
+const canvasHeight = 360;
 
 // DOM Elements
 const gridContainer = document.getElementById("sandbox-grid") as HTMLDivElement;
@@ -143,7 +144,7 @@ function drawSandbox(sb: Sandbox) {
   if (!tele) return;
 
   const chamberSize = tele.chamberSize || 1000.0;
-  const scale = 1000.0 / chamberSize;
+  const scale = canvasWidth / chamberSize;
 
   const ctx = sb.ctx;
   ctx.save();
@@ -176,15 +177,18 @@ function drawSandbox(sb: Sandbox) {
   }
   ctx.stroke();
 
+  // Glow as a translucent halo instead of shadowBlur (a blur pass per spore is expensive on the GPU)
   tele.foods.forEach((spore: any) => {
+    const color = spore.typeId === 2 ? '#ef4444' : '#10b981';
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    ctx.arc(spore.x, spore.y, 12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.beginPath();
     ctx.arc(spore.x, spore.y, 8, 0, Math.PI * 2);
-    const isMeat = spore.typeId === 2;
-    ctx.fillStyle = isMeat ? '#ef4444' : '#10b981';
-    ctx.shadowBlur = 4;
-    ctx.shadowColor = isMeat ? '#ef4444' : '#10b981';
     ctx.fill();
-    ctx.shadowBlur = 0;
   });
 
   let pheno = phenotypeCache.get(tele.genome);
@@ -206,7 +210,23 @@ function drawSandbox(sb: Sandbox) {
   ctx.restore();
 }
 
+// Telemetry only marks sandboxes dirty; drawing happens at most once per animation frame, so a slow
+// GPU drops frames instead of queueing draws behind the 25 Hz telemetry
+const dirtySandboxes = new Set<Sandbox>();
+let drawScheduled = false;
+function scheduleDraw(sb: Sandbox) {
+  dirtySandboxes.add(sb);
+  if (drawScheduled) return;
+  drawScheduled = true;
+  requestAnimationFrame(() => {
+    drawScheduled = false;
+    dirtySandboxes.forEach(drawSandbox);
+    dirtySandboxes.clear();
+  });
+}
+
 async function rebuildSandboxGrid() {
+  dirtySandboxes.clear();
   gridContainer.innerHTML = "";
   sandboxes = [];
 
@@ -570,7 +590,7 @@ async function setupTauriListeners() {
           const sb = sandboxes.find(s => s.id === tele.id);
           if (sb) {
             sb.lastTelemetry = tele;
-            drawSandbox(sb);
+            scheduleDraw(sb);
 
             const labelOrigin = document.getElementById(`sb-origin-lbl-${tele.id}`);
             if (labelOrigin) {

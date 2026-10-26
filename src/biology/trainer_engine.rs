@@ -40,6 +40,8 @@ pub struct TrainerSandbox {
     pub scenario: Scenario,
     pub cumulative_rotation: f32,
     pub coverage_mask: u64,
+    /// Energy ran out during the current trial: the creature stops and cannot eat until the trial ends (TCK-178)
+    pub starved: bool,
     /// Per-tick buffers of `scenarios::step_physics` (reused, not state)
     #[serde(skip)]
     pub sensor_inputs: Vec<f32>,
@@ -139,6 +141,7 @@ pub fn init_rust_sandbox(
         scenario,
         cumulative_rotation: 0.0,
         coverage_mask: 0,
+        starved: false,
         sensor_inputs: Vec::new(),
         visible_scratch: Vec::new(),
     };
@@ -180,6 +183,7 @@ impl TrainerSandbox {
         self.consumed_count = 0;
         self.cumulative_rotation = 0.0;
         self.coverage_mask = 0;
+        self.starved = false;
 
         // Randomize spores respecting the trial distance and chamber bounds
         let from = (self.agent.px, self.agent.py);
@@ -207,6 +211,10 @@ pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, rng: &m
     let plugin = sb.scenario.plugin();
     let size = plugin.chamber_size();
     let hit_wall = crate::biology::scenarios::step_physics(sb, app_config);
+    if sb.starved {
+        // Out of energy: no movement, no catches for the rest of the trial (TCK-178)
+        return;
+    }
 
     // Track visited 8x8 grid sectors for unique canvas coverage
     let sec_x = ((sb.agent.px / size) * 8.0).floor().clamp(0.0, 7.0) as u32;
@@ -262,6 +270,9 @@ pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, rng: &m
 
             sb.accumulated_yield += yield_val;
             sb.consumed_count += 1;
+            // Refill with the shared food energy rule of the Ocean (TCK-178)
+            let gain = crate::biology::metabolism::food_energy(carnivory, is_meat, &app_config.rules);
+            sb.agent.energy = (sb.agent.energy + gain).min(sb.agent.phenotype.stomach_capacity);
 
             if !sb.finished {
                 sb.finished = true; // Still mark finished as true for green SUCCESS label!
@@ -310,6 +321,90 @@ mod tests {
 
         assert!(sb.finished);
         assert_eq!(sb.finish_tick, Some(6));
+    }
+
+    #[test]
+    fn test_trainer_drain_equals_the_ocean_energy_function() {
+        // Trainer path: the shared `step_physics`. Ocean path: the same sensing and brain step followed by the Ocean's
+        // `drain_energy(.., 1.0)` call. Same agent, tick and outputs → identical drain (trainer scale 1).
+        let mut config = AppConfig::global().clone();
+        config.metabolism.trainer_metabolic_scale = 1.0;
+        let mut rng = seeded(4);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        for _ in 0..20 {
+            let mut ocean = sb.agent.clone();
+            let foods = sb.foods.clone();
+            let start = sb.agent.energy;
+            crate::biology::scenarios::step_physics(&mut sb, &config);
+
+            let size = Scenario::Standard.plugin().chamber_size();
+            let clock_val = 0.5 + 0.5 * crate::shared::fmath::sin((ocean.age as f32) * 0.1);
+            let inputs = crate::shared::brain::compute_sensory_inputs(&ocean, clock_val, &foods, &[], size, size);
+            let out = crate::shared::brain::execute_brain_with_learning(
+                &ocean.phenotype.brain,
+                &inputs,
+                &mut ocean.neuron_states,
+                &mut ocean.neuron_activations,
+                &mut ocean.synapse_weights,
+                &mut ocean.brain_runtime,
+                config.rules.hebbian_learning_rate_base,
+            );
+            let drain = crate::biology::metabolism::drain_energy(&mut ocean, out[0], &config.metabolism, 1.0);
+            assert!(drain > 0.0);
+            assert_eq!(sb.agent.energy.to_bits(), ocean.energy.to_bits(), "trainer drain {} vs ocean drain {}", start - sb.agent.energy, drain);
+        }
+    }
+
+    #[test]
+    fn test_starved_creature_stops_and_cannot_eat() {
+        let mut rng = seeded(5);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        let size = Scenario::Standard.plugin().chamber_size();
+        for f in &mut sb.foods {
+            f.x = size - 10.0;
+            f.y = size - 10.0;
+        }
+        sb.agent.energy = 1e-6;
+        step_trainer_sandbox_physics(&mut sb, &mut rng);
+        assert!(sb.starved);
+        assert_eq!((sb.agent.energy, sb.agent.vx, sb.agent.vy), (0.0, 0.0, 0.0));
+
+        // Frozen for the rest of the trial: no movement, food on top of it is not eaten
+        let (px, py) = (sb.agent.px, sb.agent.py);
+        sb.foods[0].x = px;
+        sb.foods[0].y = py;
+        for _ in 0..10 {
+            step_trainer_sandbox_physics(&mut sb, &mut rng);
+        }
+        assert_eq!((sb.agent.px, sb.agent.py), (px, py));
+        assert!(!sb.finished && sb.consumed_count == 0);
+        assert_eq!(sb.epoch_ticks, 11);
+
+        sb.reset_trial(&mut rng);
+        assert!(!sb.starved);
+        assert_eq!(sb.agent.energy, crate::biology::creature_factory::start_energy(&sb.agent.phenotype));
+    }
+
+    #[test]
+    fn test_eating_refills_energy_with_the_shared_food_rule() {
+        let mut rng = seeded(6);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        let size = Scenario::Standard.plugin().chamber_size();
+        for f in &mut sb.foods {
+            f.x = size - 10.0;
+            f.y = size - 10.0;
+        }
+        step_trainer_sandbox_physics(&mut sb, &mut rng);
+        let before = sb.agent.energy;
+        assert!(before < crate::biology::creature_factory::start_energy(&sb.agent.phenotype), "energy drains every tick");
+
+        sb.agent.energy = 10.0;
+        sb.foods[0].x = sb.agent.px;
+        sb.foods[0].y = sb.agent.py;
+        step_trainer_sandbox_physics(&mut sb, &mut rng);
+        assert_eq!(sb.consumed_count, 1);
+        let gain = crate::biology::metabolism::food_energy(sb.agent.phenotype.carnivory, false, &AppConfig::global().rules);
+        assert!(sb.agent.energy > 10.0 + gain - 1.0 && sb.agent.energy < 10.0 + gain, "energy {} after eating (gain {})", sb.agent.energy, gain);
     }
 
     #[test]

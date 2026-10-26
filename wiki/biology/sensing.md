@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/ongoing/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md]
+sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md]
 ---
 
 # Sensing

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.20] - 2026-10-22
+
+Training track P6 "Energy v2" (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 4).
+
+### Changed
+- One energy model for Ocean and trainer: body mass, organs, neurons, brain activity and movement each cost energy per tick; the constants are derived from biological share targets (brain + senses about 15 % of resting cost) at the previous Ocean energy level, instead of the multiplicative formula that made sense organs prohibitively expensive (ref TCK-151).
+- The trainer has an energy budget: creatures pay the same costs as in the Ocean, refill by eating and stop when they starve; reports show end energy, starved share and sensor equipment. Sensor equipment did not shrink (food-organ share 0.91 -> 0.96 small, 0.81 -> 0.92 large) (ref TCK-178).
+- Predation feeds the attacker (scaled by carnivory, never more than the damage dealt or what the victim still has), with one bite per tick and a cooldown per attacker/victim pair (ref TCK-145).
+- The typical total energy use of a creature (resting plus movement) stays at the previous Ocean level: Ocean deaths in a 90 s check 149 before vs 147 after (ref TCK-151).
+- Measured after this phase (5 seeds, population 16, last 5 of 30 generations): training success small room 0.22 -> 0.22, large room 0.033 -> 0.050 (ref TCK-178).
+
+### Fixed
+- Ocean: deaths without a bite were reported as "hunted down by predators" (ref TCK-145).
+- Trainer view: the webview backed up until it froze (response times rising past 20 s, even while idle), because every 25 Hz telemetry tick redrew all 16 sandbox canvases at once with a 1000×1000 backing store and per-spore `shadowBlur`, which saturated the GPU. Drawing now happens at most once per animation frame, the canvases use a 360 px backing store and spores glow through a translucent halo (ref TCK-171).
+- Trainer view: the sandbox grid border never rendered because of an invalid `rgba(14a, …)` color.
+- Dev tooling: the Vite dev server crawled `target/`, `.agents/` and other non-frontend folders and slowed `tauri dev` to a stall; they are now excluded from its file watcher.
+
+### Removed
+- The Ocean `* 0.45` metabolism literal and the keys `basalMetabolicRateMultiplier`, `bmrBaseScale`; every config key is now read somewhere, the exemption list is gone (ref TCK-151, TCK-149).
+
 ## [1.12.19] - 2026-10-22
 
 Training track P5 "Locomotion v2" (epic TCK-171). Physics only: the creature model and saved data are unchanged; new CI reference.

@@ -136,9 +136,14 @@ fn spawn_foods(sb: &mut TrainerSandbox, rng: &mut SimRng, min_dist: f32) {
     }
 }
 
-/// One tick of sensing, brain, kinematics and food drift; shared by all scenarios.
+/// One tick of sensing, brain, metabolism, kinematics and food drift; shared by all scenarios.
+/// Metabolism (TCK-178): the shared energy function drains `trainerMetabolicScale` times the Ocean cost; at 0 energy
+/// the creature starves (`sb.starved`): it stops at once and does nothing else for the rest of the trial.
 /// Returns whether the creature hit a wall.
 pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
+    if sb.starved {
+        return false;
+    }
     let plugin = sb.scenario.plugin();
     let size = plugin.chamber_size();
 
@@ -158,6 +163,15 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
     );
     let out_thrust = outputs[0];
     let out_left = outputs[1];
+
+    crate::biology::metabolism::drain_energy(&mut sb.agent, out_thrust, &app_config.metabolism, app_config.metabolism.trainer_metabolic_scale);
+    if sb.agent.energy <= 0.0 {
+        sb.agent.energy = 0.0;
+        sb.agent.vx = 0.0;
+        sb.agent.vy = 0.0;
+        sb.starved = true;
+        return false;
+    }
 
     let old_heading = sb.agent.heading_angle;
     use crate::shared::physics::step_creature_kinematics;

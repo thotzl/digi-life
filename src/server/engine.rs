@@ -25,11 +25,44 @@ struct PeerSnapshot {
     py: f32,
     vx: f32,
     vy: f32,
+    energy: f32,
 }
 
 impl From<&CreatureAgent> for PeerSnapshot {
     fn from(c: &CreatureAgent) -> Self {
-        Self { id: c.id, species_id: c.species_id.clone(), px: c.px, py: c.py, vx: c.vx, vy: c.vy }
+        Self { id: c.id, species_id: c.species_id.clone(), px: c.px, py: c.py, vx: c.vx, vy: c.vy, energy: c.energy }
+    }
+}
+
+/// Bite target of an attacker (TCK-145): the nearest candidate within `bite_range` that is not the attacker, not of its
+/// species and not bitten by this attacker within the cooldown (`bitten_recently(victim_id)`). One target at most,
+/// so an attacker bites at most once per tick.
+fn bite_target<'a>(
+    attacker: &CreatureAgent,
+    candidates: impl IntoIterator<Item = &'a PeerSnapshot>,
+    bite_range: f32,
+    bitten_recently: impl Fn(u32) -> bool,
+) -> Option<&'a PeerSnapshot> {
+    let mut target: Option<(&PeerSnapshot, f32)> = None;
+    for victim in candidates {
+        if victim.id == attacker.id || victim.species_id == attacker.species_id || bitten_recently(victim.id) {
+            continue;
+        }
+        let dist = ((victim.px - attacker.px).powi(2) + (victim.py - attacker.py).powi(2)).sqrt();
+        if dist <= bite_range && target.map_or(true, |(_, best)| dist < best) {
+            target = Some((victim, dist));
+        }
+    }
+    target.map(|(victim, _)| victim)
+}
+
+/// Log message and type of a death: "hunted down" only for a creature that took bite damage this tick, otherwise
+/// the starvation/senescence message of the metabolism branch (metabolism and thermal stress also end at ≤ 0.1 energy).
+fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, &'static str) {
+    if bitten {
+        (format!("✝️ Specimen #{} '{}' was hunted down by predators.", id, latin_name), "mutation")
+    } else {
+        (format!("💀 Species '{}' (Strain: #{}) deceased due to starvation/senescence.", latin_name, id), "system")
     }
 }
 
@@ -105,6 +138,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let mut next_creature_id = 1;
         let mut next_spore_id = 1000;
         let mut highest_generation = 1;
+        // Ocean step counter and last bite tick per (attacker, victim) pair for the bite cooldown (TCK-145)
+        let mut ocean_tick: u64 = 0;
+        let mut bite_ticks: std::collections::HashMap<(u32, u32), u64> = std::collections::HashMap::new();
 
         // Trainer: TrainerSim owns population, epochs and breeding; the engine keeps the UI state,
         // DB persistence and telemetry
@@ -406,6 +442,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 creatures.clear();
                                 food_pellets.clear();
                                 newly_spawned_creatures.clear(); // Clear newborns to prevent phantom shivering creatures!
+                                bite_ticks.clear();
                                 next_creature_id = 1;
                                 highest_generation = 1;
 
@@ -764,6 +801,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         // Lightweight snapshot of all creatures before this step (prey search and bite targets)
                         let alive_clones: Vec<PeerSnapshot> = creatures.iter().map(PeerSnapshot::from).collect();
                         let mut damage_map = std::collections::HashMap::<u32, f32>::new();
+                        ocean_tick += 1;
+                        let bite_cooldown = app_config.rules.bite_cooldown_ticks as u64;
+                        bite_ticks.retain(|_, &mut tick| ocean_tick - tick < bite_cooldown);
 
                     let mut next_creatures = Vec::new();
                     let population = creatures.len();
@@ -895,10 +935,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let out_thrust = outputs[0];
                         let out_left = outputs[1];
 
-                        // Passive metabolism
-                        // Reduce Ozean basal metabolic rate decay by half (0.45 coefficient) for long, organic, and gentle lifespans!
-                        let bmr_decay = agent.phenotype.basal_metabolic_rate * app_config.rules.bmr_base_scale * app_config.basal_metabolic_rate_multiplier * 0.45;
-                        agent.energy -= bmr_decay;
+                        // Metabolism: the shared energy function of Ocean and trainer (body, organs, neurons, activity, thrust; TCK-151)
+                        crate::biology::metabolism::drain_energy(&mut agent, out_thrust, &app_config.metabolism, 1.0);
 
                         // Photosynthesis for green creatures in light zone
                         let hue = agent.phenotype.primary_color.h;
@@ -958,20 +996,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let dy = f.y - agent.py;
                                     if (dx*dx + dy*dy).sqrt() <= eat_radius {
                                         let is_meat = f.type_id == 2;
-                                        let efficiency = if is_meat {
-                                            agent.phenotype.carnivory
-                                        } else {
-                                            1.0 - agent.phenotype.carnivory
-                                        };
-
                                         let old_x = f.x;
                                         let old_y = f.y;
-                                        let scale_factor = if is_meat {
-                                            app_config.rules.biting_efficiency_carnivore_scale
-                                        } else {
-                                            app_config.rules.grazing_efficiency_herbivore_scale
-                                        };
-                                        let energy_gain = 15.0 * efficiency * scale_factor;
+                                        let energy_gain = crate::biology::metabolism::food_energy(agent.phenotype.carnivory, is_meat, &app_config.rules);
                                         agent.energy = (agent.energy + energy_gain).min(agent.phenotype.stomach_capacity);
                                         agent.has_eaten = true;
                                         
@@ -1017,38 +1044,38 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
                             }
 
-                            // Fight Biting (Predation)
+                            // Fight Biting (Predation, TCK-145): at most one bite per attacker and tick, on the nearest victim in
+                            // range that this attacker has not bitten within `biteCooldownTicks`; the attacker gains
+                            // `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`, capped by the victim's energy
                             if agent.phenotype.carnivory >= app_config.rules.biting_carnivory_threshold {
                                 let bite_range = mean_radius * app_config.rules.biting_radius_multiplier + app_config.rules.biting_radius_offset;
-                                let nearby_peers = grid.get_nearby_creatures(agent.px, agent.py, bite_range);
-                                for v_idx in nearby_peers {
-                                    if alive_clones.get(v_idx as usize).map_or(true, |c| c.id == agent.id) { continue; }
-                                    if let Some(victim) = alive_clones.get(v_idx as usize) {
-                                        if victim.species_id != agent.species_id {
-                                            let dx = victim.px - agent.px;
-                                            let dy = victim.py - agent.py;
-                                            let dist = (dx*dx + dy*dy).sqrt();
-                                            if dist <= bite_range {
-                                                // Record damage (configured in config.json!)
-                                                *damage_map.entry(victim.id).or_insert(0.0) += app_config.rules.biting_energy_damage;
+                                let nearby = grid.get_nearby_creatures(agent.px, agent.py, bite_range);
+                                let candidates = nearby.iter().filter_map(|&v_idx| alive_clones.get(v_idx as usize));
+                                if let Some(victim) = bite_target(&agent, candidates, bite_range, |victim_id| bite_ticks.contains_key(&(agent.id, victim_id))) {
+                                    // Gain is capped by what the victim still has after earlier bites in this tick,
+                                    // so several attackers together cannot take more than the victim had
+                                    let damage_taken = damage_map.entry(victim.id).or_insert(0.0);
+                                    let remaining = victim.energy - *damage_taken;
+                                    *damage_taken += app_config.rules.biting_energy_damage;
+                                    bite_ticks.insert((agent.id, victim.id), ocean_tick);
+                                    let gain = crate::biology::metabolism::bite_energy_gain(agent.phenotype.carnivory, remaining, &app_config.rules);
+                                    agent.energy = (agent.energy + gain).min(agent.phenotype.stomach_capacity);
+                                    agent.has_eaten = true;
 
-                                                // Broadcast bite shockwave ring
-                                                emit_state(json!({
-                                                    "type": "BITE_EVENT",
-                                                    "attackerId": agent.id,
-                                                    "victimId": victim.id,
-                                                    "x": victim.px,
-                                                    "y": victim.py
-                                                }));
+                                    // Broadcast bite shockwave ring
+                                    emit_state(json!({
+                                        "type": "BITE_EVENT",
+                                        "attackerId": agent.id,
+                                        "victimId": victim.id,
+                                        "x": victim.px,
+                                        "y": victim.py
+                                    }));
 
-                                                emit_state(json!({
-                                                    "type": "LOG_EVENT",
-                                                    "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.rules.biting_energy_damage),
-                                                    "logType": "mutation"
-                                                }));
-                                            }
-                                        }
-                                    }
+                                    emit_state(json!({
+                                        "type": "LOG_EVENT",
+                                        "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.rules.biting_energy_damage, gain),
+                                        "logType": "mutation"
+                                    }));
                                 }
                             }
 
@@ -1142,7 +1169,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     // Apply registered damages and filter out deceased prey
                     let mut final_creatures = Vec::new();
                     for mut agent in next_creatures {
-                        if let Some(&damage) = damage_map.get(&agent.id) {
+                        let bite_damage = damage_map.get(&agent.id).copied();
+                        if let Some(damage) = bite_damage {
                             agent.energy -= damage;
                         }
                         if agent.energy > 0.1 {
@@ -1166,10 +1194,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
                             }
 
+                            let (message, log_type) = death_log(agent.id, &agent.phenotype.latin_name, bite_damage.is_some_and(|d| d > 0.0));
                             emit_state(json!({
                                 "type": "LOG_EVENT",
-                                "message": format!("✝️ Specimen #{} '{}' was hunted down by predators.", agent.id, agent.phenotype.latin_name),
-                                "logType": "mutation"
+                                "message": message,
+                                "logType": log_type
                             }));
                         }
                     }
@@ -1521,4 +1550,41 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::biology::creature_factory::spawn_creature;
+    use crate::biology::dna::WILDTYPE_GENOME;
+
+    fn peer(id: u32, species: &str, px: f32) -> PeerSnapshot {
+        PeerSnapshot { id, species_id: species.to_string(), px, py: 0.0, vx: 0.0, vy: 0.0, energy: 50.0 }
+    }
+
+    #[test]
+    fn test_death_without_bite_is_not_reported_as_predation() {
+        let (hunted, hunted_type) = death_log(7, "Testus", true);
+        assert!(hunted.contains("hunted down") && hunted_type == "mutation");
+        let (starved, starved_type) = death_log(7, "Testus", false);
+        assert!(starved.contains("starvation") && !starved.contains("hunted") && starved_type == "system");
+    }
+
+    #[test]
+    fn test_bite_target_is_nearest_eligible_victim_and_respects_cooldown() {
+        let attacker = spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px: 0.0, py: 0.0, heading_angle: 0.0, generation: 1, methylations: None, synapse_weights: None });
+        let peers = vec![
+            peer(1, "other", 0.0),             // the attacker itself
+            peer(2, &attacker.species_id, 1.0), // same species
+            peer(3, "other", 8.0),
+            peer(4, "other", 5.0),
+            peer(5, "other", 50.0), // out of range
+        ];
+        let none_recent = |_: u32| false;
+        assert_eq!(bite_target(&attacker, &peers, 10.0, none_recent).map(|p| p.id), Some(4));
+        // Victim 4 on cooldown for this attacker: the next nearest
+        assert_eq!(bite_target(&attacker, &peers, 10.0, |id| id == 4).map(|p| p.id), Some(3));
+        assert!(bite_target(&attacker, &peers, 10.0, |id| id == 4 || id == 3).is_none());
+        assert!(bite_target(&attacker, &peers, 4.0, none_recent).is_none());
+    }
 }

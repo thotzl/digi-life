@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, SpawnOptions};
-use crate::biology::dna::{parse_genome, CTRNNSynapse, WILDTYPE_GENOME};
+use crate::biology::dna::{parse_genome, CTRNNSynapse, OrganKind, WILDTYPE_GENOME};
 use crate::biology::scenarios::Scenario;
 use crate::biology::trainer_engine::{breed_genome, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
 use crate::shared::rng::{derive, SimRng};
@@ -63,6 +63,10 @@ pub struct GenomeRecord {
 struct TrialRecord {
     finish_tick: Option<u32>,
     distance_traveled: f32,
+    /// Energy at trial end
+    end_energy: f32,
+    /// The creature ran out of energy during the trial (TCK-178)
+    starved: bool,
 }
 
 /// Generation summary, computed at epoch end over the final fitness, before breeding.
@@ -82,6 +86,14 @@ pub struct GenerationStats {
     pub mean_genome_length: f32,
     /// Share of sandbox-trials below `IMMOBILE_DISTANCE_PX` travelled
     pub immobile_share: f32,
+    /// Mean energy at trial end over the sandbox-trials (TCK-178)
+    pub mean_end_energy: f32,
+    /// Share of sandbox-trials in which the creature ran out of energy (TCK-178)
+    pub starved_share: f32,
+    /// Mean organ count of the generation's sandboxes (sensor equipment, TCK-178)
+    pub mean_organ_count: f32,
+    /// Share of the generation's sandboxes with at least one eye or nose (TCK-178)
+    pub food_organ_share: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -158,6 +170,14 @@ impl GenerationStats {
             fitness_quantiles: quantiles,
             mean_genome_length: sandboxes.iter().map(|s| s.agent.genome.len() as f32).sum::<f32>() / n,
             immobile_share: trials.iter().filter(|t| t.distance_traveled < IMMOBILE_DISTANCE_PX).count() as f32 / trial_count,
+            mean_end_energy: trials.iter().map(|t| t.end_energy).sum::<f32>() / trial_count,
+            starved_share: trials.iter().filter(|t| t.starved).count() as f32 / trial_count,
+            mean_organ_count: sandboxes.iter().map(|s| s.agent.phenotype.organelles.len() as f32).sum::<f32>() / n,
+            food_organ_share: sandboxes
+                .iter()
+                .filter(|s| s.agent.phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)))
+                .count() as f32
+                / n,
         }
     }
 }
@@ -243,6 +263,7 @@ impl TrainerSim {
             sb.consumed_count = 0;
             sb.accumulated_yield = 0.0;
             sb.coverage_mask = 0;
+            sb.starved = false;
             scenario.plugin().initialize(sb, rng);
         }
     }
@@ -278,13 +299,19 @@ impl TrainerSim {
         sb.epoch_ticks = 0;
         sb.accumulated_yield = 0.0;
         sb.consumed_count = 0;
+        sb.starved = false;
         Some(&*sb)
     }
 
     fn end_epoch(&mut self, epoch_duration: u32, parallel: bool) -> Option<TrainerEvent> {
         for sb in &mut self.sandboxes {
             sb.current_fitness = sb.scenario.plugin().calculate_fitness(sb, epoch_duration);
-            self.trial_records.push(TrialRecord { finish_tick: sb.finish_tick, distance_traveled: sb.distance_traveled });
+            self.trial_records.push(TrialRecord {
+                finish_tick: sb.finish_tick,
+                distance_traveled: sb.distance_traveled,
+                end_energy: sb.agent.energy,
+                starved: sb.starved,
+            });
         }
 
         if self.params.multi_trial {

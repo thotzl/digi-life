@@ -6,7 +6,7 @@
     "generations": 3,
     "trials": 3,
     "multi_trial": true,
-    "version": "1.12.18"
+    "version": "1.12.20"
   },
   "generations": [
     {
@@ -14,60 +14,72 @@
       "success_rate": 0.0,
       "mean_time_to_first_catch": null,
       "median_time_to_first_catch": null,
-      "best_fitness": 18.68929,
-      "median_fitness": 0.8947823,
-      "mean_fitness": 3.2837045,
+      "best_fitness": 46.294556,
+      "median_fitness": 0.89411765,
+      "mean_fitness": 5.005127,
       "fitness_quantiles": [
-        0.24856277,
-        0.69901574,
-        0.8947823,
-        1.696291,
-        11.544865
+        0.24994516,
+        0.69942105,
+        0.89411765,
+        1.59823,
+        11.568424
       ],
       "mean_genome_length": 299.5,
-      "immobile_share": 0.0
+      "immobile_share": 0.0,
+      "mean_end_energy": 177.8991,
+      "starved_share": 0.0,
+      "mean_organ_count": 3.375,
+      "food_organ_share": 1.0
     },
     {
       "generation": 2,
-      "success_rate": 0.020833334,
-      "mean_time_to_first_catch": 100.0,
-      "median_time_to_first_catch": 100.0,
-      "best_fitness": 532.98645,
-      "median_fitness": 21.829594,
-      "mean_fitness": 52.171234,
+      "success_rate": 0.0,
+      "mean_time_to_first_catch": null,
+      "median_time_to_first_catch": null,
+      "best_fitness": 64.52867,
+      "median_fitness": 23.501734,
+      "mean_fitness": 23.64484,
       "fitness_quantiles": [
-        0.9902189,
-        1.9766128,
-        21.829594,
-        30.873743,
-        56.27056
+        0.99307835,
+        1.9930497,
+        23.501734,
+        33.383915,
+        55.16677
       ],
       "mean_genome_length": 279.5,
-      "immobile_share": 0.0
+      "immobile_share": 0.0,
+      "mean_end_energy": 201.344,
+      "starved_share": 0.0,
+      "mean_organ_count": 2.0,
+      "food_organ_share": 0.8125
     },
     {
       "generation": 3,
       "success_rate": 0.020833334,
-      "mean_time_to_first_catch": 145.0,
-      "median_time_to_first_catch": 145.0,
-      "best_fitness": 894.52075,
-      "median_fitness": 19.90134,
-      "mean_fitness": 72.26482,
+      "mean_time_to_first_catch": 150.0,
+      "median_time_to_first_catch": 150.0,
+      "best_fitness": 559.70715,
+      "median_fitness": 16.135172,
+      "mean_fitness": 54.619576,
       "fitness_quantiles": [
-        0.55432963,
-        3.129663,
-        19.90134,
-        29.73511,
-        38.42218
+        0.49517626,
+        1.1727661,
+        16.135172,
+        39.477463,
+        59.315857
       ],
-      "mean_genome_length": 292.1875,
-      "immobile_share": 0.0
+      "mean_genome_length": 263.3125,
+      "immobile_share": 0.0,
+      "mean_end_energy": 142.94728,
+      "starved_share": 0.0,
+      "mean_organ_count": 1.375,
+      "food_organ_share": 0.75
     }
   ],
   "perf": {
-    "ticks_per_second_total": 682383.6038384078,
-    "ticks_per_second_per_sandbox": 42648.97523990049,
-    "wall_seconds": 0.0633075,
-    "generation_end_seconds": 0.0129328
+    "ticks_per_second_total": 679700.5541447573,
+    "ticks_per_second_per_sandbox": 42481.28463404733,
+    "wall_seconds": 0.0635574,
+    "generation_end_seconds": 0.0138004
   }
 }

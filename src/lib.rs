@@ -7,6 +7,7 @@ pub mod biology {
     pub mod trainer_report;
     pub mod scenarios;
     pub mod creature_factory;
+    pub mod metabolism;
     pub mod probes;
 }
 pub mod shared {

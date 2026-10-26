@@ -27,7 +27,8 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 - **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters.
 - **Creep mutation** — a letter moved 1–2 alphabet steps (small value change).
 - **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key, per plastic synapse with probability `lamarckianAssimilationChance` (TCK-152).
-- **BMR** — basal metabolic rate.
+- **Energy cost** — per-tick drain of the shared energy function (`metabolism::tick_cost`): body, senses, brain (neurons + synaptic activity), movement, see [[wiki/biology/metabolism-and-reproduction]]. Replaced the multiplicative BMR (basal metabolic rate) in P6 (TCK-151).
+- **Starved** — trainer state of a creature at 0 energy: frozen for the rest of the trial (TCK-178), see [[wiki/simulation/trainer]].
 - **Golden master** — fingerprint test over 300 genomes guarding the compiler, see [[wiki/quality/testing]].
 - **Model version** — `MODEL_VERSION`; a bump resets the model tables of the DB, see [[wiki/architecture/persistence]].
 - **RV-ID** — review finding ID from the review of 2026-10-19 (`RV-B01`, ...; B bugs, A architecture, P performance, S simulation, D database, F frontend, T test/CI, X docs). Cited in articles as the source of a known limitation or fix.

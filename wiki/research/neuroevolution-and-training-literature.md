@@ -35,6 +35,7 @@ Literature collected on 2026-10-21 for training quality, brain design and metabo
 - Brain energy use scales linearly with neuron number, roughly constant per neuron across mammals (Herculano-Houzel 2011).
 - Most signalling energy goes into action potentials (47 %) and synaptic transmission (34 %) and scales with activity; sparse codes save energy (Attwell & Laughlin 2001).
 - Vision costs 15 % of resting metabolism in a young (1 g) Astyanax fish and 5 % in an 8.5 g fish; eyeless cavefish save this energy in food-poor caves (Moran et al. 2015). Vertebrate brains take about 2–8 % of resting metabolism, the human brain about 20 %.
+- Applied in P6 (TCK-151): additive cost with senses 7.5 % and brain 7.5 % of the median resting cost, the brain share split 20 % per neuron / 80 % activity ([[wiki/biology/metabolism-and-reproduction]]).
 
 ## Sources
 

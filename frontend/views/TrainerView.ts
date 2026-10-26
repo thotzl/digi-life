@@ -364,7 +364,7 @@ const SandboxGridContainer = styled("div")`
   overflow-y: auto;
   padding: 10px;
   background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(14a, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.08);
   border-radius: 6px;
   box-sizing: border-box;
 `;

@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-105-evolutionary-reinforcement-learning-trainer.md, tickets/closed/TCK-106-advanced-carnivore-training-and-adaptive-ctrnn-physiology.md, tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md, tickets/closed/TCK-136-trainer-sandbox-epoch-ticks.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, src/biology/scenarios.rs, src/biology/trainer_sim.rs, src/biology/trainer_engine.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, src/biology/metabolism.rs]
 ---
 
 # Trainer
@@ -9,8 +9,8 @@ Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor
 ## Structure
 
 - `src/biology/trainer_sim.rs` — `TrainerSim`: population of sandboxes, epoch/trial loop, breeding, parents and hall of fame; no IO. API: `new` (generation 1), `restore` (continue from parents + HoF), `step(parallel) -> Option<TrainerEvent>`, `set_scenario`, `assign_creature`. Types `TrainerParams`, `GenomeRecord`, `GenerationStats`, `TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats }` (TCK-173).
-- `src/biology/trainer_engine.rs` — `TrainerSandbox` (one creature + its food), `SandboxOrigin` enum (`elite`/`hof`/`mutant`/`random`, ts-rs), `breed_genome`, `init_rust_sandbox`, `TrainerSandbox::reset_trial`, `step_trainer_sandbox_physics` (eating, respawn, wall counter, 8×8 coverage mask), `TrainerTelemetrySandbox`.
-- `src/biology/scenarios.rs` — `Scenario` enum (`standard`/`exploration`, ts-rs), `DietClass` (`CARNIVORE_MIN` 0.6, `HERBIVORE_MAX` 0.4), `TrainingScenarioPlugin` trait (`chamber_size`, `epoch_ticks`, `respawn_min_distance`, `trial_min_distance`, `initialize`, `visible_foods`, `calculate_fitness`) returned as `&'static dyn` by `Scenario::plugin()`; one shared `step_physics` (sensing, brain, kinematics, food drift) with the `visible_foods` hook; helpers `spawn_at_min_distance` and `target_distance_by_diet` (TCK-173).
+- `src/biology/trainer_engine.rs` — `TrainerSandbox` (one creature + its food), `SandboxOrigin` enum (`elite`/`hof`/`mutant`/`random`, ts-rs), `breed_genome`, `init_rust_sandbox`, `TrainerSandbox::reset_trial`, `step_trainer_sandbox_physics` (eating and energy refill, respawn, wall counter, 8×8 coverage mask; nothing after starvation), `TrainerTelemetrySandbox`.
+- `src/biology/scenarios.rs` — `Scenario` enum (`standard`/`exploration`, ts-rs), `DietClass` (`CARNIVORE_MIN` 0.6, `HERBIVORE_MAX` 0.4), `TrainingScenarioPlugin` trait (`chamber_size`, `epoch_ticks`, `respawn_min_distance`, `trial_min_distance`, `initialize`, `visible_foods`, `calculate_fitness`) returned as `&'static dyn` by `Scenario::plugin()`; one shared `step_physics` (sensing, brain, metabolism, kinematics, food drift) with the `visible_foods` hook; helpers `spawn_at_min_distance` and `target_distance_by_diet` (TCK-173).
 - Engine (`src/server/engine.rs`) keeps only the UI state: active/running flags, warp (cap 35, [[wiki/architecture/invariants]]), selected sandbox, run id, 25 Hz telemetry and DB writes. One function builds the `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED` payload ([[wiki/architecture/simulation-engine]]).
 - Creatures are spawned by the shared `CreatureFactory` (`src/biology/creature_factory.rs`, TCK-185), identical to Ocean spawns except position, heading, id and generation. Each sandbox holds exactly one creature; prey mocking ("meatballs") provides meat targets (TCK-106).
 
@@ -32,8 +32,11 @@ Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor
 ## Start state and energy
 
 - Start energy = `stomach_capacity · creatureStartStomachRatio` (0.60), set by the factory and again by every trial reset (TCK-185; before: fixed 100). The brain input `internal_energy = energy / 100` therefore differs per body instead of being 1.0.
-- No metabolism in the trainer: energy is never reduced during a trial.
-- `reset_trial`: agent to the centre with a random heading, velocity/bend/age reset, start energy, neuron states cleared, food respawned at `trial_min_distance`; learned synapse weights are kept.
+- **Energy budget** (TCK-178, P6): after the brain step every tick, `metabolism::drain_energy` subtracts `trainerMetabolicScale` (1.0) × the Ocean cost (body, organs, neurons, synaptic activity, thrust; [[wiki/biology/metabolism-and-reproduction]]). Test `test_trainer_drain_equals_the_ocean_energy_function`: trainer and Ocean path give a bit-identical drain over 20 ticks.
+- Eating refills `metabolism::food_energy` (the Ocean rule, `foodSporeEnergy` · diet efficiency), capped at `stomach_capacity`.
+- **Starvation:** at energy ≤ 0 the sandbox is `starved`: energy and velocity are set to 0, and for the rest of the trial there is no sensing, brain step, movement or eating (the epoch tick counter keeps running). The trial counts as failed unless a catch came before; energy is not a fitness term. `starved` is cleared on every trial reset and new generation.
+- `trainerMetabolicScale` scales only the trainer drain (the Ocean uses 1); it exists for the curriculum pressure ramp of TCK-176 and stays 1.0 because the budget did not collapse sensor equipment (below).
+- `reset_trial`: agent to the centre with a random heading, velocity/bend/age reset, start energy, `starved` cleared, neuron states cleared, food respawned at `trial_min_distance`; learned synapse weights are kept.
 
 ## Generation loop
 
@@ -49,7 +52,7 @@ Neuroevolution in isolated sandboxes (training chambers) to breed fit progenitor
 - **Lamarckian toggle** (default off, TCK-128): elites and mutants receive the source parent's methylations and, per plastic synapse with the same key in the (possibly mutated) child genome, with probability `lamarckianAssimilationChance` (0.25) the parent's full learned offset, else the genome weight (`inherit_learned_weights`, TCK-179, TCK-152). The draws come from the slot's seeded breed stream, so runs stay deterministic. An unmutated elite also inherits only ~25 % of its parent's learned weights; fixed reflexes and new synapses start at their genome weight. Same rule as Ocean mitosis ([[wiki/biology/metabolism-and-reproduction]]).
 - Defaults (`TrainerParams::default`, same as the UI): population 16, elite 0.15, mutation 0.06, inflow 0.15, HoF 0.15, multi-trial on, 3 trials, Lamarck off.
 - Fixed while extracting (TCK-173): Lamarck source index underflow for fallback mutants; Lamarck mutants were built from the unmutated parent genome; catalogue assignment kept the old `antisense` and neuron buffers.
-- `trainer_genomes` rows from an older model version (before Brain v2, before Oja learning) are dropped by the model-version reset (TCK-183, `MODEL_VERSION` 3 since TCK-152, [[wiki/architecture/persistence]]).
+- `trainer_genomes` rows from an older model version (before Brain v2, before Oja learning) are dropped by the model-version reset (TCK-183, `MODEL_VERSION` 4 since TCK-151/TCK-178: weights and fitness before P6 were selected without an energy budget, [[wiki/architecture/persistence]]).
 - Kept as is (TCK-173 equivalence): HoF slots are not mutated although a mutation rate is passed; `avg_fitness` divides by the population size.
 
 ## Determinism
@@ -124,6 +127,28 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 - Immobile share in the small room: 0.004 in generation 1, 0 at the end (P4: 0.067 / 0.008).
 - Throughput standard pop 300, 10 generations, seed b1: 857k → 882k sandbox-ticks/s.
 
+## After Energy v2 (P6)
+
+Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generations, Lamarck off), before = P5 code, after = final calibration (typical total cost = old Ocean drain); reports kept locally in `.agents/artifacts/p6/before/` and `.agents/artifacts/p6/after2/` (TCK-151, TCK-178).
+
+| Setup | Success rate gen 1 | Success rate last 5 gens | Best gen | Mean time to first catch (last 5) |
+| :--- | :--- | :--- | :--- | :--- |
+| small, pop 16, 30 gens, 5 seeds | 0.013 | 0.223 (P5: 0.218) | 0.396 | ≈ 189 ticks |
+| large, pop 16, 30 gens, 5 seeds | 0.000 | 0.050 (P5: 0.033) | 0.271 | ≈ 1007 ticks |
+
+| Energy metrics, last 5 gens (P5 → P6) | small | large |
+| :--- | :--- | :--- |
+| `starved_share` | 0 → 0 | 0 → 0.182 (gen 1: 0.10) |
+| `mean_end_energy` | 161.7 → 139.0 | 144.0 → 71.3 |
+| `food_organ_share` (eye or nose) | 0.907 → 0.958 | 0.812 → 0.917 |
+| `mean_organ_count` | 2.96 → 3.41 | 1.85 → 3.24 |
+| best fitness | 1204 → 1318 | 1427 → 1582 |
+
+- The 300-tick small room does not exhaust the budget; in the 1800-tick large room about a fifth of the trials end starved. Sensor equipment did not collapse under the cost, it grew (TCK-178 acceptance).
+- Both success changes are within or near the 5-seed noise; the large room per seed 0.021 / 0.138 / 0.054 / 0.021 / 0.017, the gain carried mainly by seed b2.
+- Throughput standard pop 300, 10 generations, seed b1: ≈ 1064k → 983k sandbox-ticks/s (−8 %; [[wiki/architecture/performance]]).
+- Report fields added: `mean_end_energy`, `starved_share`, `mean_organ_count`, `food_organ_share` ([[wiki/simulation/analytics-and-balancing]]).
+
 ## Controls
 
 - Start/pause/reset, warp (capped 35), hyperparameters, sandbox selection/assignment, Lamarckian synapse inheritance toggle (TCK-128), `apply_champion`, add catalogue creatures to training.
@@ -132,7 +157,8 @@ Same protocol (pop 16, 30 generations, seeds b1–b5, mean of the last 5 generat
 
 - `TrainerSim` is IO-free, seeded and parallel-safe; the engine and the headless runner drive the same code.
 - Two plugin rooms with multi-trial evaluation and elitist selection; spawn loops are bounded, spawn distances still differ per trial (RV-S08).
-- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033; after Oja learning (P4) 0.207 and 0.046; after Locomotion v2 (P5) 0.218 and 0.033 (10 seeds: 0.193 and 0.060).
+- P2 baseline: success rate 0.040 (small) and 0.023 (large) at population 16 after 30 generations; after Brain v2 0.122 and 0.033; after Oja learning (P4) 0.207 and 0.046; after Locomotion v2 (P5) 0.218 and 0.033 (10 seeds: 0.193 and 0.060); after Energy v2 (P6) 0.223 and 0.050.
+- Trainer creatures pay the Ocean energy cost and can starve (TCK-178); about a fifth of the large-room trials end starved (0.182), sensor equipment did not shrink.
 - Generation 1 and immigrants are structured random genomes; Lamarckian weights follow synapse keys and are inherited per plastic synapse with probability 0.25 (TCK-152).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-150, TCK-152, TCK-173, TCK-179, TCK-180, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-105, TCK-106, TCK-120, TCK-128, TCK-136, TCK-150, TCK-151, TCK-152, TCK-178, TCK-173, TCK-179, TCK-180, TCK-183, TCK-184, TCK-185, `docs/revisit/04-simulation-model.md`, `src/biology/scenarios.rs`, `src/biology/trainer_sim.rs`.

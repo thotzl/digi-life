@@ -1,7 +1,7 @@
 ---
 id: TCK-178
 title: Energy Budget in the Trainer
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -28,3 +28,10 @@ The current BMR model multiplies by synapse and input count (RV-S03); one sense 
 ## Acceptance
 - Trainer and Ocean use the same energy function (test: identical drain for the same agent and tick).
 - Before/after report: success rate and energy metrics; no collapse of sensor equipment (share of genomes with eyes/noses stays comparable).
+
+## Verification (P6, v1.12.20)
+- Trainer drains `trainerMetabolicScale` (1.0) x the shared cost every tick (`test_trainer_drain_equals_the_ocean_energy_function`: bit-identical to the Ocean path over 20 ticks); one food-energy rule (`metabolism::food_energy`, `foodSporeEnergy`); a creature at 0 energy is starved for the rest of the trial (no brain, motion, eating).
+- Report fields `mean_end_energy`, `starved_share`, `mean_organ_count`, `food_organ_share`.
+- 5 seeds (pop 16, 30 gens, last 5 gens): small success 0.218 -> 0.223, starved 0, end energy 161.7 -> 139.0; large success 0.033 -> 0.050 (per seed 0.017-0.138), starved 0 -> 0.182, end energy 144.0 -> 71.3. No collapse, so `trainerMetabolicScale` stays 1.0; the P8 ramp (TCK-176) can lower it at the start of a curriculum.
+- Throughput pop 300 standard 1064k -> 983k sandbox-ticks/s (-8 %, target >= 206k kept).
+- Golden master `0xe0a2bfd1c7310306` -> `0x9d206dfd8124f808` (phenotype field `basal_metabolic_rate` removed); `MODEL_VERSION` 3 -> 4; CI reference regenerated. `cargo test` 113 passed (1 ignored), 0 warnings; `npm run build`, vitest green.

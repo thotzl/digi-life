@@ -436,9 +436,6 @@ pub struct CreaturePhenotype {
     #[ts(rename = "preferredHabitat")]
     pub preferred_habitat: String,
 
-    #[serde(rename = "basalMetabolicRate")]
-    #[ts(rename = "basalMetabolicRate")]
-    pub basal_metabolic_rate: f32,
     #[serde(rename = "stomachCapacity")]
     #[ts(rename = "stomachCapacity")]
     pub stomach_capacity: f32,
@@ -1944,30 +1941,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         flattening_head,
     };
 
-    // 16. BMR and metabolic cost calculation
-    let mut integrated_area_sum = 0.0;
-    for steps in 0..=20 {
-        let s_coord = steps as f32 / 20.0;
-        let r_at_s = get_spinal_radius_at(s_coord);
-        integrated_area_sum += r_at_s * r_at_s * std::f32::consts::PI;
-    }
-    let mean_area = integrated_area_sum / 21.0;
-    
-    let total_synapses = brain.synapses.len();
-    let brain_complexity_multiplier = 1.0 + total_synapses as f32 * 0.06;
-
-    let mut vestigial_organ_tax = 0.0;
-    for patch in &organelles {
-        let tax = patch.scale * patch.scale * (1.1 - patch.bandwidth) * 1.0;
-        vestigial_organ_tax += tax;
-    }
-
-    let basal_metabolic_rate = ((mean_area * base_length * 0.000008 + vestigial_organ_tax)
-        * (1.0 + (organelles.len() * SPECTRAL_CHANNELS) as f32 * 0.08)
-        * (stiffness * 1.4)
-        * brain_complexity_multiplier)
-        .round();
-
     let eco = derive_ecological_metrics(
         &clean_genome,
         symmetry,
@@ -2021,7 +1994,6 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         sensory_biolum: eco.biolum,
         diet_class: eco.diet,
         preferred_habitat: eco.habitat,
-        basal_metabolic_rate,
         stomach_capacity,
         thermal_tolerance_min,
         thermal_tolerance_max,
@@ -2313,7 +2285,7 @@ mod tests {
         // Core assertions
         assert!(phenotype.genome_string.starts_with(progenitor_dna));
         assert!(phenotype.spinal_harmonics.mean_radius >= 16.0 && phenotype.spinal_harmonics.mean_radius <= 28.0);
-        assert!(phenotype.basal_metabolic_rate > 0.0);
+        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting() > 0.0);
         assert!(phenotype.stiffness >= 0.15 && phenotype.stiffness <= 1.0);
         assert!(phenotype.antisense_strand.starts_with(&get_complementary_string(progenitor_dna)));
 
@@ -2330,8 +2302,8 @@ mod tests {
         assert_eq!(output_count, OUTPUT_MOTOR_NODES_COUNT);
         assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our generic thalamus sum/diff pre-processor interneurons!
 
-        // Verify that BMR scaling values are deterministic and finite
-        assert!(phenotype.basal_metabolic_rate.is_finite());
+        // Verify that the resting metabolic cost is finite
+        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting().is_finite());
         assert!(phenotype.stomach_capacity > 0.0);
     }
 
@@ -2486,12 +2458,13 @@ mod tests {
 
             // A. Assert compilation robustness: must NEVER panic, crash or deadlock
             let phenotype = parse_genome(&genome, None, None);
+            let resting_cost = crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting();
             let brain = phenotype.brain;
 
             // B. Assert state boundaries are finite
             assert!(phenotype.stiffness.is_finite());
             assert!(phenotype.stiffness >= 0.15 && phenotype.stiffness <= 1.0);
-            assert!(phenotype.basal_metabolic_rate.is_finite());
+            assert!(resting_cost.is_finite());
             assert!(phenotype.stomach_capacity > 0.0);
 
             // C. Assert brain execution robustness: run euler integration for 10 ticks and ensure zero NaNs/Infs
@@ -2957,7 +2930,9 @@ mod tests {
 
     // Fingerprint of parse_genome output over golden_genomes(); Brain v2 model change (P3 slice A: TCK-179/182/144/153/149;
     // slice C: gene identity by promoter spelling + occurrence, 0x0c404a33923c8dd9 -> 0x65f701a6937c1e71;
-    // P4 TCK-152: `plastic` flag per synapse, 0x65f701a6937c1e71 -> 0xe0a2bfd1c7310306, unchanged without the flag)
-    const GOLDEN_FINGERPRINT: u64 = 0xe0a2bfd1c7310306;
+    // P4 TCK-152: `plastic` flag per synapse, 0x65f701a6937c1e71 -> 0xe0a2bfd1c7310306, unchanged without the flag;
+    // P6 TCK-151: `basalMetabolicRate` removed from the phenotype (cost computed by `biology::metabolism`),
+    // 0xe0a2bfd1c7310306 -> 0x9d206dfd8124f808)
+    const GOLDEN_FINGERPRINT: u64 = 0x9d206dfd8124f808;
 
 }
