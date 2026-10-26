@@ -12,9 +12,8 @@ use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_engine::TrainerTelemetrySandbox;
 use crate::biology::trainer_sim::{TrainerEvent, TrainerSim};
-use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerSelectedBrain, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
+use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
 use crate::database::{delete_trainer_run, init_db, load_trainer_genomes, load_trainer_run_state, save_trainer_elites, save_trainer_run_state, LogDbError};
 use crate::shared::rng::seed_from_str;
 
@@ -68,11 +67,12 @@ fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, &'static str) 
 }
 
 /// TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED payload: the trainer settings as the UI shows them.
-fn trainer_state(is_running: bool, trainer: &TrainerSim, warp_speed: usize, is_headless: bool, run_id: &str) -> TrainerState {
+fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, warp_speed: usize, is_headless: bool, run_id: &str) -> TrainerState {
     let params = &trainer.params;
     TrainerState {
         is_running,
         population: params.population,
+        display_count: display_count.min(params.population),
         warp_speed,
         elite_ratio: params.elite_ratio,
         mutation_rate: params.mutation_ops_max,
@@ -158,6 +158,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let mut trainer_is_headless = false; // only echoed back to the UI
         let mut trainer_run_id = "default_run".to_string();
         let mut trainer_selected_sandbox_id: Option<u32> = Some(1);
+        // Displayed sandboxes (UI grid tiles and telemetry, `N`); the population is `trainer.params.population`
+        // (config `trainerPopulation`, TCK-192). Only the telemetry reads it, the simulation never does.
+        let mut trainer_display_count: usize = 16;
         let trainer_retention = app_config.trainer_genome_retention_per_run;
         let trainer_seed = |run_id: &str| seed_from_str(&format!("{}:{}", app_config.seed, run_id));
 
@@ -317,8 +320,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     if let Some(act_type) = action["type"].as_str() {
                         // Trainer actions are typed (TCK-177); the other action types are matched on the raw JSON
                         if let Ok(trainer_action) = serde_json::from_value::<TrainerAction>(action.clone()) {
-                            let state_changed = |is_running: bool, trainer: &TrainerSim, warp: usize, headless: bool, run_id: &str| {
-                                TrainerUiEvent::TrainerStateChanged(trainer_state(is_running, trainer, warp, headless, run_id)).to_payload()
+                            let state_changed = |is_running: bool, trainer: &TrainerSim, display: usize, warp: usize, headless: bool, run_id: &str| {
+                                TrainerUiEvent::TrainerStateChanged(trainer_state(is_running, trainer, display, warp, headless, run_id)).to_payload()
                             };
                             match trainer_action {
                                 // Room switches take effect at the next generation (at once at a generation start; TCK-176)
@@ -328,20 +331,20 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let size = trainer.room().chamber_size();
                                         println!("[TRAINER] Training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
                                     }
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::SetTrainerLevel { level } => {
                                     trainer.set_level(level);
                                     println!("[TRAINER] Manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::StartTraining => {
                                     trainer_is_running = true;
-                                    emit_state(state_changed(true, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                    emit_state(state_changed(true, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::PauseTraining => {
                                     trainer_is_running = false;
-                                    emit_state(state_changed(false, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                    emit_state(state_changed(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::TrainerReset => {
                                     trainer_is_running = false;
@@ -356,7 +359,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     trainer = TrainerSim::new(fresh_params, trainer_seed(&trainer_run_id), trainer_retention);
                                     trainer_run_state_loaded = true;
 
-                                    let state = trainer_state(false, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
+                                    let state = trainer_state(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
                                     emit_state(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..state }).to_payload());
                                 }
                                 TrainerAction::SelectTrainerSandbox { id } => {
@@ -403,11 +406,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let mut grid_changed = false;
                                     let mut generation_base = trainer.generation;
                                     let p = &mut trainer.params;
-                                    if let Some(n) = update.population {
+                                    // Population (TCK-192): a change restores the population from the DB
+                                    if let Some(n) = update.population.map(|n| n.max(1)) {
                                         if n != p.population {
                                             p.population = n;
                                             grid_changed = true;
                                         }
+                                    }
+                                    // Displayed sandboxes: telemetry only, the simulation is not touched
+                                    if let Some(n) = update.display_count {
+                                        trainer_display_count = n.max(1);
                                     }
                                     if let Some(warp) = update.warp_speed {
                                         trainer_warp_speed = warp;
@@ -451,9 +459,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &conn);
                                         trainer_run_state_loaded = true;
                                     }
+                                    trainer_display_count = trainer_display_count.min(trainer.params.population);
 
                                     // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                             }
                             continue;
@@ -793,7 +802,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
                                         // Broadcast full hyperparams truth back to the UI!
-                                        emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
+                                        emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
                                     } else {
                                         is_trainer_active = false;
                                         println!("[TRAINER] Leaving trainer mode. Resuming Ocean substrate.");
@@ -1489,7 +1498,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             // B. TRAINER EVOLUTION TICK
             if is_trainer_active {
                 if trainer_is_running {
-                    // Run trainer_warp_speed steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding)
+                    // Run trainer_warp_speed steps (cap steps per 60Hz tick to prevent thread blocking/IPC flooding).
+                    // Frame cost scales with population × steps (TCK-192): `step(true)` steps the sandboxes on the
+                    // rayon pool; at ~1 M sandbox-ticks/s (runner, pop 300) warp 1 costs ~0.3 ms per frame and the cap
+                    // of 35 steps ~10 ms. A frame over 16.7 ms only skips the sleep (actions are still read every
+                    // frame); the telemetry cost depends on the displayed sandboxes, not on the population.
                     let steps_this_frame = if trainer_warp_speed > 35 { 35 } else { trainer_warp_speed };
                     for _step in 0..steps_this_frame {
                         if let Some(event) = trainer.step(true) { // parallel == sequential (seeded per-sandbox and per-slot streams)
@@ -1508,7 +1521,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 stats: (&stats).into(),
                             }).to_payload());
                             // Settings after the generation boundary (applied room switch, gate level, adapted mutation ops)
-                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
+                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes
                             save_trainer_elites(&conn, &trainer_run_id, generation, &elites, trainer_retention);
@@ -1519,60 +1532,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     }
                 }
 
-                // C. Stream Trainer Telemetry to UI at 25Hz (lightweight frames)
+                // C. Stream Trainer Telemetry to UI at 25Hz: only the displayed sandboxes (first N, elites first), so
+                // the payload does not grow with the population (TCK-192)
                 if last_emit_time.elapsed() >= emit_interval {
-                    let plugin = trainer.room();
-                    let telemetry_sandboxes: Vec<TrainerTelemetrySandbox> = trainer
-                        .sandboxes
-                        .iter()
-                        .map(|sb| {
-                            TrainerTelemetrySandbox {
-                                id: sb.id,
-                                chamber_size: sb.room.chamber_size(),
-                                px: sb.agent.px,
-                                py: sb.agent.py,
-                                vx: sb.agent.vx,
-                                vy: sb.agent.vy,
-                                heading_angle: sb.agent.heading_angle,
-                                omega_rot: sb.agent.omega_rot,
-                                finished: sb.finished,
-                                current_fitness: sb.current_fitness,
-                                origin_type: sb.origin_type,
-                                consumed_spore_type: sb.consumed_spore_type.clone(),
-                                foods: sb.foods.clone(),
-                                latin_name: sb.agent.phenotype.latin_name.clone(),
-                                primary_color_h: sb.agent.phenotype.primary_color.h,
-                                primary_color_s: sb.agent.phenotype.primary_color.s,
-                                primary_color_l: sb.agent.phenotype.primary_color.l,
-                                energy: sb.agent.energy,
-                                age: sb.agent.age,
-                                generation: sb.agent.generation,
-                                genome: sb.agent.genome.clone(),
-                                scenario: trainer.params.scenario,
-                                level: sb.room.level(),
-                                cumulative_rotation: sb.cumulative_rotation,
-                                coverage_mask: sb.coverage_mask,
-                            }
-                        })
-                        .collect();
-
-                    let time_str = format!("{:.1}s", ((plugin.epoch_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
-
-                    // Live neural activations of the selected sandbox for the brain view
-                    let selected_brain = trainer_selected_sandbox_id.and_then(|sel_id| {
-                        trainer.sandboxes.iter().find(|s| s.id == sel_id).map(|sel_sb| TrainerSelectedBrain {
-                            id: sel_id,
-                            activations: sel_sb.agent.neuron_activations.clone(),
-                        })
-                    });
-
-                    emit_state(TrainerUiEvent::TrainerTelemetryTick(TrainerTelemetryTick {
-                        generation: trainer.generation,
-                        is_running: trainer_is_running,
-                        time_str,
-                        sandboxes: telemetry_sandboxes,
-                        selected_brain,
-                    }).to_payload());
+                    let tick = TrainerTelemetryTick::build(&trainer, trainer_display_count, trainer_selected_sandbox_id, trainer_is_running);
+                    emit_state(TrainerUiEvent::TrainerTelemetryTick(tick).to_payload());
 
                     last_emit_time = Instant::now();
                 }

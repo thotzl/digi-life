@@ -158,3 +158,16 @@ Phases P1–P8 closed (v1.12.15 … v1.12.22), one commit per phase on master; a
 | Ticks/s, pop 300 | 206k | 0.6–2.1 M (one run at 195k under concurrent build load) | met |
 
 Open gap: at the protocol population of 16 the success targets are not met on unseen layouts, the large room in particular (0.096). Levers measured but not chosen: rehearsal, metabolic ramp (both without benefit). Next options (after the epic): larger populations / longer runs in headless training, the escalations of TCK-175 (novelty blend, multi-objective, connection cost), and the after-epic plan in `.agents/state/next-tasks.md`.
+
+## Wrap-up (2026-10-26, v1.12.23 – v1.12.25)
+Follow-ups that round off the epic (user decision after the epic report): TCK-191 run state persisted (v1.12.23), TCK-190 tanh thalamus sum nodes with re-derived energy constants, model version 6 (v1.12.24), TCK-192 population independent of the visible tiles, default 100 (v1.12.25); dependency alerts ticketed as TCK-189, naming as TCK-193, training escalations in `.agents/state/next-tasks.md`.
+
+Final measurement with the finished model (unseen layouts, final population, 10 evaluation trials per room; raw data `.agents/artifacts/wrapup/final`):
+
+| Population | small room direct | curriculum 60 gens: small / large | final level |
+| :--- | :--- | :--- | :--- |
+| 16 (10 seeds) | 0.454 (30 gens; elites 0.598) | 0.320 / 0.227 | 0.91 |
+| 100 (5 seeds, app default) | 0.708 (60 gens; elites 0.926) | 0.467 / 0.376 (elites 0.481) | 1.0 |
+| 300 (10 seeds) | 0.709 (60 gens; elites 0.920) | 0.462 / 0.395 (SD 0.213; elites 0.525) | 0.99 |
+
+Targets: small room ≥ 0.50 and large room ≥ 0.30 on unseen layouts are **met** at the app default population 100 and at 300 (direct training for the small room, curriculum for the large room); at the protocol population of 16 the small room is close (0.454) and the large room is not (0.227). Brain + senses share of the resting cost after the re-derivation: 15.5 %. Throughput pop 300: median 1.4–1.9 M ticks/s.

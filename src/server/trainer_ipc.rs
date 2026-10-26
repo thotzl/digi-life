@@ -5,9 +5,9 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::biology::scenarios::Scenario;
+use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::TrainerTelemetrySandbox;
-use crate::biology::trainer_sim::{GenerationStats, LevelMove};
+use crate::biology::trainer_sim::{GenerationStats, LevelMove, TrainerSim};
 
 /// Trainer events sent to the UI (payload of the `simulation-state` event, tag `type`).
 #[derive(Debug, Clone, Serialize, TS)]
@@ -30,7 +30,7 @@ impl TrainerUiEvent {
     }
 }
 
-/// Live frame of all sandboxes (25 Hz).
+/// Live frame of the displayed sandboxes (25 Hz): the first `N` of the population (TCK-192).
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -41,6 +41,53 @@ pub struct TrainerTelemetryTick {
     pub time_str: String,
     pub sandboxes: Vec<TrainerTelemetrySandbox>,
     pub selected_brain: Option<TrainerSelectedBrain>,
+}
+
+impl TrainerTelemetryTick {
+    /// Frame of the first `display_count` sandboxes (TCK-192). Within a generation the sandboxes keep their breeding
+    /// slot order (ids 1..=population: elites, hall of fame, random immigrants, mutants), so the displayed tiles show
+    /// the elites first and their ids are stable for the whole generation. The payload size depends on
+    /// `display_count`, not on the population. The brain view gets activations only for a displayed sandbox.
+    /// Reads the sim only: the display count never changes the simulation.
+    pub fn build(trainer: &TrainerSim, display_count: usize, selected_sandbox_id: Option<u32>, is_running: bool) -> Self {
+        let displayed = &trainer.sandboxes[..display_count.min(trainer.sandboxes.len())];
+        let scenario = trainer.params.scenario;
+        let sandboxes = displayed
+            .iter()
+            .map(|sb| TrainerTelemetrySandbox {
+                id: sb.id,
+                chamber_size: sb.room.chamber_size(),
+                px: sb.agent.px,
+                py: sb.agent.py,
+                vx: sb.agent.vx,
+                vy: sb.agent.vy,
+                heading_angle: sb.agent.heading_angle,
+                omega_rot: sb.agent.omega_rot,
+                finished: sb.finished,
+                current_fitness: sb.current_fitness,
+                origin_type: sb.origin_type,
+                consumed_spore_type: sb.consumed_spore_type.clone(),
+                foods: sb.foods.clone(),
+                latin_name: sb.agent.phenotype.latin_name.clone(),
+                primary_color_h: sb.agent.phenotype.primary_color.h,
+                primary_color_s: sb.agent.phenotype.primary_color.s,
+                primary_color_l: sb.agent.phenotype.primary_color.l,
+                energy: sb.agent.energy,
+                age: sb.agent.age,
+                generation: sb.agent.generation,
+                genome: sb.agent.genome.clone(),
+                scenario,
+                level: sb.room.level(),
+                cumulative_rotation: sb.cumulative_rotation,
+                coverage_mask: sb.coverage_mask,
+            })
+            .collect();
+        let time_str = format!("{:.1}s", ((trainer.room().epoch_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
+        let selected_brain = selected_sandbox_id.and_then(|sel_id| {
+            displayed.iter().find(|s| s.id == sel_id).map(|sb| TrainerSelectedBrain { id: sel_id, activations: sb.agent.neuron_activations.clone() })
+        });
+        Self { generation: trainer.generation, is_running, time_str, sandboxes, selected_brain }
+    }
 }
 
 /// Live neuron activations of the selected sandbox (brain view).
@@ -130,8 +177,11 @@ impl From<&GenerationStats> for TrainerGenerationStats {
 #[ts(export)]
 pub struct TrainerState {
     pub is_running: bool,
-    #[serde(rename = "N")]
+    /// Sandboxes per generation; selection, breeding and stats run over all of them (TCK-192)
     pub population: usize,
+    /// Displayed sandboxes (grid tiles, telemetry), at most `population`
+    #[serde(rename = "N")]
+    pub display_count: usize,
     pub warp_speed: usize,
     pub elite_ratio: f32,
     /// Kept field name: since TCK-174 the max mutation operator calls per child (`mutation_ops_max`), slider range
@@ -181,7 +231,12 @@ pub enum TrainerAction {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct TrainerHyperparamsUpdate {
+    /// Displayed sandboxes (grid tiles, telemetry); never changes the simulation (TCK-192)
     #[serde(rename = "N", default)]
+    #[ts(optional)]
+    pub display_count: Option<usize>,
+    /// Population size; a change restores the population from the DB
+    #[serde(default)]
     #[ts(optional)]
     pub population: Option<usize>,
     #[serde(default)]
@@ -249,11 +304,12 @@ mod tests {
         assert_eq!(parse(json!({ "type": "SET_TRAINER_LEVEL", "level": 0.4 })), Some(TrainerAction::SetTrainerLevel { level: 0.4 }));
         assert_eq!(parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": 3 })), Some(TrainerAction::SelectTrainerSandbox { id: Some(3) }));
         assert_eq!(parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": null })), Some(TrainerAction::SelectTrainerSandbox { id: None }));
-        let update = parse(json!({ "type": "UPDATE_TRAINER_HYPERPARAMS", "N": 16, "warpSpeed": 2, "eliteRatio": 0.25, "runId": "r1", "lamarckian": true }));
+        let update = parse(json!({ "type": "UPDATE_TRAINER_HYPERPARAMS", "N": 16, "population": 300, "warpSpeed": 2, "eliteRatio": 0.25, "runId": "r1", "lamarckian": true }));
         assert_eq!(
             update,
             Some(TrainerAction::UpdateTrainerHyperparams(TrainerHyperparamsUpdate {
-                population: Some(16),
+                display_count: Some(16),
+                population: Some(300),
                 warp_speed: Some(2),
                 elite_ratio: Some(0.25),
                 run_id: Some("r1".to_string()),
@@ -307,7 +363,8 @@ mod tests {
     fn test_trainer_events_keep_type_tag_and_ui_field_names() {
         let state = TrainerState {
             is_running: true,
-            population: 16,
+            population: 100,
+            display_count: 16,
             warp_speed: 1,
             elite_ratio: 0.25,
             mutation_rate: 3,
@@ -328,6 +385,7 @@ mod tests {
         let v = TrainerUiEvent::TrainerStateChanged(state.clone()).to_payload();
         assert_eq!(v["type"], "TRAINER_STATE_CHANGED");
         assert_eq!(v["N"], 16);
+        assert_eq!(v["population"], 100);
         assert_eq!(v["isRunning"], true);
         assert_eq!(v["mutationRate"], 3);
         assert_eq!(v["trainingMode"], "curriculum");
@@ -347,5 +405,44 @@ mod tests {
         assert_eq!(tick["type"], "TRAINER_TELEMETRY_TICK");
         assert_eq!(tick["timeStr"], "5.0s");
         assert_eq!(tick["selectedBrain"]["id"], 1);
+    }
+
+    /// TCK-192: the telemetry carries the first `N` sandboxes (elites first, ids 1..=N) and the brain view only a
+    /// displayed sandbox.
+    #[test]
+    fn test_telemetry_carries_only_the_displayed_sandboxes() {
+        use crate::biology::trainer_engine::SandboxOrigin;
+        use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
+        let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::default() }, 11, 200);
+        while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
+        let tick = TrainerTelemetryTick::build(&sim, 5, Some(3), true);
+        assert_eq!(tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+        assert_eq!(tick.sandboxes[0].origin_type, SandboxOrigin::Elite);
+        assert_eq!(tick.selected_brain.as_ref().map(|b| b.id), Some(3));
+        assert!(TrainerTelemetryTick::build(&sim, 5, Some(9), true).selected_brain.is_none(), "sandbox 9 is not displayed");
+        assert_eq!(TrainerTelemetryTick::build(&sim, 100, None, true).sandboxes.len(), 12, "display count above the population");
+    }
+
+    /// TCK-192: the display count is a UI concern; building the telemetry with different counts every tick leaves
+    /// the generation stats of the same seed unchanged.
+    #[test]
+    fn test_display_count_does_not_change_the_simulation() {
+        use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
+        let run = |display_count: Option<usize>| {
+            let mut sim = TrainerSim::new(TrainerParams { population: 10, trials: 2, ..TrainerParams::default() }, 21, 200);
+            let mut stats = Vec::new();
+            while stats.len() < 2 {
+                if let Some(n) = display_count {
+                    assert!(TrainerTelemetryTick::build(&sim, n, Some(1), true).sandboxes.len() <= n);
+                }
+                if let Some(TrainerEvent::GenerationCompleted { stats: s, .. }) = sim.step(true) {
+                    stats.push(s);
+                }
+            }
+            stats
+        };
+        let reference = run(None);
+        assert_eq!(run(Some(4)), reference);
+        assert_eq!(run(Some(10)), reference);
     }
 }

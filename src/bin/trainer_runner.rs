@@ -14,7 +14,8 @@ use src_tauri::database::{init_db, save_trainer_elites, save_trainer_run_state};
 use src_tauri::shared::types::AppConfig;
 
 const USAGE: &str = "Usage:
-  trainer_runner run --seed <str> --generations <N> --scenario standard|exploration|curriculum --population <N>
+  trainer_runner run --seed <str> --generations <N> --scenario standard|exploration|curriculum
+                     [--population <N; default config trainerPopulation>]
                      [--schedule <room>:<gens>,... (rooms standard|exploration|curriculum; replaces --scenario,
                       sets --generations)] [--eval-final standard,exploration] [--eval-trials <N; default --trials>]
                      [--curriculum-upper <x>] [--curriculum-lower <x>] [--curriculum-step <x>] [--start-level <0..1>]
@@ -119,7 +120,7 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     if eval_final.contains(&Scenario::Curriculum) {
         return Err("--eval-final takes fixed rooms (standard, exploration)".to_string());
     }
-    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", None)?, generations);
+    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", Some(AppConfig::global().trainer_population))?, generations);
     let c = defaults.curriculum;
     let curriculum = CurriculumParams {
         upper: parse(flags, "curriculum-upper", Some(c.upper))?,

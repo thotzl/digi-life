@@ -583,7 +583,20 @@ export function createTrainerView(): HTMLElement {
             children: [
               SliderLabelRow({
                 children: [
-                  styled("span")``({ children: "Grid Size (N Sandboxes)" }),
+                  styled("span")``({ children: "Population" }),
+                  styled("span")``({ id: "lbl-population", children: "100" })
+                ]
+              }),
+              // Value = index into POPULATION_STEPS (trainerMetrics.ts); selection, breeding and stats run over the
+              // whole population, the grid shows the first N sandboxes (TCK-192)
+              SliderInput({ id: "slider-population", type: "range", min: "0", max: "4", value: "2", step: "1" })
+            ]
+          }),
+          SliderControl({
+            children: [
+              SliderLabelRow({
+                children: [
+                  styled("span")``({ children: "Visible Sandboxes" }),
                   styled("span")``({ id: "lbl-grid-size", children: "16" })
                 ]
               }),
@@ -696,7 +709,7 @@ export function createTrainerView(): HTMLElement {
               styled("label")``({
                 htmlFor: "chk-multi-trial",
                 style: { fontSize: "0.65rem", cursor: "pointer", userSelect: "none" },
-                children: "Enable Multi-Trial (3 Runs per Gen)"
+                children: "Enable Multi-Trial (several layouts per generation)"
               })
             ]
           }),
@@ -723,7 +736,7 @@ export function createTrainerView(): HTMLElement {
               "Champion Exporter (Local Cache)"
             ] 
           }),
-          styled("p")``({ children: "Copy-paste this DNA into config.json's rules.progenitorGenome to boost live ocean spawn rates." }),
+          styled("p")``({ children: "DNA of the best creature of the last generation. Seeding champions into the Ocean is planned (TCK-123)." }),
           GenomeTextArea({ id: "txt-dna", readonly: true, placeholder: "No champion evolved yet. Start training..." }),
           styled("button")``({
             id: "btn-copy-dna",

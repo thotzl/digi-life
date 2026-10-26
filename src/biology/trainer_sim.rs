@@ -208,11 +208,11 @@ pub struct TrainerParams {
 }
 
 impl Default for TrainerParams {
-    /// Defaults of the trainer UI (trials, aggregation and mutation ops from config.json).
+    /// Defaults of the trainer UI (population, trials, aggregation and mutation ops from config.json).
     fn default() -> Self {
         let config = AppConfig::global();
         Self {
-            population: 16,
+            population: config.trainer_population.max(1),
             elite_ratio: 0.25,
             mutation_ops_min: config.mutation_ops_min,
             mutation_ops_max: config.mutation_ops_max,
@@ -526,12 +526,14 @@ pub struct TrainerRunState {
     pub level_auto: bool,
     pub layout_id: u64,
     pub mutation_ops_max: u32,
+    /// Population of the run (TCK-192); `None` for rows saved before it was stored (config default applies)
+    pub population: Option<usize>,
 }
 
 impl TrainerRunState {
     pub fn of(sim: &TrainerSim) -> Self {
         let p = &sim.params;
-        Self { scenario: p.scenario, level: p.level, level_auto: p.level_auto, layout_id: sim.layout_id, mutation_ops_max: p.mutation_ops_max }
+        Self { scenario: p.scenario, level: p.level, level_auto: p.level_auto, layout_id: sim.layout_id, mutation_ops_max: p.mutation_ops_max, population: Some(p.population) }
     }
 
     /// Writes the state into `params` (the layout goes to `TrainerSim::restore_at_layout`). `mutation_ops_max` is
@@ -542,6 +544,9 @@ impl TrainerRunState {
         params.level = snap_level(self.level);
         params.level_auto = self.level_auto;
         params.mutation_ops_max = self.mutation_ops_max.clamp(lo, AppConfig::global().mutation_ops_limit.max(lo));
+        if let Some(population) = self.population {
+            params.population = population.max(1);
+        }
     }
 }
 
@@ -1755,10 +1760,11 @@ mod tests {
 
     #[test]
     fn test_run_state_apply_clamps_mutation_ops_and_snaps_level() {
-        let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000 };
+        let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000, population: Some(42) };
         let mut params = TrainerParams::default();
         state.apply(&mut params);
         let limit = AppConfig::global().mutation_ops_limit.max(params.mutation_ops_min.max(1));
         assert_eq!((params.scenario, params.level, params.level_auto, params.mutation_ops_max), (Scenario::Exploration, snap_level(0.47), false, limit));
+        assert_eq!(params.population, 42, "the stored population is restored (TCK-192)");
     }
 }

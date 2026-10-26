@@ -11,7 +11,7 @@ Goal: with this epic and follow-up epics, build the setup that fulfils the game-
 - Next step after P8: propose an epic structure and tickets to the user (needs GO before creating tickets).
 - **Training escalations** (from TCK-175, not part of epic TCK-171; only if larger populations and the curriculum are not enough): novelty blend (fitness plus a novelty term on end position / visited sectors, Cuccu/Gomez 2011, or minimal-criterion novelty), multi-objective selection (eating, path and energy as separate Pareto objectives, Mouret/Doncieux), connection cost as a selection objective (Clune/Mouret/Lipson 2013). Measure on unseen layouts (`--eval-final`).
 - **Dependency security alerts:** ticketed as TCK-189.
-- Open gap carried over from TCK-171 (`## Result`): at pop 16 the success targets are not met on unseen layouts (small 0.383, large 0.096); pop 300 meets both. Options: headless training with large populations, TCK-175 escalations (novelty blend, multi-objective, connection cost).
+- Remaining gap from TCK-171 (`## Wrap-up`): targets met at the app default population 100 and at 300; at pop 16 the large room stays at 0.227. Only relevant if small populations matter (e.g. arenas with few creatures); options: the training escalations below.
 
 ## Findings (not yet ticketed)
 - None open.

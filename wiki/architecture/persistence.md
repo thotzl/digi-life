@@ -23,7 +23,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-a
 | `simulation_history` | Ocean time series every 10 s: `generation`, `population_count`, `average_fitness`/`max_fitness` (actually avg/max energy); no reader in the app |
 | `simulation_state` | Ocean snapshot, key `current_state`, JSON of creatures, food, counters; upsert every 10 s; loaded on startup |
 | `trainer_genomes` | trainer elites per `run_id`/`generation`: `fitness`, `active` (current parents), `genome`, `methylations`, `synapse_weights` (JSON); bounded per run (below) |
-| `trainer_run_state` | one row per `run_id`: training mode (`scenario`, UI mode string), curriculum `level`, `level_auto`, `layout_id` (u64 as decimal text), `mutation_ops_max` (adapted by the 1/5 rule), `updated_at` (s) (TCK-191) |
+| `trainer_run_state` | one row per `run_id`: training mode (`scenario`, UI mode string), curriculum `level`, `level_auto`, `layout_id` (u64 as decimal text), `mutation_ops_max` (adapted by the 1/5 rule), `updated_at` (s), `population` (TCK-192; nullable, added by `init_db` to tables of v1.12.23) (TCK-191) |
 | `creature_catalogue` | user-saved specimens: `id`, `name`, `genome`, `source`, `fitness`, `carnivory`, `methylations`, `synapse_weights`, `created_at`; index on `genome` (TCK-128) |
 
 - `RESET_EVOLUTION` deletes `species_records`, `simulation_history`, `simulation_state` (incl. `progenitor_genome`) and must clear `newly_spawned_creatures` ([[wiki/architecture/invariants]]).

@@ -193,10 +193,19 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
             level_auto INTEGER NOT NULL,
             layout_id TEXT NOT NULL,
             mutation_ops_max INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            population INTEGER
         );",
         [],
     )?;
+    // Column added with TCK-192; tables created by v1.12.23 lack it (rows without it fall back to the config default)
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(trainer_run_state);")?;
+        let columns: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(1))?.filter_map(|c| c.ok()).collect();
+        if !columns.iter().any(|c| c == "population") {
+            conn.execute("ALTER TABLE trainer_run_state ADD COLUMN population INTEGER;", [])?;
+        }
+    }
 
     // 6. Create creature_catalogue table (Persistent cross-simulation library)
     conn.execute(
@@ -301,9 +310,9 @@ pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim)
     let state = TrainerRunState::of(sim);
     let now_secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
     conn.execute(
-        "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![run_id, state.scenario.mode(), state.level as f64, state.level_auto, state.layout_id.to_string(), state.mutation_ops_max as i64, now_secs],
+        "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at, population)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![run_id, state.scenario.mode(), state.level as f64, state.level_auto, state.layout_id.to_string(), state.mutation_ops_max as i64, now_secs, state.population.map(|n| n as i64)],
     ).log_db_err("INSERT OR REPLACE INTO trainer_run_state");
 }
 
@@ -311,18 +320,19 @@ pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim)
 pub fn load_trainer_run_state(conn: &Connection, run_id: &str) -> Option<TrainerRunState> {
     let row = conn
         .query_row(
-            "SELECT scenario, level, level_auto, layout_id, mutation_ops_max FROM trainer_run_state WHERE run_id = ?1",
+            "SELECT scenario, level, level_auto, layout_id, mutation_ops_max, population FROM trainer_run_state WHERE run_id = ?1",
             params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?, row.get::<_, bool>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?)),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?, row.get::<_, bool>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?, row.get::<_, Option<i64>>(5)?)),
         )
         .optional();
     match row {
-        Ok(Some((scenario, level, level_auto, layout_id, mutation_ops_max))) => Some(TrainerRunState {
+        Ok(Some((scenario, level, level_auto, layout_id, mutation_ops_max, population))) => Some(TrainerRunState {
             scenario: Scenario::from_mode(&scenario),
             level: level as f32,
             level_auto,
             layout_id: layout_id.parse().unwrap_or(0),
             mutation_ops_max: mutation_ops_max.clamp(0, u32::MAX as i64) as u32,
+            population: population.filter(|&n| n > 0).map(|n| n as usize),
         }),
         Ok(None) => None,
         Err(e) => {
@@ -547,6 +557,28 @@ mod tests {
         let conn = init_db(&path).unwrap();
         assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 0, 1]);
         assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+        drop(conn);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_run_state_table_of_v1_12_23_gains_the_population_column() {
+        let dir = temp_dir("run-state-population");
+        let path = dir.join("test.db");
+        {
+            let conn = init_db(&path).unwrap();
+            conn.execute("DROP TABLE trainer_run_state", []).unwrap();
+            conn.execute(
+                "CREATE TABLE trainer_run_state (run_id TEXT PRIMARY KEY, scenario TEXT NOT NULL, level REAL NOT NULL, level_auto INTEGER NOT NULL, layout_id TEXT NOT NULL, mutation_ops_max INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute("INSERT INTO trainer_run_state VALUES ('run', 'curriculum', 0.3, 1, '5', 2, 0)", []).unwrap();
+        }
+        // Reopening adds the column and keeps the row; the missing population falls back to the config default
+        let conn = init_db(&path).unwrap();
+        let state = load_trainer_run_state(&conn, "run").unwrap();
+        assert_eq!((state.scenario, state.layout_id, state.mutation_ops_max, state.population), (Scenario::Curriculum, 5, 2, None));
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }

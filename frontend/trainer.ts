@@ -10,8 +10,8 @@ import {
 } from "./signals";
 import { drawProgressChart } from "./render/progressChart";
 import {
-  ProgressHistory, TRAINING_MODE_LABELS, formatFirstCatch, formatLevel, formatRate, modeChoice, pendingSwitchLabel,
-  type TrainingModeChoice,
+  POPULATION_STEPS, ProgressHistory, TRAINING_MODE_LABELS, formatFirstCatch, formatLevel, formatRate, modeChoice,
+  pendingSwitchLabel, populationStepIndex, visibleSandboxRange, type TrainingModeChoice,
 } from "./trainerMetrics";
 import type { TrainerAction } from "../bindings/TrainerAction";
 import type { TrainerGenerationCompleted } from "../bindings/TrainerGenerationCompleted";
@@ -43,6 +43,7 @@ const btnReset = document.getElementById("btn-reset-train") as HTMLButtonElement
 const btnCopyDna = document.getElementById("btn-copy-dna") as HTMLButtonElement;
 
 const sliderGridSize = document.getElementById("slider-grid-size") as HTMLInputElement;
+const sliderPopulation = document.getElementById("slider-population") as HTMLInputElement;
 const sliderSpeedup = document.getElementById("slider-speedup") as HTMLInputElement;
 const sliderEliteRatio = document.getElementById("slider-elite-ratio") as HTMLInputElement;
 const sliderMutation = document.getElementById("slider-mutation-rate") as HTMLInputElement;
@@ -55,6 +56,7 @@ const sliderZoomTiles = document.getElementById("slider-zoom-tiles") as HTMLInpu
 const sliderLevel = document.getElementById("slider-level") as HTMLInputElement;
 
 const lblGridSize = document.getElementById("lbl-grid-size") as HTMLSpanElement;
+const lblPopulation = document.getElementById("lbl-population") as HTMLSpanElement;
 const lblSpeedup = document.getElementById("lbl-speedup") as HTMLSpanElement;
 const lblEliteRatio = document.getElementById("lbl-elite-ratio") as HTMLSpanElement;
 const lblMutation = document.getElementById("lbl-mutation-rate") as HTMLSpanElement;
@@ -100,10 +102,17 @@ function updateStartButtonUI() {
 }
 
 function syncSlidersFromBackend(data: TrainerState) {
+  if (data.population !== undefined) {
+    population = data.population;
+    syncPopulationControls();
+  }
+  // N = visible sandboxes (grid tiles); the backend clamps it to the population (TCK-192)
   if (data.N !== undefined) {
+    const gridChanged = data.N !== N;
     N = data.N;
     sliderGridSize.value = N.toString();
     lblGridSize.innerText = N.toString();
+    if (gridChanged) rebuildSandboxGrid(false);
   }
   if (data.warpSpeed !== undefined) {
     warpSpeed = data.warpSpeed;
@@ -208,7 +217,9 @@ function switchRun(id: string) {
   runId = id;
 }
 
+// Visible sandboxes (grid tiles, telemetry) and the population; the grid shows the first N sandboxes (elites first)
 let N = 16;
+let population = 100;
 let warpSpeed = 1;
 let eliteRatio = 0.25;
 // Mutation operator calls per mutant / hall-of-fame child: uniform in [mutationOpsMin, mutationOpsMax] (TCK-174)
@@ -223,6 +234,15 @@ let runId = "default_run";
 let currentGeneration = 1;
 
 redrawProgress();
+
+// Population slider (index into POPULATION_STEPS) and the visible-sandboxes range (at most the population)
+function syncPopulationControls() {
+  sliderPopulation.value = populationStepIndex(population).toString();
+  lblPopulation.innerText = population.toString();
+  const range = visibleSandboxRange(population);
+  sliderGridSize.min = range.min.toString();
+  sliderGridSize.max = range.max.toString();
+}
 
 function getSandboxTaxaString(id: number, gen: number, pheno: any): string {
   const carn = pheno.carnivory;
@@ -333,10 +353,17 @@ effect(() => {
   }
 });
 
-async function rebuildSandboxGrid() {
+// `push` sends the hyperparameters (incl. N) afterwards; false when the grid follows a backend state
+async function rebuildSandboxGrid(push = true, includePopulation = false) {
   dirtySandboxes.clear();
   gridContainer.innerHTML = "";
   sandboxes = [];
+  if (selectedSandboxIdx >= N) {
+    // The selected sandbox is no longer displayed: select the first tile (the backend sends brain data only for
+    // displayed sandboxes)
+    selectedSandboxIdx = 0;
+    sendTrainerAction({ type: "SELECT_TRAINER_SANDBOX", id: 1 });
+  }
 
   for (let idx = 0; idx < N; idx++) {
     const id = idx + 1;
@@ -413,18 +440,21 @@ async function rebuildSandboxGrid() {
     });
   }
 
-  pushHyperparamsToRust();
+  if (push) pushHyperparamsToRust({ population: includePopulation });
 }
 
 // `mutationRate` is sent only when the mutation slider itself changed: with the 1/5 rule the backend adapts the
-// max ops per generation, and other sliders must not overwrite it with the slider's stale value
-function pushHyperparamsToRust(includeMutation = false) {
+// max ops per generation, and other sliders must not overwrite it with the slider's stale value. `population` is
+// sent only when the population slider changed: a change restores the population (the backend default comes from
+// config `trainerPopulation`), while N (visible sandboxes) never touches the simulation (TCK-192).
+function pushHyperparamsToRust(include: { mutation?: boolean; population?: boolean } = {}) {
   sendTrainerAction({
     type: "UPDATE_TRAINER_HYPERPARAMS",
     N,
+    ...(include.population ? { population } : {}),
     warpSpeed,
     eliteRatio,
-    ...(includeMutation ? { mutationRate: mutationOpsMax } : {}),
+    ...(include.mutation ? { mutationRate: mutationOpsMax } : {}),
     inflowRate,
     hofRate,
     multiTrial: isMultiTrial,
@@ -595,8 +625,20 @@ sliderGridSize.addEventListener("input", () => {
   lblGridSize.innerText = sliderGridSize.value;
 });
 sliderGridSize.addEventListener("change", () => {
-  N = parseInt(sliderGridSize.value);
+  N = Math.min(parseInt(sliderGridSize.value), visibleSandboxRange(population).max);
   rebuildSandboxGrid();
+});
+
+sliderPopulation.addEventListener("input", () => {
+  lblPopulation.innerText = POPULATION_STEPS[parseInt(sliderPopulation.value)].toString();
+});
+sliderPopulation.addEventListener("change", () => {
+  population = POPULATION_STEPS[parseInt(sliderPopulation.value)];
+  syncPopulationControls();
+  N = Math.min(N, visibleSandboxRange(population).max);
+  sliderGridSize.value = N.toString();
+  lblGridSize.innerText = N.toString();
+  rebuildSandboxGrid(true, true);
 });
 
 sliderSpeedup.addEventListener("input", () => {
@@ -634,7 +676,7 @@ sliderMutation.addEventListener("input", () => {
 });
 sliderMutation.addEventListener("change", () => {
   mutationOpsMax = parseInt(sliderMutation.value);
-  pushHyperparamsToRust(true);
+  pushHyperparamsToRust({ mutation: true });
 });
 
 sliderInflow.addEventListener("input", () => {

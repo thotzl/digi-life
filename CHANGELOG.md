@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.25] - 2026-10-26
+
+Training track wrap-up (epic TCK-171): the app trains with a population of 100 while showing 16 tiles. Final results on unseen layouts (pop 100): small room 0.708, large room 0.376 with the curriculum — both epic targets met.
+
+### Added
+- Trainer population independent of the visible tiles: new "Population" slider (16 / 50 / 100 / 200 / 300, config `trainerPopulation`, default 100); "Visible Sandboxes" only chooses how many sandboxes are drawn. Telemetry carries only the visible sandboxes, so its size no longer grows with the population; stats and the progress curve cover the whole population (ref TCK-192).
+- The population is stored with the run state and restored after a restart (ref TCK-192, TCK-191).
+
+### Fixed
+- Trainer UI texts: "Enable Multi-Trial (3 Runs per Gen)" (there are 8 trials since 1.12.22) and the champion exporter, which pointed to a non-existent `rules.progenitorGenome` config key.
+
 ## [1.12.24] - 2026-10-26
 
 Training track wrap-up (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 6).

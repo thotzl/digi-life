@@ -292,6 +292,11 @@ pub struct AppConfig {
     pub target_population: usize,
     pub food_spore_count: usize,
     pub max_creatures: usize,
+    /// Trainer population (sandboxes per generation) of the app, `TrainerParams::default().population`; independent
+    /// of the displayed sandbox tiles (TCK-192). The runner's `--population` overrides it. Missing in older config
+    /// overrides: 100.
+    #[serde(default = "default_trainer_population")]
+    pub trainer_population: usize,
     /// Trainer genomes kept per run in the DB and in the in-memory hall of fame (best by fitness)
     pub trainer_genome_retention_per_run: usize,
     /// Trials per trainer generation with multi-trial on (TCK-174)
@@ -326,6 +331,10 @@ pub struct AppConfig {
     /// Constants of the shared energy function (`biology::metabolism`, TCK-151)
     pub metabolism: MetabolismConfig,
     pub rules: SimulationRules,
+}
+
+fn default_trainer_population() -> usize {
+    100
 }
 
 use std::sync::OnceLock;

@@ -1,7 +1,7 @@
 {
   "name": "digi-life",
   "private": true,
-  "version": "1.12.24",
+  "version": "1.12.25",
   "type": "module",
   "scripts": {
     "dev": "vite",

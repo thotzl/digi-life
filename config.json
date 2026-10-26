@@ -3,6 +3,7 @@
   "targetPopulation": 25,
   "foodSporeCount": 300,
   "maxCreatures": 45,
+  "trainerPopulation": 100,
   "trainerGenomeRetentionPerRun": 200,
   "trainerTrials": 8,
   "trainerTrialAggregation": "mean",

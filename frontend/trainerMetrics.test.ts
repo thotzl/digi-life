@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { TrainerGenerationStats } from "../bindings/TrainerGenerationStats";
-import { ProgressHistory, formatFirstCatch, formatLevel, formatRate, modeChoice, pendingSwitchLabel } from "./trainerMetrics";
+import {
+  POPULATION_STEPS, ProgressHistory, formatFirstCatch, formatLevel, formatRate, modeChoice, pendingSwitchLabel, populationStepIndex,
+  visibleSandboxRange,
+} from "./trainerMetrics";
 
 const stats = (generation: number, successRate = 0.5): TrainerGenerationStats => ({
   generation,
@@ -51,5 +54,20 @@ describe("progress history", () => {
     expect(h.points).toEqual([{ generation: 1, successRate: 0.3, bestFitness: 3, medianFitness: 1, level: 0.2 }]);
     h.clear();
     expect(h.points).toEqual([]);
+  });
+});
+
+describe("population and visible sandboxes (TCK-192)", () => {
+  it("maps a population to the nearest slider step", () => {
+    expect(POPULATION_STEPS[populationStepIndex(100)]).toBe(100);
+    expect(POPULATION_STEPS[populationStepIndex(16)]).toBe(16);
+    expect(POPULATION_STEPS[populationStepIndex(140)]).toBe(100);
+    expect(POPULATION_STEPS[populationStepIndex(1000)]).toBe(300);
+  });
+
+  it("never offers more visible tiles than the population", () => {
+    expect(visibleSandboxRange(16)).toEqual({ min: 4, max: 16 });
+    expect(visibleSandboxRange(300)).toEqual({ min: 4, max: 100 });
+    expect(visibleSandboxRange(2)).toEqual({ min: 2, max: 2 });
   });
 });

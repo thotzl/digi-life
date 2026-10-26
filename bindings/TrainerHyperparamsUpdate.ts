@@ -3,7 +3,15 @@
 /**
  * Changed trainer hyperparameters; absent fields stay unchanged.
  */
-export type TrainerHyperparamsUpdate = { N?: number, warpSpeed?: number, eliteRatio?: number, 
+export type TrainerHyperparamsUpdate = { 
+/**
+ * Displayed sandboxes (grid tiles, telemetry); never changes the simulation (TCK-192)
+ */
+N?: number, 
+/**
+ * Population size; a change restores the population from the DB
+ */
+population?: number, warpSpeed?: number, eliteRatio?: number, 
 /**
  * Max mutation ops per child (TCK-174; field name kept)
  */

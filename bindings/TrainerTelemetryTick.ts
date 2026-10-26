@@ -3,7 +3,7 @@ import type { TrainerSelectedBrain } from "./TrainerSelectedBrain";
 import type { TrainerTelemetrySandbox } from "./TrainerTelemetrySandbox";
 
 /**
- * Live frame of all sandboxes (25 Hz).
+ * Live frame of the displayed sandboxes (25 Hz): the first `N` of the population (TCK-192).
  */
 export type TrainerTelemetryTick = { generation: number, isRunning: boolean, 
 /**

@@ -40,6 +40,27 @@ export function pendingSwitchLabel(pending: Scenario | null): string {
   return pending === null ? "" : `Pending: ${TRAINING_MODE_LABELS[pending]} – takes effect next generation`;
 }
 
+/** Population sizes of the population slider (slider value = index); the backend may hold another size (config). */
+export const POPULATION_STEPS = [16, 50, 100, 200, 300];
+/** Upper bound of the visible sandbox tiles (one canvas each), independent of the population. */
+export const MAX_VISIBLE_SANDBOXES = 100;
+const MIN_VISIBLE_SANDBOXES = 4;
+
+/** Slider index of the step nearest to `population` (ties to the smaller step). */
+export function populationStepIndex(population: number): number {
+  let best = 0;
+  POPULATION_STEPS.forEach((step, idx) => {
+    if (Math.abs(step - population) < Math.abs(POPULATION_STEPS[best] - population)) best = idx;
+  });
+  return best;
+}
+
+/** Range of the visible-sandboxes slider: never more tiles than the population has sandboxes (TCK-192). */
+export function visibleSandboxRange(population: number): { min: number; max: number } {
+  const max = Math.max(1, Math.min(population, MAX_VISIBLE_SANDBOXES));
+  return { min: Math.min(MIN_VISIBLE_SANDBOXES, max), max };
+}
+
 export interface ProgressPoint {
   generation: number;
   successRate: number;

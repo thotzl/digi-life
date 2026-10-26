@@ -4,7 +4,15 @@ import type { Scenario } from "./Scenario";
 /**
  * Trainer settings as the UI shows them (TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED).
  */
-export type TrainerState = { isRunning: boolean, N: number, warpSpeed: number, eliteRatio: number, 
+export type TrainerState = { isRunning: boolean, 
+/**
+ * Sandboxes per generation; selection, breeding and stats run over all of them (TCK-192)
+ */
+population: number, 
+/**
+ * Displayed sandboxes (grid tiles, telemetry), at most `population`
+ */
+N: number, warpSpeed: number, eliteRatio: number, 
 /**
  * Kept field name: since TCK-174 the max mutation operator calls per child (`mutation_ops_max`), slider range
  * [max(1, mutationOpsMin), mutationOpsLimit]
