@@ -14,6 +14,19 @@ const DELTA_GAIN: f32 = 2.5;
 pub const WEIGHT_CLAMP: f32 = 4.0;
 /// A plastic weight learned below this magnitude is pruned: set to exactly 0 for the rest of the life (TCK-121).
 pub const PRUNE_THRESHOLD: f32 = 0.015;
+/// Sensor range of an organ per unit organ scale (px): range = `scale · SENSOR_RANGE_PER_SCALE`.
+pub const SENSOR_RANGE_PER_SCALE: f32 = 550.0;
+
+/// Largest range (px) at which the phenotype's distance organs (eye, nose, thermal: the organs that see food in
+/// `compute_sensory_inputs`) can detect food; 0 without such an organ. Ignores the view cone.
+pub fn food_sense_range(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
+    phenotype
+        .organelles
+        .iter()
+        .filter(|o| o.kind.is_distance())
+        .map(|o| o.scale * SENSOR_RANGE_PER_SCALE)
+        .fold(0.0, f32::max)
+}
 
 /// Neuron activation function, decoded once from `CTRNNNeuron::activation_type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,7 +272,7 @@ pub fn compute_sensory_inputs_into(
     inputs.resize(k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT, 0.0);
 
     for (idx, patch) in agent.phenotype.organelles.iter().enumerate() {
-        let range = patch.scale * 550.0;
+        let range = patch.scale * SENSOR_RANGE_PER_SCALE;
         let alpha = patch.angle * (std::f32::consts::PI / 180.0);
         let half_cone = (patch.bandwidth * 1.5).max(0.1);
         let organ_power = patch.scale * (1.1 - patch.bandwidth);

@@ -157,6 +157,68 @@ pub struct SimulationRules {
     pub creature_start_stomach_ratio: f32,
 }
 
+/// Weights of the trainer fitness in catch units (`scenarios::calculate_fitness`, TCK-175). Both stay below 1 so a
+/// catch with full diet fit always outweighs the bonuses of a trial without one.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrainerFitnessConfig {
+    /// Bonus of a first catch at tick 0, falling linearly to 0 at the end of the trial (time to first catch)
+    pub first_catch_bonus: f32,
+    /// Bonus for full relative approach towards the nearest diet target that came into food-sensing range (shaping)
+    pub approach_bonus: f32,
+}
+
+/// Minimum food distance per trainer room for trial starts and respawns after eating (TCK-154 / RV-S08); the same
+/// value for the first trial, every re-trial and every respawn.
+///
+/// Choice (sensor range = organ scale · 550 px; food-sensing organs of structured genomes p10/p50/p90 = 256 / 575 /
+/// 926 px, max 990; equipment probe, 2000 genomes):
+/// - `standard` 200 px (1000 px chamber, centre start, farthest point ≈ 670 px): food is never at the spawn, and for
+///   89 % of structured genomes some food is in sensor range at spawn (homing task).
+/// - `exploration` 500 px (3500 px chamber): just below the median sensor range, so a median organ reaches food at the
+///   minimum distance; food is in range at spawn for 35 % of structured genomes (in the view cone for 13 %), the rest
+///   must search. For comparison 650 px (old first trial): 23 %, 800 px: 10 %, 1200 px (old re-trials): 0 %.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrainerSpawnMinDistance {
+    pub standard: f32,
+    pub exploration: f32,
+}
+
+/// Minimal criterion for random trainer genomes (generation 1 and immigrants, RV-S09): at least one food-sensing
+/// organ (eye or nose) and able to move (`trainer_engine::meets_minimal_criterion`).
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TrainerMinimalCriterion {
+    pub enabled: bool,
+    /// Redraws after the first candidate; when none passes, the last candidate is kept (bounded, deterministic)
+    pub max_redraws: u32,
+    /// Ticks of the mobility check (fixed standard-room trial)
+    pub mobility_ticks: u32,
+    /// Path length (px) the creature must cover within `mobility_ticks`
+    pub mobility_min_distance: f32,
+}
+
+/// How the trainer combines the per-trial fitness of a sandbox into its generation fitness (TCK-174).
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TrialAggregation {
+    #[default]
+    Mean,
+    Median,
+}
+
+/// Mutation channels of the trainer's mutated children (TCK-181): `Mixed` lets every operator call hit any gene;
+/// `Separate` gives each child one channel (body or brain genes, drawn per child from its breeding stream) and
+/// restricts all its operator calls to genes of that channel (`dna::mutate_genome_in_channel`).
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MutationChannelMode {
+    #[default]
+    Mixed,
+    Separate,
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppConfig {
@@ -166,6 +228,25 @@ pub struct AppConfig {
     pub max_creatures: usize,
     /// Trainer genomes kept per run in the DB and in the in-memory hall of fame (best by fitness)
     pub trainer_genome_retention_per_run: usize,
+    /// Trials per trainer generation with multi-trial on (TCK-174)
+    pub trainer_trials: u32,
+    /// Per-trial fitness aggregation of the trainer: "mean" or "median" (TCK-174)
+    pub trainer_trial_aggregation: TrialAggregation,
+    /// Mutation operator calls per trainer child (mutant and hall-of-fame slots), uniform in [min, max] (TCK-174)
+    pub mutation_ops_min: u32,
+    pub mutation_ops_max: u32,
+    /// Population-level 1/5 success rule on the trainer's max ops per child (TCK-174; on in config.json since P7)
+    pub mutation_one_fifth_rule: bool,
+    /// Upper bound of the max ops per child (1/5 rule and UI slider); the lower bound is max(1, mutationOpsMin)
+    pub mutation_ops_limit: u32,
+    /// Body/brain mutation channels of trainer children: "mixed" (default) or "separate" (TCK-181, experimental)
+    pub mutation_channels: MutationChannelMode,
+    /// Trainer fitness weights (TCK-175)
+    pub trainer_fitness: TrainerFitnessConfig,
+    /// Minimum food distance per room, trial starts and respawns (TCK-154)
+    pub trainer_spawn_min_distance: TrainerSpawnMinDistance,
+    /// Minimal criterion for random trainer genomes (RV-S09; on in config.json since P7)
+    pub trainer_minimal_criterion: TrainerMinimalCriterion,
     /// Random genomes of trainer generation 1, immigrants and Ocean founders (TCK-184)
     pub genome_composition: GenomeComposition,
     /// Operator weights of `mutate_genome` (TCK-184)

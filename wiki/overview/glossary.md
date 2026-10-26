@@ -1,5 +1,5 @@
 ---
-sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md]
+sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md]
 ---
 
 # Glossary
@@ -7,7 +7,11 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 - **Ocean** — open-world simulation mode with a free population, see [[wiki/simulation/ocean]].
 - **Trainer** — neuroevolution mode with isolated sandboxes, see [[wiki/simulation/trainer]].
 - **Sandbox / chamber** — one isolated trainer arena with one candidate and target spores.
-- **Epoch** — fixed tick budget of one trainer evaluation; **trial** — one of up to 3 epochs per generation (multi-trial).
+- **Epoch** — fixed tick budget of one trainer evaluation; **trial** — one of the `trainerTrials` (3) epochs per generation (multi-trial).
+- **Layout** — shared trainer task of one trial (start heading, food positions, respawn seed), the same for every sandbox of a generation; `layout_id` advances once all elites solve it (TCK-174), see [[wiki/simulation/trainer]].
+- **Catch unit** — scale of the trainer fitness since P7: 1.0 = one catch at full diet fit; time and approach bonuses stay below 1 (TCK-175).
+- **Minimal criterion** — filter for random trainer genomes (generation 1, immigrants): eye or nose and moves ≥ 5 px within 100 ticks (`trainerMinimalCriterion`, RV-S09, TCK-175).
+- **1/5 rule** — population-level step-size rule: more than 1/5 of the mutants beat their parent → one more max mutation op per child, fewer → one less (`mutationOneFifthRule`, TCK-174).
 - **HoF** — Hall of Fame, best genomes of a trainer run (`trainer_genomes`).
 - **Catalogue** — user-saved specimens incl. epigenetics and learned weights (`creature_catalogue`); **cryo-cloning** = saving/restoring that state.
 - **Restocking** — Ocean refills its population to `targetPopulation` from catalogue clones or structured random founders.
@@ -26,6 +30,7 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 - **Synapse key / owner / weight tape** — role-based stable synapse identity, the one gene that defines a synapse, and that gene's payload letters as initial weights, see [[wiki/biology/ctrnn-brain]].
 - **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters.
 - **Creep mutation** — a letter moved 1–2 alphabet steps (small value change).
+- **Mutation channel** — which genes a mutation touched: body (trait, `HOX`, organ genes), brain (`NEU`, `SY`, `OUT`), both or neutral (outside every gene) (`dna::promoter_channel`, `classify_mutation`, TCK-181), see [[wiki/biology/genome-compiler]].
 - **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key, per plastic synapse with probability `lamarckianAssimilationChance` (TCK-152).
 - **Energy cost** — per-tick drain of the shared energy function (`metabolism::tick_cost`): body, senses, brain (neurons + synaptic activity), movement, see [[wiki/biology/metabolism-and-reproduction]]. Replaced the multiplicative BMR (basal metabolic rate) in P6 (TCK-151).
 - **Starved** — trainer state of a creature at 0 energy: frozen for the rest of the trial (TCK-178), see [[wiki/simulation/trainer]].

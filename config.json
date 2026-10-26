@@ -4,6 +4,27 @@
   "foodSporeCount": 300,
   "maxCreatures": 45,
   "trainerGenomeRetentionPerRun": 200,
+  "trainerTrials": 3,
+  "trainerTrialAggregation": "mean",
+  "mutationOpsMin": 1,
+  "mutationOpsMax": 3,
+  "mutationOneFifthRule": true,
+  "mutationOpsLimit": 8,
+  "mutationChannels": "mixed",
+  "trainerFitness": {
+    "firstCatchBonus": 0.5,
+    "approachBonus": 0.3
+  },
+  "trainerSpawnMinDistance": {
+    "standard": 200.0,
+    "exploration": 500.0
+  },
+  "trainerMinimalCriterion": {
+    "enabled": true,
+    "maxRedraws": 50,
+    "mobilityTicks": 100,
+    "mobilityMinDistance": 5.0
+  },
   "genomeComposition": {
     "targetLength": 256,
     "payloadLengthMin": 8,

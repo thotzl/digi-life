@@ -1,6 +1,6 @@
 [package]
 name = "src-tauri"
-version = "1.12.20"
+version = "1.12.21"
 edition = "2024"
 default-run = "src-tauri"
 

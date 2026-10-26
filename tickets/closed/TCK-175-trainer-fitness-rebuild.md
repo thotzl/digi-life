@@ -1,7 +1,7 @@
 ---
 id: TCK-175
 title: Trainer Fitness Rebuild
-status: open
+status: closed
 priority: high
 assigned: unassigned
 created_at: 2026-10-21
@@ -33,3 +33,24 @@ The large chamber suffers from the bootstrap problem: early on all candidates fa
 - **Connection cost as a selection objective:** selecting for performance and low connection cost yields more modular and more evolvable networks (Clune, Mouret, Lipson 2013, https://arxiv.org/pdf/1207.2743.pdf); a trainer rule on top of the in-world energy cost of TCK-151.
 
 Sources: see epic TCK-171.
+
+## Verification (P7 step 2, 2026-10-26)
+Implementation: one shared function `scenarios::calculate_fitness` (live UI telemetry, epoch end in UI and runner, `probes::evaluate_genome`), in catch units (1.0 = one catch at full diet fit), same scale in both rooms:
+`fitness = yield + firstCatchBonus · (1 − finish_tick / epoch_ticks) + approachBonus · approach`
+- yield = Σ diet fit per catch (meat: carnivory, plant: 1 − carnivory); time bonus only with a catch, in [0, 0.5); approach = `1 − d_min / d_sight` towards the nearest diet target, where `d_sight` is the distance when that target first came within the creature's food-sensing range (`food_sense_range`, max of scale · 550 over eye/nose/thermal organs); restarts per trial and after each catch; 0 if no target was ever in range.
+- Removed: centre-distance term, wall/looping/standstill/path-efficiency multipliers, trial gate (×0.1 / +150). Generation fitness = aggregate of the trial fitness (`trainerTrialAggregation`).
+- Config `trainerFitness` (`firstCatchBonus` 0.5, `approachBonus` 0.3; a test keeps both in [0, 1)). A wrong-diet catch (yield < 0.4) can score below a no-catch trial with full approach (max 0.3); matching catches always win.
+- Generation 1 / immigrants minimal criterion (RV-S09, config `trainerMinimalCriterion`, on): structured generator with food-organ probability 1.0, redrawn (≤ `maxRedraws` 50) until the genome has an eye or nose and moves ≥ 5 px within 100 ticks; deterministic from the slot's breed stream. Runner flag `--minimal-criterion`.
+- `MODEL_VERSION` 5 (stored fitness from the old formula, ~10²–10³, would outrank new values in HoF/retention/run list).
+- Frontend: fitness shown with 2 decimals (trainer, catalogue, Ocean, diagnostics).
+- Tests: `cargo test` 137 passed (11 new: one catch = 1.0 with bonuses < 1, no cliffs, same scale in both rooms, approach tracking, minimal criterion, live == epoch-end fitness, generation fitness = trial mean, determinism).
+
+Measurement (pop 16, 30 gens, mean success of the last 5 gens, 20 seeds b1..b20; raw data `.agents/artifacts/p7/comb`):
+
+| Variant | small | large | time to first catch large / small (ticks) |
+| :--- | :--- | :--- | :--- |
+| TCK-174 state (old fitness, 1/5 rule) | 0.432 (SD 0.132) | 0.229 (SD 0.107) | 944 / 219 |
+| new fitness | 0.425 (0.163) | 0.264 (0.144) | 662 / 192 |
+| new fitness + minimal criterion (chosen) | 0.434 (0.123) | 0.306 (0.109) | 722 / 178 |
+
+Acceptance met: large-room success +0.077 (≈ 2.3 standard errors) and time to first catch −222 ticks; small room unchanged within noise. Large-room target (≥ 0.30) reached at pop 16; small-room target (≥ 0.50) is open for the curriculum (TCK-176). Escalations (novelty, Pareto, connection cost) not needed so far; revisit after P8.

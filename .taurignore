@@ -5,3 +5,13 @@
 target/
 dist/
 node_modules/
+# Docs, tickets, agent workspace and editor files are not part of the app; edits there must not restart `tauri dev`
+wiki
+wiki/**
+tickets
+tickets/**
+.agents
+.agents/**
+.obsidian
+.obsidian/**
+*.md

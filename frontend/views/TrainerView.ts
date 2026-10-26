@@ -469,13 +469,13 @@ export function createTrainerView(): HTMLElement {
           StatsItem({
             children: [
               StatsLabel({ children: "Best Fitness:" }),
-              StatsValue({ id: "stat-best-fit", class: "val-green", children: "0.0" })
+              StatsValue({ id: "stat-best-fit", class: "val-green", children: "0.00" })
             ]
           }),
           StatsItem({
             children: [
               StatsLabel({ children: "Avg Fitness:" }),
-              StatsValue({ id: "stat-avg-fit", class: "val-gold", children: "0.0" })
+              StatsValue({ id: "stat-avg-fit", class: "val-gold", children: "0.00" })
             ]
           }),
           StatsItem({
@@ -574,11 +574,11 @@ export function createTrainerView(): HTMLElement {
             children: [
               SliderLabelRow({
                 children: [
-                  styled("span")``({ children: "Genome Mutation Rate" }),
-                  styled("span")``({ id: "lbl-mutation-rate", children: "15%" })
+                  styled("span")``({ children: "Mutation Ops per Child" }),
+                  styled("span")``({ id: "lbl-mutation-rate", children: "1–3" })
                 ]
               }),
-              SliderInput({ id: "slider-mutation-rate", type: "range", min: "0", max: "50", value: "15", step: "1" })
+              SliderInput({ id: "slider-mutation-rate", type: "range", min: "1", max: "8", value: "3", step: "1" })
             ]
           }),
           SliderControl({

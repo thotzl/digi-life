@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md]
+sources: [.agents/skills/simulation-analytics/SKILL.md, docs/revisit/04-simulation-model.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/biology/trainer_report.rs, src/biology/probes.rs, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md]
 ---
 
 # Analytics and Balancing
@@ -12,12 +12,14 @@ Trainer measurements run headless with `trainer_runner` (TCK-173): reproducible,
 
 ```
 cargo run --release --bin trainer_runner -- run --seed <text> --generations <N> --scenario standard|exploration --population <N>
-    [--trials 3] [--multi-trial true|false] [--parallel true|false] [--persist --db <path>] [--run-id <id>] [--out <file>]
+    [--trials <N>] [--aggregation mean|median] [--one-fifth true|false] [--elite-ratio <0..1>]
+    [--minimal-criterion true|false] [--mutation-channels mixed|separate]
+    [--multi-trial true|false] [--parallel true|false] [--persist --db <path>] [--run-id <id>] [--out <file>]
 cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <text>
     [--out <file; directory for all>] [--db <path>] [--hof-limit 64] [--samples <N>]
 ```
 
-- `run`: `--seed`, `--generations`, `--scenario`, `--population` are required; defaults `--trials 3`, `--multi-trial true`, `--parallel false`. All other trainer parameters are the UI defaults (elite 0.15, mutation 0.06, inflow 0.15, HoF 0.15, Lamarck off). Unknown flags are rejected (exit code 2 with usage). Progress goes to stderr; the report goes to `--out` or stdout.
+- `run`: `--seed`, `--generations`, `--scenario`, `--population` are required; defaults from `config.json` / `TrainerParams::default` (`RunConfig::with_defaults`): `--trials` = `trainerTrials` (3), `--aggregation` = `trainerTrialAggregation` (mean), `--one-fifth` = `mutationOneFifthRule` (true), `--elite-ratio` 0.25 (must be in (0, 1]), `--minimal-criterion` = `trainerMinimalCriterion.enabled` (true), `--mutation-channels` = `mutationChannels` (mixed), `--multi-trial true`, `--parallel false` (P7, TCK-174, TCK-175, TCK-181). All other trainer parameters are the UI defaults (mutation ops 1–3 from `mutationOpsMin`/`mutationOpsMax`, inflow 0.15, HoF 0.15, Lamarck off). Unknown flags are rejected (exit code 2 with usage). Progress goes to stderr; the report goes to `--out` or stdout.
 - In memory by default: no DB file is opened or created. `--persist` requires `--db <path>` and writes every generation's elites with retention (run id `--run-id`, default `headless-<seed>`) ([[wiki/architecture/persistence]]).
 - `npm run sim:balance` = standard room, seed `baseline`, 20 generations, population 16, parallel, report to `.agents/artifacts/runner/balance.json`.
 - Determinism: the text seed is hashed with `seed_from_str`; same seed and flags → identical report except `perf`, independent of `--parallel` and thread count and of the platform ([[wiki/quality/testing]]). `--parallel true` only changes the speed.
@@ -26,20 +28,25 @@ cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steer
 
 | Field | Content |
 | :--- | :--- |
-| `meta` | `seed`, `scenario`, `population`, `generations`, `trials`, `multi_trial`, `version` (crate version) |
+| `meta` | `seed`, `scenario`, `population`, `generations`, `trials`, `trial_aggregation`, `multi_trial`, `elite_ratio`, `mutation_ops_min`, `mutation_ops_max` (at run start; the 1/5 rule may adapt it), `one_fifth_rule`, `minimal_criterion`, `mutation_channels`, `version` (crate version) |
 | `generations[]` | one `GenerationStats` per generation (below) |
 | `perf` | `ticks_per_second_total` (sandbox-ticks/s over all sandboxes), `ticks_per_second_per_sandbox`, `wall_seconds`, `generation_end_seconds` (time in ticks that ended a generation: fitness, stats, breeding) |
 
 `GenerationStats` (computed at generation end over the final fitness, before breeding):
 - `success_rate` — share of sandbox-trials with at least one catch (population × trials).
 - `mean_time_to_first_catch`, `median_time_to_first_catch` — ticks from trial start to the first catch over successful trials; `null` without any catch.
-- `best_fitness`, `median_fitness`, `mean_fitness`, `fitness_quantiles` (p10, p25, p50, p75, p90, linear interpolation) — over the generation's final fitness (multi-trial average incl. the no-catch factor × 0.1 and +150 per successful trial).
+- `best_fitness`, `median_fitness`, `mean_fitness`, `fitness_quantiles` (p10, p25, p50, p75, p90, linear interpolation) — over the generation's final fitness in catch units (1.0 = one catch at full diet fit; aggregate of the trial fitness, no gate; TCK-175, [[wiki/simulation/trainer]]).
 - `mean_genome_length` — over the generation's sandboxes.
 - `immobile_share` — share of sandbox-trials with less than 5 px travelled.
 - `mean_end_energy` — mean energy at trial end over the sandbox-trials (TCK-178).
 - `starved_share` — share of sandbox-trials in which the creature ran out of energy (TCK-178).
 - `mean_organ_count` — mean organ count of the generation's sandboxes.
 - `food_organ_share` — share of the generation's sandboxes with at least one eye or nose (sensor-equipment check under the energy budget, TCK-178).
+- `layout_id` — shared layout the generation was evaluated on; increases when all elites solved every trial (TCK-174).
+- `mutation_ops_max` — max mutation ops per child used to breed this generation (adapted by the 1/5 rule, TCK-174).
+- `child_success_share` — share of mutants with a higher fitness than their parent's unmodified elite slot of the same generation, input of the 1/5 rule; `null` without such mutants (TCK-174).
+- `mutation_channels` — mutant slots (origin `Mutant`) per channel `body` / `brain` / `both` / `neutral`, each with `mutants`, `beat_parent_share`, `elite_share` (`null` without mutants), plus `organ_mutants` (mutants with a call in an organ gene, counted as body) (TCK-181).
+- `elite_last_mutation` — channel of the last mutation in each elite's lineage, elites in rank order; `null` for a lineage without mutation (generation 1, immigrant) or a restored parent (TCK-181).
 
 ## Probes (TCK-172)
 
@@ -68,8 +75,8 @@ Genome sets (since TCK-184): `letter_soup` = random 256-base genomes (the former
 
 ## Caveats
 
-- **Fitness is not comparable** across rooms, across fitness-function changes or with HoF entries from before TCK-135/136; `success_rate` and time to first catch are the comparable metrics.
-- **Different food layouts per sandbox:** candidates of one generation solve different tasks, which adds noise to all per-generation numbers ([[wiki/simulation/trainer]]).
+- **Fitness** is in catch units since P7 and on the same scale in both rooms (TCK-175); it is not comparable with reports or HoF entries from before P7 (old formula, ~10²–10³; `MODEL_VERSION` 5). `success_rate` and time to first catch stay the metrics comparable across phases.
+- **Shared layouts:** since P7 all candidates of one generation solve the same task (TCK-174); the layout changes only when `layout_id` advances, so a jump in `success_rate` can come from a new layout, not only from selection ([[wiki/simulation/trainer]]). Respawns are shared only for catches at the same position.
 - **HoF-based probes depend on the local DB** (`--db`): their numbers are reproducible only with the same DB content.
 - **Config keys:** every key has a test-enforced read site, without exemptions (TCK-149, TCK-145, [[wiki/architecture/configuration]]), so every tuning has an effect.
 - **Energy metrics depend on the room length:** the 300-tick small room hardly drains the budget (`starved_share` 0 after P6), the 1800-tick large room does (≈ 0.18); compare energy metrics only within one room.
@@ -97,4 +104,4 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 - Compare reports minus `perf`, over fixed seed sets, against the TCK-171 targets.
 - The Ocean has no reproducible measurement path yet; trainer data is the evolution signal.
 
-Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-150, TCK-151, TCK-172, TCK-173, TCK-178, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.
+Sources: `.agents/skills/simulation-analytics/SKILL.md`, `docs/revisit/04-simulation-model.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-149, TCK-150, TCK-151, TCK-172, TCK-173, TCK-174, TCK-175, TCK-178, TCK-181, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, `src/bin/trainer_runner.rs`, `src/biology/trainer_report.rs`, `src/biology/probes.rs`.

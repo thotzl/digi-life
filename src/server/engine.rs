@@ -74,7 +74,11 @@ fn trainer_state_payload(event_type: &str, is_running: bool, params: &TrainerPar
         "N": params.population,
         "warpSpeed": warp_speed,
         "eliteRatio": params.elite_ratio,
-        "mutationRate": params.mutation_rate,
+        // Kept field name: since TCK-174 the max mutation operator calls per child (`mutation_ops_max`), slider range
+        // [max(1, mutationOpsMin), mutationOpsLimit]
+        "mutationRate": params.mutation_ops_max,
+        "mutationOpsMin": params.mutation_ops_min.max(1),
+        "mutationOpsLimit": crate::shared::types::AppConfig::global().mutation_ops_limit,
         "inflowRate": params.inflow_rate,
         "hofRate": params.hof_rate,
         "multiTrial": params.multi_trial,
@@ -727,8 +731,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 if let Some(e_r) = action["eliteRatio"].as_f64() {
                                     p.elite_ratio = e_r as f32;
                                 }
-                                if let Some(m_r) = action["mutationRate"].as_f64() {
-                                    p.mutation_rate = m_r as f32;
+                                // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
+                                if let Some(ops) = action["mutationRate"].as_f64() {
+                                    let lo = p.mutation_ops_min.max(1);
+                                    p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.mutation_ops_limit.max(lo));
                                 }
                                 if let Some(i_r) = action["inflowRate"].as_f64() {
                                     p.inflow_rate = i_r as f32;
@@ -1457,7 +1463,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     for _step in 0..steps_this_frame {
                         if let Some(event) = trainer.step(true) { // parallel == sequential (seeded per-sandbox and per-slot streams)
                             let TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, .. } = event;
-                            println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.1}, Avg Fit: {:.1}", generation, best_fitness, avg_fitness);
+                            println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.2}, Avg Fit: {:.2}", generation, best_fitness, avg_fitness);
 
                             // Broadcast completion metadata back to UI instantly
                             emit_state(json!({
@@ -1466,6 +1472,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 "bestFitness": best_fitness,
                                 "avgFitness": avg_fitness,
                                 "bestGenome": best_genome,
+                                // Max mutation ops per child after this generation (adapted by the 1/5 rule, TCK-174)
+                                "mutationOpsMax": trainer.params.mutation_ops_max,
                             }));
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes

@@ -398,7 +398,7 @@ export class CatalogueView {
         const metrics = SpecimenMetricsRow({
           children: [
             styled("span")``({ children: `Diet: ${dietLabel}` }),
-            styled("span")``({ children: `Fit: ${creature.fitness.toFixed(0)}` })
+            styled("span")``({ children: `Fit: ${creature.fitness.toFixed(2)}` })
           ]
         });
 
@@ -615,7 +615,7 @@ export class CatalogueView {
       runs.forEach((run: any) => {
         const opt = document.createElement("option");
         opt.value = JSON.stringify({ id: run.run_id, gen: run.max_gen });
-        opt.innerText = `${run.run_id} (Generation ${run.max_gen}, Best Fit: ${run.max_fit.toFixed(0)})`;
+        opt.innerText = `${run.run_id} (Generation ${run.max_gen}, Best Fit: ${run.max_fit.toFixed(2)})`;
         runSelect.appendChild(opt);
       });
 

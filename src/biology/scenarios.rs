@@ -1,7 +1,7 @@
 use crate::biology::trainer_engine::TrainerSandbox;
 use crate::shared::fmath;
 use crate::shared::rng::SimRng;
-use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
+use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore, TrainerFitnessConfig};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -100,21 +100,18 @@ pub trait TrainingScenarioPlugin: Send + Sync {
     /// Ticks per epoch (one trial)
     fn epoch_ticks(&self) -> u32;
 
-    /// Minimum distance of a food spore respawned after a catch
-    fn respawn_min_distance(&self) -> f32;
+    /// Minimum distance of every food from the creature, at the start of each trial (the first one included) and for
+    /// respawns after a catch (config `trainerSpawnMinDistance`, TCK-154 / RV-S08)
+    fn spawn_min_distance(&self) -> f32;
 
-    /// Minimum food distance when a new trial starts (multi-trial reset)
-    fn trial_min_distance(&self) -> f32;
-
-    /// Initializes food spores and sandbox conditions dynamically based on the active scenario
+    /// Places the scenario's food for a new trial (every food at least `spawn_min_distance` from the creature) and
+    /// restarts the approach tracking; draws only the food positions from `rng`. Used by the first trial, every
+    /// re-trial (`TrainerSandbox::reset_trial`) and room switches.
     fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng);
 
     /// Food the creature's sensors see this tick (hook of the shared `step_physics`);
     /// `scratch` is a reused buffer for foods built per tick
     fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore];
-
-    /// Calculates scenario-specific evolutionary fitness at the end of the epoch
-    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32;
 }
 
 /// Helper function to retrieve the active scenario plugin
@@ -125,15 +122,44 @@ pub fn get_scenario_plugin(scenario: Scenario) -> &'static dyn TrainingScenarioP
     }
 }
 
-/// Spawns every food of `sb` at least `min_dist` away from the agent (in food order).
-fn spawn_foods(sb: &mut TrainerSandbox, rng: &mut SimRng, min_dist: f32) {
-    let size = sb.scenario.plugin().chamber_size();
+/// Spawns every food of `sb` at least the plugin's `spawn_min_distance` away from the agent (in food order) and
+/// restarts the approach tracking.
+fn spawn_foods(sb: &mut TrainerSandbox, rng: &mut SimRng) {
+    let plugin = sb.scenario.plugin();
+    let (size, min_dist) = (plugin.chamber_size(), plugin.spawn_min_distance());
     let from = (sb.agent.px, sb.agent.py);
     for food in &mut sb.foods {
         let (x, y) = spawn_at_min_distance(rng, size, from, min_dist, SPAWN_MAX_TRIES);
         food.x = x;
         food.y = y;
     }
+    sb.reset_approach();
+}
+
+/// Trainer fitness of one trial in catch units (TCK-175); the same function for both rooms, the UI telemetry
+/// (per tick) and the epoch end (runner and UI):
+///
+/// `fitness = yield + first_catch_bonus · (1 − finish_tick / epoch_ticks) + approach_bonus · approach`
+///
+/// - `yield` (primary): sum over the trial's catches of the diet fit, meat `carnivory`, plant `1 − carnivory` (at most
+///   1.0 per catch, for a pure herbivore or carnivore eating its food), so 1.0 = one catch.
+/// - time to first catch (secondary): only with a catch; `finish_tick` in `1..=epoch_ticks`, so the bonus lies in
+///   `[0, first_catch_bonus)` and earlier is better.
+/// - `approach` (shaping) in `[0, 1]`: relative approach `1 − d_min / d_sight` towards the nearest diet target
+///   (`target_distance_by_diet`), counted from the tick it first came within the creature's food-sensing range
+///   (`food_sense_range`); `d_sight` = distance at that tick, `d_min` = smallest distance since. The episode restarts
+///   after every catch (it then rewards approach to the next food); 0 if no target was ever in range.
+///
+/// Both bonus weights are below 1 (config `trainerFitness`), so neither bonus is worth a full catch. No penalties:
+/// wall contact, looping, standstill and distance from the centre do not enter; starvation ends the trial's catches
+/// (TCK-178) and is no separate term. Non-finite results count as 0.
+pub fn calculate_fitness(sb: &TrainerSandbox, epoch_ticks: u32, weights: &TrainerFitnessConfig) -> f32 {
+    let time_bonus = match sb.finish_tick {
+        Some(tick) if epoch_ticks > 0 => weights.first_catch_bonus * (1.0 - (tick.min(epoch_ticks) as f32 / epoch_ticks as f32)),
+        _ => 0.0,
+    };
+    let fit = sb.accumulated_yield + time_bonus + weights.approach_bonus * sb.approach_fraction();
+    if fit.is_finite() { fit } else { 0.0 }
 }
 
 /// One tick of sensing, brain, metabolism, kinematics and food drift; shared by all scenarios.
@@ -209,12 +235,8 @@ impl TrainingScenarioPlugin for StandardScenario {
         300
     }
 
-    fn respawn_min_distance(&self) -> f32 {
-        200.0
-    }
-
-    fn trial_min_distance(&self) -> f32 {
-        200.0
+    fn spawn_min_distance(&self) -> f32 {
+        AppConfig::global().trainer_spawn_min_distance.standard
     }
 
     fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng) {
@@ -222,48 +244,12 @@ impl TrainingScenarioPlugin for StandardScenario {
             FoodSpore { id: 1, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // plant
             FoodSpore { id: 2, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meatball
         ];
-        spawn_foods(sb, rng, 200.0);
-
-        sb.start_distance = target_distance_by_diet(&sb.agent, &sb.foods);
-        sb.min_distance = sb.start_distance;
+        spawn_foods(sb, rng);
     }
 
     fn visible_foods<'a>(&self, _agent: &CreatureAgent, foods: &'a [FoodSpore], _scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore] {
         // Standard homing runs 100% barrier-free in standard training, all food is in view
         foods
-    }
-
-    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32 {
-        let size = self.chamber_size();
-        let wall_penalty = (1.0 - (sb.wall_collisions as f32) * 0.10).max(0.1);
-        let fit;
-
-        if sb.accumulated_yield > 0.0 {
-            // Path efficiency: ratio of ideal straight-line distance to actual distance traveled
-            let path_efficiency = sb.start_distance / (sb.start_distance.max(sb.distance_traveled)).max(0.1);
-            // Quadratic penalty on path efficiency completely annihilates spiral/curving paths!
-            let path_efficiency_score = 1000.0 * path_efficiency.powi(2);
-            let speed_bonus = epoch_duration_ticks.saturating_sub(sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.2;
-            fit = (sb.accumulated_yield * 1000.0 + path_efficiency_score + speed_bonus) * wall_penalty;
-        } else {
-            let mut penalty_multiplier = 1.0;
-            if sb.distance_traveled < 120.0 && sb.min_distance >= 40.0 {
-                penalty_multiplier *= 0.3;
-            }
-            let displacement = ((sb.agent.px - (size / 2.0)).powi(2) + (sb.agent.py - (size / 2.0)).powi(2)).sqrt();
-            if sb.distance_traveled > 150.0 && displacement < 120.0 {
-                penalty_multiplier *= 0.05; // Brutal 95% penalty for localized looping on the spot!
-            }
-            let base_fit = if sb.min_distance < sb.start_distance {
-                1000.0 * (1.0 - sb.min_distance / sb.start_distance)
-            } else {
-                0.0
-            };
-            let kinetic_waste = sb.distance_traveled * 0.20; // Quadrupled kinetic tax to suppress aimless swimming
-            fit = ((base_fit - kinetic_waste).max(0.0) * penalty_multiplier * wall_penalty).max(0.0);
-        }
-
-        if fit.is_nan() || fit.is_infinite() { 0.0 } else { fit }
     }
 }
 
@@ -281,13 +267,8 @@ impl TrainingScenarioPlugin for ExplorationScenario {
         1800
     }
 
-    fn respawn_min_distance(&self) -> f32 {
-        // Out-of-sight spawn limit: 550.0 pixels away from the creature's current position!
-        550.0
-    }
-
-    fn trial_min_distance(&self) -> f32 {
-        1200.0
+    fn spawn_min_distance(&self) -> f32 {
+        AppConfig::global().trainer_spawn_min_distance.exploration
     }
 
     fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng) {
@@ -299,11 +280,7 @@ impl TrainingScenarioPlugin for ExplorationScenario {
             FoodSpore { id: 5, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meat 2
             FoodSpore { id: 6, type_id: 2, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // meat 3
         ];
-        spawn_foods(sb, rng, 650.0); // Dynamic curriculum blind search limit
-
-        // Start distance to the single closest target food based on diet
-        sb.start_distance = target_distance_by_diet(&sb.agent, &sb.foods);
-        sb.min_distance = sb.start_distance;
+        spawn_foods(sb, rng);
     }
 
     fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore] {
@@ -339,55 +316,6 @@ impl TrainingScenarioPlugin for ExplorationScenario {
         scratch.push(meat_target);
         scratch
     }
-
-    fn calculate_fitness(&self, sb: &TrainerSandbox, epoch_duration_ticks: u32) -> f32 {
-        let size = self.chamber_size();
-        let wall_penalty = (1.0 - (sb.wall_collisions as f32) * 0.15).max(0.1);
-        let fit;
-
-        let sectors_visited = sb.coverage_mask.count_ones() as f32;
-
-        if sb.accumulated_yield > 0.0 {
-            // Zone 3: Sated / Consumed Target Spore successfully (add minor coverage bonus)
-            let path_efficiency = sb.start_distance / (sb.start_distance.max(sb.distance_traveled)).max(0.1);
-            let speed_bonus = epoch_duration_ticks.saturating_sub(sb.finish_tick.unwrap_or(epoch_duration_ticks)) as f32 * 0.5;
-            let coverage_bonus = sectors_visited * 10.0;
-            fit = (sb.accumulated_yield * 3000.0 + 1000.0 * path_efficiency + speed_bonus + coverage_bonus) * wall_penalty;
-        } else {
-            let mut penalty_multiplier = 1.0;
-            // Standstill/Laid back penalty
-            if sb.distance_traveled < 100.0 {
-                penalty_multiplier *= 0.1;
-            }
-
-            let displacement = ((sb.agent.px - (size / 2.0)).powi(2) + (sb.agent.py - (size / 2.0)).powi(2)).sqrt();
-
-            // Kontinuierliche Suchbasis + additiver Homing-Bonus (keine Klippe!)
-            let exploration_reward = displacement * 1.2;
-            let homing_bonus = if sb.min_distance <= 550.0 {
-                1500.0 * (1.0 - sb.min_distance / 550.0)
-            } else {
-                0.0
-            };
-
-            let base_fit = exploration_reward + homing_bonus + sectors_visited * 20.0;
-
-            // Mild kinetic waste tax in Exploration mode to suppress extremely redundant, aimless wandering
-            // but remains negligible for clean, wide-scale search walks (only 2% tax)
-            let kinetic_waste = sb.distance_traveled * 0.02;
-            fit = ((base_fit - kinetic_waste).max(0.0) * penalty_multiplier * wall_penalty).max(0.0);
-        }
-
-        let mut final_fit = fit;
-        if sb.cumulative_rotation > 10.0 {
-            let avg_radius = sb.distance_traveled / sb.cumulative_rotation;
-            if avg_radius < 180.0 {
-                final_fit *= 0.25; // Heavily penalize (75% reduction) localized looping on the spot, but don't K.o. completely on success!
-            }
-        }
-
-        if final_fit.is_nan() || final_fit.is_infinite() { 0.0 } else { final_fit }
-    }
 }
 
 #[cfg(test)]
@@ -414,5 +342,96 @@ mod tests {
         assert_eq!(DietClass::from_carnivory(0.4), DietClass::Omnivore);
         assert_eq!(DietClass::from_carnivory(0.59), DietClass::Omnivore);
         assert_eq!(DietClass::from_carnivory(0.6), DietClass::Carnivore);
+    }
+
+    use crate::biology::dna::WILDTYPE_GENOME;
+    use crate::biology::trainer_engine::{init_rust_sandbox, SandboxOrigin};
+
+    fn sandbox(scenario: Scenario) -> TrainerSandbox {
+        init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, scenario, None, None, &mut seeded(3))
+    }
+
+    fn weights() -> TrainerFitnessConfig {
+        TrainerFitnessConfig { first_catch_bonus: 0.5, approach_bonus: 0.3 }
+    }
+
+    #[test]
+    fn test_configured_bonuses_stay_below_one_catch() {
+        let w = &AppConfig::global().trainer_fitness;
+        assert!((0.0..1.0).contains(&w.first_catch_bonus) && (0.0..1.0).contains(&w.approach_bonus), "{:?}", w);
+    }
+
+    #[test]
+    fn test_one_catch_is_one_and_bonuses_are_bounded() {
+        for scenario in [Scenario::Standard, Scenario::Exploration] {
+            let epoch = scenario.plugin().epoch_ticks();
+            let mut sb = sandbox(scenario);
+            assert_eq!(calculate_fitness(&sb, epoch, &weights()), 0.0, "nothing done, nothing earned");
+
+            // One catch with full diet fit at the last tick, no approach episode open: exactly 1.0
+            sb.accumulated_yield = 1.0;
+            sb.finish_tick = Some(epoch);
+            assert_eq!(calculate_fitness(&sb, epoch, &weights()), 1.0);
+            // The earliest possible first catch stays below one more catch
+            sb.finish_tick = Some(1);
+            let early = calculate_fitness(&sb, epoch, &weights());
+            assert!(early > 1.0 && early < 1.5, "{}", early);
+            // Earlier is better
+            sb.finish_tick = Some(epoch / 2);
+            assert!(calculate_fitness(&sb, epoch, &weights()) < early);
+
+            // No catch, full approach: below one catch
+            let mut miss = sandbox(scenario);
+            miss.sight_distance = Some(400.0);
+            miss.approach_min_distance = 0.0;
+            let shaped = calculate_fitness(&miss, epoch, &weights());
+            assert!((shaped - 0.3).abs() < 1e-6 && shaped < 1.0, "{}", shaped);
+            // Half the distance: half the shaping
+            miss.approach_min_distance = 200.0;
+            assert!((calculate_fitness(&miss, epoch, &weights()) - 0.15).abs() < 1e-6);
+            // Two catches beat one catch with every bonus
+            let mut two = sandbox(scenario);
+            two.accumulated_yield = 2.0;
+            two.finish_tick = Some(epoch);
+            let mut one = sandbox(scenario);
+            one.accumulated_yield = 1.0;
+            one.finish_tick = Some(1);
+            one.sight_distance = Some(400.0);
+            one.approach_min_distance = 1.0;
+            assert!(calculate_fitness(&two, epoch, &weights()) > calculate_fitness(&one, epoch, &weights()));
+        }
+    }
+
+    #[test]
+    fn test_no_cliffs_for_walls_looping_standstill_or_centre_distance() {
+        for scenario in [Scenario::Standard, Scenario::Exploration] {
+            let epoch = scenario.plugin().epoch_ticks();
+            let mut sb = sandbox(scenario);
+            sb.accumulated_yield = 1.0;
+            sb.finish_tick = Some(100);
+            sb.sight_distance = Some(300.0);
+            sb.approach_min_distance = 150.0;
+            let reference = calculate_fitness(&sb, epoch, &weights());
+            let mut variant = sb.clone();
+            variant.wall_collisions = 50;
+            variant.cumulative_rotation = 500.0;
+            variant.distance_traveled = 0.0;
+            variant.coverage_mask = u64::MAX;
+            variant.agent.px = 30.0;
+            variant.agent.py = 30.0;
+            assert_eq!(calculate_fitness(&variant, epoch, &weights()), reference, "{:?}", scenario);
+        }
+    }
+
+    #[test]
+    fn test_same_fitness_scale_in_both_rooms() {
+        // Same trial outcome, same fitness, although chamber and epoch differ
+        let mut small = sandbox(Scenario::Standard);
+        let mut large = sandbox(Scenario::Exploration);
+        for (sb, epoch) in [(&mut small, 300u32), (&mut large, 1800u32)] {
+            sb.accumulated_yield = 2.0;
+            sb.finish_tick = Some(epoch / 4);
+        }
+        assert_eq!(calculate_fitness(&small, 300, &weights()), calculate_fitness(&large, 1800, &weights()));
     }
 }

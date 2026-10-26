@@ -38,7 +38,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig`, cost-calibration helper | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, breeding, hall of fame, generation stats | [[wiki/simulation/trainer]] |
 | `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox physics step | [[wiki/simulation/trainer]] |
-| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait, shared sandbox step, spawn and fitness functions | [[wiki/simulation/trainer]] |
+| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait, shared sandbox step, spawn distance per room, shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
 | `biology/trainer_report.rs` | headless trainer run and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
 | `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology, metabolism) | [[wiki/simulation/analytics-and-balancing]] |
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |

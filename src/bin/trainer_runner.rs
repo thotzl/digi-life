@@ -8,13 +8,17 @@ use std::process::ExitCode;
 use src_tauri::biology::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
 use src_tauri::biology::scenarios::Scenario;
 use src_tauri::biology::trainer_report::{run_trainer, RunConfig};
-use src_tauri::biology::trainer_sim::TrainerEvent;
+use src_tauri::biology::trainer_sim::{MutationChannelMode, TrainerEvent, TrialAggregation};
 use src_tauri::database::{init_db, save_trainer_elites};
 use src_tauri::shared::types::AppConfig;
 
 const USAGE: &str = "Usage:
   trainer_runner run --seed <str> --generations <N> --scenario standard|exploration --population <N>
-                     [--trials 3] [--multi-trial true|false] [--parallel true|false]
+                     [--trials <N; default config trainerTrials>] [--aggregation mean|median]
+                     [--one-fifth true|false] [--elite-ratio <0..1; default 0.25>]
+                     [--minimal-criterion true|false; default config trainerMinimalCriterion.enabled]
+                     [--mutation-channels mixed|separate; default config mutationChannels]
+                     [--multi-trial true|false] [--parallel true|false]
                      [--persist --db <path>] [--run-id <id>] [--out <file>]
   trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <str>
                      [--out <file; directory for 'all'>] [--db <path: HoF genomes, opened read-only>]
@@ -74,7 +78,10 @@ fn parse<T: std::str::FromStr>(flags: &HashMap<String, String>, key: &str, defau
 }
 
 fn run(flags: &HashMap<String, String>) -> Result<(), String> {
-    const KNOWN: &[&str] = &["seed", "generations", "scenario", "population", "trials", "multi-trial", "parallel", "persist", "db", "run-id", "out"];
+    const KNOWN: &[&str] = &[
+        "seed", "generations", "scenario", "population", "trials", "aggregation", "one-fifth", "elite-ratio", "minimal-criterion", "mutation-channels", "multi-trial", "parallel", "persist", "db",
+        "run-id", "out",
+    ];
     if let Some(unknown) = flags.keys().find(|k| !KNOWN.contains(&k.as_str())) {
         return Err(format!("unknown flag --{}", unknown));
     }
@@ -84,14 +91,33 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         "exploration" => Scenario::Exploration,
         other => return Err(format!("unknown scenario '{}'", other)),
     };
+    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", None)?, parse(flags, "generations", None)?);
+    let trial_aggregation = match flags.get("aggregation").map(String::as_str) {
+        None => defaults.trial_aggregation,
+        Some("mean") => TrialAggregation::Mean,
+        Some("median") => TrialAggregation::Median,
+        Some(other) => return Err(format!("unknown aggregation '{}'", other)),
+    };
+    let mutation_channels = match flags.get("mutation-channels").map(String::as_str) {
+        None => defaults.mutation_channels,
+        Some("mixed") => MutationChannelMode::Mixed,
+        Some("separate") => MutationChannelMode::Separate,
+        Some(other) => return Err(format!("unknown mutation channel mode '{}'", other)),
+    };
+    let elite_ratio: f32 = parse(flags, "elite-ratio", Some(defaults.elite_ratio))?;
+    if !(elite_ratio > 0.0 && elite_ratio <= 1.0) {
+        return Err(format!("--elite-ratio must be in (0, 1], got {}", elite_ratio));
+    }
     let config = RunConfig {
-        seed: required(flags, "seed")?.to_string(),
-        scenario,
-        population: parse(flags, "population", None)?,
-        generations: parse(flags, "generations", None)?,
-        trials: parse(flags, "trials", Some(3))?,
-        multi_trial: parse(flags, "multi-trial", Some(true))?,
+        trials: parse(flags, "trials", Some(defaults.trials))?,
+        trial_aggregation,
+        multi_trial: parse(flags, "multi-trial", Some(defaults.multi_trial))?,
+        one_fifth_rule: parse(flags, "one-fifth", Some(defaults.one_fifth_rule))?,
+        elite_ratio,
+        minimal_criterion: parse(flags, "minimal-criterion", Some(defaults.minimal_criterion))?,
+        mutation_channels,
         parallel: parse(flags, "parallel", Some(false))?,
+        ..defaults
     };
     let persist = flags.contains_key("persist");
     let run_id = flags.get("run-id").cloned().unwrap_or_else(|| format!("headless-{}", config.seed));
@@ -109,13 +135,24 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     let retention = AppConfig::global().trainer_genome_retention_per_run;
 
     eprintln!(
-        "[runner] seed '{}', scenario {:?}, population {}, generations {}, trials {}, multi-trial {}, parallel {}",
-        config.seed, config.scenario, config.population, config.generations, config.trials, config.multi_trial, config.parallel
+        "[runner] seed '{}', scenario {:?}, population {}, generations {}, trials {} ({:?}), multi-trial {}, elite ratio {}, 1/5 rule {}, minimal criterion {}, mutation channels {:?}, parallel {}",
+        config.seed,
+        config.scenario,
+        config.population,
+        config.generations,
+        config.trials,
+        config.trial_aggregation,
+        config.multi_trial,
+        config.elite_ratio,
+        config.one_fifth_rule,
+        config.minimal_criterion,
+        config.mutation_channels,
+        config.parallel
     );
     let report = run_trainer(&config, |event| {
         let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
         eprintln!(
-            "[runner] generation {}/{}: best {:.1}, median {:.1}, success {:.2}",
+            "[runner] generation {}/{}: best {:.2}, median {:.2}, success {:.2}",
             generation, config.generations, stats.best_fitness, stats.median_fitness, stats.success_rate
         );
         if let Some(conn) = &conn {

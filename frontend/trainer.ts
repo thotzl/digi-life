@@ -94,10 +94,18 @@ function syncSlidersFromBackend(data: any) {
     sliderEliteRatio.value = Math.round(eliteRatio * 100).toString();
     lblEliteRatio.innerText = `${Math.round(eliteRatio * 100)}%`;
   }
+  // `mutationRate` carries the max mutation operator calls per child since TCK-174 (field name kept)
+  if (data.mutationOpsMin !== undefined) {
+    mutationOpsMin = data.mutationOpsMin;
+    sliderMutation.min = mutationOpsMin.toString();
+  }
+  if (data.mutationOpsLimit !== undefined) {
+    sliderMutation.max = data.mutationOpsLimit.toString();
+  }
   if (data.mutationRate !== undefined) {
-    genomeMutationRate = data.mutationRate;
-    sliderMutation.value = Math.round(genomeMutationRate * 100).toString();
-    lblMutation.innerText = `${Math.round(genomeMutationRate * 100)}%`;
+    mutationOpsMax = data.mutationRate;
+    sliderMutation.value = mutationOpsMax.toString();
+    lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
   }
   if (data.inflowRate !== undefined) {
     inflowRate = data.inflowRate;
@@ -124,8 +132,11 @@ function syncSlidersFromBackend(data: any) {
 
 let N = 16;
 let warpSpeed = 1;
-let eliteRatio = 0.15;
-let genomeMutationRate = 0.06;
+let eliteRatio = 0.25;
+// Mutation operator calls per mutant / hall-of-fame child: uniform in [mutationOpsMin, mutationOpsMax] (TCK-174)
+let mutationOpsMin = 1;
+let mutationOpsMax = 3;
+const mutationOpsLabel = (max: number) => (max > mutationOpsMin ? `${mutationOpsMin}–${max}` : `${max}`);
 let inflowRate = 0.15;
 let hofRate = 0.15;
 let isMultiTrial = true;
@@ -308,14 +319,16 @@ async function rebuildSandboxGrid() {
   pushHyperparamsToRust();
 }
 
-function pushHyperparamsToRust() {
+// `mutationRate` is sent only when the mutation slider itself changed: with the 1/5 rule the backend adapts the
+// max ops per generation, and other sliders must not overwrite it with the slider's stale value
+function pushHyperparamsToRust(includeMutation = false) {
   safeInvoke("handle_client_action", {
     action: JSON.stringify({
       type: "UPDATE_TRAINER_HYPERPARAMS",
       N,
       warpSpeed,
       eliteRatio,
-      mutationRate: genomeMutationRate,
+      ...(includeMutation ? { mutationRate: mutationOpsMax } : {}),
       inflowRate,
       hofRate,
       multiTrial: isMultiTrial,
@@ -371,7 +384,7 @@ async function populateRunSelector() {
 
     listItems.push({
       id: run.run_id,
-      label: `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(0)})`
+      label: `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(2)})`
     });
   });
 
@@ -522,11 +535,11 @@ sliderEliteRatio.addEventListener("change", () => {
 });
 
 sliderMutation.addEventListener("input", () => {
-  lblMutation.innerText = `${sliderMutation.value}%`;
+  lblMutation.innerText = mutationOpsLabel(parseInt(sliderMutation.value));
 });
 sliderMutation.addEventListener("change", () => {
-  genomeMutationRate = parseFloat(sliderMutation.value) / 100;
-  pushHyperparamsToRust();
+  mutationOpsMax = parseInt(sliderMutation.value);
+  pushHyperparamsToRust(true);
 });
 
 sliderInflow.addEventListener("input", () => {
@@ -611,7 +624,7 @@ async function setupTauriListeners() {
 
             const labelFit = document.getElementById(`sb-fit-lbl-${tele.id}`);
             if (labelFit) {
-              labelFit.innerText = `F: ${tele.current_fitness.toFixed(1)}`;
+              labelFit.innerText = `F: ${tele.current_fitness.toFixed(2)}`;
             }
 
             const labelStatus = document.getElementById(`sb-status-lbl-${tele.id}`);
@@ -651,15 +664,20 @@ async function setupTauriListeners() {
         syncSlidersFromBackend(data);
       }
       else if (data.type === "TRAINER_GENERATION_COMPLETED") {
-        statBestFit.innerText = data.bestFitness.toFixed(1);
-        statAvgFit.innerText = data.avgFitness.toFixed(1);
+        statBestFit.innerText = data.bestFitness.toFixed(2);
+        statAvgFit.innerText = data.avgFitness.toFixed(2);
         txtDna.value = data.bestGenome;
+        if (data.mutationOpsMax !== undefined) {
+          mutationOpsMax = data.mutationOpsMax;
+          sliderMutation.value = mutationOpsMax.toString();
+          lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
+        }
         populateRunSelector();
       }
       else if (data.type === "TRAINER_RESET_COMPLETED") {
         statGen.innerText = "1";
-        statBestFit.innerText = "0.0";
-        statAvgFit.innerText = "0.0";
+        statBestFit.innerText = "0.00";
+        statAvgFit.innerText = "0.00";
         statTimer.innerText = "5.0s";
         txtDna.value = "";
         isRunning = false;

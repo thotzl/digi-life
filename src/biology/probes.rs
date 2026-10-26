@@ -672,7 +672,7 @@ pub struct SpeedSet {
     pub terminal_speed: Option<Distribution>,
     pub p90_p10_ratio: Option<f32>,
     pub share_below_0_2: f32,
-    /// Cannot cover 1200 px (exploration trial min distance) in 1800 ticks, straight line from rest
+    /// Cannot cover 1200 px in 1800 ticks, straight line from rest (fixed speed yardstick of the TCK-188 target; 1200 px was the pre-P7 large-room re-trial distance, the room now uses 500 px)
     pub share_below_1200px_in_1800_ticks: f32,
     /// Cannot cover 200 px (standard trial min distance) in 300 ticks, straight line from rest
     pub share_below_200px_in_300_ticks: f32,
@@ -1298,13 +1298,14 @@ fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed:
             sb.reset_trial(&mut rng);
         }
         for _ in 0..epoch {
-            step_trainer_sandbox_physics_with_config(&mut sb, &mut rng, config);
+            step_trainer_sandbox_physics_with_config(&mut sb, config);
         }
     }
     weight_samples(&sb.agent)
 }
 
-/// (gated fitness, successful trials, catches, learned weights) of one genome in one scenario, as the trainer scores it.
+/// (fitness, successful trials, catches, learned weights) of one genome in one scenario, as the trainer scores it
+/// (mean of the trial fitness, `scenarios::calculate_fitness`).
 fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (f32, u32, u32, Vec<WeightSample>) {
     let epoch = scenario.plugin().epoch_ticks();
     let stream_for = |trial: u32| -> Vec<u64> { stream.iter().copied().chain([trial as u64]).collect() };
@@ -1317,16 +1318,15 @@ fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u
             sb.reset_trial(&mut rng); // learned weights are kept across trials, as in the trainer
         }
         for _ in 0..epoch {
-            step_trainer_sandbox_physics_with_config(&mut sb, &mut rng, config);
+            step_trainer_sandbox_physics_with_config(&mut sb, config);
         }
-        acc_fitness += scenario.plugin().calculate_fitness(&sb, epoch);
+        acc_fitness += crate::biology::scenarios::calculate_fitness(&sb, epoch, &config.trainer_fitness);
         if sb.finished {
             eaten += 1;
         }
         catches += sb.consumed_count;
     }
-    let avg = acc_fitness / HEBBIAN_TRIALS as f32;
-    let fitness = if eaten == 0 { avg * 0.1 } else { avg + eaten as f32 * 150.0 };
+    let fitness = acc_fitness / HEBBIAN_TRIALS as f32;
     (fitness, eaten, catches, weight_samples(&sb.agent))
 }
 

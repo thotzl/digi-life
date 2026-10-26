@@ -33,7 +33,7 @@ Thrust is set so that full thrust settles at a terminal speed chosen from the ge
 
 Probe `trainer_runner probe speed --seed tck172`: forced outputs (thrust 1, bend 0) from rest in an open arena, terminal speed after 1,800 ticks; 1,000 genomes per set. Before = P4 state (v1.12.18), after = P5. Reports kept locally in `.agents/artifacts/p5/before|after/`.
 
-| Set | p10 | p50 | p90 | p90/p10 | < 0.2 px/tick | cannot cover 1200 px in 1800 ticks |
+| Set | p10 | p50 | p90 | p90/p10 | < 0.2 px/tick | cannot cover 1200 px (pre-P7 large-room re-trial distance) in 1800 ticks |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | letter soup, before | 0.25 | 1.33 | 3.12 | ×12.5 | 8.9 % | 20.2 % |
 | letter soup, after | 2.34 | 2.82 | 3.41 | ×1.45 | 0 % | 0 % |

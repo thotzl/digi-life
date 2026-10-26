@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md]
 ---
 
 # Genome Compiler
@@ -60,7 +60,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 | ≥ 1 food-sensing organ (affinity ≥ 0.25) | 67 % | 99 % |
 | `HOX` organ pair | 21 % | 31 % |
 | Food in range / non-zero stimulus at spawn, small room | 57 % / 31 % | 86 % / 46 % |
-| Food in range / non-zero stimulus at spawn, large room | 14 % / 4.8 % | 24 % / 7.5 % |
+| Food in range / non-zero stimulus at spawn, large room (650 px, before P7; 500 px since: 35 % in range, [[wiki/biology/sensing]]) | 14 % / 4.8 % | 24 % / 7.5 % |
 
 ## Mutation (TCK-184)
 
@@ -68,8 +68,15 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 - Letter operators act only on unprotected positions; protected: every motif match (all expressed promoters incl. `HOX`, legacy `SYM`, terminator `EN`) and the promoter letters of every expressed gene. Gene operators splice only when the result changes exactly the intended promoter's gene count, with at most one spacer letter.
 - Length stays in `[128, 512]` (test `test_mutate_genome_keeps_length_bounds`).
 - `mutate_genome_with_kind` applies one fixed operator for probes and tests. All generators and operators take the caller's RNG (seeded `SimRng` in trainer, runner and probes; `thread_rng` in the Ocean; TCK-173).
-- Trainer mutants apply `round(genome.len() · mutation_rate)` operations (`breed_genome`; 0.06 → ≈ 15 at 256 bases). Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
+- Trainer mutants and HoF children apply 1–3 operator calls (`draw_mutation_ops`, uniform in [`mutationOpsMin`, `mutationOpsMax`], max adapted by the 1/5 rule; TCK-174, [[wiki/simulation/trainer]]); before P7 `round(genome.len() · mutation_rate)` (0.06 → ≈ 15 at 256 bases). Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
 - `read_evolution_rates` reads the `EVO` rates without compiling the phenotype (TCK-140).
+
+## Gene channels (TCK-181)
+
+- `promoter_channel(promoter) -> Option<GeneChannel>` (`src/biology/dna.rs`): brain = `NEU` (hidden neuron and its synapses), `SY` (explicit synapse), `OUT` (motor bias/τ, systemic → motor weights); body = every other expressed promoter: trait genes `COL SIZ STF WAV PUL STM TEM CAR REP EVO`, `HOX`, organ genes `EYE NOS TAC LUM`; `None` (neutral) for loci outside every gene.
+- Organ genes are mixed in the compiler: their payload sets the organ traits and is also the tape of the thalamus → motor weights; they count as body and are flagged separately (`MutationTouch::organ`).
+- `classify_mutation(parent, mutation) -> MutationTouch` uses the compiler's gene table (`GeneTable`, no RNG): every parent gene whose span contains the mutation locus, plus every gene identity (`GeneRef`) present in only one of parent and child (formed, destroyed, duplicated or renumbered); a locus outside every gene with an unchanged gene set is neutral; silent copies count by their promoter. A child's `MutationChannel` (body / brain / both / neutral) is the union over its calls.
+- `mutate_genome_in_channel(genome, ops, channel, rng)` restricts the loci to one channel's genes and redraws a result that still touches the other channel (at most `CHANNEL_MUTATION_ATTEMPTS`); used by the trainer mode `mutationChannels: separate`. The measurement and the decision to keep `mixed` are in [[wiki/simulation/trainer]].
 
 ## Measured heredity (TCK-172 probe, P3)
 
@@ -108,4 +115,4 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 - Heredity after 15 trainer ops rose from 0.32 to 0.81 (TCK-179, TCK-184).
 - Any model change shows up in the golden master ([[wiki/quality/testing]]).
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-150, TCK-162, TCK-172, TCK-173, TCK-179, TCK-184, TCK-187, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-150, TCK-162, TCK-172, TCK-173, TCK-174, TCK-179, TCK-181, TCK-184, TCK-187, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.

@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.21] - 2026-10-26
+
+Training track P7 "Evaluation and fitness" (epic TCK-171). Intended model change: new CI reference, model tables reset once on first start (model version 5, fitness scale changed); golden master unchanged. Success (pop 16, 30 gens, last 5 gens, 20 seeds) small 0.223 → 0.434, large 0.050 → 0.306.
+
+### Changed
+- Trainer evaluation: all sandboxes of a generation share one layout per trial (food positions, start heading, respawn seed), derived from the run seed; the layout advances once every elite caught food in every trial. 3 trials, mean aggregation (configurable `trainerTrials`, `trainerTrialAggregation`) (ref TCK-174).
+- Trainer selection: 1–3 mutation operator calls per child instead of `length · rate` (15–30), adapted per generation by a 1/5 success rule (`mutationOpsMin`, `mutationOpsMax`, `mutationOneFifthRule`, `mutationOpsLimit`); elite ratio 0.25; hall-of-fame children are mutated like mutants; average fitness divides by the actual sandbox count (ref TCK-174).
+- Trainer fitness rebuilt in catch units, the same scale in both rooms: food yield plus a bounded first-catch time bonus and a bounded approach term towards food that was in sensor range; no centre-distance term, no wall/looping/standstill cliffs, no trial gate. One function for live telemetry, epoch end, runner and probes (`trainerFitness`) (ref TCK-175).
+- Spawn distances from the scenario plugin, identical for the first trial, re-trials and respawns (small room 200 px, large room 500 px from a sensor-range sweep; `trainerSpawnMinDistance`); re-trials reuse the plugin initialisation (ref TCK-154).
+- Generation 1 and random immigrants must have a food-sensing organ and move (`trainerMinimalCriterion`) (ref TCK-175, TCK-154).
+- Trainer UI: the mutation slider sets the maximum operator calls per child (1–8); it is sent only when it changes itself (other sliders no longer overwrite the value adapted by the 1/5 rule) and shows the adapted value after each generation; fitness shown with 2 decimals in trainer, catalogue, Ocean and diagnostics.
+- Headless runner: flags `--trials`, `--aggregation`, `--one-fifth`, `--elite-ratio`, `--minimal-criterion`, `--mutation-channels`; report adds layout id, mutation ops, child success share and mutation statistics per gene channel (ref TCK-174, TCK-181).
+
+### Added
+- Mutation channels (body / brain / neutral by gene promoter) with per-generation statistics and an optional "separate" mode; measured, decoupling not needed, default stays mixed (ref TCK-181).
+
+### Fixed
+- Trainer creatures never aged, so the clock input was constant in the trainer; age now increments per tick and resets per trial.
+- Exploration spawn distances differed between the first trial (650 px), re-trials (1200 px) and respawns (550 px), making the first trial systematically easier (RV-S08, ref TCK-154).
+- Dev tooling: `tauri dev` rebuilt and restarted the app whenever a wiki page, ticket or agent file changed; `.taurignore` now excludes `wiki/`, `tickets/`, `.agents/`, `.obsidian/` and Markdown files.
+
 ## [1.12.20] - 2026-10-22
 
 Training track P6 "Energy v2" (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 4).

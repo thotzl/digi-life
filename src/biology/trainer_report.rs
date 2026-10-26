@@ -6,7 +6,7 @@ use std::time::Instant;
 use serde::{Deserialize, Serialize};
 
 use crate::biology::scenarios::Scenario;
-use crate::biology::trainer_sim::{GenerationStats, TrainerEvent, TrainerParams, TrainerSim};
+use crate::biology::trainer_sim::{GenerationStats, MutationChannelMode, TrainerEvent, TrainerParams, TrainerSim, TrialAggregation};
 use crate::shared::rng::seed_from_str;
 use crate::shared::types::AppConfig;
 
@@ -18,8 +18,37 @@ pub struct RunConfig {
     pub population: usize,
     pub generations: u32,
     pub trials: u32,
+    pub trial_aggregation: TrialAggregation,
     pub multi_trial: bool,
+    pub one_fifth_rule: bool,
+    pub elite_ratio: f32,
+    /// Minimal criterion for generation 1 and random immigrants (RV-S09)
+    pub minimal_criterion: bool,
+    /// Body/brain mutation channels (TCK-181, experimental)
+    pub mutation_channels: MutationChannelMode,
     pub parallel: bool,
+}
+
+impl RunConfig {
+    /// Run settings with the trainer defaults (config.json / `TrainerParams::default`) for everything but the
+    /// required run identity.
+    pub fn with_defaults(seed: &str, scenario: Scenario, population: usize, generations: u32) -> Self {
+        let defaults = TrainerParams::default();
+        Self {
+            seed: seed.to_string(),
+            scenario,
+            population,
+            generations,
+            trials: defaults.trials,
+            trial_aggregation: defaults.trial_aggregation,
+            multi_trial: defaults.multi_trial,
+            one_fifth_rule: defaults.one_fifth_rule,
+            elite_ratio: defaults.elite_ratio,
+            minimal_criterion: defaults.minimal_criterion,
+            mutation_channels: defaults.mutation_channels,
+            parallel: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -29,7 +58,17 @@ pub struct ReportMeta {
     pub population: usize,
     pub generations: u32,
     pub trials: u32,
+    pub trial_aggregation: TrialAggregation,
     pub multi_trial: bool,
+    pub elite_ratio: f32,
+    pub mutation_ops_min: u32,
+    /// Max mutation ops per child at the start of the run (the 1/5 rule may adapt it; see the generations)
+    pub mutation_ops_max: u32,
+    pub one_fifth_rule: bool,
+    /// Minimal criterion for random genomes was on (RV-S09)
+    pub minimal_criterion: bool,
+    /// Body/brain mutation channel mode (TCK-181)
+    pub mutation_channels: MutationChannelMode,
     /// Crate version that produced the report
     pub version: String,
 }
@@ -58,6 +97,11 @@ impl RunConfig {
             population: self.population,
             multi_trial: self.multi_trial,
             trials: self.trials,
+            trial_aggregation: self.trial_aggregation,
+            one_fifth_rule: self.one_fifth_rule,
+            elite_ratio: self.elite_ratio,
+            minimal_criterion: self.minimal_criterion,
+            mutation_channels: self.mutation_channels,
             scenario: self.scenario,
             ..TrainerParams::default()
         }
@@ -69,6 +113,7 @@ impl RunConfig {
 pub fn run_trainer(config: &RunConfig, mut on_generation: impl FnMut(&TrainerEvent)) -> TrainerReport {
     let params = config.params();
     let population = params.population.max(1);
+    let (mutation_ops_min, mutation_ops_max) = (params.mutation_ops_min, params.mutation_ops_max);
     let mut sim = TrainerSim::new(params, seed_from_str(&config.seed), AppConfig::global().trainer_genome_retention_per_run);
     // No telemetry: fitness is only needed at epoch end
     sim.track_live_fitness = false;
@@ -97,7 +142,14 @@ pub fn run_trainer(config: &RunConfig, mut on_generation: impl FnMut(&TrainerEve
             population,
             generations: config.generations,
             trials: config.trials,
+            trial_aggregation: config.trial_aggregation,
             multi_trial: config.multi_trial,
+            elite_ratio: config.elite_ratio,
+            mutation_ops_min,
+            mutation_ops_max,
+            one_fifth_rule: config.one_fifth_rule,
+            minimal_criterion: config.minimal_criterion,
+            mutation_channels: config.mutation_channels,
             version: env!("CARGO_PKG_VERSION").to_string(),
         },
         generations,
@@ -115,7 +167,7 @@ mod tests {
     use super::*;
 
     fn config(seed: &str, parallel: bool) -> RunConfig {
-        RunConfig { seed: seed.to_string(), scenario: Scenario::Standard, population: 6, generations: 2, trials: 2, multi_trial: true, parallel }
+        RunConfig { trials: 2, parallel, ..RunConfig::with_defaults(seed, Scenario::Standard, 6, 2) }
     }
 
     /// Serialized report without `perf`.

@@ -147,7 +147,7 @@ pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::sc
     let ticks = scenario.plugin().epoch_ticks();
     let (mut activity, mut thrust) = (0.0, 0.0);
     for _ in 0..ticks {
-        step_trainer_sandbox_physics_with_config(&mut sb, rng, &config);
+        step_trainer_sandbox_physics_with_config(&mut sb, &config);
         activity += sb.agent.brain_runtime.activity();
         thrust += thrust_neuron.map_or(0.0, |i| sb.agent.neuron_activations[i].abs());
     }

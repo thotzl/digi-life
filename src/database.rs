@@ -17,7 +17,9 @@ static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 ///     old rule, incl. drifted reflexes, are not valid under the new one).
 /// 4 = Energy v2 (TCK-151/178: `basalMetabolicRate` removed from stored phenotypes; trainer fitness and weights were
 ///     selected and learned without an energy budget).
-pub const MODEL_VERSION: u32 = 4;
+/// 5 = Fitness in catch units (TCK-175: stored trainer and catalogue fitness of the old formula, ~10^2..10^3, would
+///     outrank every new value in the hall of fame, retention and run list, which all sort by raw fitness).
+pub const MODEL_VERSION: u32 = 5;
 
 /// Tables whose rows depend on the model version; dropped (and recreated empty) on a version change. No migration.
 const MODEL_TABLES: [&str; 5] = ["trainer_genomes", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];

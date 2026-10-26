@@ -740,7 +740,7 @@ export class UnifiedDiagnosticsPanel {
         let dietLabel = "Omnivore";
         if (creature.carnivory >= 0.55) dietLabel = "Predator";
         else if (creature.carnivory < 0.3) dietLabel = "Herbivore";
-        pDetails.innerHTML = `Diet Class: <span style="color:#3b82f6;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(0)}<br/>Origin: ${escapeHtml(creature.source)}`;
+        pDetails.innerHTML = `Diet Class: <span style="color:#3b82f6;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(2)}<br/>Origin: ${escapeHtml(creature.source)}`;
         
         try {
           const pheno = await safeInvoke("get_fossil_phenotype", { genome: creature.genome });
@@ -771,7 +771,7 @@ export class UnifiedDiagnosticsPanel {
               <div style="width:6px; height:6px; border-radius:50%; background:hsla(${colorH},85%,55%,1); box-shadow:0 0 6px hsla(${colorH},85%,55%,0.8);"></div>
               <b style="color:#fff;">${escapeHtml(c.name)}</b>
             </div>
-            <span style="color:#64748b; font-size:0.58rem; text-transform:uppercase;">${dietLabel} // F: ${c.fitness.toFixed(0)}</span>
+            <span style="color:#64748b; font-size:0.58rem; text-transform:uppercase;">${dietLabel} // F: ${c.fitness.toFixed(2)}</span>
           `;
 
           card.addEventListener("click", () => {
