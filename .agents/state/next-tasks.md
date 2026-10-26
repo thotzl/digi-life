@@ -14,4 +14,4 @@ Goal: with this epic and follow-up epics, build the setup that fulfils the game-
 - Open gap carried over from TCK-171 (`## Result`): at pop 16 the success targets are not met on unseen layouts (small 0.383, large 0.096); pop 300 meets both. Options: headless training with large populations, TCK-175 escalations (novelty blend, multi-objective, connection cost).
 
 ## Findings (not yet ticketed)
-- **Thalamus sum nodes give a constant offset when silent** (found in P3, existed in the old model as well): sum nodes use `sigmoid` with bias 0, so a silent channel outputs 0.5 and feeds a constant drive into hidden neurons and motors (`src/biology/dna.rs`, thalamus `ThalamusKind::Sum` → sigmoid). Acts like an implicit bias per live channel. Check in P5/P7 with the steering probe whether a centred activation (e.g. `tanh`, or sigmoid − 0.5) improves directed steering; it is a model change (golden master, CI reference, `MODEL_VERSION`).
+- None open.

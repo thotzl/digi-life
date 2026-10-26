@@ -23,27 +23,27 @@
       "rehearsal_level": 0.0,
       "metabolic_ramp_start": 1.0
     },
-    "version": "1.12.22"
+    "version": "1.12.23"
   },
   "generations": [
     {
       "generation": 1,
-      "success_rate": 0.0078125,
-      "mean_time_to_first_catch": 110.0,
-      "median_time_to_first_catch": 110.0,
-      "best_fitness": 0.20018716,
-      "median_fitness": 0.035141483,
-      "mean_fitness": 0.042390477,
+      "success_rate": 0.015625,
+      "mean_time_to_first_catch": 246.5,
+      "median_time_to_first_catch": 246.5,
+      "best_fitness": 0.2334422,
+      "median_fitness": 0.043452635,
+      "mean_fitness": 0.061193947,
       "fitness_quantiles": [
-        0.013826264,
-        0.023800414,
-        0.035141483,
-        0.0459111,
-        0.052475847
+        0.009133151,
+        0.026188347,
+        0.043452635,
+        0.062626995,
+        0.15137032
       ],
-      "mean_genome_length": 298.125,
+      "mean_genome_length": 298.0625,
       "immobile_share": 0.0,
-      "mean_end_energy": 143.78877,
+      "mean_end_energy": 151.11066,
       "starved_share": 0.0,
       "mean_organ_count": 3.375,
       "food_organ_share": 1.0,
@@ -81,40 +81,40 @@
       ],
       "scenario": "standard",
       "level": 0.0,
-      "level_success_rate": 0.0078125,
+      "level_success_rate": 0.015625,
       "rehearsal_trials": 0,
       "rehearsal_success_rate": null,
       "level_move": null
     },
     {
       "generation": 2,
-      "success_rate": 0.03125,
-      "mean_time_to_first_catch": 132.0,
-      "median_time_to_first_catch": 132.0,
-      "best_fitness": 0.080340974,
-      "median_fitness": 0.050411914,
-      "mean_fitness": 0.047734424,
+      "success_rate": 0.0703125,
+      "mean_time_to_first_catch": 224.88889,
+      "median_time_to_first_catch": 198.0,
+      "best_fitness": 0.15192007,
+      "median_fitness": 0.05788053,
+      "mean_fitness": 0.07110916,
       "fitness_quantiles": [
-        0.008420616,
-        0.030407144,
-        0.050411914,
-        0.07356879,
-        0.080340974
+        0.040959515,
+        0.053058513,
+        0.05788053,
+        0.08276515,
+        0.12641034
       ],
-      "mean_genome_length": 276.875,
+      "mean_genome_length": 276.4375,
       "immobile_share": 0.0,
-      "mean_end_energy": 126.84784,
+      "mean_end_energy": 142.3194,
       "starved_share": 0.0,
-      "mean_organ_count": 1.375,
-      "food_organ_share": 0.9375,
+      "mean_organ_count": 2.625,
+      "food_organ_share": 1.0,
       "layout_id": 1,
       "mutation_ops_max": 3,
-      "child_success_share": 0.125,
+      "child_success_share": 0.25,
       "mutation_channels": {
         "body": {
-          "mutants": 3,
+          "mutants": 4,
           "beat_parent_share": 0.0,
-          "elite_share": 0.6666667
+          "elite_share": 0.25
         },
         "brain": {
           "mutants": 0,
@@ -122,95 +122,95 @@
           "elite_share": null
         },
         "both": {
-          "mutants": 5,
-          "beat_parent_share": 0.2,
-          "elite_share": 0.0
+          "mutants": 4,
+          "beat_parent_share": 0.5,
+          "elite_share": 0.25
         },
         "neutral": {
           "mutants": 0,
           "beat_parent_share": null,
           "elite_share": null
         },
-        "organ_mutants": 2
+        "organ_mutants": 3
       },
       "elite_last_mutation": [
         null,
         "body",
         "body",
-        "body"
+        "both"
       ],
       "scenario": "standard",
       "level": 0.0,
-      "level_success_rate": 0.03125,
+      "level_success_rate": 0.0703125,
       "rehearsal_trials": 0,
       "rehearsal_success_rate": null,
       "level_move": null
     },
     {
       "generation": 3,
-      "success_rate": 0.078125,
-      "mean_time_to_first_catch": 155.1,
-      "median_time_to_first_catch": 155.0,
-      "best_fitness": 0.21215454,
-      "median_fitness": 0.20984235,
-      "mean_fitness": 0.1448067,
+      "success_rate": 0.0,
+      "mean_time_to_first_catch": null,
+      "median_time_to_first_catch": null,
+      "best_fitness": 0.094994195,
+      "median_fitness": 0.07186067,
+      "mean_fitness": 0.060597897,
       "fitness_quantiles": [
-        0.010588905,
-        0.05993884,
-        0.20984235,
-        0.21215454,
-        0.21215454
+        0.011263913,
+        0.05077504,
+        0.07186067,
+        0.07416444,
+        0.089899324
       ],
-      "mean_genome_length": 271.625,
+      "mean_genome_length": 288.4375,
       "immobile_share": 0.0,
-      "mean_end_energy": 171.24896,
+      "mean_end_energy": 181.14558,
       "starved_share": 0.0,
-      "mean_organ_count": 1.1875,
-      "food_organ_share": 0.9375,
+      "mean_organ_count": 2.875,
+      "food_organ_share": 1.0,
       "layout_id": 2,
-      "mutation_ops_max": 2,
-      "child_success_share": 0.0,
+      "mutation_ops_max": 4,
+      "child_success_share": 0.125,
       "mutation_channels": {
         "body": {
-          "mutants": 6,
-          "beat_parent_share": 0.0,
-          "elite_share": 0.0
+          "mutants": 4,
+          "beat_parent_share": 0.25,
+          "elite_share": 0.5
         },
         "brain": {
-          "mutants": 1,
+          "mutants": 2,
           "beat_parent_share": 0.0,
           "elite_share": 0.0
         },
         "both": {
-          "mutants": 1,
+          "mutants": 2,
           "beat_parent_share": 0.0,
-          "elite_share": 0.0
+          "elite_share": 0.5
         },
         "neutral": {
           "mutants": 0,
           "beat_parent_share": null,
           "elite_share": null
         },
-        "organ_mutants": 1
+        "organ_mutants": 3
       },
       "elite_last_mutation": [
-        null,
+        "both",
         "body",
-        "body",
+        "both",
         "body"
       ],
       "scenario": "standard",
       "level": 0.0,
-      "level_success_rate": 0.078125,
+      "level_success_rate": 0.0,
       "rehearsal_trials": 0,
       "rehearsal_success_rate": null,
       "level_move": null
     }
   ],
   "perf": {
-    "ticks_per_second_total": 377332.1633415907,
-    "ticks_per_second_per_sandbox": 23583.26020884942,
-    "wall_seconds": 0.3053013,
-    "generation_end_seconds": 0.0150826
+    "ticks_per_second_total": 505525.01098156546,
+    "ticks_per_second_per_sandbox": 31595.31318634784,
+    "wall_seconds": 0.2278819,
+    "generation_end_seconds": 0.019184899999999998
   }
 }

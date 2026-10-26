@@ -14,7 +14,7 @@ Every `CTRNNNeuron` carries a `role` (`NeuronRole`, ts-rs); the vector order is 
 | :--- | :--- | :--- | :--- |
 | 1. Sensors | `Sensor{gene, side, channel, kind}` | 6 per organ (5 spectral + ΔI), organ order of `phenotype.organelles` | input, no integration |
 | 2. Systemic | `Systemic{input}`: `Clock`, `LinearSpeed`, `RotationalSpeed`, `Energy`, `Pain`, `SearchArousal` | 6 | input |
-| 3. Thalamus | `Thalamus{gene, channel, node Sum\|Diff}` | per organ gene and live channel one `Sum` node, plus one `Diff` node for `HOX` pairs | τ = 0.1 (≈ pass-through), bias 0; `Sum` sigmoid, `Diff` tanh |
+| 3. Thalamus | `Thalamus{gene, channel, node Sum\|Diff}` | per organ gene and live channel one `Sum` node, plus one `Diff` node for `HOX` pairs | τ = 0.1 (≈ pass-through), bias 0; `Sum` tanh (config `thalamusSumActivation`; sigmoid until model version 5 gave a silent channel a constant 0.5 drive, TCK-190), `Diff` tanh |
 | 4. Hidden | `Hidden{gene}` | one per `NEU` gene (first 12), sorted by depth | τ `0.2 + 1.8h`, bias `[-1, 1]`, activation `tanh`/`relu`/`sigmoid`/`sin`, depth `0.55–0.85`, all from the `NEU` payload |
 | 5. Motors | `Motor{Thrust\|Bend}` | 2 | bias/τ from the first `OUT` gene; without one bias 0, τ 1.1 |
 

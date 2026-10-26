@@ -20,7 +20,9 @@ static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 ///     selected and learned without an energy budget).
 /// 5 = Fitness in catch units (TCK-175: stored trainer and catalogue fitness of the old formula, ~10^2..10^3, would
 ///     outrank every new value in the hall of fame, retention and run list, which all sort by raw fitness).
-pub const MODEL_VERSION: u32 = 5;
+/// 6 = Thalamus sum nodes with tanh instead of sigmoid (TCK-190: stored weights were selected and learned with a constant
+///     0.5 drive from every silent channel).
+pub const MODEL_VERSION: u32 = 6;
 
 /// Tables whose rows depend on the model version; dropped (and recreated empty) on a version change. No migration.
 const MODEL_TABLES: [&str; 6] = ["trainer_genomes", "trainer_run_state", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];

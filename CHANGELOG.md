@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.24] - 2026-10-26
+
+Training track wrap-up (epic TCK-171). Intended model change: new golden master, new CI reference, model tables reset once on first start (model version 6).
+
+### Changed
+- Thalamus sum nodes use `tanh` instead of `sigmoid` (`thalamusSumActivation`): a silent sensor channel now outputs 0 instead of a constant 0.5 drive into hidden neurons and motors. On unseen layouts (pop 16, 10 seeds) the small room improves from 0.266 to 0.559 and the large room with the curriculum from 0.096 to 0.184 (ref TCK-190).
+- Energy constants re-derived with the documented share-target procedure, because brains are now about half as active (median activity 9.6 → 5.0): the typical total cost again equals the old Ocean drain (0.0243 per tick), brain + senses 15.5 % of the resting cost (ref TCK-190, TCK-151).
+
 ## [1.12.23] - 2026-10-26
 
 Training track wrap-up (epic TCK-171): trainer run state survives app restarts.

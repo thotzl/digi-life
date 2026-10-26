@@ -1661,7 +1661,7 @@ fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[
             for channel in (0..CHANNELS_PER_ORGANELLE).filter(|&c| live[g][c]) {
                 let id = neurons.len();
                 let (name, activation) = match node {
-                    ThalamusKind::Sum => ("Sum", "sigmoid"),
+                    ThalamusKind::Sum => ("Sum", crate::shared::types::AppConfig::global().thalamus_sum_activation.label()),
                     ThalamusKind::Diff => ("Diff", "tanh"),
                 };
                 let label = format!("🧠 Thalamus {} {} ({})", name, prefix, channel_name(channel));
@@ -3066,7 +3066,7 @@ mod tests {
     // P4 TCK-152: `plastic` flag per synapse, 0x65f701a6937c1e71 -> 0xe0a2bfd1c7310306, unchanged without the flag;
     // P6 TCK-151: `basalMetabolicRate` removed from the phenotype (cost computed by `biology::metabolism`),
     // 0xe0a2bfd1c7310306 -> 0x9d206dfd8124f808)
-    const GOLDEN_FINGERPRINT: u64 = 0x9d206dfd8124f808;
+    const GOLDEN_FINGERPRINT: u64 = 0x0ab34073297ace74;
 
     /// A copy of `genome` with the letter at `index` changed such that the gene table keeps every gene identity.
     fn letter_change(genome: &str, index: usize) -> Mutation {

@@ -255,6 +255,26 @@ pub enum MutationChannelMode {
     Separate,
 }
 
+/// Activation of the thalamus sum nodes (TCK-190). Sensor inputs are non-negative, so `Sigmoid` turns a silent
+/// channel into a constant 0.5 drive; `Tanh` keeps a silent channel at 0.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ThalamusSumActivation {
+    Sigmoid,
+    #[default]
+    Tanh,
+}
+
+impl ThalamusSumActivation {
+    /// Activation label of the compiled neuron (`brain::Activation::from_label`)
+    pub fn label(self) -> &'static str {
+        match self {
+            ThalamusSumActivation::Sigmoid => "sigmoid",
+            ThalamusSumActivation::Tanh => "tanh",
+        }
+    }
+}
+
 /// When the shared trial layout of the trainer changes (TCK-174, revisited in P8). `Hold` keeps a layout until every
 /// elite solves it; `Rotate` uses a new layout every generation, so selection cannot reward memorising one layout.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -289,6 +309,8 @@ pub struct AppConfig {
     pub mutation_channels: MutationChannelMode,
     /// When the shared trial layout changes: "hold" (until all elites solve it) or "rotate" (every generation)
     pub trainer_layout_policy: LayoutPolicy,
+    /// Activation of the thalamus sum nodes: "sigmoid" or "tanh" (TCK-190)
+    pub thalamus_sum_activation: ThalamusSumActivation,
     /// Trainer fitness weights (TCK-175)
     pub trainer_fitness: TrainerFitnessConfig,
     /// Minimum food distance per room, trial starts and respawns (TCK-154)

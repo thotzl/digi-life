@@ -12,6 +12,7 @@
   "mutationOpsLimit": 8,
   "mutationChannels": "mixed",
   "trainerLayoutPolicy": "rotate",
+  "thalamusSumActivation": "tanh",
   "trainerFitness": {
     "firstCatchBonus": 0.5,
     "approachBonus": 0.3
@@ -71,11 +72,11 @@
     "creepMaxStep": 2
   },
   "metabolism": {
-    "bodyCostPerMass": 2.171e-5,
-    "organCostPerLoad": 6.369e-4,
-    "neuronCost": 1.589e-5,
-    "activityCost": 9.26e-5,
-    "movementCostPerMass": 2.554e-5,
+    "bodyCostPerMass": 2.241e-5,
+    "organCostPerLoad": 6.575e-4,
+    "neuronCost": 1.639e-5,
+    "activityCost": 1.84e-4,
+    "movementCostPerMass": 2.636e-5,
     "trainerMetabolicScale": 1.0
   },
   "rules": {

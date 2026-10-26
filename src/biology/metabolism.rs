@@ -13,8 +13,10 @@
 //!
 //! ## Derivation of the constants (config `metabolism`, no free tuning)
 //! Inputs: `trainer_runner probe metabolism --seed tck151` over 1000 structured genomes (config `genomeComposition`),
-//! medians: body mass M = 580.355, organ load O = 1.74513, neurons N = 14, activity A = 9.60623 and |thrust| T = 0.7029
+//! medians: body mass M = 580.355, organ load O = 1.74513, neurons N = 14, activity A = 4.98867 and |thrust| T = 0.6406
 //! (mean Σ|w·a| and mean |out_thrust| per tick over one standard-room trial, learning on; the "typical" brain).
+//! Re-derived for model version 6 (TCK-190, tanh thalamus sum nodes: silent channels add no activity; P6 had A = 9.60623,
+//! T = 0.7029, f = 0.6100).
 //! Old Ocean drain: `basal_metabolic_rate · bmrBaseScale (0.002) · basalMetabolicRateMultiplier (1.0) · 0.45`, median
 //! over the same genomes 27 · 0.0009 = D = 0.0243 per tick.
 //! 1. Shares (relative constants, unit scale D): at rest, for the median phenotype, senses 7.5 % and brain 7.5 %
@@ -23,17 +25,17 @@
 //!    transmission). Movement: full thrust costs the resting cost of the median body (active ≈ 2× resting), so speed
 //!    is not free; for any body full thrust costs `body / 0.85`, about its resting cost.
 //!    body 0.85·D/M = 3.559e-5, organ 0.075·D/O = 1.044e-3, neuron 0.2·0.075·D/N = 2.604e-5,
-//!    activity 0.8·0.075·D/A = 1.518e-4, movement D/M = 4.187e-5.
+//!    activity 0.8·0.075·D/A = 2.923e-4, movement D/M = 4.187e-5.
 //! 2. Absolute scale: the median TYPICAL TOTAL cost (resting at the genome's trial activity + movement at its trial
 //!    mean |thrust|) equals D, so active creatures pay what the old model charged (matching only the resting cost
-//!    doubled the Ocean death turnover, P6 Ocean measurement). With the step-1 constants that median is 0.039834, so
-//!    all five constants are multiplied by f = 0.0243 / 0.039834 = 0.6100; shares and the movement ratio are unchanged:
-//!   - `bodyCostPerMass`     = 2.171e-5
-//!   - `organCostPerLoad`    = 6.369e-4
-//!   - `neuronCost`          = 1.589e-5
-//!   - `activityCost`        = 9.26e-5
-//!   - `movementCostPerMass` = 2.554e-5
-//!    Resulting median resting cost ≈ 0.0152 per tick.
+//!    doubled the Ocean death turnover, P6 Ocean measurement). With the step-1 constants that median is 0.038598, so
+//!    all five constants are multiplied by f = 0.0243 / 0.038598 = 0.6296; shares and the movement ratio are unchanged:
+//!   - `bodyCostPerMass`     = 2.241e-5
+//!   - `organCostPerLoad`    = 6.575e-4
+//!   - `neuronCost`          = 1.639e-5
+//!   - `activityCost`        = 1.84e-4
+//!   - `movementCostPerMass` = 2.636e-5
+//!    Resulting median resting cost ≈ 0.0157 per tick.
 //! - `trainerMetabolicScale` multiplies the trainer drain only (pressure ramp of TCK-176); the Ocean uses 1.
 
 use serde::{Deserialize, Serialize};
@@ -166,8 +168,8 @@ mod tests {
     /// Old median Ocean drain of structured genomes (module docs), the absolute scale of the calibration.
     const PRE_P6_MEDIAN_OCEAN_DRAIN: f32 = 0.0243;
     /// Typical activity and |thrust| of the derivation (medians over one standard-room trial, module docs).
-    const TYPICAL_ACTIVITY: f32 = 9.60623;
-    const TYPICAL_THRUST: f32 = 0.7029;
+    const TYPICAL_ACTIVITY: f32 = 4.98867;
+    const TYPICAL_THRUST: f32 = 0.6406;
 
     fn median(mut v: Vec<f32>) -> f32 {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());

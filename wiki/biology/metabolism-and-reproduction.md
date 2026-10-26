@@ -12,11 +12,11 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 
 | Term | Formula | Config key (`metabolism`) |
 | :--- | :--- | :--- |
-| body | `bodyCostPerMass · mass` | `bodyCostPerMass` 2.171e-5 |
-| senses | `organCostPerLoad · Σ scale² · (1.1 − bandwidth)` over the organs | `organCostPerLoad` 6.369e-4 |
-| brain, per neuron | `neuronCost · neurons` | `neuronCost` 1.589e-5 |
-| brain, activity | `activityCost · Σ abs(w · a_source)` | `activityCost` 9.26e-5 |
-| movement | `movementCostPerMass · mass · abs(out_thrust)` | `movementCostPerMass` 2.554e-5 |
+| body | `bodyCostPerMass · mass` | `bodyCostPerMass` 2.241e-5 |
+| senses | `organCostPerLoad · Σ scale² · (1.1 − bandwidth)` over the organs | `organCostPerLoad` 6.575e-4 |
+| brain, per neuron | `neuronCost · neurons` | `neuronCost` 1.639e-5 |
+| brain, activity | `activityCost · Σ abs(w · a_source)` | `activityCost` 1.84e-4 |
+| movement | `movementCostPerMass · mass · abs(out_thrust)` | `movementCostPerMass` 2.636e-5 |
 
 - `mass` = the physics mass `r^1.5 · L / 25` (`physics::body_mass`, also used for drag, [[wiki/simulation/physics]]).
 - `neurons` = thalamus + hidden + motor neurons (`brain_neurons`). Sensor and systemic slots are inputs written by the sensing code; their cost is the organ term.
@@ -26,13 +26,13 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 
 ### Calibration (derived, not tuned)
 
-- Inputs: `trainer_runner probe metabolism --seed tck151` over 1000 structured genomes ([[wiki/simulation/analytics-and-balancing]]); medians mass 580.355, organ load 1.74513, neurons 14, activity 9.60623 and |thrust| 0.7029 (p10 0.160, p90 0.968) (means per tick over one standard-room trial, learning on, no drain).
+- Inputs: `trainer_runner probe metabolism --seed tck151` over 1000 structured genomes ([[wiki/simulation/analytics-and-balancing]]); medians mass 580.355, organ load 1.74513, neurons 14, activity 4.98867 and |thrust| 0.6406 (p10 0.181, p90 0.942); re-derived for model version 6 (TCK-190: tanh thalamus sum nodes, silent channels add no activity; P6 values activity 9.60623, |thrust| 0.7029, factor 0.6100) (means per tick over one standard-room trial, learning on, no drain).
 - Old Ocean drain of the same genomes, median `D = 27 (BMR) · 0.002 · 1.0 · 0.45 = 0.0243` per tick.
 - Shares at rest for the median phenotype: body 85 %, senses 7.5 %, brain 7.5 % (together 15 %, TCK-171 band 10–20 %); the brain share splits 20 % per neuron / 80 % activity. Basis: cost per neuron roughly constant (Herculano-Houzel 2011), signalling cost activity-driven (Attwell & Laughlin 2001), vision 5–15 % of resting metabolism in fish (Moran et al. 2015) ([[wiki/research/neuroevolution-and-training-literature]]).
 - Movement: full thrust costs the resting cost of the median body; for any body full thrust costs about its resting cost (`body / 0.85`), so swimming is not free.
-- Absolute scale (lead decision, after the first P6 Ocean check): the median **typical total** cost (resting at the genome's trial activity + movement at its trial mean |thrust|) equals `D`, so active creatures pay what the old model charged. With the shares above at unit scale that median was 0.039834, so all five constants are multiplied by `0.0243 / 0.039834 = 0.6100`; shares and the movement ratio are unchanged. Matching only the resting cost to `D` (the first P6 calibration) doubled the Ocean death turnover (module docs of `metabolism.rs`).
-- Measured by the probe after P6 (structured set, p10 / p50 / p90): resting cost 0.0100 / 0.0152 / 0.0222 per tick; typical total cost 0.0146 / 0.0243 / 0.0381; brain + senses share of the resting cost per genome 7.2 % / 15.2 % / 29.2 %; full-thrust / resting cost 0.83 / 1.00 / 1.09. Letter-soup set: share median 10.4 %, typical total median 0.0237.
-- Tests in `metabolism::tests`: median-phenotype and per-genome shares in [10 %, 20 %] (1000 genomes); `test_typical_total_cost_matches_the_old_ocean_drain` (200 genomes: median activity within ±15 % of 9.606, median |thrust| within ±15 % of 0.7029, median typical total cost within ±10 % of 0.0243); full-thrust ratio in [0.8, 1.25]; silent synapses cost nothing and the cost is the plain sum of its terms ([[wiki/quality/testing]]).
+- Absolute scale (lead decision, after the first P6 Ocean check): the median **typical total** cost (resting at the genome's trial activity + movement at its trial mean |thrust|) equals `D`, so active creatures pay what the old model charged. With the shares above at unit scale that median is 0.038598, so all five constants are multiplied by `0.0243 / 0.038598 = 0.6296`; shares and the movement ratio are unchanged. Matching only the resting cost to `D` (the first P6 calibration) doubled the Ocean death turnover (module docs of `metabolism.rs`).
+- Measured by the probe for model version 6 (structured set, p10 / p50 / p90): resting cost 0.0104 / 0.0157 / 0.0230 per tick; typical total cost 0.0154 / 0.0243 / 0.0389; brain + senses share of the resting cost per genome 7.6 % / 15.5 % / 29.5 %; full-thrust / resting cost 0.83 / 0.99 / 1.09. Letter-soup set: share median 11.4 %, typical total median 0.0222.
+- Tests in `metabolism::tests`: median-phenotype and per-genome shares in [10 %, 20 %] (1000 genomes); `test_typical_total_cost_matches_the_old_ocean_drain` (200 genomes: median activity within ±15 % of 4.989, median |thrust| within ±15 % of 0.6406, median typical total cost within ±10 % of 0.0243); full-thrust ratio in [0.8, 1.25]; silent synapses cost nothing and the cost is the plain sum of its terms ([[wiki/quality/testing]]).
 
 ### Replaced model
 
