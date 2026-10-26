@@ -155,7 +155,7 @@ impl RunConfig {
 
 /// Runs `config.generations` generations and builds the report. `on_generation` receives every
 /// completed generation (progress output, optional persistence by the caller).
-pub fn run_trainer(config: &RunConfig, mut on_generation: impl FnMut(&TrainerEvent)) -> TrainerReport {
+pub fn run_trainer(config: &RunConfig, mut on_generation: impl FnMut(&TrainerEvent, &TrainerSim)) -> TrainerReport {
     let params = config.params();
     let population = params.population.max(1);
     let (mutation_ops_min, mutation_ops_max) = (params.mutation_ops_min, params.mutation_ops_max);
@@ -183,13 +183,14 @@ pub fn run_trainer(config: &RunConfig, mut on_generation: impl FnMut(&TrainerEve
         let tick_start = Instant::now();
         if let Some(event) = sim.step(config.parallel) {
             generation_end_seconds += tick_start.elapsed().as_secs_f64();
-            on_generation(&event);
-            let TrainerEvent::GenerationCompleted { stats, .. } = event;
-            generations.push(stats);
-            // At a generation start the switch applies at once (the next generation runs in the new room)
-            if let Some(&(_, next)) = switches.iter().find(|(end, _)| *end == generations.len()) {
+            // At a generation start the switch applies at once (the next generation runs in the new room); before the
+            // callback, so it sees the state the next generation runs with (run state, TCK-191)
+            if let Some(&(_, next)) = switches.iter().find(|(end, _)| *end == generations.len() + 1) {
                 sim.set_scenario(next);
             }
+            on_generation(&event, &sim);
+            let TrainerEvent::GenerationCompleted { stats, .. } = event;
+            generations.push(stats);
         }
     }
     let wall_seconds = start.elapsed().as_secs_f64();
@@ -249,17 +250,17 @@ mod tests {
     #[test]
     fn test_same_seed_identical_report_and_parallel_equals_sequential() {
         let mut completed = 0;
-        let a = run_trainer(&config("report-seed", false), |_| completed += 1);
+        let a = run_trainer(&config("report-seed", false), |_, _| completed += 1);
         assert_eq!(completed, 2);
         assert_eq!(a.generations.len(), 2);
         assert_eq!(a.meta.version, env!("CARGO_PKG_VERSION"));
 
-        let b = run_trainer(&config("report-seed", false), |_| {});
-        let parallel = run_trainer(&config("report-seed", true), |_| {});
+        let b = run_trainer(&config("report-seed", false), |_, _| {});
+        let parallel = run_trainer(&config("report-seed", true), |_, _| {});
         assert_eq!(reproducible_json(&a), reproducible_json(&b));
         assert_eq!(reproducible_json(&a), reproducible_json(&parallel));
 
-        let other = run_trainer(&config("other-seed", false), |_| {});
+        let other = run_trainer(&config("other-seed", false), |_, _| {});
         assert_ne!(a.generations, other.generations);
         // Single-room runs carry no schedule or evaluation keys
         let json = reproducible_json(&a);
@@ -282,15 +283,15 @@ mod tests {
             parallel,
             ..RunConfig::with_defaults("schedule-seed", Scenario::Standard, 4, 4)
         };
-        let report = run_trainer(&scheduled(false), |_| {});
+        let report = run_trainer(&scheduled(false), |_, _| {});
         let rooms: Vec<(u32, Scenario, f32)> = report.generations.iter().map(|g| (g.generation, g.scenario, g.level)).collect();
         assert_eq!(rooms, vec![(1, Scenario::Standard, 0.0), (2, Scenario::Standard, 0.0), (3, Scenario::Exploration, 1.0), (4, Scenario::Standard, 0.0)]);
         // The first span equals a plain run of the same room
-        let plain = run_trainer(&RunConfig { trials: 1, ..RunConfig::with_defaults("schedule-seed", Scenario::Standard, 4, 2) }, |_| {});
+        let plain = run_trainer(&RunConfig { trials: 1, ..RunConfig::with_defaults("schedule-seed", Scenario::Standard, 4, 2) }, |_, _| {});
         assert_eq!(report.generations[..2], plain.generations[..]);
         // Final evaluation per room, deterministic and parallel-safe
         assert_eq!(report.final_eval.iter().map(|e| (e.scenario, e.eval.level, e.eval.trials)).collect::<Vec<_>>(), vec![(Scenario::Standard, 0.0, 1), (Scenario::Exploration, 1.0, 1)]);
-        assert_eq!(reproducible_json(&report), reproducible_json(&run_trainer(&scheduled(true), |_| {})));
+        assert_eq!(reproducible_json(&report), reproducible_json(&run_trainer(&scheduled(true), |_, _| {})));
         assert_eq!(report.meta.schedule, schedule);
     }
 }

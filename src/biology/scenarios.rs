@@ -29,6 +29,15 @@ impl Scenario {
         }
     }
 
+    /// UI mode string; inverse of `from_mode` (also the stored form in `trainer_run_state.scenario`, TCK-191).
+    pub fn mode(self) -> &'static str {
+        match self {
+            Scenario::Standard => "standard",
+            Scenario::Exploration => "exploration",
+            Scenario::Curriculum => "curriculum",
+        }
+    }
+
     /// Difficulty level of a fixed room (`None` for the curriculum, whose level is trainer state).
     pub fn fixed_level(self) -> Option<f32> {
         match self {

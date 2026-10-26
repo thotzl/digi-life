@@ -1,5 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
-use crate::biology::trainer_sim::GenomeRecord;
+use crate::biology::scenarios::Scenario;
+use crate::biology::trainer_sim::{GenomeRecord, TrainerRunState, TrainerSim};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -22,7 +23,7 @@ static DB_PATH: OnceLock<PathBuf> = OnceLock::new();
 pub const MODEL_VERSION: u32 = 5;
 
 /// Tables whose rows depend on the model version; dropped (and recreated empty) on a version change. No migration.
-const MODEL_TABLES: [&str; 5] = ["trainer_genomes", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];
+const MODEL_TABLES: [&str; 6] = ["trainer_genomes", "trainer_run_state", "creature_catalogue", "simulation_state", "simulation_history", "species_records"];
 
 /// Sets the database location once at startup (the desktop app passes its app data dir).
 pub fn set_db_path(path: PathBuf) {
@@ -181,6 +182,20 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
         [],
     )?;
 
+    // Per-run trainer state a restore continues with (TCK-191); layout_id is a u64 as decimal text
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS trainer_run_state (
+            run_id TEXT PRIMARY KEY,
+            scenario TEXT NOT NULL,
+            level REAL NOT NULL,
+            level_auto INTEGER NOT NULL,
+            layout_id TEXT NOT NULL,
+            mutation_ops_max INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );",
+        [],
+    )?;
+
     // 6. Create creature_catalogue table (Persistent cross-simulation library)
     conn.execute(
         "CREATE TABLE IF NOT EXISTS creature_catalogue (
@@ -276,6 +291,50 @@ pub fn prune_trainer_genomes(conn: &Connection, run_id: &str, retention: usize) 
          (SELECT id FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2)",
         params![run_id, retention as i64],
     ).log_db_err("DELETE FROM trainer_genomes (retention)");
+}
+
+/// Stores the run state of `sim` (TCK-191, `TrainerRunState::of`); called right after `save_trainer_elites`, so it is
+/// the state the next generation runs with.
+pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim) {
+    let state = TrainerRunState::of(sim);
+    let now_secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+    conn.execute(
+        "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![run_id, state.scenario.mode(), state.level as f64, state.level_auto, state.layout_id.to_string(), state.mutation_ops_max as i64, now_secs],
+    ).log_db_err("INSERT OR REPLACE INTO trainer_run_state");
+}
+
+/// Saved run state of `run_id`; `None` without a row or on a read error (logged), i.e. today's defaults.
+pub fn load_trainer_run_state(conn: &Connection, run_id: &str) -> Option<TrainerRunState> {
+    let row = conn
+        .query_row(
+            "SELECT scenario, level, level_auto, layout_id, mutation_ops_max FROM trainer_run_state WHERE run_id = ?1",
+            params![run_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?, row.get::<_, bool>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?)),
+        )
+        .optional();
+    match row {
+        Ok(Some((scenario, level, level_auto, layout_id, mutation_ops_max))) => Some(TrainerRunState {
+            scenario: Scenario::from_mode(&scenario),
+            level: level as f32,
+            level_auto,
+            layout_id: layout_id.parse().unwrap_or(0),
+            mutation_ops_max: mutation_ops_max.clamp(0, u32::MAX as i64) as u32,
+        }),
+        Ok(None) => None,
+        Err(e) => {
+            eprintln!("[DB] SELECT FROM trainer_run_state failed: {}", e);
+            None
+        }
+    }
+}
+
+/// Deletes a run: its genomes and its run state (run delete and trainer reset).
+pub fn delete_trainer_run(conn: &Connection, run_id: &str) -> Result<()> {
+    conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![run_id])?;
+    conn.execute("DELETE FROM trainer_run_state WHERE run_id = ?1", params![run_id])?;
+    Ok(())
 }
 
 /// Best genomes of a run by fitness: the active parents (`active_only`) or the hall of fame (all rows).
@@ -438,6 +497,7 @@ mod tests {
         conn.execute("INSERT INTO species_records (id, latin_name, genome_string, birth_time, carnivory) VALUES ('sp', 'Name', 'COL', 0, 0.0)", []).unwrap();
         conn.execute("INSERT INTO creature_catalogue (id, name, genome, source, methylations, synapse_weights) VALUES ('c', 'n', 'COL', 'src', '[]', '[]')", []).unwrap();
         save_trainer_elites(conn, "run", 1, &[elite(1.0)], 10);
+        conn.execute("INSERT INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at) VALUES ('run', 'standard', 0.0, 1, '0', 3, 0)", []).unwrap();
     }
 
     fn row_counts(conn: &Connection) -> Vec<i64> {
@@ -452,12 +512,12 @@ mod tests {
 
         // Same version: untouched
         reset_model_tables_on_version_change(&conn).unwrap();
-        assert_eq!(row_counts(&conn), vec![1, 1, 1, 1, 1, 1]);
+        assert_eq!(row_counts(&conn), vec![1, 1, 1, 1, 1, 1, 1]);
 
         // Older version: model tables dropped (init_db recreates them), sessions kept, version updated
         conn.execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
         reset_model_tables_on_version_change(&conn).unwrap();
-        let tables: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('trainer_genomes', 'creature_catalogue', 'simulation_state', 'simulation_history', 'species_records')", [], |r| r.get(0)).unwrap();
+        let tables: i64 = conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('trainer_genomes', 'trainer_run_state', 'creature_catalogue', 'simulation_state', 'simulation_history', 'species_records')", [], |r| r.get(0)).unwrap();
         assert_eq!(tables, 0);
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
@@ -470,12 +530,12 @@ mod tests {
         fill_model_tables(&init_db(&path).unwrap());
 
         // Same version: reopening keeps every row
-        assert_eq!(row_counts(&init_db(&path).unwrap()), vec![1, 1, 1, 1, 1, 1]);
+        assert_eq!(row_counts(&init_db(&path).unwrap()), vec![1, 1, 1, 1, 1, 1, 1]);
 
         // Stored version differs: model tables recreated empty, version updated, other tables kept
         init_db(&path).unwrap().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
         let conn = init_db(&path).unwrap();
-        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 1]);
+        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 0, 1]);
         assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
         fill_model_tables(&conn);
 
@@ -483,7 +543,7 @@ mod tests {
         conn.execute("DELETE FROM meta", []).unwrap();
         drop(conn);
         let conn = init_db(&path).unwrap();
-        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 1]);
+        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 0, 1]);
         assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
@@ -520,5 +580,45 @@ mod tests {
 
         // Other runs are untouched
         assert_eq!(load_trainer_genomes(&conn, "other", false, 100).len(), 1);
+    }
+
+    /// A trainer at generation 2 with non-default run state (curriculum, manual level, layout 7, 5 ops).
+    fn trainer_with_state(layout_id: u64) -> TrainerSim {
+        use crate::biology::trainer_sim::TrainerParams;
+        let params = TrainerParams { population: 2, scenario: Scenario::Curriculum, level: 0.4, level_auto: false, mutation_ops_max: 5, ..TrainerParams::default() };
+        TrainerSim::restore_at_layout(params, 3, 2, layout_id, Vec::new(), Vec::new(), 10)
+    }
+
+    #[test]
+    fn test_trainer_run_state_round_trip_and_missing_row() {
+        let conn = init_db(":memory:").unwrap();
+        assert_eq!(load_trainer_run_state(&conn, "run"), None, "no row: today's defaults");
+
+        // u64 beyond i64 survives the decimal text column
+        let sim = trainer_with_state(u64::MAX - 1);
+        save_trainer_run_state(&conn, "run", &sim);
+        let loaded = load_trainer_run_state(&conn, "run").unwrap();
+        assert_eq!(loaded, TrainerRunState::of(&sim));
+        assert_eq!((loaded.scenario, loaded.level, loaded.level_auto, loaded.layout_id, loaded.mutation_ops_max), (Scenario::Curriculum, 0.4, false, u64::MAX - 1, 5));
+
+        // Saving again replaces the run's row; other runs stay separate
+        save_trainer_run_state(&conn, "run", &trainer_with_state(7));
+        assert_eq!(load_trainer_run_state(&conn, "run").unwrap().layout_id, 7);
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM trainer_run_state", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(load_trainer_run_state(&conn, "other"), None);
+    }
+
+    #[test]
+    fn test_delete_trainer_run_clears_genomes_and_run_state_of_that_run_only() {
+        let conn = init_db(":memory:").unwrap();
+        for run in ["run", "other"] {
+            save_trainer_elites(&conn, run, 1, &[elite(1.0)], 10);
+            save_trainer_run_state(&conn, run, &trainer_with_state(7));
+        }
+        delete_trainer_run(&conn, "run").unwrap();
+        assert!(load_trainer_genomes(&conn, "run", false, 100).is_empty());
+        assert_eq!(load_trainer_run_state(&conn, "run"), None);
+        assert_eq!(load_trainer_genomes(&conn, "other", false, 100).len(), 1);
+        assert!(load_trainer_run_state(&conn, "other").is_some());
     }
 }

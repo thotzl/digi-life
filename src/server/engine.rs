@@ -13,9 +13,9 @@ use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genom
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::TrainerTelemetrySandbox;
-use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
+use crate::biology::trainer_sim::{TrainerEvent, TrainerSim};
 use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerSelectedBrain, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
-use crate::database::{init_db, load_trainer_genomes, save_trainer_elites, LogDbError};
+use crate::database::{delete_trainer_run, init_db, load_trainer_genomes, load_trainer_run_state, save_trainer_elites, save_trainer_run_state, LogDbError};
 use crate::shared::rng::seed_from_str;
 
 /// Per-step snapshot of the fields other creatures read (prey search, bite targets).
@@ -162,14 +162,28 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let trainer_seed = |run_id: &str| seed_from_str(&format!("{}:{}", app_config.seed, run_id));
 
         // Continues a run from the DB: active parents + hall of fame; the generation counter
-        // continues from the newest parent
-        let restore_trainer = |params: TrainerParams, run_id: &str, generation: u32, db_conn: &rusqlite::Connection| -> TrainerSim {
+        // continues from the newest parent. Run state (TCK-191): with `load_run_state` (the in-memory trainer does not
+        // hold this run's state yet: app start, run switch) the saved mode, level, gate, layout and mutation ops of
+        // the run replace the current ones (no row: current params, layout 0); otherwise the current params and layout
+        // continue, so unsaved UI changes since the last generation end are kept.
+        let restore_trainer = |current: &TrainerSim, run_id: &str, generation: u32, load_run_state: bool, db_conn: &rusqlite::Connection| -> TrainerSim {
+            let mut params = current.params.clone();
+            let layout_id = if load_run_state {
+                load_trainer_run_state(db_conn, run_id).map_or(0, |state| {
+                    state.apply(&mut params);
+                    state.layout_id
+                })
+            } else {
+                current.layout_id()
+            };
             let parents = load_trainer_genomes(db_conn, run_id, true, params.population);
             let hof = load_trainer_genomes(db_conn, run_id, false, trainer_retention);
             let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
-            TrainerSim::restore(params, trainer_seed(run_id), generation, parents, hof, trainer_retention)
+            TrainerSim::restore_at_layout(params, trainer_seed(run_id), generation, layout_id, parents, hof, trainer_retention)
         };
-        let mut trainer = TrainerSim::new(TrainerParams::default(), trainer_seed(&trainer_run_id), trainer_retention);
+        let mut trainer = TrainerSim::new(Default::default(), trainer_seed(&trainer_run_id), trainer_retention);
+        // Whether `trainer` holds the run state of `trainer_run_id` (false until the first restore loads it)
+        let mut trainer_run_state_loaded = false;
 
         // Ensure the default desktop session exists to satisfy foreign key constraints
         conn.execute(
@@ -332,14 +346,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 TrainerAction::TrainerReset => {
                                     trainer_is_running = false;
 
-                                    // Delete all saved training genomes for the current run_id in SQLite (hard reset!)
-                                    conn.execute("DELETE FROM trainer_genomes WHERE run_id = ?1", params![trainer_run_id]).log_db_err("DELETE FROM trainer_genomes");
+                                    // Delete the saved genomes and run state of the current run_id in SQLite (hard reset!)
+                                    delete_trainer_run(&conn, &trainer_run_id).log_db_err("DELETE trainer run");
                                     // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
                                     let mut fresh_params = trainer.params.clone();
                                     if fresh_params.level_auto {
                                         fresh_params.level = fresh_params.curriculum.start_level;
                                     }
                                     trainer = TrainerSim::new(fresh_params, trainer_seed(&trainer_run_id), trainer_retention);
+                                    trainer_run_state_loaded = true;
 
                                     let state = trainer_state(false, &trainer, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
                                     emit_state(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..state }).to_payload());
@@ -428,11 +443,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             trainer_run_id = r_id;
                                             generation_base = 1;
                                             grid_changed = true;
+                                            trainer_run_state_loaded = false;
                                         }
                                     }
 
                                     if grid_changed {
-                                        trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, generation_base, &conn);
+                                        trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &conn);
+                                        trainer_run_state_loaded = true;
                                     }
 
                                     // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
@@ -771,7 +788,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     if mode == "trainer" {
                                         is_trainer_active = true;
                                         // Rebuild the population from the DB when entering the trainer
-                                        trainer = restore_trainer(trainer.params.clone(), &trainer_run_id, trainer.generation, &conn);
+                                        trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &conn);
+                                        trainer_run_state_loaded = true;
                                         println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
                                         // Broadcast full hyperparams truth back to the UI!
@@ -1494,6 +1512,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes
                             save_trainer_elites(&conn, &trainer_run_id, generation, &elites, trainer_retention);
+                            // Run state after the boundary (TCK-191); a switch requested later stays pending until its generation ends
+                            save_trainer_run_state(&conn, &trainer_run_id, &trainer);
                             emit_state(json!({ "type": "DATABASE_CHANGED" }));
                         }
                     }

@@ -1,5 +1,6 @@
 //! Headless trainer runner (TCK-173): runs `TrainerSim` without UI and warp cap and writes a JSON report.
-//! In memory by default; `--persist --db <path>` writes the elites of every generation to that DB.
+//! In memory by default; `--persist --db <path>` writes the elites and the run state (TCK-191) of every generation to
+//! that DB.
 //! `probe` runs the mechanics diagnosis probes of TCK-172 (`biology::probes`); its `--db` is opened read-only.
 
 use std::collections::HashMap;
@@ -9,7 +10,7 @@ use src_tauri::biology::probes::{load_hof_genomes, run_probe, ProbeOptions, PROB
 use src_tauri::biology::scenarios::Scenario;
 use src_tauri::biology::trainer_report::{run_trainer, RunConfig, ScheduleSpan};
 use src_tauri::biology::trainer_sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrialAggregation};
-use src_tauri::database::{init_db, save_trainer_elites};
+use src_tauri::database::{init_db, save_trainer_elites, save_trainer_run_state};
 use src_tauri::shared::types::AppConfig;
 
 const USAGE: &str = "Usage:
@@ -209,7 +210,7 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     if !config.schedule.is_empty() {
         eprintln!("[runner] schedule {:?}", config.schedule);
     }
-    let report = run_trainer(&config, |event| {
+    let report = run_trainer(&config, |event, sim| {
         let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
         eprintln!(
             "[runner] generation {}/{}: {:?} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
@@ -224,6 +225,7 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         );
         if let Some(conn) = &conn {
             save_trainer_elites(conn, &run_id, *generation, elites, retention);
+            save_trainer_run_state(conn, &run_id, sim);
         }
     });
     for eval in &report.final_eval {

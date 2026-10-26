@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.23] - 2026-10-26
+
+Training track wrap-up (epic TCK-171): trainer run state survives app restarts.
+
+### Added
+- Trainer run state per run (training mode, curriculum level, auto/manual, layout id, mutation strength adapted by the 1/5 rule) in a new table `trainer_run_state`, saved after each generation and restored at app start and after a run switch; cleared with trainer reset and run delete, and by model resets (ref TCK-191).
+
+### Fixed
+- After an app restart or a run switch a run restarted at layout 0, the curriculum level and the training mode fell back to their defaults and the adapted mutation strength was lost; re-entering the trainer no longer resets the layout either (ref TCK-191).
+
 ## [1.12.22] - 2026-10-26
 
 Training track P8 "Curriculum and UI" (epic TCK-171, final phase). New CI reference; golden master unchanged. From this release on, training results are measured on unseen layouts (final population, 10 evaluation trials per room): small room 0.383, large room 0.096 with the curriculum (pop 16, 60 gens, 10 seeds).

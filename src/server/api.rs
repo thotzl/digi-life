@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager, State};
 use serde_json::json;
 use std::sync::mpsc::Sender;
 use rusqlite::params;
-use crate::database::DbState;
+use crate::database::{delete_trainer_run, DbState};
 use crate::biology::dna::parse_genome;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -180,10 +180,8 @@ pub fn save_trainer_generation(db: State<'_, DbState>, run_id: String, generatio
 pub fn clear_trainer_history(db: State<'_, DbState>, run_id: String) -> Result<bool, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
-    conn.execute(
-        "DELETE FROM trainer_genomes WHERE run_id = ?1",
-        params![run_id],
-    ).map_err(|e| e.to_string())?;
+    // Genomes and run state (TCK-191)
+    delete_trainer_run(&conn, &run_id).map_err(|e| e.to_string())?;
 
     Ok(true)
 }

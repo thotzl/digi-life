@@ -516,15 +516,48 @@ impl GenerationStats {
     }
 }
 
+/// Per-run state a restore continues with (TCK-191, table `trainer_run_state`): training mode, curriculum level and
+/// gate, the shared layout and the `mutation_ops_max` adapted by the 1/5 rule. Taken right after a generation end
+/// (`of`), i.e. the state the next generation runs with; a switch still pending at that moment is not part of it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrainerRunState {
+    pub scenario: Scenario,
+    pub level: f32,
+    pub level_auto: bool,
+    pub layout_id: u64,
+    pub mutation_ops_max: u32,
+}
+
+impl TrainerRunState {
+    pub fn of(sim: &TrainerSim) -> Self {
+        let p = &sim.params;
+        Self { scenario: p.scenario, level: p.level, level_auto: p.level_auto, layout_id: sim.layout_id, mutation_ops_max: p.mutation_ops_max }
+    }
+
+    /// Writes the state into `params` (the layout goes to `TrainerSim::restore_at_layout`). `mutation_ops_max` is
+    /// clamped to the current `[mutationOpsMin, mutationOpsLimit]` like the UI field.
+    pub fn apply(&self, params: &mut TrainerParams) {
+        let lo = params.mutation_ops_min.max(1);
+        params.scenario = self.scenario;
+        params.level = snap_level(self.level);
+        params.level_auto = self.level_auto;
+        params.mutation_ops_max = self.mutation_ops_max.clamp(lo, AppConfig::global().mutation_ops_limit.max(lo));
+    }
+}
+
 impl TrainerSim {
     /// Generation 1: all sandboxes are structured random genomes (`breed_genome`, origin Random).
     pub fn new(params: TrainerParams, seed: u64, hof_retention: usize) -> Self {
         Self::restore(params, seed, 1, Vec::new(), Vec::new(), hof_retention)
     }
 
-    /// Continues a run: breeds `generation` from `parents` (fitness descending) and `hof`.
-    /// The shared layout restarts at layout 0 (it is not persisted).
-    pub fn restore(mut params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
+    /// Continues a run: breeds `generation` from `parents` (fitness descending) and `hof` on shared layout 0.
+    pub fn restore(params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
+        Self::restore_at_layout(params, seed, generation, 0, parents, hof, hof_retention)
+    }
+
+    /// `restore` on shared layout `layout_id` (the persisted run state, TCK-191, `TrainerRunState`).
+    pub fn restore_at_layout(mut params: TrainerParams, seed: u64, generation: u32, layout_id: u64, parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
         params.population = params.population.max(1);
         params.level = snap_level(params.level);
         sort_desc_by_fitness(&mut hof);
@@ -546,7 +579,7 @@ impl TrainerSim {
             slot_parents: Vec::new(),
             slot_lineage: Vec::new(),
             parent_last_mutation: vec![None; parents.len()],
-            layout_id: 0,
+            layout_id,
             parents,
             hof,
             hof_retention,
@@ -1693,5 +1726,39 @@ mod tests {
         assert!((0.0..=1.0).contains(&a.success_rate));
         assert!(a.elite_success_rate.is_some(), "generation 2 has elite slots");
         assert_eq!(sim.evaluate_population(room, Some(4), false).trials, 4);
+    }
+
+    // ---------------------------------------------------------------- run state (TCK-191)
+
+    #[test]
+    fn test_restore_with_run_state_continues_layout_level_mode_and_mutation_ops() {
+        let params = TrainerParams { layout_policy: LayoutPolicy::Rotate, mutation_ops_max: 5, trials: 2, ..curriculum_params(6, 0.3, true) };
+        let mut original = TrainerSim::new(params.clone(), 71, 200);
+        run(&mut original, 2);
+        let state = TrainerRunState::of(&original);
+        assert_eq!(state.layout_id, 2, "rotate: a new layout after every generation");
+
+        // A restore from other params (app start: config defaults, other mode and ops) with the saved state applied
+        let mut restored_params = TrainerParams { scenario: Scenario::Standard, level: 0.0, level_auto: false, mutation_ops_max: 2, ..params };
+        state.apply(&mut restored_params);
+        let restored = TrainerSim::restore_at_layout(restored_params, 71, original.generation, state.layout_id, original.parents.clone(), original.hof.clone(), 200);
+        assert_eq!(TrainerRunState::of(&restored), state);
+        assert_eq!((restored.params.scenario, restored.params.level_auto), (Scenario::Curriculum, true));
+        assert_eq!((restored.room(), &restored.rehearsal), (original.room(), &original.rehearsal));
+        assert_eq!(genomes(&restored), genomes(&original));
+        assert!(restored.sandboxes.iter().zip(&original.sandboxes).all(|(a, b)| a.agent.px == b.agent.px && a.agent.py == b.agent.py));
+
+        // No saved state: today's restore on layout 0
+        let fresh = TrainerSim::restore(params, 71, original.generation, original.parents.clone(), original.hof.clone(), 200);
+        assert_eq!(fresh.layout_id(), 0);
+    }
+
+    #[test]
+    fn test_run_state_apply_clamps_mutation_ops_and_snaps_level() {
+        let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000 };
+        let mut params = TrainerParams::default();
+        state.apply(&mut params);
+        let limit = AppConfig::global().mutation_ops_limit.max(params.mutation_ops_min.max(1));
+        assert_eq!((params.scenario, params.level, params.level_auto, params.mutation_ops_max), (Scenario::Exploration, snap_level(0.47), false, limit));
     }
 }
