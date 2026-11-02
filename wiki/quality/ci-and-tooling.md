@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-testing-ci-tooling.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/open/TCK-189-dependency-security-alerts.md]
 ---
 
 # CI, Toolchain and Releases
@@ -65,8 +65,15 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 ## Toolchain state
 
 - `rustc 1.99.1` stable-msvc (TCK-134).
-- `Cargo.toml` package name `src-tauri`, binaries `src-tauri` (default) and `trainer_runner`; dependencies added in TCK-173: `rand_chacha 0.3` (seeded `ChaCha8Rng`), `rayon 1` (parallel trainer), `libm 0.2` (platform-identical math). `rusqlite 0.29` and `rand 0.8` are old; `typescript ^5`, `vite ^5`, `vitest ^1.6` with transitive deprecations (RV-T05).
+- `Cargo.toml` package name `src-tauri`, binaries `src-tauri` (default) and `trainer_runner`; dependencies added in TCK-173: `rand_chacha 0.3` (seeded `ChaCha8Rng`), `rayon 1` (parallel trainer), `libm 0.2` (platform-identical math). `rusqlite 0.29` and `rand 0.8` are old; `typescript ^5`, `vite ^6.4`, `vitest` / `@vitest/coverage-v8` `^4.1` (TCK-189).
 - `types:generate` depends on all tests passing.
+
+## Dependencies and audits (TCK-189)
+
+- Dev dependencies are only `@tauri-apps/cli`, `@vitest/coverage-v8`, `typescript`, `vite`, `vitest`; the unused `concurrently`, `tsx` and Stryker (and the `test:mutation` script) were removed. `npm audit`: 0 vulnerabilities (2026-11-02).
+- Vite stays on major 6: Vite 7/8 need Node ≥ 20.19, the local dev machine runs Node 20.13.1 (CI uses `lts/*`). Vitest 4 supports Vite 6–8.
+- npm 10.5.2 (bundled with Node 20.13) crashes (`Cannot read properties of null (reading 'edgesOut')`) when resolving a new Vitest 4 tree; `npm ci` from the existing lock file works. To change the lock file, use a newer npm, e.g. `npx -y npm@10.9.9 install`.
+- `cargo audit` (cargo-audit 0.22): 0 vulnerabilities, 8 warnings: unmaintained `proc-macro-error` and `unic-*` (Tauri build tooling), unsound `glib 0.18.5` (RUSTSEC-2024-0429, Linux GTK stack via Tauri/wry, not used directly) and `tokio 1.53.1` (RUSTSEC-2026-0386, `AsyncFd`, not used directly). Accepted; no crate upgrades.
 
 ## Key Takeaways
 
@@ -74,4 +81,4 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 - Tickets are mirrored to GitHub issues on every push to master.
 - Every closed ticket = patch bump + changelog entry.
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, TCK-173, TCK-186, TCK-187, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/07-testing-ci-tooling.md`, TCK-114, TCK-134, TCK-173, TCK-186, TCK-187, TCK-189, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.

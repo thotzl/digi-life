@@ -15,19 +15,14 @@
     "types:generate": "cargo test",
     "test:all": "npm run test && npm run test:rust && cargo check --features runner --bin trainer_runner",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:mutation": "stryker run"
+    "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@stryker-mutator/core": "^8.2.0",
-    "@stryker-mutator/vitest-runner": "^8.2.0",
     "@tauri-apps/cli": "^2.11.4",
-    "@vitest/coverage-v8": "^1.6.0",
-    "concurrently": "^10.0.5",
-    "tsx": "^4.23.12",
+    "@vitest/coverage-v8": "^4.1.12",
     "typescript": "^5.0.0",
-    "vite": "^5.0.0",
-    "vitest": "^1.6.0"
+    "vite": "^6.4.5",
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@preact/signals-core": "^1.14.4",
