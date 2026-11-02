@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-154-trainer-scenario-parameters.md]
+sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, tickets/closed/TCK-133-biophysical-sensing-upgrades-and-sensor-fusion.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-154-trainer-scenario-parameters.md]
 ---
 
 # Sensing
@@ -62,4 +62,4 @@ Six inputs after all organ slots (`SystemicInput`, `SYSTEMIC_BASE_INPUTS_COUNT`)
 - Only channels an organ can sense are wired.
 - Structured generation-1 genomes all have an organ and 99 % a food sensor; the large room still gives few spawn-time food signals.
 
-Sources: TCK-122, TCK-129, TCK-133, TCK-144, TCK-149, TCK-172, TCK-173, TCK-154, TCK-182, TCK-184, FIX-131, `docs/revisit/01-critical-bugs.md`.
+Sources: TCK-122, TCK-129, TCK-133, TCK-144, TCK-149, TCK-172, TCK-173, TCK-154, TCK-182, TCK-184, FIX-131.

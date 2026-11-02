@@ -7,7 +7,7 @@ description: Rules and procedure for measuring, tuning and balancing the trainer
 ## I. Knowledge (read first)
 - Runner commands, report fields, probes, comparison method, caveats: `wiki/simulation/analytics-and-balancing.md`
 - Trainer model and P2 baseline: `wiki/simulation/trainer.md`
-- Target values per phase: `tickets/ongoing/TCK-171-training-track-epic.md` ("Target values")
+- Target values per phase: `tickets/closed/TCK-171-training-track-epic.md` ("Target values")
 
 ## II. Rules
 - Measure with `trainer_runner` (`cargo run --release --features runner --bin trainer_runner -- run|probe ...`, from the repo root), never via the UI or DB queries; the runner stays in memory unless `--persist --db <path>` is given.
@@ -21,4 +21,4 @@ description: Rules and procedure for measuring, tuning and balancing the trainer
 1. Baseline: `run` both rooms (`--scenario standard|exploration`) on the seed set, plus the relevant `probe` (`heredity|speed|equipment|steering|wall|hebbian|all`); keep reports under `.agents/artifacts/`.
 2. Apply one change; re-run identical commands.
 3. Behaviour-preserving change: reports must be identical (`node tests/reference/compare-trainer-report.mjs a.json b.json`). Model change: aggregate per config (mean of last 5 generations, generation 1 for the slope) and compare against the targets.
-4. Record before/after numbers in the ticket; update the wiki article with the resulting state when the ticket closes. An intended model change also updates `tests/reference/trainer-ci.json` in the same commit.
+4. Record before/after numbers in the ticket; update the wiki article with the resulting state when the ticket closes. An intended model change also updates `tests/reference/trainer-ci.json` and `tests/reference/trainer-ci-curriculum.json` in the same commit.

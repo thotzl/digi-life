@@ -34,7 +34,7 @@ walk(reference, actual, "report");
 if (diffs.length > 0) {
   console.error(`Trainer report differs from the reference (${diffs.length} values). First differences:`);
   diffs.slice(0, 20).forEach((d) => console.error(`  ${d}`));
-  console.error("An intended model change updates tests/reference/trainer-ci.json in the same commit (see TCK-186).");
+  console.error(`An intended model change updates ${referencePath} in the same commit (see TCK-186).`);
   process.exit(1);
 }
 console.log("Trainer report matches the reference.");

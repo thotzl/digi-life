@@ -568,10 +568,10 @@ export function createTrainerView(): HTMLElement {
           styled("b")``({ style: { color: "#94a3b8", display: "block", marginBottom: "6px" }, children: "POPULATION ORIGINS:" }),
           LegendGrid({
             children: [
-              LegendItem({ children: [IconElite, `<span style='color:#fbbf24;'>Elite Winner</span>`] }),
-              LegendItem({ children: [IconTrophy, `<span style='color:#60a5fa;'>Hall of Fame</span>`] }),
-              LegendItem({ children: [IconMutant, `<span style='color:#c084fc;'>Mutant Clone</span>`] }),
-              LegendItem({ children: [IconPlant, `<span style='color:#34d399;'>Fresh Random</span>`] })
+              LegendItem({ children: [IconElite, styled("span")``({ style: { color: "#fbbf24" }, children: "Elite Winner" })] }),
+              LegendItem({ children: [IconTrophy, styled("span")``({ style: { color: "#60a5fa" }, children: "Hall of Fame" })] }),
+              LegendItem({ children: [IconMutant, styled("span")``({ style: { color: "#c084fc" }, children: "Mutant Clone" })] }),
+              LegendItem({ children: [IconPlant, styled("span")``({ style: { color: "#34d399" }, children: "Fresh Random" })] })
             ]
           })
         ]

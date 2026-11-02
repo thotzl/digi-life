@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, docs/revisit/02-architecture.md, docs/revisit/06-frontend.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/trainer_ipc.rs, src/server/engine.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/trainer_ipc.rs, src/server/engine.rs]
 ---
 
 # IPC Protocol
@@ -66,4 +66,4 @@ Tests `test_trainer_actions_parse_from_ui_json`, `test_non_trainer_actions_are_n
 - `bindings/` is generated and drift-checked in CI; brain, gene and trainer IPC types are consumed by the frontend, the rest of the IPC types are still handwritten (RV-A03 partly).
 - Trainer room switches (`SET_TRAINER_MODE`, `SET_TRAINER_LEVEL`) are deferred to the next generation boundary; `TRAINER_STATE_CHANGED` follows every generation.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `docs/revisit/02-architecture.md`, `src/main.rs`, `src/server/trainer_ipc.rs`, TCK-149, TCK-173, TCK-176, TCK-177, TCK-179, TCK-187.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `src/main.rs`, `src/server/trainer_ipc.rs`, TCK-149, TCK-173, TCK-176, TCK-177, TCK-179, TCK-187.

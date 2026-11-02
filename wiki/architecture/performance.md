@@ -1,5 +1,5 @@
 ---
-sources: [docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md]
+sources: [tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md]
 ---
 
 # Performance
@@ -54,4 +54,4 @@ Measured with the headless runner (release build), `perf` block of the report; m
 - Trainer sandboxes and breeding run in parallel, deterministically.
 - Remaining hot spots: linear nearest-food search, Ocean sensor allocation, trainer generation end.
 
-Sources: `docs/revisit/03-performance.md`, TCK-139, TCK-140, TCK-150, TCK-151, TCK-173, TCK-178, TCK-182.
+Sources: TCK-139, TCK-140, TCK-150, TCK-151, TCK-173, TCK-178, TCK-182.

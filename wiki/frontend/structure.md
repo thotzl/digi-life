@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-frontend.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, frontend/trainer.ts, frontend/trainerMetrics.ts, frontend/render/progressChart.ts]
+sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, frontend/trainer.ts, frontend/trainerMetrics.ts, frontend/render/progressChart.ts]
 ---
 
 # Frontend Structure
@@ -24,7 +24,7 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 - **Genome view** (TCK-187): every base is coloured by the backend gene span covering it (`phenotype.genes`, [[wiki/biology/genome-compiler]]): promoter letters, gene body, silent copies (later copies of first-only promoters, dimmed) or non-coding; the tooltip names the gene and its meaning (e.g. `EYE 1: Sensory organ (EYE) - Eye pair`).
 - `views/CatalogueView.ts` — fullscreen catalogue, selection dialog with synapse restore options.
 - `views/TrainerView.ts` — trainer layout; since P8 (TCK-176/TCK-177) the stats row with success rate, median fitness, time to first catch and level (`#stat-success`, `#stat-median-fit`, `#stat-first-catch`, `#stat-level`), the progress card (`#canvas-progress`, legend success / best / median / level), the mode select with "Curriculum (auto)" and "Manual Level (slider)", the pending-switch note `#lbl-pending-switch` and the difficulty slider `#slider-level` ([[wiki/simulation/trainer]]).
-- `core/styled.ts` — small typed CSS-in-JS engine; `applyChildren` treats strings starting with `<` as HTML. `class`/`className` props are added to the generated class via `classList` (before the TCK-186 smoke check they were assigned as a no-op JS property, so e.g. the main-menu card hover styles and catalogue classes never applied). `styles.css` global styles.
+- `core/styled.ts` — small typed CSS-in-JS engine; `applyChildren` renders string and number children as text; markup is parsed only when marked with `html()` (`TrustedHtml`, used for the static icon SVGs in `components/Icons.ts`), so a user-entered creature name cannot inject HTML (TCK-197, test `core/styled.test.ts`). `class`/`className` props are added to the generated class via `classList` (before the TCK-186 smoke check they were assigned as a no-op JS property, so e.g. the main-menu card hover styles and catalogue classes never applied). `styles.css` global styles.
 - `core/escape.ts` — `escapeHtml` for interpolated DB/user data (TCK-141).
 - `components/Icons.ts` — SVG icons.
 
@@ -46,7 +46,7 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 ## Security
 
 - Untrusted strings (names, genomes, logs) go through `textContent` or `escapeHtml`, never raw `innerHTML` (RV-F02, TCK-141).
-- CSP is `null` in `tauri.conf.json`.
+- CSP in `tauri.conf.json` (TCK-197): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost`. `style-src` needs `'unsafe-inline'` for the `styled` stylesheet, inline `style` attributes and Vite's dev style injection; `dangerousDisableAssetCspModification: ["style-src"]` keeps Tauri from adding nonces there, which would make browsers ignore `'unsafe-inline'`.
 
 ## Hardcoded values
 
@@ -58,6 +58,6 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 - Four views mounted once, router owns the backend mode, renderers are pure Canvas 2D.
 - Genome view and neural inspector render backend gene spans and neuron roles; the frontend only maps them to text (TCK-187).
 - The trainer draws its tiles in a rAF loop scoped to the trainer view from stored telemetry snapshots and shows the report's generation stats and a progress curve (TCK-177).
-- Output escaping is in place; there is no CSP and no per-view listener lifecycle.
+- Output escaping and a restrictive CSP are in place (TCK-197); there is no per-view listener lifecycle.
 
-Sources: `.agents/skills/client-rendering/SKILL.md`, `docs/revisit/06-frontend.md`, TCK-115, TCK-128, TCK-141, FIX-131, TCK-177, TCK-186, TCK-187.
+Sources: `.agents/skills/client-rendering/SKILL.md`, TCK-115, TCK-128, TCK-141, FIX-131, TCK-177, TCK-186, TCK-187.

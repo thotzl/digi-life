@@ -144,8 +144,24 @@ function parseCSSRules(className: string, cssText: string): string[] {
 }
 
 /**
- * Helper to append diverse children nodes (strings, numbers, elements, or arrays thereof).
- * Auto-detects and compiles raw HTML/SVG markup safely into DOM Nodes.
+ * Static markup marked as trusted (icon SVG constants). The only way to put HTML into styled children (TCK-197);
+ * never wrap user input or backend data. `toString` returns the markup, so icons still interpolate into templates.
+ */
+export class TrustedHtml {
+  constructor(readonly markup: string) {}
+  toString(): string {
+    return this.markup;
+  }
+}
+
+/** Marks static, developer-written markup as HTML for styled children. */
+export function html(markup: string): TrustedHtml {
+  return new TrustedHtml(markup);
+}
+
+/**
+ * Helper to append diverse children nodes (strings, numbers, elements, trusted markup, or arrays thereof).
+ * Strings and numbers always become text nodes; only `html()` markup is parsed.
  */
 function applyChildren(parent: Element, children: any) {
   if (children === null || children === undefined) return;
@@ -153,16 +169,12 @@ function applyChildren(parent: Element, children: any) {
   const appendSingle = (child: any) => {
     if (child === null || child === undefined) return;
     if (typeof child === "string" || typeof child === "number") {
-      const str = String(child);
-      if (str.trim().startsWith("<")) {
-        // Safe live compilation of raw HTML/SVG vector tags
-        const temp = document.createElement("div");
-        temp.innerHTML = str;
-        while (temp.firstChild) {
-          parent.appendChild(temp.firstChild);
-        }
-      } else {
-        parent.appendChild(document.createTextNode(str));
+      parent.appendChild(document.createTextNode(String(child)));
+    } else if (child instanceof TrustedHtml) {
+      const temp = document.createElement("div");
+      temp.innerHTML = child.markup;
+      while (temp.firstChild) {
+        parent.appendChild(temp.firstChild);
       }
     } else if (child instanceof HTMLElement || child instanceof SVGElement || child instanceof DocumentFragment || child instanceof Text) {
       parent.appendChild(child);

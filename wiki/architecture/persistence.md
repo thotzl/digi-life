@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, README.md, docs/revisit/05-persistence.md, tickets/closed/TCK-137-persistence-appdata-shared-connection.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, README.md, tickets/closed/TCK-137-persistence-appdata-shared-connection.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md]
 ---
 
 # Persistence (SQLite)
@@ -52,4 +52,4 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-a
 - Model-version reset instead of migrations; retention only for `trainer_genomes` (best 200 per run).
 - Ocean state is auto-saved every 10 s and restored on start.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/05-persistence.md`, TCK-128, TCK-137, TCK-173, TCK-175, TCK-179, TCK-183, `README.md`.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-128, TCK-137, TCK-173, TCK-175, TCK-179, TCK-183, `README.md`.

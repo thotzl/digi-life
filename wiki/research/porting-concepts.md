@@ -1,5 +1,5 @@
 ---
-sources: [ideas.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
+sources: [ideas.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
 ---
 
 # Porting Concepts
@@ -20,4 +20,4 @@ Assessment of the four porting ideas in `ideas.md` (sections II and III, "Epochs
 - All four ideas are compatible in spirit but specified against an outdated genome model.
 - Hormones would be new systemic inputs; oscillators depend on the thrust behaviour.
 
-Sources: `ideas.md`, `docs/revisit/04-simulation-model.md`, TCK-150.
+Sources: `ideas.md`, TCK-150.

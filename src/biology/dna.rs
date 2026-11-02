@@ -2688,7 +2688,7 @@ mod tests {
             state ^= state << 17;
             state
         };
-        let motifs = ["EYE", "NOS", "TAC", "LUM", "HOX", "NEU", "SY", "EN", "SP", "COL", "STF", "PUL", "SIZ", "WAV", "REP", "EVO", "CAR"];
+        let motifs = ["EYE", "NOS", "TAC", "LUM", "HOX", "NEU", "SY", "OUT", "EN", "SP", "COL", "STF", "PUL", "SIZ", "WAV", "STM", "TEM", "REP", "EVO", "CAR"];
         (0..300)
             .map(|_| {
                 let len = 128 + (next() % 300) as usize;
@@ -3030,15 +3030,57 @@ mod tests {
         }
     }
 
+    /// Canonical bytes of the model fields of a phenotype (TCK-197): body traits, initial methylations, organs
+    /// (kind, side, sensing/placement params), neurons in order (role, tau, bias, activation) and synapses (key, weight,
+    /// owner gene, plastic). Display strings, derived labels and dead payload are left out, so moving or dropping them
+    /// does not change the golden master.
+    fn model_fields(p: &CreaturePhenotype, out: &mut Vec<u8>) {
+        let f = |v: f32, out: &mut Vec<u8>| out.extend_from_slice(&v.to_bits().to_le_bytes());
+        let gene = |g: &GeneRef, out: &mut Vec<u8>| {
+            out.extend_from_slice(g.promoter.as_bytes());
+            out.extend_from_slice(g.spelling.as_bytes());
+            out.extend_from_slice(&(g.occurrence as u32).to_le_bytes());
+        };
+        let len = |n: usize, out: &mut Vec<u8>| out.extend_from_slice(&(n as u32).to_le_bytes());
+        let traits = owned_traits(p);
+        len(traits.len(), out);
+        for (promoter, v) in traits {
+            out.extend_from_slice(promoter.as_bytes());
+            f(v, out);
+        }
+        len(p.methylations.len(), out);
+        p.methylations.iter().for_each(|&v| f(v, out));
+        len(p.organelles.len(), out);
+        for o in &p.organelles {
+            out.extend_from_slice(&[o.kind as u8, o.side as u8]);
+            for v in [o.spectral_affinity, o.bandwidth, o.expression_style, o.scale, o.spinal_pos, o.angle] {
+                f(v, out);
+            }
+        }
+        len(p.brain.neurons.len(), out);
+        for n in &p.brain.neurons {
+            n.role.encode(false, out);
+            f(n.tau, out);
+            f(n.bias, out);
+            out.extend_from_slice(n.activation_type.as_deref().unwrap_or("-").as_bytes());
+            out.push(0);
+        }
+        len(p.brain.synapses.len(), out);
+        for s in &p.brain.synapses {
+            out.extend_from_slice(&s.key.to_le_bytes());
+            f(s.weight, out);
+            gene(&p.genes[s.owner].gene, out);
+            out.push(s.plastic as u8);
+        }
+    }
+
     #[test]
     fn test_parse_genome_golden_master() {
-        let mut combined = String::new();
+        let mut combined = Vec::new();
         for g in golden_genomes() {
-            let mut pheno = parse_genome(&g, None, None);
-            pheno.latin_name.clear(); // covered by test_latin_name_is_deterministic
-            combined.push_str(&serde_json::to_string(&pheno).unwrap());
+            model_fields(&parse_genome(&g, None, None), &mut combined);
         }
-        let fingerprint = fnv1a(combined.as_bytes());
+        let fingerprint = fnv1a(&combined);
         println!("GOLDEN_FINGERPRINT={:#018x}", fingerprint);
         assert_eq!(fingerprint, GOLDEN_FINGERPRINT);
     }
@@ -3065,8 +3107,10 @@ mod tests {
     // slice C: gene identity by promoter spelling + occurrence, 0x0c404a33923c8dd9 -> 0x65f701a6937c1e71;
     // P4 TCK-152: `plastic` flag per synapse, 0x65f701a6937c1e71 -> 0xe0a2bfd1c7310306, unchanged without the flag;
     // P6 TCK-151: `basalMetabolicRate` removed from the phenotype (cost computed by `biology::metabolism`),
-    // 0xe0a2bfd1c7310306 -> 0x9d206dfd8124f808)
-    const GOLDEN_FINGERPRINT: u64 = 0x0ab34073297ace74;
+    // 0xe0a2bfd1c7310306 -> 0x9d206dfd8124f808; TCK-190 tanh thalamus sum nodes -> 0x0ab34073297ace74;
+    // TCK-197: hash of the model fields only (`model_fields`) instead of the full serde output, and the motifs OUT, STM,
+    // TEM added to `golden_genomes`, 0x0ab34073297ace74 -> 0x6b78c31a4d19b0e8, no model change)
+    const GOLDEN_FINGERPRINT: u64 = 0x6b78c31a4d19b0e8;
 
     /// A copy of `genome` with the letter at `index` changed such that the gene table keeps every gene identity.
     fn letter_change(genome: &str, index: usize) -> Mutation {

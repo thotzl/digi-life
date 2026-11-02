@@ -1,5 +1,5 @@
 ---
-sources: [.agents/state/active-task.md, .agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/testing-strategies/SKILL.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md]
 ---
 
 # Invariants (do not regress)
@@ -13,7 +13,7 @@ Rules verified against the code. Breaking one has caused real defects before.
 5. **Bundle icons stay registered.** `tauri.conf.json` → `bundle.icon` must list `icons/icon.ico` and `icons/icon.icns` (valid files, generated via `npx tauri icon`), or the Windows/macOS packagers fail.
 6. **No DB work in the hot loop.** Keep SQLite access out of the per-step physics path; batch writes on timers or events (RV-P01). See [[wiki/architecture/simulation-engine]].
 7. **Bindings are committed.** After changing a `#[derive(TS)]` struct run `cargo test` and commit `bindings/`; CI fails on drift. See [[wiki/architecture/ipc-protocol]].
-8. **Golden master is intentional.** Update `GOLDEN_FINGERPRINT` only for intended phenotype/brain model changes and say so in the ticket. The same holds for the trainer reference report `tests/reference/trainer-ci.json` checked in CI (TCK-186). See [[wiki/quality/testing]].
+8. **Golden master is intentional.** Update `GOLDEN_FINGERPRINT` only for intended phenotype/brain model changes and say so in the ticket. The same holds for the trainer reference reports `tests/reference/trainer-ci.json` (TCK-186) and `tests/reference/trainer-ci-curriculum.json` (TCK-197) checked in CI. See [[wiki/quality/testing]].
 9. **Model change bumps `MODEL_VERSION`.** A change that makes stored genomes' phenotypes or synapse weights invalid (normally one that changes the golden master) bumps `MODEL_VERSION` in `src/database.rs` in the same commit; the next start then resets the model tables instead of loading weights that no longer match (TCK-183). See [[wiki/architecture/persistence]].
 
 10. **Dev and installed app never share a data folder.** `npm run tauri:dev` merges `tauri.dev.conf.json`, whose identifier is the release identifier plus `.dev`; the data folder (DB) follows the identifier. A dev build with a new `MODEL_VERSION` would otherwise reset the save data of the installed test version, and two engines would write one DB (TCK-195). See [[wiki/quality/ci-and-tooling]].
@@ -23,4 +23,4 @@ Rules verified against the code. Breaking one has caused real defects before.
 - Rules 1–3 protect the engine/UI coupling, 4 the physics model, 5 the release build, 6–8 performance and contracts, 9 stored data across model changes, 10 the save data of an installed test version.
 - Rules 2 and 3 are not covered by tests (RV-X02).
 
-Sources: `.agents/state/active-task.md`, `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `.agents/skills/testing-strategies/SKILL.md`, TCK-150, TCK-183, TCK-186.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `.agents/skills/testing-strategies/SKILL.md`, TCK-150, TCK-183, TCK-186.

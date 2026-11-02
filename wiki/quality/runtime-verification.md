@@ -1,5 +1,5 @@
 ---
-sources: [HANDOFF.md, tickets/closed/TCK-142-docs-skills-ticket-sync.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, docs/revisit/00-executive-summary.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
+sources: [tickets/closed/TCK-142-docs-skills-ticket-sync.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md]
 ---
 
 # Runtime Verification
@@ -39,4 +39,4 @@ What has been verified by actually running the app, as opposed to tests or stati
 - App start, persistence location and state restore are verified at runtime.
 - Ocean and trainer core flows are smoke-checked per phase (TCK-186); the installed Windows build, update and uninstall are verified (TCK-195); catalogue flows and Linux/macOS builds are not.
 
-Sources: `HANDOFF.md`, TCK-134, TCK-142, TCK-186, `docs/revisit/00-executive-summary.md`.
+Sources: TCK-134, TCK-142, TCK-186.

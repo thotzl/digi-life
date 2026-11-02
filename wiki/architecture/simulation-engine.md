@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architecture.md, docs/revisit/03-performance.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-176-automatic-training-curriculum.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, src/server/trainer_ipc.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-176-automatic-training-curriculum.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, src/server/trainer_ipc.rs]
 ---
 
 # Simulation Engine
@@ -59,4 +59,4 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 - Trainer IPC is typed (`trainer_ipc.rs`); room switches are deferred to the generation boundary and every generation ends with `TRAINER_STATE_CHANGED`.
 - Ocean engine structure, world-size constants and Ocean RNG are known limitations (RV-A01, RV-A05, RV-T04).
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `docs/revisit/02-architecture.md`, `docs/revisit/03-performance.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-176, TCK-177, TCK-185, TCK-184, TCK-186.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-129, TCK-139, TCK-149, TCK-173, TCK-176, TCK-177, TCK-185, TCK-184, TCK-186.

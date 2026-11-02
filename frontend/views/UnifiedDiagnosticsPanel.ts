@@ -1,4 +1,4 @@
-import { styled } from "../core/styled";
+import { html, styled } from "../core/styled";
 import { escapeHtml } from "../core/escape";
 import { effect } from "@preact/signals-core";
 import { BrainRenderer } from "../render/brainRenderer";
@@ -320,7 +320,7 @@ export class UnifiedDiagnosticsPanel {
     // 1. Fallback State element (visible when no creature is focused)
     this.fallbackEl = FallbackState({
       children: [
-        `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.35; margin-bottom:12px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+        html(`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.35; margin-bottom:12px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`),
         styled("p")``({ children: "Select a specimen or sandbox chamber to decouple its genetics in real-time." })
       ]
     });
@@ -385,7 +385,8 @@ export class UnifiedDiagnosticsPanel {
                 PreviewMetaText({
                   children: [
                     styled("b")``({ style: { color: "#fff" }, children: "HD Phenotype Preview" }),
-                    `<br/>60Hz muscle & spinal preview compiled direct from active chromatin loci.`
+                    html("<br/>"),
+                    "60Hz muscle & spinal preview compiled direct from active chromatin loci."
                   ]
                 })
               ]

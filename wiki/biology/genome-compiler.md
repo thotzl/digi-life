@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116-sequence-based-dynamic-genome-regulatory-network.md, tickets/closed/TCK-117-biochemical-codon-groups-wobble-matching.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-140-trainer-shared-performance.md, tickets/closed/TCK-162-deterministic-latin-name.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-144-motion-vision-channel-design.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md]
 ---
 
 # Genome Compiler
@@ -115,4 +115,4 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 - Heredity after 15 trainer ops rose from 0.32 to 0.81 (TCK-179, TCK-184).
 - Any model change shows up in the golden master ([[wiki/quality/testing]]).
 
-Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-150, TCK-162, TCK-172, TCK-173, TCK-174, TCK-179, TCK-181, TCK-184, TCK-187, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `README.md`, `.agents/skills/biology-dna/SKILL.md`, TCK-116, TCK-117, FIX-131, TCK-140, TCK-144, TCK-150, TCK-162, TCK-172, TCK-173, TCK-174, TCK-179, TCK-181, TCK-184, TCK-187.

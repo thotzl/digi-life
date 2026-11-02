@@ -15,4 +15,4 @@ description: Rules for changing the genome compiler, CTRNN brain, sensing, metab
 - Any change that alters phenotypes or brains changes the golden master (`test_parse_genome_golden_master`). Update `GOLDEN_FINGERPRINT` only for intended model changes and state it in the ticket.
 - New promoters must be added to the protected motifs in `mutate_genome`.
 - Do not draw evolutionary conclusions from Ocean generation counters while RV-B01 (TCK-143) is open.
-- Model design decisions (species model, plasticity, evaluation order, motion vision) are pool tickets awaiting the user; do not implement them without a decision.
+- Plasticity (TCK-152), evaluation order (TCK-153) and motion vision (TCK-144) are decided and closed ([[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]]). The species model (TCK-148) is still a pool ticket awaiting the user; do not implement it without a decision.

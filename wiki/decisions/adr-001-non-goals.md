@@ -1,5 +1,5 @@
 ---
-sources: [docs/revisit/roadmap.md]
+sources: []
 ---
 
 # ADR-001: Non-goals of the Stabilization and Rebuild

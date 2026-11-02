@@ -16,7 +16,7 @@ All commands are executed from the **repository root directory** (`Cargo.toml` a
 | `npm run build` | **Type-check and build the frontend** (`tsc` + Vite into `dist/`) |
 | `cargo test` | **Run Rust unit tests** (DNA compiler, CTRNN brain, database schema); also regenerates `bindings/` |
 | `npm run types:generate` | Alias for `cargo test` (ts-rs export) |
-| `npm run test` | Vitest (configured; no frontend test files exist yet) |
+| `npm run test` | Vitest frontend unit tests (`frontend/**/*.test.ts`) |
 
 ### Windows developer setup
 1. Install Rust via [rustup](https://rustup.rs) with the `stable-msvc` toolchain.

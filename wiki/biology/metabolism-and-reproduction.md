@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, docs/revisit/01-critical-bugs.md, docs/revisit/04-simulation-model.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md, src/biology/metabolism.rs]
+sources: [.agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-119-dynamic-ctrnn-neuro-generation-and-epigenetic-learning.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-185-creature-factory.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md, src/biology/metabolism.rs]
 ---
 
 # Metabolism, Reproduction and Species
@@ -93,4 +93,4 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 - Ocean offspring are not simulated, so the Ocean does not evolve (RV-B01); trainer data is the evolution signal.
 - A bite moves energy from victim to attacker (capped by damage and victim energy), at most one bite per attacker and tick with a per-pair cooldown (TCK-145, RV-B07 resolved); species = genome string.
 
-Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-145, TCK-149, TCK-151, TCK-152, TCK-178, TCK-179, TCK-182, TCK-185, `src/biology/metabolism.rs`, `docs/revisit/01-critical-bugs.md`, `docs/revisit/04-simulation-model.md`.
+Sources: `.agents/skills/biology-dna/SKILL.md`, TCK-119, TCK-128, TCK-129, TCK-145, TCK-149, TCK-151, TCK-152, TCK-178, TCK-179, TCK-182, TCK-185, `src/biology/metabolism.rs`.

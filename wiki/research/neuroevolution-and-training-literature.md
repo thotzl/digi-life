@@ -1,5 +1,5 @@
 ---
-sources: [tickets/ongoing/TCK-171-training-track-epic.md]
+sources: [tickets/closed/TCK-171-training-track-epic.md]
 ---
 
 # Neuroevolution and Training Literature

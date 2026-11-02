@@ -1,5 +1,5 @@
 ---
-sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-176-automatic-training-curriculum.md]
+sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-152-hebbian-plasticity-model.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-176-automatic-training-curriculum.md]
 ---
 
 # Glossary
@@ -47,4 +47,4 @@ sources: [README.md, docs/revisit/README.md, .agents/skills/biology-dna/SKILL.md
 
 - Terms map to articles; RV-IDs mark known limitations and fixes.
 
-Sources: `README.md`, `docs/revisit/README.md`, agent skills.
+Sources: `README.md`, agent skills.

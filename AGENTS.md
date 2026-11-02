@@ -20,7 +20,7 @@ At session start: the user's request defines the session task; the project state
 Wiki and tickets together hold (almost) all project knowledge. Read them before analysing the code from scratch:
 
 - **Wiki** (`wiki/_master-index.md`): current state of code, architecture and biology model, results of closed tickets, known limitations (with `RV-*` IDs), decisions (ADRs) and research.
-- **Tickets** (`tickets/`): all open work and findings with code locations, research, decisions and acceptance criteria. Roadmap: epic TCK-169. Current focus: epic TCK-171 (training track, phases P1–P8).
+- **Tickets** (`tickets/`): all open work and findings with code locations, research, decisions and acceptance criteria. Roadmap: epic TCK-169. Current focus: epic TCK-196 (plugin architecture rebuild, phases R0–R6); the training track TCK-171 is closed.
 
 Skills hold agent rules and link to the wiki. Release notes: `CHANGELOG.md`. Verify against the code before changing it; if wiki and code disagree, the code wins and the wiki gets corrected.
 

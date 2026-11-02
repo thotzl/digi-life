@@ -12,6 +12,7 @@ description: Rules for changing the Pixel DNA Life webview UI - views, router, C
 - Only `navigateTo` in `frontend/core/router.ts` sends `SET_MODE`; `trainer.ts` must never send `SET_MODE: trainer` on load.
 - The client is a renderer: never mutate authoritative simulation state, only send actions.
 - Untrusted strings (names, genomes, logs) go through `textContent` or `escapeHtml` (`frontend/core/escape.ts`), never raw `innerHTML`.
+- `styled` children: strings are always text; static markup (icon SVG) only through `html()` from `frontend/core/styled.ts`. Never wrap user or backend data in `html()`. The CSP in `tauri.conf.json` forbids inline scripts and remote origins.
 - World data comes from the backend (`INIT_STATE`); do not generate or hardcode world geometry in the frontend.
 - When touching IPC types, prefer types from `bindings/` over adding to `frontend/shared/types.ts` (RV-A03).
 - Verify with `npm run build` (tsc + Vite).
