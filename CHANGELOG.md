@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.29] - 2026-11-02
+
+Epic TCK-196, phase R0 (safety net). New golden master fingerprint (hash over model fields only); no model change, trainer reference unchanged.
+
+### Security
+- Creature names could inject HTML: a catalogue name such as `<img onerror=...>` ran script with full app access. Text is now always rendered as text; markup only through an explicit marker for built-in icons. A restrictive Content Security Policy is set for the app window (ref TCK-197).
+
+### Added
+- CI runs two more trainer reference reports (curriculum with final evaluation, curriculum with rehearsal) and a documentation link check (ref TCK-197).
+
+### Changed
+- The golden master hashes only model fields, so refactoring display labels or dropping dead payload no longer changes it; the OUT, STM and TEM genes are now part of the golden genomes (ref TCK-197).
+
 ## [1.12.28] - 2026-11-02
 
 Epic TCK-196, phase R0. Dependency security alerts.

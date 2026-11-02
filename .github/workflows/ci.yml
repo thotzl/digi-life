@@ -58,6 +58,12 @@ jobs:
           cargo run --release --features runner --bin trainer_runner -- run --seed ci-curriculum --generations 4 --scenario curriculum --population 16 --rehearsal 0 --curriculum-upper 0.05 --curriculum-lower 0.02 --eval-final standard,exploration --eval-trials 3 --parallel true --out target/trainer-ci-curriculum.json
           node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci-curriculum.json target/trainer-ci-curriculum.json
 
+      # Rehearsal trials in the curriculum (share 0.25), not covered by the other references (TCK-197)
+      - name: trainer rehearsal reference run
+        run: |
+          cargo run --release --features runner --bin trainer_runner -- run --seed ci-rehearsal --generations 4 --scenario curriculum --population 16 --rehearsal 0.25 --curriculum-upper 0.05 --curriculum-lower 0.02 --parallel true --out target/trainer-ci-rehearsal.json
+          node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci-rehearsal.json target/trainer-ci-rehearsal.json
+
       # Wikilinks, `sources:` and doc paths in the wiki, skills and open/ongoing tickets must resolve (TCK-197)
       - name: doc link check
         run: node scripts/check-links.mjs

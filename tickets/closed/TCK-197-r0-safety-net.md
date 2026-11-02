@@ -1,7 +1,7 @@
 ---
 id: TCK-197
 title: "R0 Safety Net: References, Golden Master on Model Fields, XSS/CSP, Doc Checks"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -26,3 +26,12 @@ Everything the later refactor phases need to prove "behaviour unchanged", plus o
 - CI runs both trainer references and the link check; all green.
 - New golden master stated in the verification; `cargo test` green; trainer references unchanged.
 - XSS regression test fails before the fix, passes after; app starts with CSP in dev and release; 0 console errors in the UI smoke.
+
+## Verification (2026-11-02, v1.12.29)
+- Reproduction first (XSS): `npx vitest run frontend/core/styled.test.ts` before the fix failed 3/3: `AssertionError: expected [ '<img src=x onerror=alert(1)>' ] to deeply equal []` (string child parsed as HTML), `expected [ '  <svg onload=alert(1)>' ] to deeply equal []`, `expected 'undefined' to be 'function'` (no `html()` marker). After the fix 3/3 pass. `frontend/core/styled.ts`: string/number children are always text, markup only via `html()` (`TrustedHtml`); icons in `Icons.ts`, legend spans in `TrainerView.ts`, fallback SVG in `UnifiedDiagnosticsPanel.ts` converted.
+- CSP in `tauri.conf.json` as specified, plus `dangerousDisableAssetCspModification: ["style-src"]` (Tauri's style nonces would make browsers ignore `'unsafe-inline'`, which the inline style attributes and Vite dev styles need). UI smoke in the dev app OK (Ocean, inject, trainer generation, pause, reset; 0 console errors); release exe (`target/release/BroodBattle.exe`, v1.12.28 build) via `installed.cjs`: menu, Ocean 25/25, trainer to generation 3, 0 console errors.
+- Golden master (intended, no model change, no `MODEL_VERSION` bump): `0x0ab34073297ace74` -> `0x6b78c31a4d19b0e8`. Hash over model fields only (body traits incl. methylations; organs kind/side/params; neurons role/tau/bias/activation; synapses key/weight/owner gene/plastic) instead of the full serde output; motifs `OUT`, `STM`, `TEM` added to `golden_genomes`.
+- References: standard `tests/reference/trainer-ci.json` unchanged and matching; new `tests/reference/trainer-ci-curriculum.json` (`--seed ci-curriculum --generations 4 --scenario curriculum --population 16 --rehearsal 0 --curriculum-upper 0.05 --curriculum-lower 0.02 --eval-final standard,exploration --eval-trials 3`; gate hold, hold, up, up; final_eval standard 0.292, exploration 0.000); new `tests/reference/trainer-ci-rehearsal.json` (`--seed ci-rehearsal ... --rehearsal 0.25`, 2 rehearsal trials per generation, gate hold x3, up). All three reproduce exactly; CI runs all three.
+- `cargo test` 182 passed, 1 ignored; `npm test` 13 passed (3 files); `npm run build` ok.
+- `scripts/check-links.mjs` in CI: wikilinks, `sources:` and doc paths in wiki, skills and open/ongoing tickets; 55 breaks found and fixed (dead `docs/revisit/*`, `HANDOFF.md`, `.agents/state/active-task.md` sources in 24 articles, TCK-171 paths); now OK.
+- Close checklist in `project-baseline`; `client-rendering` rule for `html()`/CSP; stale texts in `README.md`, `AGENTS.md` (focus TCK-196), `biology-dna`, `simulation-analytics` fixed. `.claude/` (agent worktrees) added to `.gitignore`.
