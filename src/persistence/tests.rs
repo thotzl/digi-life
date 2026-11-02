@@ -509,7 +509,6 @@ mod contract {
         assert_eq!(repo.ocean_snapshot().unwrap(), None);
         repo.save_ocean_snapshot("{\"a\":1}").unwrap();
         repo.save_ocean_snapshot("{\"a\":2}").unwrap();
-        repo.save_progenitor_genome("COL").unwrap();
         assert_eq!(repo.ocean_snapshot().unwrap().as_deref(), Some("{\"a\":2}"));
         repo.clear_ocean_state().unwrap();
         assert_eq!(repo.ocean_snapshot().unwrap(), None);

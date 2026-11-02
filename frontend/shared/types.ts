@@ -62,19 +62,9 @@ export interface CreaturePhenotype {
   methylations: number[];
 }
 
-export interface SpeciesRecord {
-  id: string;             // Sense DNA string serves as the unique ID
-  name: string;           // Procedural scientific name (Latin)
-  genome: string;         // The Sense DNA
-  antisense: string;      // The complementary strand
-  parentSpeciesId: string | null; // Parent Species DNA ID (Lineage / Stammbaum!)
-  status: "alive" | "extinct";    // Evolved state
-  peakPopulation: number; // Highest concurrent specimen count reached
-  birthTime: number;      // Creation epoch
-  extinctionTime?: number; // Sinking epoch
-  generation: number;     // Ancestral depth
-  carnivory: number;      // Predation bias
-}
+// Species roster entry: the `get_registered_species` result type (ts-rs, TCK-157). The Ocean event payloads are the
+// binding types of `UiEvent` (frontend/core/ipc.ts); the model types below are aligned to the bindings in TCK-160.
+export type { SpeciesEntry as SpeciesRecord } from "../../bindings/SpeciesEntry";
 
 export interface CreatureAgent {
   id: number;
@@ -100,91 +90,11 @@ export interface CreatureAgent {
   bendAngle?: number;
 }
 
-export interface FoodSpore {
-  id: number;
-  typeId: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  amount: number;
-}
 
-export interface TelemetryCreatureInput {
-  id: number;
-  speciesId: string;
-  genome: string;
-  antisense: string;
-  px: number;
-  py: number;
-  vx: number;
-  vy: number;
-  headingAngle: number;
-  omegaRot: number;
-  energy: number;
-  age: number;
-  generation: number;
-  hasEaten: boolean;
-  phenotype?: CreaturePhenotype;
-}
-
-export interface TelemetryPayload {
-  type: "TELEMETRY_TICK" | "INIT_STATE" | "DATABASE_CHANGED" | "BITE_EVENT" | "LOG_EVENT";
-  highestGeneration: number;
-  running: boolean;
-  timeStr?: string;
-  creatures: TelemetryCreatureInput[];
-  foodPellets: FoodSpore[];
-  selectedBrain?: {
-    id: number;
-    activations: number[];
-  };
-}
-
-export interface Vertex {
-  x: number;
-  y: number;
-  r: number;
-  angle: number;
-}
-
-export interface ProceduralObstacle {
-  id: number;
-  x: number;
-  y: number;
-  radius: number;
-  type: 'rock' | 'coral';
-  color: string;
-  vertices: Vertex[];
-}
-
-export interface CurrentVent {
-  id: number;
-  x: number;
-  y: number;
-  radius: number;
-  forceType: 'push' | 'pull' | 'vortex';
-  strength: number;
-}
-
-export interface BiomeArea {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  sporeSpawnRate: number;
-  sporeEnergyValue: number;
-  hazardDamage: number;
-  color: string;
-}
-
-export interface ProceduralWorld {
-  seed: string;
-  width: number;
-  height: number;
-  obstacles: ProceduralObstacle[];
-  vents: CurrentVent[];
-  biomes: BiomeArea[];
-}
+// Food and world types are generated from Rust (ts-rs, TCK-157)
+export type { FoodSpore } from "../../bindings/FoodSpore";
+export type { Vertex } from "../../bindings/Vertex";
+export type { ProceduralObstacle } from "../../bindings/ProceduralObstacle";
+export type { CurrentVent } from "../../bindings/CurrentVent";
+export type { BiomeArea } from "../../bindings/BiomeArea";
+export type { ProceduralWorld } from "../../bindings/ProceduralWorld";

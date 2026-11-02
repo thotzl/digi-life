@@ -2,7 +2,7 @@ import { styled } from "../core/styled";
 import { escapeHtml } from "../core/escape";
 import { navigateTo, currentView } from "../core/router";
 import { effect } from "@preact/signals-core";
-import { safeInvoke } from "../api";
+import { call, type CallError } from "../core/ipc";
 import { IconCatalogue, IconBack, IconRocket, IconWeights } from "../components/Icons";
 import { UnifiedDiagnosticsPanel } from "./UnifiedDiagnosticsPanel";
 import {
@@ -358,8 +358,8 @@ export class CatalogueView {
     this.listEl.innerHTML = `<div class="fallback-state">Sensing database ledger...</div>`;
     
     try {
-      const creatures = await safeInvoke("get_catalogue_creatures");
-      if (!creatures || creatures.length === 0) {
+      const creatures = await call("get_catalogue_creatures");
+      if (creatures.length === 0) {
         this.listEl.innerHTML = `
           <div class="fallback-state">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="opacity:0.3; margin-bottom:10px;"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
@@ -454,8 +454,8 @@ export class CatalogueView {
         this.listEl.appendChild(card);
       });
     } catch (e) {
-      console.error("[Catalogue] Failed to load ledger list:", e);
-      this.listEl.innerHTML = `<div class="fallback-state" style="color:#ef4444;">Failed to read SQLite database: ${escapeHtml(e)}</div>`;
+      const message = (e as CallError).message ?? String(e);
+      this.listEl.innerHTML = `<div class="fallback-state" style="color:#ef4444;">Failed to read SQLite database: ${escapeHtml(message)}</div>`;
     }
   }
 
@@ -475,12 +475,9 @@ export class CatalogueView {
 
     // Fetch full compiled phenotype from the backend
     try {
-      const pheno = await safeInvoke("get_fossil_phenotype", { genome: creature.genome });
-      if (pheno) {
-        selectedPhenotype.value = pheno;
-      }
-    } catch (e) {
-      console.error("[Catalogue] Failed to decompile phenotype:", e);
+      selectedPhenotype.value = await call("get_fossil_phenotype", { genome: creature.genome });
+    } catch {
+      // reported by the IPC client (toast)
     }
 
     // Highlighting selected card
@@ -527,15 +524,13 @@ export class CatalogueView {
       onClick: async () => {
         const loadSyn = checkbox.checked;
         try {
-          const ok = await safeInvoke("spawn_catalogue_creature_to_ocean", {
+          await call("spawn_catalogue_creature_to_ocean", {
             id: creature.id,
             loadLearnedSynapses: loadSyn
           });
-          if (ok) {
-            alert(`Clone of "${creature.name}" was successfully released into the ocean!`);
-          }
-        } catch (err) {
-          alert(`Error during spawning: ${err}`);
+          alert(`Clone of "${creature.name}" was successfully released into the ocean!`);
+        } catch {
+          // reported by the IPC client (toast)
         } finally {
           this.modalContainer.innerHTML = ""; // close modal
         }
@@ -588,8 +583,8 @@ export class CatalogueView {
     this.modalContainer.innerHTML = "";
 
     try {
-      const runs = await safeInvoke("get_trainer_runs");
-      if (!runs || runs.length === 0) {
+      const runs = await call("get_trainer_runs");
+      if (runs.length === 0) {
         alert("No training runs found in the database. First create a run in the Training Chamber!");
         return;
       }
@@ -612,10 +607,10 @@ export class CatalogueView {
       });
 
       // Populate select options with all available runs
-      runs.forEach((run: any) => {
+      runs.forEach((run) => {
         const opt = document.createElement("option");
-        opt.value = JSON.stringify({ id: run.run_id, gen: run.max_gen });
-        opt.innerText = `${run.run_id} (Generation ${run.max_gen}, Best Fit: ${run.max_fit.toFixed(2)})`;
+        opt.value = JSON.stringify({ id: run.runId, gen: run.maxGeneration });
+        opt.innerText = `${run.runId} (Generation ${run.maxGeneration}, Best Fit: ${run.maxFitness.toFixed(2)})`;
         runSelect.appendChild(opt);
       });
 
@@ -634,16 +629,14 @@ export class CatalogueView {
         onClick: async () => {
           const selectedData = JSON.parse(runSelect.value);
           try {
-            const ok = await safeInvoke("add_catalogue_creature_to_training", {
+            await call("add_catalogue_creature_to_training", {
               creatureId: creature.id,
               runId: selectedData.id,
               generation: selectedData.gen
             });
-            if (ok) {
-              alert(`Creature "${creature.name}" successfully injected into training run "${selectedData.id}" (Generation ${selectedData.gen})!\n\nIt will compete in one of the sandbox chambers starting from the next generation.`);
-            }
-          } catch (err) {
-            alert(`Error injecting into training: ${err}`);
+            alert(`Creature "${creature.name}" successfully injected into training run "${selectedData.id}" (Generation ${selectedData.gen})!\n\nIt will compete in one of the sandbox chambers starting from the next generation.`);
+          } catch {
+            // reported by the IPC client (toast)
           } finally {
             this.modalContainer.innerHTML = ""; // close modal
           }
@@ -687,8 +680,8 @@ export class CatalogueView {
 
       backdrop.appendChild(modalBox);
       this.modalContainer.appendChild(backdrop);
-    } catch (e) {
-      console.error("[Catalogue] Failed to fetch runs for inject dialog:", e);
+    } catch {
+      // reported by the IPC client (toast)
     }
   }
 
@@ -702,15 +695,13 @@ export class CatalogueView {
     if (!name) return;
 
     try {
-      const ok = await safeInvoke("rename_catalogue_creature", { id: creature.id, newName: name });
-      if (ok) {
-        if (selectedId.value === creature.id) {
-          selectedName.value = name;
-        }
-        this.refreshList();
+      await call("rename_catalogue_creature", { id: creature.id, newName: name });
+      if (selectedId.value === creature.id) {
+        selectedName.value = name;
       }
-    } catch (e) {
-      alert(`Error renaming: ${e}`);
+      this.refreshList();
+    } catch {
+      // reported by the IPC client (toast)
     }
   }
 
@@ -722,15 +713,13 @@ export class CatalogueView {
     if (!confirmWipe) return;
 
     try {
-      const ok = await safeInvoke("delete_from_catalogue", { id: creature.id });
-      if (ok) {
-        if (selectedId.value === creature.id) {
-          selectedId.value = null; // Clear focus
-        }
-        this.refreshList();
+      await call("delete_from_catalogue", { id: creature.id });
+      if (selectedId.value === creature.id) {
+        selectedId.value = null; // Clear focus
       }
-    } catch (e) {
-      alert(`Error deleting: ${e}`);
+      this.refreshList();
+    } catch {
+      // reported by the IPC client (toast)
     }
   }
 }

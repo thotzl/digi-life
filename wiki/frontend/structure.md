@@ -9,12 +9,13 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TC
 ## Boot and navigation
 
 - `main.ts` mounts all views once (`views/MainMenu.ts`, `OceanView.ts`, `TrainerView.ts`, `CatalogueView.ts`), then dynamically imports `ocean.ts` and `trainer.ts`; visibility follows the `currentView` signal.
-- `core/router.ts` — `navigateTo(view)` pauses loops and sends `SET_MODE` to the backend; the only place that sets the mode ([[wiki/architecture/invariants]]).
-- `api.ts` — `safeInvoke` wrapper around `invoke` (returns `null` outside Tauri and on errors, logging `console.warn`) and a phenotype cache over `get_fossil_phenotype`. `ocean.ts` also calls `invoke` directly. Failed saves/deletes give no UI feedback (RV-F04).
+- `core/router.ts` — `navigateTo(view)` pauses both simulations and switches the backend mode (`setMode` → command `set_mode`, in that order); the only place that sets the mode ([[wiki/architecture/invariants]]).
+- `core/ipc.ts` — typed IPC client, the only module that calls Tauri (TCK-157): `call(command, args)` (typed by the `Commands` map, rejects with `IpcError` / `transport`), `send(action)` (`ClientAction` without `SET_MODE`, resolves accepted or not), `setMode`, `onUiEvent` (one `simulation-state` listener for the app), `onIpcError` (default: toast from `core/toast.ts`). Every failed call or rejected action shows a toast, so failed saves/deletes are visible (RV-F04 resolved); it replaced `api.ts` / `safeInvoke`, which returned `null` on errors. Contract [[wiki/contracts/ipc-message]].
+- `core/phenotypes.ts` — phenotype cache over `get_fossil_phenotype` (bounded, one request per genome).
 
 ## Loop modules
 
-- `ocean.ts` / `trainer.ts` — side-effect modules with global state: `"simulation-state"` listeners registered on import (never removed, each handles all event types, RV-F05) and render loops (`drawBetaSimulationFrame` via `requestAnimationFrame` in Ocean; the trainer loop below). Coupled to views via `document.getElementById`.
+- `ocean.ts` / `trainer.ts` — side-effect modules with global state: `onUiEvent` handlers registered on import (never removed, each receives every typed `UiEvent` and switches on `type`, RV-F05 partly) and render loops (`drawBetaSimulationFrame` via `requestAnimationFrame` in Ocean; the trainer loop below). Coupled to views via `document.getElementById`.
 - **Trainer render loop** (TCK-177, P8; `frontend/trainer.ts`): the 25 Hz `TRAINER_TELEMETRY_TICK` handler only stores the latest snapshot per sandbox (`lastTelemetry`) and marks it dirty (`scheduleDraw`); a continuous `requestAnimationFrame` loop (`renderFrame`) draws the dirty sandboxes once per frame and skips unchanged ones, so a slow GPU drops frames instead of queueing draws. The loop runs only while the trainer view is active: a signals `effect` on `currentView` starts it (marking every sandbox dirty) and cancels it when the view is left. Before: P6 coalesced one rAF draw per telemetry burst; earlier, every telemetry tick redrew all canvases.
 - Trainer sandbox tiles have a 360 × 360 px canvas backing store (`canvasWidth` / `canvasHeight`; tiles show at ~130–160 CSS px, so 360 covers DPR 2; a 1000 px store per tile made 16 tiles GPU-bound, P6) ([[wiki/architecture/performance]]).
 
@@ -40,7 +41,7 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TC
 - `signals.ts`: `selectedId`, `selectedEnergy`, `selectedGenome`, `selectedPhenotype`, `selectedBrainActivations`, `speciesRosterSignal`, ...; UI reacts via signal `effect`s.
 - The legacy positional-genome helpers (`getLocusDescription`, `computeActiveGeneSpans` with `ST`/`GO`) were removed; gene meanings come from backend spans (RV-F03 resolved, TCK-187).
 - `shared/genome.ts` — display tables only: promoter → meaning (incl. which promoters are read first-only), systemic input, organ kind, channel and motor names; `describeGene`, `describeRole`, `describeSynapse`, `geneIndexByPosition`. The backend decides which genes and neurons exist. Tests `shared/genome.test.ts` (Vitest).
-- `shared/types.ts` — re-exports the brain and gene types from `bindings/`; phenotype, agent and Ocean telemetry types are still handwritten (RV-A03 partly, RV-F01). The trainer imports its event, action and stats types directly from `bindings/` (TCK-177).
+- `shared/types.ts` — re-exports the brain, gene, species (`SpeciesRecord` = `SpeciesEntry`), food and world types from `bindings/`; the phenotype and agent model types used by the renderers are still handwritten (RV-A03 partly, RV-F01). All event, action and command result types come from `bindings/` through `core/ipc.ts` (TCK-157); the handwritten `TelemetryPayload` was removed.
 - `trainerMetrics.ts` — trainer UI helpers (TCK-177): `formatRate`, `formatFirstCatch` (ticks and seconds at `TICKS_PER_SECOND` 60), `formatLevel` (fixed / auto / manual), `pendingSwitchLabel`, `TRAINING_MODE_LABELS`, `modeChoice` (curriculum with the gate off = "manual"), `ProgressHistory` (points of the current run). Tests `trainerMetrics.test.ts` (Vitest).
 
 ## Security

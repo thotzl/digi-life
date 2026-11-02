@@ -59,13 +59,12 @@ pub trait TrainerRepo {
     fn delete_trainer_run(&self, run_id: &str) -> RepoResult<()>;
 }
 
-/// `simulation_state`: the Ocean snapshot (JSON owned by the engine) and the legacy progenitor key.
+/// `simulation_state`: the Ocean snapshot (JSON owned by the engine). The legacy key `progenitor_genome` (written by
+/// the removed `apply_champion` command, never read; RV-D06, TCK-157) may still exist in old databases.
 pub trait OceanSnapshotRepo {
     /// Replaces the snapshot (`current_state`), `updated_at` = now (ms).
     fn save_ocean_snapshot(&self, state_json: &str) -> RepoResult<()>;
     fn ocean_snapshot(&self) -> RepoResult<Option<String>>;
-    /// `apply_champion` (RV-D06: written, never read; removed by TCK-157), `updated_at` = now (s).
-    fn save_progenitor_genome(&self, genome: &str) -> RepoResult<()>;
-    /// Deletes the snapshot and the progenitor key (`RESET_EVOLUTION`).
+    /// Deletes every key, the snapshot and a legacy progenitor key (`RESET_EVOLUTION`).
     fn clear_ocean_state(&self) -> RepoResult<()>;
 }

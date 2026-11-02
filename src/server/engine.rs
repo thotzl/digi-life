@@ -10,12 +10,14 @@ use crate::shared::dto::{CreatureAgent, FoodSpore, TelemetryCreature};
 use crate::shared::{geom, time};
 use crate::shared::physics::{step_food_spore_physics, SporePusher};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
-use crate::shared::map_generator::generate_world;
+use crate::shared::map_generator::{generate_world, ProceduralWorld};
 use crate::biology::genome::{generate_structured_genome, mutate_genome};
 use crate::biology::phenotype::parse_genome;
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_sim::{run_seed, GenomeRecord, TrainerEvent, TrainerParams, TrainerSim};
+use crate::server::ipc::{ClientAction, EngineAction, LogKind, SimMode, UiEvent, UI_EVENT_NAME};
+use crate::server::ocean_ipc::{OceanAction, OceanInitState, OceanRules, OceanTelemetryTick, OceanUiEvent, SelectedBrain};
 use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
 use crate::biology::trainer_store;
 use crate::persistence::{init_db, CatalogueRepo, Db, LogDbError, NewSpecies, OceanSnapshotRepo, SpeciesRepo, SpeciesStatus, TrainerRepo};
@@ -61,11 +63,11 @@ fn bite_target<'a>(
 
 /// Log message and type of a death: "hunted down" only for a creature that took bite damage this tick, otherwise
 /// the starvation/senescence message of the metabolism branch (metabolism and thermal stress also end at ≤ 0.1 energy).
-fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, &'static str) {
+fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, LogKind) {
     if bitten {
-        (format!("✝️ Specimen #{} '{}' was hunted down by predators.", id, latin_name), "mutation")
+        (format!("✝️ Specimen #{} '{}' was hunted down by predators.", id, latin_name), LogKind::Mutation)
     } else {
-        (format!("💀 Species '{}' (Strain: #{}) deceased due to starvation/senescence.", latin_name, id), "system")
+        (format!("💀 Species '{}' (Strain: #{}) deceased due to starvation/senescence.", latin_name, id), LogKind::System)
     }
 }
 
@@ -83,6 +85,20 @@ fn patchy_spore_position<R: Rng + ?Sized>(rng: &mut R, nutrient_centers: &[(f32,
     } else {
         (rng.gen_range(100.0..logical_width - 100.0), rng.gen_range(100.0..logical_height - 100.0))
     }
+}
+
+/// INIT_STATE: the full Ocean state for a (re)loaded or reset UI.
+fn ocean_init_state(highest_generation: u32, running: bool, seed: &str, world: &ProceduralWorld, food_pellets: &[FoodSpore], creatures: &[CreatureAgent]) -> UiEvent {
+    OceanUiEvent::InitState(OceanInitState {
+        highest_generation,
+        running,
+        seed: seed.to_string(),
+        world: world.clone(),
+        rules: OceanRules { spore_energy: 15.0 },
+        food_pellets: food_pellets.to_vec(),
+        creatures: creatures.to_vec(),
+    })
+    .into()
 }
 
 /// TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED payload: the trainer settings as the UI shows them.
@@ -111,30 +127,31 @@ fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, w
     }
 }
 
-/// Starts the engine thread. `config` is the app config of the entry point (`main.rs`); the thread owns it.
-pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>, config: AppConfig) {
+/// Starts the engine thread. `config` is the app config of the entry point (`main.rs`); the thread owns it. `rx`
+/// receives the typed client actions of the commands (TCK-157).
+pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<ClientAction>, config: AppConfig) {
     thread::spawn(move || {
         let app_config = &config;
         let db_path = crate::persistence::db_path();
         let db = init_db(&db_path).expect("Failed to initialize local DB");
 
-        // Events are buffered and flushed once per frame (in order); repeated DATABASE_CHANGED
+        // Typed events (`UiEvent`) are buffered and flushed once per frame (in order); repeated DATABASE_CHANGED
         // notifications within one frame are coalesced since the UI only refetches the roster.
-        let pending_events = std::cell::RefCell::new(Vec::<serde_json::Value>::new());
-        let emit_state = |payload: serde_json::Value| {
-            pending_events.borrow_mut().push(payload);
+        let pending_events = std::cell::RefCell::new(Vec::<UiEvent>::new());
+        let emit_state = |event: UiEvent| {
+            pending_events.borrow_mut().push(event);
         };
         let flush_events = || {
             let mut database_changed_sent = false;
-            for payload in pending_events.borrow_mut().drain(..) {
-                if payload["type"] == "DATABASE_CHANGED" {
+            for event in pending_events.borrow_mut().drain(..) {
+                if event.is_database_changed() {
                     if database_changed_sent {
                         continue;
                     }
                     database_changed_sent = true;
                 }
-                if let Err(e) = window.emit("simulation-state", payload) {
-                    log::error!("emitting 'simulation-state' failed: {}", e);
+                if let Err(e) = window.emit(UI_EVENT_NAME, event) {
+                    log::error!("emitting '{}' failed: {}", UI_EVENT_NAME, e);
                 }
             }
         };
@@ -312,7 +329,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         }
 
         // Instantly notify frontend to fetch the newly seeded species roster!
-        emit_state(json!({ "type": "DATABASE_CHANGED" }));
+        emit_state(UiEvent::database_changed());
 
         let mut last_emit_time = Instant::now();
         let mut last_food_emit_time = Instant::now();
@@ -323,201 +340,313 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         loop {
             let loop_start = Instant::now();
 
-            // Process UI Actions
-            while let Ok(action_str) = rx.try_recv() {
-                if let Ok(action) = serde_json::from_str::<serde_json::Value>(&action_str) {
-                    if let Some(act_type) = action["type"].as_str() {
-                        // Trainer actions are typed (TCK-177); the other action types are matched on the raw JSON
-                        if let Ok(trainer_action) = serde_json::from_value::<TrainerAction>(action.clone()) {
-                            let state_changed = |is_running: bool, trainer: &TrainerSim, display: usize, warp: usize, headless: bool, run_id: &str| {
-                                TrainerUiEvent::TrainerStateChanged(trainer_state(is_running, trainer, display, warp, headless, run_id)).to_payload()
-                            };
-                            match trainer_action {
-                                // Room switches take effect at the next generation (at once at a generation start; TCK-176)
-                                TrainerAction::SetTrainerMode { mode: scenario } => {
-                                    if scenario != trainer.params.scenario || trainer.pending_scenario().is_some() || (scenario == Scenario::Curriculum && !trainer.params.level_auto) {
-                                        trainer.set_scenario(scenario);
-                                        let size = trainer.room().chamber_size();
-                                        log::info!("training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
-                                    }
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+            // Process UI actions: typed `ClientAction`s, parsed and validated by the commands (TCK-157)
+            while let Ok(action) = rx.try_recv() {
+                match action {
+                    ClientAction::Trainer(trainer_action) => {
+                        let state_changed = |is_running: bool, trainer: &TrainerSim, display: usize, warp: usize, headless: bool, run_id: &str| {
+                            UiEvent::from(TrainerUiEvent::TrainerStateChanged(trainer_state(is_running, trainer, display, warp, headless, run_id)))
+                        };
+                        match trainer_action {
+                            // Room switches take effect at the next generation (at once at a generation start; TCK-176)
+                            TrainerAction::SetTrainerMode { mode: scenario } => {
+                                if scenario != trainer.params.scenario || trainer.pending_scenario().is_some() || (scenario == Scenario::Curriculum && !trainer.params.level_auto) {
+                                    trainer.set_scenario(scenario);
+                                    let size = trainer.room().chamber_size();
+                                    log::info!("training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
                                 }
-                                TrainerAction::SetTrainerLevel { level } => {
-                                    trainer.set_level(level);
-                                    log::info!("manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                                }
-                                TrainerAction::StartTraining => {
-                                    trainer_is_running = true;
-                                    emit_state(state_changed(true, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                                }
-                                TrainerAction::PauseTraining => {
-                                    trainer_is_running = false;
-                                    emit_state(state_changed(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                                }
-                                TrainerAction::TrainerReset => {
-                                    trainer_is_running = false;
+                                emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                            }
+                            TrainerAction::SetTrainerLevel { level } => {
+                                trainer.set_level(level);
+                                log::info!("manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
+                                emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                            }
+                            TrainerAction::StartTraining => {
+                                trainer_is_running = true;
+                                emit_state(state_changed(true, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                            }
+                            TrainerAction::PauseTraining => {
+                                trainer_is_running = false;
+                                emit_state(state_changed(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                            }
+                            TrainerAction::TrainerReset => {
+                                trainer_is_running = false;
 
-                                    // Delete the saved genomes and run state of the current run_id in SQLite (hard reset!)
-                                    db.delete_trainer_run(&trainer_run_id).log_db_err("deleting the trainer run");
-                                    // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
-                                    let mut fresh_params = trainer.params.clone();
-                                    if fresh_params.level_auto {
-                                        fresh_params.level = fresh_params.curriculum.start_level;
-                                    }
-                                    // A reset starts a new run: fresh seed (clock nonce), stored at once so a restart
-                                    // before the first generation end continues this run (TCK-194)
-                                    let nonce = time::now_nanos();
-                                    trainer = TrainerSim::new(fresh_params, run_seed(&app_config.core.seed, &trainer_run_id, Some(nonce)), trainer_retention, app_config);
-                                    trainer_store::save_run_state(&db, &trainer_run_id, &trainer);
-                                    trainer_run_state_loaded = true;
+                                // Delete the saved genomes and run state of the current run_id in SQLite (hard reset!)
+                                db.delete_trainer_run(&trainer_run_id).log_db_err("deleting the trainer run");
+                                // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
+                                let mut fresh_params = trainer.params.clone();
+                                if fresh_params.level_auto {
+                                    fresh_params.level = fresh_params.curriculum.start_level;
+                                }
+                                // A reset starts a new run: fresh seed (clock nonce), stored at once so a restart
+                                // before the first generation end continues this run (TCK-194)
+                                let nonce = time::now_nanos();
+                                trainer = TrainerSim::new(fresh_params, run_seed(&app_config.core.seed, &trainer_run_id, Some(nonce)), trainer_retention, app_config);
+                                trainer_store::save_run_state(&db, &trainer_run_id, &trainer);
+                                trainer_run_state_loaded = true;
 
-                                    let state = trainer_state(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
-                                    emit_state(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..state }).to_payload());
-                                }
-                                TrainerAction::SelectTrainerSandbox { id } => {
-                                    trainer_selected_sandbox_id = id;
-                                }
-                                TrainerAction::AssignSandboxCreature(assign) => {
-                                    let sb_id = assign.sandbox_id;
-                                    let m_vec = assign.methylations.unwrap_or_default();
-                                    let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
-                                    // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
-                                    let s_opt = if assign.load_learned_synapses.unwrap_or(false) {
-                                        Some(assign.synapse_weights.unwrap_or_default())
-                                    } else {
-                                        None
+                                let state = trainer_state(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
+                                emit_state(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..state }).into());
+                            }
+                            TrainerAction::SelectTrainerSandbox { id } => {
+                                trainer_selected_sandbox_id = id;
+                            }
+                            TrainerAction::AssignSandboxCreature(assign) => {
+                                let sb_id = assign.sandbox_id;
+                                let m_vec = assign.methylations.unwrap_or_default();
+                                let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
+                                // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
+                                let s_opt = if assign.load_learned_synapses.unwrap_or(false) {
+                                    Some(assign.synapse_weights.unwrap_or_default())
+                                } else {
+                                    None
+                                };
+
+                                let generation = trainer.generation;
+                                if let Some(sb) = trainer.assign_creature(sb_id, &assign.genome, m_opt, s_opt) {
+                                    // Also save this assigned creature as an active parent of this run
+                                    let record = GenomeRecord {
+                                        genome: sb.agent.genome.clone(),
+                                        name: sb.agent.phenotype.latin_name.clone(),
+                                        fitness: 0.0,
+                                        generation,
+                                        methylations: sb.agent.phenotype.methylations.clone(),
+                                        synapse_weights: sb.agent.synapse_weights.clone(),
                                     };
-
-                                    let generation = trainer.generation;
-                                    if let Some(sb) = trainer.assign_creature(sb_id, &assign.genome, m_opt, s_opt) {
-                                        // Also save this assigned creature as an active parent of this run
-                                        let record = GenomeRecord {
-                                            genome: sb.agent.genome.clone(),
-                                            name: sb.agent.phenotype.latin_name.clone(),
-                                            fitness: 0.0,
-                                            generation,
-                                            methylations: sb.agent.phenotype.methylations.clone(),
-                                            synapse_weights: sb.agent.synapse_weights.clone(),
-                                        };
-                                        trainer_store::save_assigned(&db, &trainer_run_id, generation, sb_id, &record);
-                                    }
-                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                                    trainer_store::save_assigned(&db, &trainer_run_id, generation, sb_id, &record);
                                 }
-                                TrainerAction::UpdateTrainerHyperparams(update) => {
-                                    let mut grid_changed = false;
-                                    let mut generation_base = trainer.generation;
-                                    let p = &mut trainer.params;
-                                    // Population (TCK-192): a change restores the population from the DB
-                                    if let Some(n) = update.population.map(|n| n.max(1)) {
-                                        if n != p.population {
-                                            p.population = n;
-                                            grid_changed = true;
-                                        }
-                                    }
-                                    // Displayed sandboxes: telemetry only, the simulation is not touched
-                                    if let Some(n) = update.display_count {
-                                        trainer_display_count = n.max(1);
-                                    }
-                                    if let Some(warp) = update.warp_speed {
-                                        trainer_warp_speed = warp;
-                                    }
-                                    if let Some(e_r) = update.elite_ratio {
-                                        p.elite_ratio = e_r;
-                                    }
-                                    // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
-                                    if let Some(ops) = update.mutation_rate {
-                                        let lo = p.mutation_ops_min.max(1);
-                                        p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.trainer.mutation_ops_limit.max(lo));
-                                    }
-                                    if let Some(i_r) = update.inflow_rate {
-                                        p.inflow_rate = i_r;
-                                    }
-                                    if let Some(h_r) = update.hof_rate {
-                                        p.hof_rate = h_r;
-                                    }
-                                    if let Some(mt) = update.multi_trial {
-                                        p.multi_trial = mt;
-                                    }
-                                    if let Some(hl) = update.is_headless {
-                                        trainer_is_headless = hl;
-                                    }
-                                    if let Some(lam) = update.lamarckian {
-                                        if lam != p.lamarckian {
-                                            p.lamarckian = lam;
-                                            grid_changed = true;
-                                        }
-                                    }
-                                    if let Some(r_id) = update.run_id {
-                                        if r_id != trainer_run_id {
-                                            trainer_run_id = r_id;
-                                            generation_base = 1;
-                                            grid_changed = true;
-                                            trainer_run_state_loaded = false;
-                                        }
-                                    }
-
-                                    if grid_changed {
-                                        trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &db);
-                                        trainer_run_state_loaded = true;
-                                    }
-                                    trainer_display_count = trainer_display_count.min(trainer.params.population);
-
-                                    // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
-                                    emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
-                                }
+                                emit_state(UiEvent::database_changed());
                             }
-                            continue;
+                            TrainerAction::UpdateTrainerHyperparams(update) => {
+                                let mut grid_changed = false;
+                                let mut generation_base = trainer.generation;
+                                let p = &mut trainer.params;
+                                // Population (TCK-192): a change restores the population from the DB
+                                if let Some(n) = update.population.map(|n| n.max(1)) {
+                                    if n != p.population {
+                                        p.population = n;
+                                        grid_changed = true;
+                                    }
+                                }
+                                // Displayed sandboxes: telemetry only, the simulation is not touched
+                                if let Some(n) = update.display_count {
+                                    trainer_display_count = n.max(1);
+                                }
+                                if let Some(warp) = update.warp_speed {
+                                    trainer_warp_speed = warp;
+                                }
+                                if let Some(e_r) = update.elite_ratio {
+                                    p.elite_ratio = e_r;
+                                }
+                                // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
+                                if let Some(ops) = update.mutation_rate {
+                                    let lo = p.mutation_ops_min.max(1);
+                                    p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.trainer.mutation_ops_limit.max(lo));
+                                }
+                                if let Some(i_r) = update.inflow_rate {
+                                    p.inflow_rate = i_r;
+                                }
+                                if let Some(h_r) = update.hof_rate {
+                                    p.hof_rate = h_r;
+                                }
+                                if let Some(mt) = update.multi_trial {
+                                    p.multi_trial = mt;
+                                }
+                                if let Some(hl) = update.is_headless {
+                                    trainer_is_headless = hl;
+                                }
+                                if let Some(lam) = update.lamarckian {
+                                    if lam != p.lamarckian {
+                                        p.lamarckian = lam;
+                                        grid_changed = true;
+                                    }
+                                }
+                                if let Some(r_id) = update.run_id {
+                                    if r_id != trainer_run_id {
+                                        trainer_run_id = r_id;
+                                        generation_base = 1;
+                                        grid_changed = true;
+                                        trainer_run_state_loaded = false;
+                                    }
+                                }
+
+                                if grid_changed {
+                                    trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &db);
+                                    trainer_run_state_loaded = true;
+                                }
+                                trainer_display_count = trainer_display_count.min(trainer.params.population);
+
+                                // Broadcast the validated hyperparameters back to the UI (Self-Healing UI!)
+                                emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
+                            }
                         }
-                        match act_type {
-                            "CLIENT_READY" => {
-                                // The mode stays with the router (SET_MODE): forcing Ocean here raced a fast
-                                // navigation to the trainer after startup and left the trainer inactive
-                                log::info!("client handshake, synchronizing {} creatures and {} spores", creatures.len(), food_pellets.len());
-                                let world = ocean_world.clone();
-                                let init_json = json!({
-                                    "type": "INIT_STATE",
-                                    "highestGeneration": highest_generation,
-                                    "running": is_running,
-                                    "seed": app_config.core.seed,
-                                    "world": world,
-                                    "rules": {
-                                        "sporeEnergy": 15.0
-                                    },
-                                    "foodPellets": food_pellets,
-                                    "creatures": creatures
-                                });
-                                emit_state(init_json);
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                emit_state(json!({
-                                    "type": "LOG_EVENT",
-                                    "message": "Handshake successful. Ecosystem synchronized.",
-                                    "logType": "system"
-                                }));
-                            }
-                            "TOGGLE_SIMULATION" => {
-                                if let Some(running) = action["running"].as_bool() {
-                                    is_running = running;
-                                    emit_state(json!({ "type": "SIM_STATE", "running": is_running }));
-                                }
-                            }
-                            "INJECT_URZELLE" | "SPAWN_CLONE" if creatures.len() >= app_config.ocean.max_creatures => {
-                                emit_state(json!({
-                                    "type": "LOG_EVENT",
-                                    "message": format!("Population cap reached ({} creatures), spawn rejected.", app_config.ocean.max_creatures),
-                                    "logType": "system"
-                                }));
-                            }
-                            "INJECT_URZELLE" => {
-                                let mut rng = rand::thread_rng();
-                                let random_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
-                                let random_pheno = parse_genome(&random_dna, None, None, &app_config.brain);
+                    }
+                    ClientAction::Engine(EngineAction::ClientReady) => {
+                        // The mode stays with the router (SET_MODE): forcing Ocean here raced a fast
+                        // navigation to the trainer after startup and left the trainer inactive
+                        log::info!("client handshake, synchronizing {} creatures and {} spores", creatures.len(), food_pellets.len());
+                        emit_state(ocean_init_state(highest_generation, is_running, &app_config.core.seed, &ocean_world, &food_pellets, &creatures));
+                        emit_state(UiEvent::database_changed());
+                        emit_state(UiEvent::log("Handshake successful. Ecosystem synchronized.", LogKind::System));
+                    }
+                    ClientAction::Ocean(OceanAction::ToggleSimulation { running }) => {
+                        is_running = running;
+                        emit_state(OceanUiEvent::SimState { running: is_running }.into());
+                    }
+                    ClientAction::Ocean(OceanAction::InjectUrzelle | OceanAction::SpawnClone(_)) if creatures.len() >= app_config.ocean.max_creatures => {
+                        emit_state(UiEvent::log(format!("Population cap reached ({} creatures), spawn rejected.", app_config.ocean.max_creatures), LogKind::System));
+                    }
+                    ClientAction::Ocean(OceanAction::InjectUrzelle) => {
+                        let mut rng = rand::thread_rng();
+                        let random_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
+                        let random_pheno = parse_genome(&random_dna, None, None, &app_config.brain);
 
+                        let px = rng.gen_range(500.0..logical_width - 500.0);
+                        let py = rng.gen_range(500.0..logical_height - 500.0);
+                        let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
+
+                        let mut new_agent = spawn_from_phenotype(&random_dna, random_pheno.clone(), SpawnOptions {
+                            id: next_creature_id,
+                            px,
+                            py,
+                            heading_angle,
+                            generation: 1,
+                            methylations: None,
+                            synapse_weights: None,
+                        }, &app_config.metabolism);
+                        new_agent.vx = rng.gen_range(-0.4..0.4);
+                        new_agent.vy = rng.gen_range(-0.4..0.4);
+
+                        creatures.push(new_agent.clone());
+                        newly_spawned_creatures.push(new_agent.clone());
+
+                        db.insert_species(&NewSpecies { genome: random_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
+                            .log_db_err("inserting a species");
+                        species_cache_dirty = true;
+
+                        emit_state(UiEvent::database_changed());
+                        emit_state(UiEvent::log(format!("Released wildtype organism: Strain #{} '{}'.", next_creature_id, random_pheno.latin_name), LogKind::Mutation));
+                        next_creature_id += 1;
+                    }
+                    ClientAction::Ocean(OceanAction::SpawnClone(clone)) => {
+                        let mut rng = rand::thread_rng();
+                        {
+                            let genome = clone.genome.as_str();
+                            let load_learned_synapses = clone.load_learned_synapses.unwrap_or(false);
+
+                            // Parent methylations if any
+                            let m_vec: Vec<f32> = clone.methylations.unwrap_or_default();
+                            let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
+
+                            let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
+                            
+                            let px = rng.gen_range(500.0..logical_width - 500.0);
+                            let py = rng.gen_range(500.0..logical_height - 500.0);
+                            let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
+                            
+                            let learned_synapses = if load_learned_synapses {
+                                clone.synapse_weights
+                            } else {
+                                None
+                            };
+
+                            let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
+                                id: next_creature_id,
+                                px,
+                                py,
+                                heading_angle,
+                                generation: 1,
+                                methylations: m_opt,
+                                synapse_weights: learned_synapses,
+                            }, &app_config.metabolism);
+                            new_agent.vx = rng.gen_range(-0.4..0.4);
+                            new_agent.vy = rng.gen_range(-0.4..0.4);
+
+                            creatures.push(new_agent.clone());
+                            newly_spawned_creatures.push(new_agent);
+
+                            // Record the newly released clone in species_records if not exists
+                            db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
+                                .log_db_err("inserting a species");
+                            species_cache_dirty = true;
+
+                            emit_state(UiEvent::database_changed());
+                            emit_state(UiEvent::log(format!("Released catalogue specimen: Strain #{} '{}' (Pre-trained: {}).", next_creature_id, pheno.latin_name, load_learned_synapses), LogKind::System));
+                            next_creature_id += 1;
+                        }
+                    }
+                    ClientAction::Ocean(OceanAction::ResetEvolution) => {
+                        log::info!("evolution reset");
+                        
+                        // Wipe old species records, histories, and state caches from SQLite database
+                        db.clear_species().log_db_err("clearing species_records");
+                        species_cache_dirty = true;
+                        db.clear_ocean_state().log_db_err("clearing the Ocean snapshot");
+
+                        creatures.clear();
+                        food_pellets.clear();
+                        newly_spawned_creatures.clear(); // Clear newborns to prevent phantom shivering creatures!
+                        bite_ticks.clear();
+                        next_creature_id = 1;
+                        highest_generation = 1;
+
+                        let mut rng = rand::thread_rng();
+
+                        // Query all saved catalogue creatures
+                        let catalogue_creatures = db.list_catalogue().unwrap_or_else(|e| {
+                            log::error!("reading the catalogue failed: {}", e);
+                            Vec::new()
+                        });
+
+                        if !catalogue_creatures.is_empty() {
+                            for _ in 0..25 {
+                                let idx = rng.gen_range(0..catalogue_creatures.len());
+                                let entry = &catalogue_creatures[idx];
+                                let genome = &entry.genome;
+                                let m_arr: Vec<f32> = entry.methylations.clone();
+                                let s_arr: Vec<f32> = entry.synapse_weights.clone();
+                                let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
+                                
+                                let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
+                                
                                 let px = rng.gen_range(500.0..logical_width - 500.0);
                                 let py = rng.gen_range(500.0..logical_height - 500.0);
                                 let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
 
-                                let mut new_agent = spawn_from_phenotype(&random_dna, random_pheno.clone(), SpawnOptions {
+                                let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
+                                    id: next_creature_id,
+                                    px,
+                                    py,
+                                    heading_angle,
+                                    generation: 1,
+                                    methylations: m_opt,
+                                    synapse_weights: Some(s_arr),
+                                }, &app_config.metabolism);
+                                new_agent.vx = rng.gen_range(-0.4..0.4);
+                                new_agent.vy = rng.gen_range(-0.4..0.4);
+
+                                creatures.push(new_agent.clone());
+
+                                db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
+                                    .log_db_err("inserting a species");
+                                species_cache_dirty = true;
+                                next_creature_id += 1;
+                            }
+                            emit_state(UiEvent::database_changed());
+                            emit_state(UiEvent::log(format!("Evolution reset. Biosphere repopulated with 25 clones from Catalogue."), LogKind::System));
+                        } else {
+                            // Fallback to structured random genomes if the catalogue is empty (TCK-184)
+                            for _ in 0..25 {
+                                let founder_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
+
+                                let random_pheno = parse_genome(&founder_dna, None, None, &app_config.brain);
+                                let px = rng.gen_range(500.0..logical_width - 500.0);
+                                let py = rng.gen_range(500.0..logical_height - 500.0);
+                                let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
+
+                                let mut new_agent = spawn_from_phenotype(&founder_dna, random_pheno.clone(), SpawnOptions {
                                     id: next_creature_id,
                                     px,
                                     py,
@@ -530,237 +659,66 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                 creatures.push(new_agent.clone());
-                                newly_spawned_creatures.push(new_agent.clone());
 
-                                db.insert_species(&NewSpecies { genome: random_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
+                                db.insert_species(&NewSpecies { genome: founder_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
                                     .log_db_err("inserting a species");
                                 species_cache_dirty = true;
-
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                emit_state(json!({
-                                    "type": "LOG_EVENT",
-                                    "message": format!("Released wildtype organism: Strain #{} '{}'.", next_creature_id, random_pheno.latin_name),
-                                    "logType": "mutation"
-                                }));
                                 next_creature_id += 1;
                             }
-                            "SPAWN_CLONE" => {
-                                let mut rng = rand::thread_rng();
-                                if let Some(genome) = action["genome"].as_str() {
-                                    let load_learned_synapses = action["load_learned_synapses"].as_bool().unwrap_or(false);
-                                    
-                                    // Parse parent methylations if any
-                                    let m_vec: Vec<f32> = serde_json::from_value(action["methylations"].clone()).unwrap_or_default();
-                                    let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
-                                    
-                                    let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
-                                    
-                                    let px = rng.gen_range(500.0..logical_width - 500.0);
-                                    let py = rng.gen_range(500.0..logical_height - 500.0);
-                                    let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                                    
-                                    let learned_synapses = if load_learned_synapses {
-                                        serde_json::from_value::<Vec<f32>>(action["synapse_weights"].clone()).ok()
-                                    } else {
-                                        None
-                                    };
+                            emit_state(UiEvent::database_changed());
+                            emit_state(UiEvent::log("Evolution reset. Biosphere repopulated with 25 structured random founder cells.", LogKind::System));
+                        }
 
-                                    let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
-                                        id: next_creature_id,
-                                        px,
-                                        py,
-                                        heading_angle,
-                                        generation: 1,
-                                        methylations: m_opt,
-                                        synapse_weights: learned_synapses,
-                                    }, &app_config.metabolism);
-                                    new_agent.vx = rng.gen_range(-0.4..0.4);
-                                    new_agent.vy = rng.gen_range(-0.4..0.4);
+                        // Regenerate 12 random nutrient centers for the reset biosphere
+                        nutrient_centers.clear();
+                        for _ in 0..12 {
+                            let cx = rng.gen_range(1000.0..logical_width - 1000.0);
+                            let cy = rng.gen_range(1000.0..logical_height - 1000.0);
+                            nutrient_centers.push((cx, cy));
+                        }
 
-                                    creatures.push(new_agent.clone());
-                                    newly_spawned_creatures.push(new_agent);
+                        // Inject Initial Spores with patchy density distribution (nutrient centers!)
+                        for _ in 0..app_config.ocean.food_spore_count {
+                            let (x, y) = patchy_spore_position(&mut rng, &nutrient_centers, logical_width, logical_height);
 
-                                    // Record the newly released clone in species_records if not exists
-                                    db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
-                                        .log_db_err("inserting a species");
-                                    species_cache_dirty = true;
+                            food_pellets.push(FoodSpore {
+                                id: next_spore_id,
+                                type_id: 1, // Plant/Algae
+                                x,
+                                y,
+                                amount: 15.0,
+                                vx: rng.gen_range(-0.15..0.15),
+                                vy: rng.gen_range(-0.15..0.15),
+                            });
+                            next_spore_id += 1;
+                        }
 
-                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                    emit_state(json!({
-                                        "type": "LOG_EVENT",
-                                        "message": format!("Released catalogue specimen: Strain #{} '{}' (Pre-trained: {}).", next_creature_id, pheno.latin_name, load_learned_synapses),
-                                        "logType": "system"
-                                    }));
-                                    next_creature_id += 1;
-                                }
-                            }
-                            "RESET_EVOLUTION" => {
-                                log::info!("evolution reset");
-                                
-                                // Wipe old species records, histories, and state caches from SQLite database
-                                db.clear_species().log_db_err("clearing species_records");
-                                species_cache_dirty = true;
-                                db.clear_ocean_state().log_db_err("clearing the Ocean snapshot");
+                        emit_state(UiEvent::database_changed());
 
-                                creatures.clear();
-                                food_pellets.clear();
-                                newly_spawned_creatures.clear(); // Clear newborns to prevent phantom shivering creatures!
-                                bite_ticks.clear();
-                                next_creature_id = 1;
-                                highest_generation = 1;
+                        // Emit full fresh INIT_STATE so client successfully overwrites its local lists
+                        emit_state(ocean_init_state(highest_generation, is_running, &app_config.core.seed, &ocean_world, &food_pellets, &creatures));
+                        emit_state(UiEvent::log("Evolution reset. Biosphere repopulated with 15 unique wildtype cells.", LogKind::System));
+                    }
+                    ClientAction::Ocean(OceanAction::SelectAgent { id }) => {
+                        selected_agent_id = id;
+                    }
+                    ClientAction::Ocean(OceanAction::SetSimulationSpeed { speed }) => {
+                        ocean_warp_factor = speed as usize;
+                    }
+                    // Sent only by the `set_mode` command (router, invariant 1)
+                    ClientAction::Engine(EngineAction::SetMode { mode }) => {
+                        if mode == SimMode::Trainer {
+                            is_trainer_active = true;
+                            // Rebuild the population from the DB when entering the trainer
+                            trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &db);
+                            trainer_run_state_loaded = true;
+                            log::info!("rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
-                                let mut rng = rand::thread_rng();
-
-                                // Query all saved catalogue creatures
-                                let catalogue_creatures = db.list_catalogue().unwrap_or_else(|e| {
-                                    log::error!("reading the catalogue failed: {}", e);
-                                    Vec::new()
-                                });
-
-                                if !catalogue_creatures.is_empty() {
-                                    for _ in 0..25 {
-                                        let idx = rng.gen_range(0..catalogue_creatures.len());
-                                        let entry = &catalogue_creatures[idx];
-                                        let genome = &entry.genome;
-                                        let m_arr: Vec<f32> = entry.methylations.clone();
-                                        let s_arr: Vec<f32> = entry.synapse_weights.clone();
-                                        let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
-                                        
-                                        let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
-                                        
-                                        let px = rng.gen_range(500.0..logical_width - 500.0);
-                                        let py = rng.gen_range(500.0..logical_height - 500.0);
-                                        let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
-
-                                        let mut new_agent = spawn_from_phenotype(genome, pheno.clone(), SpawnOptions {
-                                            id: next_creature_id,
-                                            px,
-                                            py,
-                                            heading_angle,
-                                            generation: 1,
-                                            methylations: m_opt,
-                                            synapse_weights: Some(s_arr),
-                                        }, &app_config.metabolism);
-                                        new_agent.vx = rng.gen_range(-0.4..0.4);
-                                        new_agent.vy = rng.gen_range(-0.4..0.4);
-
-                                        creatures.push(new_agent.clone());
-
-                                        db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
-                                            .log_db_err("inserting a species");
-                                        species_cache_dirty = true;
-                                        next_creature_id += 1;
-                                    }
-                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                    emit_state(json!({ "type": "LOG_EVENT", "message": format!("Evolution reset. Biosphere repopulated with 25 clones from Catalogue."), "logType": "system" }));
-                                } else {
-                                    // Fallback to structured random genomes if the catalogue is empty (TCK-184)
-                                    for _ in 0..25 {
-                                        let founder_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
-
-                                        let random_pheno = parse_genome(&founder_dna, None, None, &app_config.brain);
-                                        let px = rng.gen_range(500.0..logical_width - 500.0);
-                                        let py = rng.gen_range(500.0..logical_height - 500.0);
-                                        let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
-
-                                        let mut new_agent = spawn_from_phenotype(&founder_dna, random_pheno.clone(), SpawnOptions {
-                                            id: next_creature_id,
-                                            px,
-                                            py,
-                                            heading_angle,
-                                            generation: 1,
-                                            methylations: None,
-                                            synapse_weights: None,
-                                        }, &app_config.metabolism);
-                                        new_agent.vx = rng.gen_range(-0.4..0.4);
-                                        new_agent.vy = rng.gen_range(-0.4..0.4);
-
-                                        creatures.push(new_agent.clone());
-
-                                        db.insert_species(&NewSpecies { genome: founder_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
-                                            .log_db_err("inserting a species");
-                                        species_cache_dirty = true;
-                                        next_creature_id += 1;
-                                    }
-                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                    emit_state(json!({ "type": "LOG_EVENT", "message": "Evolution reset. Biosphere repopulated with 25 structured random founder cells.", "logType": "system" }));
-                                }
-
-                                // Regenerate 12 random nutrient centers for the reset biosphere
-                                nutrient_centers.clear();
-                                for _ in 0..12 {
-                                    let cx = rng.gen_range(1000.0..logical_width - 1000.0);
-                                    let cy = rng.gen_range(1000.0..logical_height - 1000.0);
-                                    nutrient_centers.push((cx, cy));
-                                }
-
-                                // Inject Initial Spores with patchy density distribution (nutrient centers!)
-                                for _ in 0..app_config.ocean.food_spore_count {
-                                    let (x, y) = patchy_spore_position(&mut rng, &nutrient_centers, logical_width, logical_height);
-
-                                    food_pellets.push(FoodSpore {
-                                        id: next_spore_id,
-                                        type_id: 1, // Plant/Algae
-                                        x,
-                                        y,
-                                        amount: 15.0,
-                                        vx: rng.gen_range(-0.15..0.15),
-                                        vy: rng.gen_range(-0.15..0.15),
-                                    });
-                                    next_spore_id += 1;
-                                }
-
-                                emit_state(json!({ "type": "DATABASE_CHANGED" }));
-
-                                // Emit full fresh INIT_STATE so client successfully overwrites its local lists
-                                let world = ocean_world.clone();
-                                let init_json = json!({
-                                    "type": "INIT_STATE",
-                                    "highestGeneration": highest_generation,
-                                    "running": is_running,
-                                    "seed": app_config.core.seed,
-                                    "world": world,
-                                    "rules": {
-                                        "sporeEnergy": 15.0
-                                    },
-                                    "foodPellets": food_pellets,
-                                    "creatures": creatures
-                                });
-                                emit_state(init_json);
-                                emit_state(json!({ "type": "LOG_EVENT", "message": "Evolution reset. Biosphere repopulated with 15 unique wildtype cells.", "logType": "system" }));
-                            }
-                            "SELECT_AGENT" => {
-                                if let Some(agent_id) = action["id"].as_u64() {
-                                    selected_agent_id = Some(agent_id as u32);
-                                } else {
-                                    selected_agent_id = None;
-                                }
-                            }
-                            "SET_SIMULATION_SPEED" => {
-                                if let Some(speed) = action["speed"].as_u64() {
-                                    ocean_warp_factor = speed as usize;
-                                }
-                            }
-                            "SET_MODE" => {
-                                if let Some(mode) = action["mode"].as_str() {
-                                    if mode == "trainer" {
-                                        is_trainer_active = true;
-                                        // Rebuild the population from the DB when entering the trainer
-                                        trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &db);
-                                        trainer_run_state_loaded = true;
-                                        log::info!("rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
-
-                                        // Broadcast full hyperparams truth back to the UI!
-                                        emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
-                                    } else {
-                                        is_trainer_active = false;
-                                        log::info!("leaving trainer mode, resuming the Ocean");
-                                    }
-                                }
-                            }
-                            other => {
-                                log::warn!("ignoring unknown client action type '{}'", other);
-                            }
+                            // Broadcast full hyperparams truth back to the UI!
+                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).into());
+                        } else {
+                            is_trainer_active = false;
+                            log::info!("leaving trainer mode, resuming the Ocean");
                         }
                     }
                 }
@@ -962,11 +920,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
                             }
 
-                            emit_state(json!({
-                                "type": "LOG_EVENT",
-                                "message": format!("💀 Species '{}' (Strain: #{}) deceased due to starvation/senescence.", agent.phenotype.latin_name, agent.id),
-                                "logType": "system"
-                            }));
+                            emit_state(UiEvent::log(format!("💀 Species '{}' (Strain: #{}) deceased due to starvation/senescence.", agent.phenotype.latin_name, agent.id), LogKind::System));
                         } else {
                             // Apply unified biological and physical kinetics
                             use crate::shared::physics::step_creature_kinematics;
@@ -1007,11 +961,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         }
 
                                         // Broadcast Eat event for client-side algae sparks
-                                        emit_state(json!({
-                                            "type": "EAT_EVENT",
-                                            "x": old_x,
-                                            "y": old_y
-                                        }));
+                                        emit_state(OceanUiEvent::EatEvent { x: old_x, y: old_y }.into());
                                     }
                                 }
                             }
@@ -1036,19 +986,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     agent.has_eaten = true;
 
                                     // Broadcast bite shockwave ring
-                                    emit_state(json!({
-                                        "type": "BITE_EVENT",
-                                        "attackerId": agent.id,
-                                        "victimId": victim.id,
-                                        "x": victim.px,
-                                        "y": victim.py
-                                    }));
+                                    emit_state(OceanUiEvent::BiteEvent { attacker_id: agent.id, victim_id: victim.id, x: victim.px, y: victim.py }.into());
 
-                                    emit_state(json!({
-                                        "type": "LOG_EVENT",
-                                        "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.metabolism.biting_energy_damage, gain),
-                                        "logType": "mutation"
-                                    }));
+                                    emit_state(UiEvent::log(format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.metabolism.biting_energy_damage, gain), LogKind::Mutation));
                                 }
                             }
 
@@ -1106,19 +1046,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         .log_db_err("inserting a species");
                                     species_cache_dirty = true;
 
-                                    emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                                    emit_state(json!({
-                                        "type": "LOG_EVENT",
-                                        "message": format!("🧬 Mitosis Mutation! Specimen #{} birthed new species '{}' (Gen. {}).", agent.id, child.phenotype.latin_name, child.generation),
-                                        "logType": "mutation"
-                                    }));
+                                    emit_state(UiEvent::database_changed());
+                                    emit_state(UiEvent::log(format!("🧬 Mitosis Mutation! Specimen #{} birthed new species '{}' (Gen. {}).", agent.id, child.phenotype.latin_name, child.generation), LogKind::Mutation));
                                 } else {
                                     // Mirror asexual clone birth log
-                                    emit_state(json!({
-                                        "type": "LOG_EVENT",
-                                        "message": format!("🌱 Mitosis Clone! Specimen #{} duplicated itself successfully.", agent.id),
-                                        "logType": "repair"
-                                    }));
+                                    emit_state(UiEvent::log(format!("🌱 Mitosis Clone! Specimen #{} duplicated itself successfully.", agent.id), LogKind::Repair));
                                 }
 
                                 if child.generation > highest_generation {
@@ -1162,11 +1094,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             }
 
                             let (message, log_type) = death_log(agent.id, &agent.phenotype.latin_name, bite_damage.is_some_and(|d| d > 0.0));
-                            emit_state(json!({
-                                "type": "LOG_EVENT",
-                                "message": message,
-                                "logType": log_type
-                            }));
+                            emit_state(UiEvent::log(message, log_type));
                         }
                     }
                     creatures = final_creatures;
@@ -1224,16 +1152,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         // Fetch name for logging
                         if let Ok(Some(name)) = db.species_name(&id) {
-                            emit_state(json!({
-                                "type": "LOG_EVENT",
-                                "message": format!("✝️ Extinction Event! Species '{}' has gone completely extinct. The only relics remain in the silent fossil archive.", name),
-                                "logType": "mutation"
-                            }));
+                            emit_state(UiEvent::log(format!("✝️ Extinction Event! Species '{}' has gone completely extinct. The only relics remain in the silent fossil archive.", name), LogKind::Mutation));
                         }
                     }
 
                     if db_changed {
-                        emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                        emit_state(UiEvent::database_changed());
                     }
 
                     // Maintain population (restocking founder cells up to config, matches TS index.ts!)
@@ -1292,12 +1216,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             .log_db_err("inserting a species");
                         species_cache_dirty = true;
 
-                        emit_state(json!({ "type": "DATABASE_CHANGED" }));
-                        emit_state(json!({
-                            "type": "LOG_EVENT",
-                            "message": format!("Restocked population: Spawned {}.", source_tag),
-                            "logType": "system"
-                        }));
+                        emit_state(UiEvent::database_changed());
+                        emit_state(UiEvent::log(format!("Restocked population: Spawned {}.", source_tag), LogKind::System));
 
                         next_creature_id += 1;
                     }
@@ -1312,37 +1232,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         .collect();
 
                     // Compute selected brain live activations if an agent is selected
-                    let selected_brain_json = if let Some(sel_id) = selected_agent_id {
-                        if let Some(sel_agent) = creatures.iter().find(|c| c.id == sel_id) {
-                            json!({
-                                "id": sel_id,
-                                "activations": sel_agent.neuron_activations
-                            })
-                        } else {
-                            json!(null)
-                        }
-                    } else {
-                        json!(null)
-                    };
-
-                    let telemetry_json = json!({
-                        "type": "TELEMETRY_TICK",
-                        "highestGeneration": highest_generation,
-                        "creatures": telemetry_creatures,
-                        "newCreatures": newly_spawned_creatures,
-                        "selectedBrain": selected_brain_json
+                    let selected_brain = selected_agent_id.and_then(|sel_id| {
+                        creatures.iter().find(|c| c.id == sel_id).map(|sel_agent| SelectedBrain { id: sel_id, activations: sel_agent.neuron_activations.clone() })
                     });
-                    emit_state(telemetry_json);
-                    newly_spawned_creatures.clear(); // Clear newborns after sending
+
+                    // Newborns are sent once: the queue moves into the event (cleared like before)
+                    emit_state(OceanUiEvent::TelemetryTick(OceanTelemetryTick {
+                        highest_generation,
+                        creatures: telemetry_creatures,
+                        new_creatures: std::mem::take(&mut newly_spawned_creatures),
+                        selected_brain,
+                    }).into());
                     last_emit_time = Instant::now();
                 }
 
                 // Broadcast Food Spores to UI (Throttled 2Hz, slow drifting food!)
                 if last_food_emit_time.elapsed() >= food_emit_interval {
-                    emit_state(json!({
-                        "type": "FOOD_TICK",
-                        "foodPellets": food_pellets
-                    }));
+                    emit_state(OceanUiEvent::FoodTick { food_pellets: food_pellets.clone() }.into());
                     last_food_emit_time = Instant::now();
                 }
 
@@ -1395,15 +1301,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 training_mode: trainer.params.scenario,
                                 next_level: trainer.params.scenario.fixed_level().unwrap_or(trainer.params.level),
                                 stats: (&stats).into(),
-                            }).to_payload());
+                            }).into());
                             // Settings after the generation boundary (applied room switch, gate level, adapted mutation ops)
-                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
+                            emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).into());
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes
                             trainer_store::save_elites(&db, &trainer_run_id, generation, &elites, trainer_retention);
                             // Run state after the boundary (TCK-191); a switch requested later stays pending until its generation ends
                             trainer_store::save_run_state(&db, &trainer_run_id, &trainer);
-                            emit_state(json!({ "type": "DATABASE_CHANGED" }));
+                            emit_state(UiEvent::database_changed());
                         }
                     }
                 }
@@ -1412,7 +1318,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                 // the payload does not grow with the population (TCK-192)
                 if last_emit_time.elapsed() >= emit_interval {
                     let tick = TrainerTelemetryTick::build(&trainer, trainer_display_count, trainer_selected_sandbox_id, trainer_is_running);
-                    emit_state(TrainerUiEvent::TrainerTelemetryTick(tick).to_payload());
+                    emit_state(TrainerUiEvent::TrainerTelemetryTick(tick).into());
 
                     last_emit_time = Instant::now();
                 }
@@ -1443,9 +1349,9 @@ mod tests {
     #[test]
     fn test_death_without_bite_is_not_reported_as_predation() {
         let (hunted, hunted_type) = death_log(7, "Testus", true);
-        assert!(hunted.contains("hunted down") && hunted_type == "mutation");
+        assert!(hunted.contains("hunted down") && hunted_type == LogKind::Mutation);
         let (starved, starved_type) = death_log(7, "Testus", false);
-        assert!(starved.contains("starvation") && !starved.contains("hunted") && starved_type == "system");
+        assert!(starved.contains("starvation") && !starved.contains("hunted") && starved_type == LogKind::System);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { signal } from "@preact/signals-core";
-import { safeInvoke } from "../api";
+import { send, setMode } from "./ipc";
 
 export type ActiveView = "main-menu" | "ocean" | "trainer" | "catalogue" | "creator";
 
@@ -14,19 +14,15 @@ export const currentView = signal<ActiveView>("main-menu");
  * the active mode of the Rust backend.
  */
 export function navigateTo(view: ActiveView) {
-  // 1. Absolute State Clean-up: Pause all client-side rendering loops
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "TOGGLE_SIMULATION", running: false }) }).catch(() => {});
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "PAUSE_TRAINING" }) }).catch(() => {});
-
-  // 2. Synchronize active simulation mode in the Rust backend
-  if (view === "ocean") {
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "ocean" }) }).catch(() => {});
-  } else if (view === "trainer") {
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "trainer" }) }).catch(() => {});
-  } else {
-    // Default back to ocean mode (idle) when returning to the main menu
-    safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "ocean" }) }).catch(() => {});
-  }
+  // 1. Pause both simulations, then 2. switch the backend mode (the only `set_mode` caller besides the trainer's
+  // unload reset, invariant 1). The calls run in this order; errors are reported by the IPC client (toast). The main
+  // menu and the catalogue idle in Ocean mode.
+  const mode = view === "trainer" ? "trainer" : "ocean";
+  (async () => {
+    await send({ type: "TOGGLE_SIMULATION", running: false });
+    await send({ type: "PAUSE_TRAINING" });
+    await setMode(mode);
+  })();
 
   // 3. Update view signal
   currentView.value = view;

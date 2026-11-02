@@ -49,7 +49,6 @@ pub trait TrainerRepo {        // trainer_genomes, trainer_run_state
 pub trait OceanSnapshotRepo {  // simulation_state
     fn save_ocean_snapshot(&self, state_json: &str) -> RepoResult<()>;
     fn ocean_snapshot(&self) -> RepoResult<Option<String>>;
-    fn save_progenitor_genome(&self, genome: &str) -> RepoResult<()>;
     fn clear_ocean_state(&self) -> RepoResult<()>;
 }
 
@@ -95,7 +94,7 @@ logs failures (`save_elites`, `load_genomes`, `save_assigned`, `save_run_state`,
   ([[wiki/architecture/invariants]] 9). Tables whose rows do not depend on the model set `model_scoped: false`.
 - An existing user database must migrate without data loss in the tables the app reads; a migration that drops data
   says so in its name and in [[wiki/architecture/persistence]].
-- Write failures of fire-and-forget calls are logged with `log_db_err`; commands return the error text.
+- Write failures of fire-and-forget calls are logged with `log_db_err`; commands return it as a logged `IpcError` (kind `database`).
 
 ## Registration point
 
@@ -112,7 +111,8 @@ logs failures (`save_elites`, `load_genomes`, `save_assigned`, `save_run_state`,
 ## Events / IPC
 
 None emitted by the persistence module. The engine emits `DATABASE_CHANGED` after species writes; the Tauri commands
-in `src/server/api.rs` map repository results onto their JSON payloads.
+in `src/server/api/` map repository rows onto their typed DTOs through `with_store` / `collect_rows`, a repository
+error becomes an `IpcError` of kind `database` ([[wiki/contracts/ipc-message]]).
 
 ## Test recipe
 

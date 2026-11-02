@@ -21,14 +21,14 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-139-ocea
 
 ## Events
 
-- `emit_state` only buffers; `flush_events()` sends the buffer once per frame in original order and coalesces repeated `DATABASE_CHANGED` (TCK-139, RV-P05).
+- `emit_state` only buffers typed `UiEvent`s (TCK-157); `flush_events()` sends the buffer once per frame in original order and coalesces repeated `DATABASE_CHANGED` (TCK-139, RV-P05).
 - One Tauri event channel `simulation-state` for everything, see [[wiki/architecture/ipc-protocol]].
 
 ## Trainer actions and events (TCK-177)
 
-- The action loop first tries `serde_json::from_value::<TrainerAction>` (`src/server/trainer_ipc.rs`); a trainer action is handled in one typed `match`, everything else falls through to the string match on `type`. A malformed trainer action matches neither and is logged as "unknown or malformed client action type".
+- The action loop receives typed `ClientAction`s over the channel (TCK-157): the commands parse and validate them (`ClientAction::from_value`; unknown or malformed actions are rejected there with a logged `IpcError`), the engine matches `ClientAction::Engine` / `Ocean` / `Trainer` in one `match`.
 - `SET_TRAINER_MODE` and the new `SET_TRAINER_LEVEL` only request a room switch (`TrainerSim::set_scenario` / `set_level`); it applies at the next generation boundary, or at once if no tick of the current generation has run ([[wiki/simulation/trainer]]). `SET_TRAINER_MODE` with the current mode and nothing pending is a no-op; every request answers `TRAINER_STATE_CHANGED` with `pendingMode`.
-- Trainer events are built as `TrainerUiEvent` values and buffered via `to_payload`: `TRAINER_TELEMETRY_TICK` (25 Hz, chamber size and level per sandbox from `sb.room`), `TRAINER_GENERATION_COMPLETED` (with the generation's `GenerationStats` as `TrainerGenerationStats`), then **`TRAINER_STATE_CHANGED` after every generation** (applied switch, gate level, adapted mutation ops). `trainer_state` builds the one `TrainerState` for state changes and resets.
+- Trainer events are built as `TrainerUiEvent` values and buffered as `UiEvent` (`emit_state(event.into())`, TCK-157): `TRAINER_TELEMETRY_TICK` (25 Hz, chamber size and level per sandbox from `sb.room`), `TRAINER_GENERATION_COMPLETED` (with the generation's `GenerationStats` as `TrainerGenerationStats`), then **`TRAINER_STATE_CHANGED` after every generation** (applied switch, gate level, adapted mutation ops). `trainer_state` builds the one `TrainerState` for state changes and resets.
 
 ## Creature spawning and RNG
 

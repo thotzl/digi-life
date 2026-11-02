@@ -4,6 +4,6 @@ import type { Scenario } from "./Scenario";
 import type { TrainerHyperparamsUpdate } from "./TrainerHyperparamsUpdate";
 
 /**
- * Trainer actions from the UI (`handle_client_action`, tag `type`). Other action types stay untyped in the engine.
+ * Trainer actions from the UI (`handle_client_action`, tag `type`; one group of `ClientAction`).
  */
 export type TrainerAction = { "type": "UPDATE_TRAINER_HYPERPARAMS" } & TrainerHyperparamsUpdate | { "type": "START_TRAINING" } | { "type": "PAUSE_TRAINING" } | { "type": "TRAINER_RESET" } | { "type": "SET_TRAINER_MODE", mode: Scenario, } | { "type": "SET_TRAINER_LEVEL", level: number, } | { "type": "SELECT_TRAINER_SANDBOX", id?: number, } | { "type": "ASSIGN_SANDBOX_CREATURE" } & AssignSandboxCreature;

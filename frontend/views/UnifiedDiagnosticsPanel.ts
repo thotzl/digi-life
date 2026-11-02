@@ -3,7 +3,7 @@ import { escapeHtml } from "../core/escape";
 import { effect } from "@preact/signals-core";
 import { BrainRenderer } from "../render/brainRenderer";
 import { CreatureRenderer } from "../render/creatureRenderer";
-import { safeInvoke } from "../api";
+import { call, send } from "../core/ipc";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
   selectedMaxEnergy, selectedAge, selectedGenome,
@@ -643,7 +643,7 @@ export class UnifiedDiagnosticsPanel {
     const w = p.brain?.synapses?.map((s: any) => s.weight) || [];
 
     try {
-      const ok = await safeInvoke("save_to_catalogue", {
+      await call("save_to_catalogue", {
         id,
         name,
         genome: g,
@@ -652,12 +652,9 @@ export class UnifiedDiagnosticsPanel {
         methylations: m,
         synapseWeights: w
       });
-      if (ok) {
-        alert(`Species "${name}" successfully saved to the persistent catalogue!`);
-      }
-    } catch (e) {
-      console.error("[Catalogue] Failed to save creature:", e);
-      alert(`Error saving creature: ${e}`);
+      alert(`Species "${name}" successfully saved to the persistent catalogue!`);
+    } catch {
+      // reported by the IPC client (toast)
     }
   }
 
@@ -670,8 +667,8 @@ export class UnifiedDiagnosticsPanel {
     if (sandboxId === null) return;
 
     try {
-      const creatures = await safeInvoke("get_catalogue_creatures");
-      if (!creatures || creatures.length === 0) {
+      const creatures = await call("get_catalogue_creatures");
+      if (creatures.length === 0) {
         alert("Your creature catalogue is empty! Save creatures in the ocean or trainer first.");
         return;
       }
@@ -744,12 +741,9 @@ export class UnifiedDiagnosticsPanel {
         pDetails.innerHTML = `Diet Class: <span style="color:#3b82f6;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(2)}<br/>Origin: ${escapeHtml(creature.source)}`;
         
         try {
-          const pheno = await safeInvoke("get_fossil_phenotype", { genome: creature.genome });
-          if (pheno) {
-            activePhenotype = pheno;
-          }
-        } catch (err) {
-          console.error("Failed to load modal preview:", err);
+          activePhenotype = await call("get_fossil_phenotype", { genome: creature.genome });
+        } catch {
+          // reported by the IPC client (toast)
         }
       };
 
@@ -838,22 +832,19 @@ export class UnifiedDiagnosticsPanel {
       btnConfirm.addEventListener("click", async () => {
         const selectedCreature = creatures[selectedIdx];
         const loadSyn = checkbox.checked;
-        try {
-          await safeInvoke("handle_client_action", {
-            action: JSON.stringify({
-              type: "ASSIGN_SANDBOX_CREATURE",
-              sandbox_id: sandboxId,
-              genome: selectedCreature.genome,
-              methylations: selectedCreature.methylations,
-              synapse_weights: selectedCreature.synapseWeights,
-              load_learned_synapses: loadSyn
-            })
-          });
+        const accepted = await send({
+          type: "ASSIGN_SANDBOX_CREATURE",
+          sandbox_id: sandboxId,
+          genome: selectedCreature.genome,
+          methylations: selectedCreature.methylations,
+          synapse_weights: selectedCreature.synapseWeights,
+          load_learned_synapses: loadSyn
+        });
+        // A rejected action is reported by the IPC client (toast); the dialog stays open
+        if (accepted) {
           cancelAnimationFrame(animId);
           backdrop.remove();
           alert(`Species "${selectedCreature.name}" successfully assigned to Sandbox #${sandboxId}!`);
-        } catch (err) {
-          alert(`Error during assignment: ${err}`);
         }
       });
 

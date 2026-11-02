@@ -1,69 +1,137 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/trainer_ipc.rs, src/server/engine.rs]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/ipc.rs, src/server/ocean_ipc.rs, src/server/trainer_ipc.rs, src/server/api/mod.rs, src/server/engine.rs, frontend/core/ipc.ts]
 ---
 
 # IPC Protocol
 
-## Frontend → backend
+Every message is typed end to end (TCK-157): Rust enums and structs exported to `bindings/` by ts-rs, consumed by
+the frontend IPC client `frontend/core/ipc.ts`, the only module that calls Tauri. Rules for adding a message:
+[[wiki/contracts/ipc-message]] and [[wiki/guides/add-ipc-message]].
 
-- `invoke("handle_client_action", { action: JSON.stringify({ type, ... }) })` — forwarded over an mpsc channel to the engine and matched on `type`.
-- Action types: `CLIENT_READY`, `TOGGLE_SIMULATION`, `INJECT_URZELLE`, `SPAWN_CLONE`, `RESET_EVOLUTION`, `SELECT_AGENT`, `SET_SIMULATION_SPEED`, `SET_MODE`, ... (untyped, matched on the raw JSON) and the typed trainer actions (below).
-- Unknown types are logged to stderr (TCK-141); in the untyped actions missing or mistyped fields are silently ignored (`as_u64()` → `None`) (RV-A02). A malformed trainer action does not parse as `TrainerAction` and is logged and ignored as a whole ("unknown or malformed client action type").
+## Frontend → backend: actions
 
-### Typed trainer actions (TCK-177)
+- `send(action)` → command `handle_client_action(action)` (the action object itself, no JSON string) →
+  `ClientAction::from_value` → mpsc channel `Sender<ClientAction>` → the engine thread drains it at the start of every
+  frame and matches the variant.
+- `ClientAction` (`src/server/ipc.rs`, untagged) = `EngineAction` | `OceanAction` | `TrainerAction`; each group is
+  tagged by `type` (SCREAMING_SNAKE_CASE), the type names are disjoint.
+- Rejected with a logged `IpcError` (`invalidAction`) and a toast, never forwarded: an unknown type ("unknown client
+  action type 'X'"), a known type with missing or mistyped fields ("malformed client action 'X': ..."), and `SET_MODE`
+  (only via the `set_mode` command). Before TCK-157 an unknown type was only logged by the engine and missing fields
+  were ignored silently (RV-A02).
 
-`TrainerAction` (`src/server/trainer_ipc.rs`, `#[serde(tag = "type")]`, ts-rs binding `TrainerAction`) is parsed first in `engine.rs`; the frontend sends it through `sendTrainerAction(action: TrainerAction)` (`frontend/trainer.ts`).
+| Group | Action | Fields | Effect |
+| :--- | :--- | :--- | :--- |
+| Engine | `CLIENT_READY` | — | answers `INIT_STATE`, `DATABASE_CHANGED`, a log line; never changes the mode ([[wiki/architecture/invariants]] 1) |
+| Engine | `SET_MODE` | `mode`: `ocean` \| `trainer` | only from the `set_mode` command; `trainer` restores the trainer population from the DB and answers `TRAINER_STATE_CHANGED` |
+| Ocean | `TOGGLE_SIMULATION` | `running` | answers `SIM_STATE` |
+| Ocean | `INJECT_URZELLE` | — | one structured random founder; at `ocean.maxCreatures` a "Population cap reached" log line instead |
+| Ocean | `SPAWN_CLONE` | `SpawnClone`: `genome`, optional `methylations`, `synapse_weights`, `load_learned_synapses` | sent by the command `spawn_catalogue_creature_to_ocean`; same cap rule |
+| Ocean | `RESET_EVOLUTION` | — | clears species, snapshot, creatures and the newborn queue ([[wiki/architecture/invariants]] 3), repopulates, answers `INIT_STATE` |
+| Ocean | `SELECT_AGENT` | `id` (optional) | creature whose activations `TELEMETRY_TICK.selectedBrain` carries |
+| Ocean | `SET_SIMULATION_SPEED` | `speed` | Ocean steps per frame, clamped to 35 ([[wiki/architecture/invariants]] 2) |
+| Trainer | `UPDATE_TRAINER_HYPERPARAMS` | `TrainerHyperparamsUpdate`, all optional: `N` (visible sandboxes only, TCK-192), `population` (restores the population from the DB when it changes), `warpSpeed`, `eliteRatio`, `mutationRate` (max ops per child, name kept), `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian` | absent fields unchanged; population, Lamarck or run change restores the population from the DB; answers `TRAINER_STATE_CHANGED` |
+| Trainer | `START_TRAINING` / `PAUSE_TRAINING` | — | running flag; answers `TRAINER_STATE_CHANGED` |
+| Trainer | `TRAINER_RESET` | — | deletes the run's rows, fresh `TrainerSim` (automatic curriculum back to `startLevel`); answers `TRAINER_RESET_COMPLETED` |
+| Trainer | `SET_TRAINER_MODE` | `mode`: `standard` \| `exploration` \| `curriculum` | **deferred** to the next generation boundary (at once at a generation start); `curriculum` turns the gate on; answers `TRAINER_STATE_CHANGED` with `pendingMode` (TCK-176) |
+| Trainer | `SET_TRAINER_LEVEL` | `level` in [0, 1] | manual difficulty level, gate off; deferred like `SET_TRAINER_MODE` |
+| Trainer | `SELECT_TRAINER_SANDBOX` | `id` (optional) | brain view source |
+| Trainer | `ASSIGN_SANDBOX_CREATURE` | `sandbox_id`, `genome`, optional `methylations`, `synapse_weights`, `load_learned_synapses` | rebuilds the sandbox creature, stores it; answers `DATABASE_CHANGED` |
 
-| Action | Fields | Effect |
-| :--- | :--- | :--- |
-| `UPDATE_TRAINER_HYPERPARAMS` | `TrainerHyperparamsUpdate`, all optional: `N` (visible sandboxes only, TCK-192), `population` (restores the population from the DB when it changes), `warpSpeed`, `eliteRatio`, `mutationRate` (max ops per child, name kept), `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian` | absent fields unchanged; population, Lamarck or run change restores the population from the DB; answers `TRAINER_STATE_CHANGED` |
-| `START_TRAINING` / `PAUSE_TRAINING` | — | running flag; answers `TRAINER_STATE_CHANGED` |
-| `TRAINER_RESET` | — | deletes the run's rows, fresh `TrainerSim` (automatic curriculum back to `startLevel`); answers `TRAINER_RESET_COMPLETED` |
-| `SET_TRAINER_MODE` | `mode`: `standard` \| `exploration` \| `curriculum` | **deferred**: pending until the next generation boundary (at once at a generation start); `curriculum` turns the gate on; answers `TRAINER_STATE_CHANGED` with `pendingMode` (TCK-176; before P8 it switched immediately) |
-| `SET_TRAINER_LEVEL` (new in P8) | `level` in [0, 1] | manual difficulty level, gate off; deferred like `SET_TRAINER_MODE`; answers `TRAINER_STATE_CHANGED` |
-| `SELECT_TRAINER_SANDBOX` | `id` (optional / null) | brain view source |
-| `ASSIGN_SANDBOX_CREATURE` | `sandbox_id`, `genome`, optional `methylations`, `synapse_weights`, `load_learned_synapses` (snake case kept) | rebuilds the sandbox creature, stores it; answers `DATABASE_CHANGED` |
+- Field casing: camelCase, except `SpawnClone` and `AssignSandboxCreature` (snake_case kept).
+- Removed in TCK-157: `SPAWN_FOOD` (right-click on empty water; the engine never handled it, so right-click food spawn
+  still does nothing, RV-B09) and `CLIENT_LOG` (newborn log line of the Ocean view; unknown to the engine, only
+  produced warnings). Neither had an effect before.
+- Tests: `ipc::tests::test_client_actions_parse_into_their_group`, `test_unknown_and_malformed_actions_are_rejected_with_the_type`, `trainer_ipc::tests::test_trainer_actions_parse_from_ui_json`.
 
-Tests `test_trainer_actions_parse_from_ui_json`, `test_non_trainer_actions_are_not_trainer_actions`.
-- `SPAWN_FOOD` (right-click) and `CLIENT_LOG` are sent by `frontend/ocean.ts` but unknown to the engine; right-click food spawn has no effect (RV-B09).
+## Tauri commands (`src/server/api/`, registered in `src/main.rs`)
 
-### Tauri commands (`src/server/api.rs`, registered in `src/main.rs`)
+Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kind, message }` with `kind` =
+`invalidAction` | `notFound` | `database` | `engineUnavailable`. Store access goes through `with_store` /
+`collect_rows` (`src/server/api/mod.rs`), which log store errors.
 
-| Area | Commands |
-| :--- | :--- |
-| Engine | `handle_client_action` |
-| Species | `get_registered_species` |
-| Trainer | `get_trainer_runs`, `get_trainer_population`, `get_trainer_hof`, `save_trainer_generation`, `clear_trainer_history`, `apply_champion` |
-| Phenotype | `get_fossil_phenotype` (runs `parse_genome`) |
-| Catalogue | `get_catalogue_creatures`, `save_to_catalogue`, `delete_from_catalogue`, `rename_catalogue_creature`, `spawn_catalogue_creature_to_ocean`, `add_catalogue_creature_to_training` |
+| Module | Command | Args | Result |
+| :--- | :--- | :--- | :--- |
+| `actions.rs` | `handle_client_action` | `action: ClientAction` | `null` |
+| `actions.rs` | `set_mode` | `mode: SimMode` | `SimMode` (queued after the actions sent before it) |
+| `species.rs` | `get_registered_species` | — | `SpeciesEntry[]` |
+| `species.rs` | `get_fossil_phenotype` (async, runs `parse_genome`) | `genome` | `CreaturePhenotype` |
+| `trainer.rs` | `get_trainer_runs` | — | `TrainerRunInfo[]` (`runId`, `maxGeneration`, `maxFitness`) |
+| `trainer.rs` | `clear_trainer_history` | `runId` | `null` |
+| `catalogue.rs` | `get_catalogue_creatures` | — | `CatalogueCreature[]` |
+| `catalogue.rs` | `save_to_catalogue` | `id`, `name`, `genome`, `source`, `fitness`, `methylations`, `synapseWeights` | `null` |
+| `catalogue.rs` | `delete_from_catalogue` | `id` | `null` |
+| `catalogue.rs` | `rename_catalogue_creature` | `id`, `newName` | `null` |
+| `catalogue.rs` | `spawn_catalogue_creature_to_ocean` | `id`, `loadLearnedSynapses` | `null` (sends a typed `SPAWN_CLONE`; `notFound` for an unknown id) |
+| `catalogue.rs` | `add_catalogue_creature_to_training` | `creatureId`, `runId`, `generation` | `null` (`notFound` for an unknown id) |
 
+- Removed in TCK-157 (no caller in `frontend/`, checked by grep): `get_trainer_population`, `get_trainer_hof`,
+  `save_trainer_generation` (deactivated a run's genomes and dropped their weights), `apply_champion` (wrote the
+  never-read `progenitor_genome` key, RV-D06; its repository method went with it).
 - All DB commands share one mutex-guarded connection (`DbState`), see [[wiki/architecture/persistence]].
 
-## Backend → frontend
+## Backend → frontend: events
 
-- Single event `"simulation-state"`; payload `type` is a string: `INIT_STATE`, `SIM_STATE`, `TELEMETRY_TICK`, `FOOD_TICK`, `TRAINER_*`, `DATABASE_CHANGED`, `LOG_EVENT`, `EAT_EVENT`, `BITE_EVENT`, ...
-- **Trainer events are typed** (TCK-177): enum `TrainerUiEvent` (`src/server/trainer_ipc.rs`, tag `type`, serialized by `to_payload`), listened to as `TrainerUiEvent | { type: "DATABASE_CHANGED" }` in `frontend/trainer.ts`:
-  - `TRAINER_TELEMETRY_TICK` (`TrainerTelemetryTick`, 25 Hz): `generation`, `isRunning`, `timeStr`, `sandboxes` (a sample of `N` visible sandboxes covering every origin group, `display_slots`, TCK-192, TCK-194; `TrainerTelemetrySandbox`, incl. `scenario` = training mode and `level` of the sandbox's trial room), `selectedBrain` (`TrainerSelectedBrain` `{ id, activations }` or null).
-  - `TRAINER_GENERATION_COMPLETED` (`TrainerGenerationCompleted`): `generation`, `bestFitness`, `avgFitness`, `bestGenome`, `mutationOpsMax`, `trainingMode`, `nextLevel`, `stats` (`TrainerGenerationStats`, built `From<&GenerationStats>`: success rate, level success rate, rehearsal fields, best/median/mean fitness, mean/median time to first catch, immobile and starved share, scenario, level, `levelMove`, `mutationOpsMax`, `layoutId` as a decimal string). One source for UI and headless report (test `test_generation_stats_match_report_serialization`).
-  - `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED` (`TrainerState`): `isRunning`, `population`, `N` (visible sandboxes, at most the population), `warpSpeed`, `eliteRatio`, `mutationRate`, `mutationOpsMin`, `mutationOpsLimit`, `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian`, `trainingMode`, `level`, `levelAuto`, `pendingMode`, `generation`. Sent after every trainer action that changes state and **after every completed generation** (right after `TRAINER_GENERATION_COMPLETED`), so the UI sees applied switches, gate moves and adapted ops (test `test_trainer_events_keep_type_tag_and_ui_field_names`).
-- Both `frontend/ocean.ts` and `frontend/trainer.ts` listen to all events and dispatch on `type` (RV-F05); the trainer narrows the payload by the typed union.
-- Field casing is mixed (`load_learned_synapses`, `sandbox_id` vs `warpSpeed`, `runId`) (RV-A02).
-- `INIT_STATE` carries all creatures incl. phenotype/brain and the procedural world (once); `FOOD_TICK` all spores at 2 Hz.
-- Trainer telemetry does not carry the per-sandbox world (removed in TCK-140).
-- Navigation switches the backend mode via several fire-and-forget actions from `router.ts` (RV-F05).
+- One Tauri event `simulation-state` (`UI_EVENT_NAME`), payload `UiEvent` (untagged) = `EngineEvent` |
+  `OceanUiEvent` | `TrainerUiEvent`, each tagged by `type`. The engine buffers typed events (`emit_state`) and emits
+  them in order once per frame; repeated `DATABASE_CHANGED` within a frame are coalesced.
+- The frontend has one listener (`onUiEvent` in `frontend/core/ipc.ts`); `ocean.ts` and `trainer.ts` register a
+  handler each and switch on `type` (per-view listener lifecycle: TCK-160).
+
+| Group | Event | Payload |
+| :--- | :--- | :--- |
+| Engine | `DATABASE_CHANGED` | — (UI refetches roster, runs) |
+| Engine | `LOG_EVENT` | `message`, `logType`: `system` \| `mutation` \| `repair` (Ocean log terminal) |
+| Ocean | `INIT_STATE` | `OceanInitState`: `highestGeneration`, `running`, `seed`, `world` (procedural world, once), `rules.sporeEnergy`, `foodPellets`, `creatures` (full, incl. phenotype/brain) |
+| Ocean | `SIM_STATE` | `running` |
+| Ocean | `TELEMETRY_TICK` (25 Hz) | `OceanTelemetryTick`: `highestGeneration`, `creatures` (`TelemetryCreature`), `newCreatures` (full, sent once), `selectedBrain` (`{ id, activations }` or null) |
+| Ocean | `FOOD_TICK` (2 Hz) | `foodPellets` |
+| Ocean | `EAT_EVENT` | `x`, `y` (no consumer in the UI) |
+| Ocean | `BITE_EVENT` | `attackerId`, `victimId`, `x`, `y` |
+| Trainer | `TRAINER_TELEMETRY_TICK` (25 Hz) | `TrainerTelemetryTick`: `generation`, `isRunning`, `timeStr`, `sandboxes` (a sample of `N` visible sandboxes covering every origin group, `display_slots`, TCK-192, TCK-194; `TrainerTelemetrySandbox` incl. `scenario` and `level`), `selectedBrain` |
+| Trainer | `TRAINER_GENERATION_COMPLETED` | `TrainerGenerationCompleted`: `generation`, `bestFitness`, `avgFitness`, `bestGenome`, `mutationOpsMax`, `trainingMode`, `nextLevel`, `stats` (`TrainerGenerationStats`, built `From<&GenerationStats>`, one source for UI and headless report; `layoutId` as a decimal string) |
+| Trainer | `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED` | `TrainerState`: `isRunning`, `population`, `N`, `warpSpeed`, `eliteRatio`, `mutationRate`, `mutationOpsMin`, `mutationOpsLimit`, `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian`, `trainingMode`, `level`, `levelAuto`, `pendingMode`, `generation`; sent after every state-changing trainer action and after every completed generation |
+
+- Number spelling: events are serialized from the typed values, so f32 fields keep their shortest f32 spelling
+  (before TCK-157 the `json!` payloads widened them to f64, e.g. 0.9 → 0.8999999761581421); the parsed f32 values on
+  the way back are identical.
+- Tests: `test_engine_events_and_errors_keep_their_wire_names`, `ocean_ipc::tests::test_ocean_events_keep_type_tag_and_ui_field_names`, `trainer_ipc::tests::test_trainer_events_keep_type_tag_and_ui_field_names`.
+
+## Frontend IPC client (`frontend/core/ipc.ts`)
+
+- `call(command, args)` — typed by the `Commands` map; resolves with the DTO, on failure reports the `CallError`
+  (`IpcError` or `transport` for Tauri-side failures such as bad arguments) through the error hook and rejects.
+  Outside Tauri (plain `vite dev`) it rejects with `unavailable` without a toast.
+- `send(action)` — `Action` = `ClientAction` without `SET_MODE`; resolves `true` / `false` (accepted / rejected), never
+  rejects.
+- `setMode(mode)` — the `set_mode` command; called by `navigateTo` and by the trainer's unload reset to Ocean only
+  ([[wiki/architecture/invariants]] 1). `navigateTo` awaits `TOGGLE_SIMULATION false` → `PAUSE_TRAINING` →
+  `set_mode` in this order.
+- `onUiEvent(handler)` — the one `simulation-state` listener; `onIpcError(handler)` replaces the default error hook,
+  a toast (`frontend/core/toast.ts`, text only). Replaces `safeInvoke` (`frontend/api.ts`), which returned `null` on
+  errors (RV-F04); the phenotype cache moved to `frontend/core/phenotypes.ts`.
 
 ## Types (ts-rs)
 
-- Rust structs with `#[derive(TS)]` / `#[ts(export)]` (`CreatureAgent`, `FoodSpore`, `CreaturePhenotype`, `TelemetryCreature`, `TrainerTelemetrySandbox`, world types, ...) are exported to `bindings/` (37 files, incl. the trainer enums `Scenario` and `SandboxOrigin` used by `TrainerTelemetrySandbox` since TCK-173, and since P8 the trainer IPC types `TrainerUiEvent`, `TrainerTelemetryTick`, `TrainerSelectedBrain`, `TrainerGenerationCompleted`, `TrainerGenerationStats`, `TrainerState`, `TrainerAction`, `TrainerHyperparamsUpdate`, `AssignSandboxCreature`, `LevelMove`, TCK-177) when `cargo test` runs (= `npm run types:generate`).
-- Brain v2 types (TCK-179, TCK-144, TCK-187): `NeuronRole` (tagged by `role`: `systemic`/`sensor`/`thalamus`/`hidden`/`motor`), `GeneRef`, `GeneSpan`, `OrganKind`, `OrganSide`, `SystemicInput`, `Motor`, `ThalamusKind`. `CTRNNNeuron` has `role`; `CTRNNSynapse` has `key` (53-bit, exact as a JS number) and `owner` (index into `CreaturePhenotype.genes`); `SensoryPatch` has `kind` and `side`; `CreaturePhenotype.genes` lists the gene spans. `CreatureAgent`/`TelemetryCreature` lost `adrenaline` (TCK-149).
-- CI fails on uncommitted binding drift (`git diff --exit-code -- bindings/`), see [[wiki/quality/ci-and-tooling]].
-- **Partly consumed** (RV-A03 partly resolved, TCK-187, TCK-177): the trainer view (`frontend/trainer.ts`, `frontend/trainerMetrics.ts`) imports its event, action and stats types from `bindings/`; `frontend/shared/types.ts` re-exports `CTRNNNeuron`, `CTRNNSynapse`, `BrainTopology`, `GeneSpan` from `bindings/`; `shared/genome.ts`, `render/brainRenderer.ts` and `views/UnifiedDiagnosticsPanel.ts` import binding types directly. The rest of `types.ts` (phenotype, agent, telemetry) is still handwritten and deviates (e.g. `OrganelleLocus` `x?/y?` vs Rust `SensoryPatch` `geneStartIndex/geneEndIndex/kind/side`) (RV-A03, RV-F01). ~40 `any`, mostly at the IPC boundary.
+- Every IPC type has `#[derive(TS)] #[ts(export)]` and is written to `bindings/` by `cargo test` (=
+  `npm run types:generate`); CI fails on uncommitted drift (`git diff --exit-code -- bindings/`, [[wiki/quality/ci-and-tooling]]).
+- Protocol types: `ClientAction`, `EngineAction`, `OceanAction`, `SpawnClone`, `TrainerAction`,
+  `TrainerHyperparamsUpdate`, `AssignSandboxCreature`, `SimMode`, `UiEvent`, `EngineEvent`, `LogKind`, `OceanUiEvent`,
+  `OceanInitState`, `OceanRules`, `OceanTelemetryTick`, `SelectedBrain`, `TrainerUiEvent` and its payloads,
+  `IpcError`, `IpcErrorKind`; command results `SpeciesEntry`, `SpeciesLifeStatus`, `TrainerRunInfo`,
+  `CatalogueCreature`; model types `CreatureAgent`, `FoodSpore`, `TelemetryCreature`, `CreaturePhenotype`, world and
+  brain types.
+- `i64` fields are typed `number` (`#[ts(type = "number")]`); u64 values are sent as decimal strings.
+- `frontend/shared/types.ts` re-exports the brain, gene, species, food and world types from `bindings/`; the
+  phenotype and agent model types used by the renderers are still handwritten (the binding `CreatureAgent` is
+  assignable to them; alignment in TCK-160, RV-A03 partly, RV-F01).
 - Timestamp units are mixed across payloads and tables (RV-A06), see [[wiki/architecture/persistence]].
 
 ## Key Takeaways
 
-- Commands in, one event channel out; the trainer events and actions are typed end to end by ts-rs (TCK-177), the Ocean contract is still stringly typed and not type-checked across the boundary (RV-A02).
-- `bindings/` is generated and drift-checked in CI; brain, gene and trainer IPC types are consumed by the frontend, the rest of the IPC types are still handwritten (RV-A03 partly).
-- Trainer room switches (`SET_TRAINER_MODE`, `SET_TRAINER_LEVEL`) are deferred to the next generation boundary; `TRAINER_STATE_CHANGED` follows every generation.
+- Actions in through `handle_client_action` / `set_mode`, events out on `simulation-state`, all typed by ts-rs
+  enums; no untyped payload is left (TCK-157).
+- Invalid actions are rejected at the command with a typed error that reaches the user as a toast.
+- Commands return typed DTOs and `IpcError`; four dead commands were removed.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `src/main.rs`, `src/server/trainer_ipc.rs`, TCK-149, TCK-173, TCK-176, TCK-177, TCK-179, TCK-187.
+Sources: `.agents/skills/server-simulation/SKILL.md`, `src/main.rs`, `src/server/ipc.rs`, `src/server/ocean_ipc.rs`, `src/server/trainer_ipc.rs`, `frontend/core/ipc.ts`, TCK-157, TCK-173, TCK-176, TCK-177, TCK-179, TCK-187.

@@ -76,14 +76,6 @@ impl OceanSnapshotRepo for Db {
         Ok(self.conn().query_row("SELECT state_json FROM simulation_state WHERE key = 'current_state'", [], |row| row.get(0)).optional()?)
     }
 
-    fn save_progenitor_genome(&self, genome: &str) -> RepoResult<()> {
-        self.conn().execute(
-            "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('progenitor_genome', ?1, ?2)",
-            params![genome, time::now_secs()],
-        )?;
-        Ok(())
-    }
-
     fn clear_ocean_state(&self) -> RepoResult<()> {
         self.conn().execute("DELETE FROM simulation_state", [])?;
         Ok(())

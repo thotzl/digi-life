@@ -1,7 +1,8 @@
 import { effect } from "@preact/signals-core";
 import { CreatureRenderer } from './render/creatureRenderer';
 import { currentView } from "./core/router";
-import { safeInvoke, getPhenotype, phenotypeCache } from './api';
+import { call, onUiEvent, send, setMode } from "./core/ipc";
+import { getPhenotype, phenotypeCache } from "./core/phenotypes";
 import { IconElite, IconTrophy, IconMutant, IconPlant, IconSuccess, IconActive } from './components/Icons';
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
@@ -17,7 +18,6 @@ import type { TrainerAction } from "../bindings/TrainerAction";
 import type { TrainerGenerationCompleted } from "../bindings/TrainerGenerationCompleted";
 import type { TrainerState } from "../bindings/TrainerState";
 import type { TrainerTelemetrySandbox } from "../bindings/TrainerTelemetrySandbox";
-import type { TrainerUiEvent } from "../bindings/TrainerUiEvent";
 
 // Backing-store size of the mini-canvases: tiles show at ~130-160 CSS px, so 360 px covers DPR 2;
 // a 1000 px store per tile made 16 tiles at 25 Hz GPU-bound and backed up the webview
@@ -78,11 +78,9 @@ interface Sandbox {
   lastTelemetry: TrainerTelemetrySandbox | null;
 }
 
-// Trainer actions are typed by the generated bindings (TCK-177)
+// Trainer actions are typed by the generated bindings (TCK-177); errors are reported by the IPC client (TCK-157)
 function sendTrainerAction(action: TrainerAction) {
-  return safeInvoke("handle_client_action", { action: JSON.stringify(action) }).catch((err) => {
-    console.error(`Tauri invoke error ${action.type}:`, err);
-  });
+  return send(action);
 }
 
 let isRunning = false;
@@ -501,8 +499,12 @@ const txtNewTraining = document.getElementById("txt-new-training") as HTMLInputE
 const btnCreateTraining = document.getElementById("btn-create-training") as HTMLButtonElement;
 
 async function populateRunSelector() {
-  const runs = await safeInvoke("get_trainer_runs");
-  if (!runs) return;
+  let runs;
+  try {
+    runs = await call("get_trainer_runs");
+  } catch {
+    return; // reported by the IPC client
+  }
 
   if (trainingListContainer) {
     trainingListContainer.innerHTML = "";
@@ -513,13 +515,13 @@ async function populateRunSelector() {
 
   const listItems: { id: string; label: string; isNew?: boolean }[] = [];
 
-  runs.forEach((run: any) => {
-    if (run.run_id === "default_run") defaultExists = true;
-    if (run.run_id === runId) activeExistsInDb = true;
+  runs.forEach((run) => {
+    if (run.runId === "default_run") defaultExists = true;
+    if (run.runId === runId) activeExistsInDb = true;
 
     listItems.push({
-      id: run.run_id,
-      label: `${run.run_id} (Gen ${run.max_gen}, F: ${run.max_fit.toFixed(2)})`
+      id: run.runId,
+      label: `${run.runId} (Gen ${run.maxGeneration}, F: ${run.maxFitness.toFixed(2)})`
     });
   });
 
@@ -575,9 +577,9 @@ async function populateRunSelector() {
         const confirmDelete = confirm(`Are you sure you want to permanently delete run '${item.id}'?`);
         if (confirmDelete) {
           try {
-            await safeInvoke("clear_trainer_history", { runId: item.id });
-          } catch (err) {
-            console.error("[Trainer API] Error deleting training:", err);
+            await call("clear_trainer_history", { runId: item.id });
+          } catch {
+            // reported by the IPC client (toast)
           }
 
           if (wasActive) {
@@ -744,129 +746,123 @@ sliderZoomTiles?.addEventListener("input", () => {
   }
 });
 
-async function setupTauriListeners() {
-  if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
-    const { listen } = await import("@tauri-apps/api/event");
-    
-    await listen<TrainerUiEvent | { type: "DATABASE_CHANGED" }>("simulation-state", (event) => {
-      const data = event.payload;
+function subscribeTrainerEvents() {
+  onUiEvent((data) => {
+    if (data.type === "TRAINER_TELEMETRY_TICK") {
+      currentGeneration = data.generation;
+      statGen.innerText = currentGeneration.toString();
+      statTimer.innerText = data.timeStr;
 
-      if (data.type === "TRAINER_TELEMETRY_TICK") {
-        currentGeneration = data.generation;
-        statGen.innerText = currentGeneration.toString();
-        statTimer.innerText = data.timeStr;
+      data.sandboxes.forEach((tele, idx) => {
+        const sb = sandboxes[idx];
+        if (sb) {
+          sb.id = tele.id;
+          sb.lastTelemetry = tele;
+          scheduleDraw(sb);
 
-        data.sandboxes.forEach((tele, idx) => {
-          const sb = sandboxes[idx];
-          if (sb) {
-            sb.id = tele.id;
-            sb.lastTelemetry = tele;
-            scheduleDraw(sb);
+          const labelId = document.getElementById(`sb-id-lbl-${idx}`);
+          if (labelId) {
+            labelId.innerText = `#${tele.id}`;
+          }
 
-            const labelId = document.getElementById(`sb-id-lbl-${idx}`);
-            if (labelId) {
-              labelId.innerText = `#${tele.id}`;
-            }
-
-            const labelOrigin = document.getElementById(`sb-origin-lbl-${idx}`);
-            if (labelOrigin) {
-              if (tele.origin_type === "elite") {
-                labelOrigin.innerHTML = `${IconElite} Elite Parent`;
-                labelOrigin.style.color = "#fbbf24";
-              } else if (tele.origin_type === "hof") {
-                labelOrigin.innerHTML = `${IconTrophy} Hall of Fame`;
-                labelOrigin.style.color = "#60a5fa";
-              } else if (tele.origin_type === "mutant") {
-                labelOrigin.innerHTML = `${IconMutant} Mutant Clone`;
-                labelOrigin.style.color = "#c084fc";
-              } else {
-                labelOrigin.innerHTML = `${IconPlant} Fresh Random`;
-                labelOrigin.style.color = "#34d399";
-              }
-            }
-
-            const labelFit = document.getElementById(`sb-fit-lbl-${idx}`);
-            if (labelFit) {
-              labelFit.innerText = `F: ${tele.current_fitness.toFixed(2)}`;
-            }
-
-            const labelStatus = document.getElementById(`sb-status-lbl-${idx}`);
-            if (labelStatus) {
-              labelStatus.innerHTML = tele.finished ? `${IconSuccess} SUCCESS` : `${IconActive} Active`;
-              labelStatus.style.color = tele.finished ? "#10b981" : "var(--text-muted)";
+          const labelOrigin = document.getElementById(`sb-origin-lbl-${idx}`);
+          if (labelOrigin) {
+            if (tele.origin_type === "elite") {
+              labelOrigin.innerHTML = `${IconElite} Elite Parent`;
+              labelOrigin.style.color = "#fbbf24";
+            } else if (tele.origin_type === "hof") {
+              labelOrigin.innerHTML = `${IconTrophy} Hall of Fame`;
+              labelOrigin.style.color = "#60a5fa";
+            } else if (tele.origin_type === "mutant") {
+              labelOrigin.innerHTML = `${IconMutant} Mutant Clone`;
+              labelOrigin.style.color = "#c084fc";
+            } else {
+              labelOrigin.innerHTML = `${IconPlant} Fresh Random`;
+              labelOrigin.style.color = "#34d399";
             }
           }
-        });
 
-        // Select the active sandbox and write its details to the global SSOT signals!
-        const activeSb = sandboxes[selectedSandboxIdx];
-        // The selected tile shows another sandbox (new generation): move the backend selection with it
-        if (activeSb && activeSb.lastTelemetry && activeSb.id !== selectedSentId) {
-          selectSandbox(activeSb.id);
+          const labelFit = document.getElementById(`sb-fit-lbl-${idx}`);
+          if (labelFit) {
+            labelFit.innerText = `F: ${tele.current_fitness.toFixed(2)}`;
+          }
+
+          const labelStatus = document.getElementById(`sb-status-lbl-${idx}`);
+          if (labelStatus) {
+            labelStatus.innerHTML = tele.finished ? `${IconSuccess} SUCCESS` : `${IconActive} Active`;
+            labelStatus.style.color = tele.finished ? "#10b981" : "var(--text-muted)";
+          }
         }
-        if (activeSb && activeSb.lastTelemetry) {
-          const tele = activeSb.lastTelemetry;
-          const pheno = phenotypeCache.get(tele.genome);
-          if (pheno) {
-            selectedId.value = activeSb.id;
-            selectedName.value = pheno.latinName;
-            selectedTaxa.value = getSandboxTaxaString(activeSb.id, currentGeneration, pheno);
-            selectedStatus.value = tele.finished ? "🏁 SUCCESS" : "Active";
-            selectedEnergy.value = tele.energy;
-            selectedMaxEnergy.value = pheno.stomachCapacity;
-            selectedAge.value = tele.age;
-            selectedGenome.value = tele.genome;
-            selectedMethylations.value = pheno.methylations;
-            selectedPhenotype.value = pheno;
+      });
 
-            if (data.selectedBrain && Number(data.selectedBrain.id) === Number(activeSb.id)) {
-              selectedBrainActivations.value = data.selectedBrain.activations;
-            }
+      // Select the active sandbox and write its details to the global SSOT signals!
+      const activeSb = sandboxes[selectedSandboxIdx];
+      // The selected tile shows another sandbox (new generation): move the backend selection with it
+      if (activeSb && activeSb.lastTelemetry && activeSb.id !== selectedSentId) {
+        selectSandbox(activeSb.id);
+      }
+      if (activeSb && activeSb.lastTelemetry) {
+        const tele = activeSb.lastTelemetry;
+        const pheno = phenotypeCache.get(tele.genome);
+        if (pheno) {
+          selectedId.value = activeSb.id;
+          selectedName.value = pheno.latinName;
+          selectedTaxa.value = getSandboxTaxaString(activeSb.id, currentGeneration, pheno);
+          selectedStatus.value = tele.finished ? "🏁 SUCCESS" : "Active";
+          selectedEnergy.value = tele.energy;
+          selectedMaxEnergy.value = pheno.stomachCapacity;
+          selectedAge.value = tele.age;
+          selectedGenome.value = tele.genome;
+          selectedMethylations.value = pheno.methylations;
+          selectedPhenotype.value = pheno;
+
+          if (data.selectedBrain && Number(data.selectedBrain.id) === Number(activeSb.id)) {
+            selectedBrainActivations.value = data.selectedBrain.activations;
           }
         }
       }
-      else if (data.type === "TRAINER_STATE_CHANGED") {
-        isRunning = data.isRunning;
-        updateStartButtonUI();
-        syncSlidersFromBackend(data);
-      }
-      else if (data.type === "TRAINER_GENERATION_COMPLETED") {
-        statBestFit.innerText = data.bestFitness.toFixed(2);
-        statAvgFit.innerText = data.avgFitness.toFixed(2);
-        txtDna.value = data.bestGenome;
-        mutationOpsMax = data.mutationOpsMax;
-        sliderMutation.value = mutationOpsMax.toString();
-        lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
-        showGenerationStats(data);
-        populateRunSelector();
-      }
-      else if (data.type === "TRAINER_RESET_COMPLETED") {
-        statGen.innerText = "1";
-        statBestFit.innerText = "0.00";
-        statAvgFit.innerText = "0.00";
-        statTimer.innerText = "5.0s";
-        txtDna.value = "";
-        resetGenerationStats();
-        isRunning = false;
-        updateStartButtonUI();
-        syncSlidersFromBackend(data);
-        rebuildSandboxGrid();
-        populateRunSelector();
-      }
-      else if (data.type === "DATABASE_CHANGED") {
-        populateRunSelector();
-      }
-    });
-  }
+    }
+    else if (data.type === "TRAINER_STATE_CHANGED") {
+      isRunning = data.isRunning;
+      updateStartButtonUI();
+      syncSlidersFromBackend(data);
+    }
+    else if (data.type === "TRAINER_GENERATION_COMPLETED") {
+      statBestFit.innerText = data.bestFitness.toFixed(2);
+      statAvgFit.innerText = data.avgFitness.toFixed(2);
+      txtDna.value = data.bestGenome;
+      mutationOpsMax = data.mutationOpsMax;
+      sliderMutation.value = mutationOpsMax.toString();
+      lblMutation.innerText = mutationOpsLabel(mutationOpsMax);
+      showGenerationStats(data);
+      populateRunSelector();
+    }
+    else if (data.type === "TRAINER_RESET_COMPLETED") {
+      statGen.innerText = "1";
+      statBestFit.innerText = "0.00";
+      statAvgFit.innerText = "0.00";
+      statTimer.innerText = "5.0s";
+      txtDna.value = "";
+      resetGenerationStats();
+      isRunning = false;
+      updateStartButtonUI();
+      syncSlidersFromBackend(data);
+      rebuildSandboxGrid();
+      populateRunSelector();
+    }
+    else if (data.type === "DATABASE_CHANGED") {
+      populateRunSelector();
+    }
+  });
 }
 
-setupTauriListeners().then(() => {
-  rebuildSandboxGrid().then(() => {
-    populateRunSelector();
-  });
+subscribeTrainerEvents();
+rebuildSandboxGrid().then(() => {
+  populateRunSelector();
 });
 
+// The trainer only resets the mode to Ocean on unload; it never sets the trainer mode itself (invariant 1)
 window.addEventListener("unload", () => {
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "PAUSE_TRAINING" }) }).catch(() => {});
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SET_MODE", mode: "ocean" }) }).catch(() => {});
+  send({ type: "PAUSE_TRAINING" });
+  setMode("ocean");
 });

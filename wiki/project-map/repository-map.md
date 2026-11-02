@@ -33,7 +33,9 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | :--- | :--- | :--- |
 | `main.rs`, `lib.rs` | Tauri setup, command registration, DB setup, starts the engine; module tree | [[wiki/architecture/system-overview]] |
 | `server/engine.rs` | simulation thread: Ocean + Trainer loop, actions, events, auto-save, restock | [[wiki/architecture/simulation-engine]] |
-| `server/api.rs` | Tauri commands (species, trainer, catalogue, phenotype) | [[wiki/architecture/ipc-protocol]] |
+| `server/api/` | Tauri commands with typed results and `IpcError`: `actions.rs` (`handle_client_action`, `set_mode`), `species.rs`, `trainer.rs`, `catalogue.rs`; helpers `with_store`, `collect_rows`, `send_to_engine` (TCK-157) | [[wiki/contracts/ipc-message]] |
+| `server/ipc.rs` | IPC protocol: `ClientAction`, `EngineAction`, `UiEvent`, `EngineEvent`, `IpcError`, `SimMode` (TCK-157) | [[wiki/contracts/ipc-message]] |
+| `server/ocean_ipc.rs` | typed Ocean actions (`OceanAction`) and events (`OceanUiEvent`) (TCK-157) | [[wiki/architecture/ipc-protocol]] |
 | `server/trainer_ipc.rs` | typed trainer events (`TrainerUiEvent`) and actions (`TrainerAction`), ts-rs exported (TCK-177) | [[wiki/architecture/ipc-protocol]] |
 | `persistence/` | the only module with SQL: DB path, `init_db` (WAL, `user_version` migrations, model-version reset), repository traits `SpeciesRepo`/`CatalogueRepo`/`TrainerRepo`/`OceanSnapshotRepo` with SQLite (`Db`) and in-memory (`MemoryDb`) implementations, DTOs, `DbState`, error logging (TCK-159) | [[wiki/architecture/persistence]] |
 | `biology/genome/` | alphabet, promoter registry (`promoters.rs`), gene scan and table (identity), payload reader, structured genome generator, mutation operators and channels | [[wiki/biology/genome-compiler]] |
@@ -70,14 +72,15 @@ Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400); no genome/phenotype/o
 | :--- | :--- | :--- |
 | `main.ts`, `core/router.ts` | view mounting, navigation, backend mode | [[wiki/frontend/structure]] |
 | `ocean.ts`, `trainer.ts` | event handling and render loops per mode | [[wiki/frontend/structure]] |
-| `api.ts` | `invoke` wrapper, phenotype cache | [[wiki/architecture/ipc-protocol]] |
+| `core/ipc.ts`, `core/ipc.test.ts` | typed IPC client: `call`, `send`, `setMode`, `onUiEvent`, error hook (toast, `core/toast.ts`); the only Tauri caller (TCK-157) | [[wiki/contracts/ipc-message]] |
+| `core/phenotypes.ts` | phenotype cache over `get_fossil_phenotype` | [[wiki/architecture/ipc-protocol]] |
 | `signals.ts` | selection/telemetry signals | [[wiki/frontend/structure]] |
 | `views/` | MainMenu, OceanView, TrainerView, CatalogueView, UnifiedDiagnosticsPanel | [[wiki/frontend/structure]] |
 | `render/` | creature and brain renderers, trainer progress chart | [[wiki/frontend/structure]] |
 | `trainerMetrics.ts`, `trainerMetrics.test.ts` | trainer metric formatting, mode labels, progress history; Vitest tests | [[wiki/frontend/structure]] |
 | `core/` | camera, `styled` engine, HTML escaping | [[wiki/frontend/structure]] |
 | `components/` | icons | — |
-| `shared/types.ts` | IPC types: brain/gene types re-exported from `bindings/`, the rest handwritten | [[wiki/architecture/ipc-protocol]] |
+| `shared/types.ts` | model types: brain, gene, species, food and world types re-exported from `bindings/`; phenotype and agent still handwritten | [[wiki/architecture/ipc-protocol]] |
 | `shared/genome.ts`, `shared/genome.test.ts` | display names for backend gene spans and neuron roles (genome view, neural inspector tooltips); Vitest tests | [[wiki/frontend/structure]] |
 | `styles.css` | global styles | — |
 

@@ -1,11 +1,11 @@
-import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import { effect } from "@preact/signals-core";
 
 import { CreatureRenderer } from "./render/creatureRenderer";
 import { CreatureAgent, FoodSpore, SpeciesRecord, ProceduralWorld } from "./shared/types";
 
-import { safeInvoke, phenotypeCache } from "./api";
+import { call, onUiEvent, send } from "./core/ipc";
+import { phenotypeCache } from "./core/phenotypes";
+import type { CreatureAgent as BindingCreatureAgent } from "../bindings/CreatureAgent";
 import { currentView } from "./core/router";
 import {
   selectedId, selectedName, selectedTaxa, selectedStatus, selectedEnergy,
@@ -15,6 +15,11 @@ import {
 } from "./signals";
 import { InteractiveCamera } from "./core/camera";
 import { escapeHtml } from "./core/escape";
+
+// Local copy of a creature from an event (binding type): the client keeps no brain state of its own
+function toLocalCreature(c: BindingCreatureAgent): CreatureAgent {
+  return { ...c, neuronStates: [], neuronActivations: [] };
+}
 
 let world: ProceduralWorld | null = null;
 let offscreenCanvas: HTMLCanvasElement | null = null;
@@ -151,13 +156,10 @@ effect(() => {
 let biteImpacts: { x: number; y: number; age: number }[] = [];
 
 function fetchRosterRecords() {
-  safeInvoke("get_registered_species").then(records => {
-    if (records) {
-      speciesRosterSignal.value = records as SpeciesRecord[];
-    }
-  }).catch(err => {
-    console.error("Failed to load native species ledger:", err);
-  });
+  // Errors are reported by the IPC client (toast)
+  call("get_registered_species").then(records => {
+    speciesRosterSignal.value = records;
+  }).catch(() => {});
 }
 
 async function initBetaWebSocket() {
@@ -169,8 +171,8 @@ async function initBetaWebSocket() {
  * Renders the ocean "Inject Species" pick-and-add cyberpunk modal with live wiggling previews.
  */
 function openOceanCatalogueDialog() {
-  safeInvoke("get_catalogue_creatures").then((catalogueList: any) => {
-    if (!catalogueList || catalogueList.length === 0) {
+  call("get_catalogue_creatures").then((catalogueList) => {
+    if (catalogueList.length === 0) {
       alert("Your creature catalogue is empty! Save elite creatures from the ocean or the trainer first.");
       return;
     }
@@ -243,12 +245,9 @@ function openOceanCatalogueDialog() {
       pDetails.innerHTML = `Diet Class: <span style="color:#f59e0b;">${dietLabel}</span><br/>Fitness rating: ${creature.fitness.toFixed(2)}<br/>Origin: ${escapeHtml(creature.source)}`;
       
       try {
-        const pheno = await safeInvoke("get_fossil_phenotype", { genome: creature.genome });
-        if (pheno) {
-          activePhenotype = pheno;
-        }
-      } catch (err) {
-        console.error("Failed to load modal preview:", err);
+        activePhenotype = await call("get_fossil_phenotype", { genome: creature.genome });
+      } catch {
+        // reported by the IPC client
       }
     };
 
@@ -360,15 +359,15 @@ function openOceanCatalogueDialog() {
       const qty = Math.max(1, Math.min(50, parseInt(qtyInput.value) || 1));
       try {
         for (let i = 0; i < qty; i++) {
-          await safeInvoke("spawn_catalogue_creature_to_ocean", {
+          await call("spawn_catalogue_creature_to_ocean", {
             id: selectedCreature.id,
             loadLearnedSynapses: loadSyn
           });
         }
         cancelAnimationFrame(animId);
         backdrop.remove();
-      } catch (err) {
-        alert(`Error during release: ${err}`);
+      } catch {
+        // reported by the IPC client (toast); the dialog stays open
       }
     });
 
@@ -385,7 +384,7 @@ function openOceanCatalogueDialog() {
     modalBox.appendChild(buttonsRow);
     backdrop.appendChild(modalBox);
     document.getElementById("app")?.appendChild(backdrop);
-  });
+  }).catch(() => {});
 }
 
 const btnToggleSim = document.getElementById("btn-toggle-sim") as HTMLButtonElement;
@@ -393,9 +392,7 @@ let isSimRunning = true;
 
 btnToggleSim?.addEventListener("click", () => {
   const nextState = !isSimRunning;
-  invoke("handle_client_action", { action: JSON.stringify({ type: "TOGGLE_SIMULATION", running: nextState }) }).catch(err => {
-    console.error("Tauri invoke error TOGGLE_SIMULATION:", err);
-  });
+  send({ type: "TOGGLE_SIMULATION", running: nextState });
 });
 
 const sliderOceanSpeedup = document.getElementById("slider-ocean-speedup") as HTMLInputElement;
@@ -423,17 +420,11 @@ sliderOceanSpeedup?.addEventListener("change", () => {
     oceanWarpSpeed = 9999;
   }
 
-  invoke("handle_client_action", { 
-    action: JSON.stringify({ type: "SET_SIMULATION_SPEED", speed: oceanWarpSpeed }) 
-  }).catch(err => {
-    console.error("Tauri invoke error SET_SIMULATION_SPEED:", err);
-  });
+  send({ type: "SET_SIMULATION_SPEED", speed: oceanWarpSpeed });
 });
 
 document.getElementById("btn-inject")?.addEventListener("click", () => {
-  invoke("handle_client_action", { action: JSON.stringify({ type: "INJECT_URZELLE" }) }).catch(err => {
-    console.error("Tauri invoke error INJECT_URZELLE:", err);
-  });
+  send({ type: "INJECT_URZELLE" });
 });
 
 document.getElementById("btn-load-catalogue")?.addEventListener("click", () => {
@@ -441,10 +432,8 @@ document.getElementById("btn-load-catalogue")?.addEventListener("click", () => {
 });
 
 document.getElementById("btn-reset")?.addEventListener("click", () => {
-  invoke("handle_client_action", { action: JSON.stringify({ type: "RESET_EVOLUTION" }) }).then(() => {
-    selectedId.value = null;
-  }).catch(err => {
-    console.error("Tauri invoke error RESET_EVOLUTION:", err);
+  send({ type: "RESET_EVOLUTION" }).then((accepted) => {
+    if (accepted) selectedId.value = null;
   });
 });
 
@@ -463,9 +452,7 @@ async function startOcean() {
 
   await initBetaWebSocket();
 
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "CLIENT_READY" }) }).catch(err => {
-    console.error("Failed to send CLIENT_READY handshake:", err);
-  });
+  send({ type: "CLIENT_READY" });
 
   requestAnimationFrame(drawBetaSimulationFrame);
 }
@@ -477,15 +464,13 @@ if (document.readyState === "complete" || document.readyState === "interactive")
 }
 
 // Global active Ocean simulation thread-step receiver (emitted from Rust background core)
-listen("simulation-state", (event: any) => {
-  const data = event.payload;
-
+onUiEvent((data) => {
   if (data.type === "INIT_STATE") {
     highestGeneration = data.highestGeneration;
     foodPellets = data.foodPellets;
     fetchRosterRecords();
 
-    isSimRunning = data.running !== undefined ? data.running : true;
+    isSimRunning = data.running;
     if (btnToggleSim) {
       btnToggleSim.innerText = isSimRunning ? "Pause Substrate" : "Resume Substrate";
       btnToggleSim.style.background = isSimRunning ? "rgba(0, 242, 254, 0.05)" : "rgba(16, 185, 129, 0.05)";
@@ -493,17 +478,10 @@ listen("simulation-state", (event: any) => {
       btnToggleSim.style.borderColor = isSimRunning ? "rgba(0, 242, 254, 0.2)" : "rgba(16, 185, 129, 0.2)";
     }
 
-    if (data.world) {
-      world = data.world;
-      createBiomeCache(data.world);
-    }
+    world = data.world;
+    createBiomeCache(world);
 
-    creatures = data.creatures.map((c: any) => ({
-      ...c,
-      phenotype: c.phenotype,
-      neuronStates: [],
-      neuronActivations: []
-    }));
+    creatures = data.creatures.map(toLocalCreature);
 
     if (creatures.length > 0 && selectedId.value === null) {
       selectSpecimen(creatures[0]);
@@ -523,28 +501,14 @@ listen("simulation-state", (event: any) => {
     const incoming = data.creatures;
 
     // Handle newborn creatures in-place
-    if (data.newCreatures && data.newCreatures.length > 0) {
-      data.newCreatures.forEach((tele: any) => {
-        if (!creatures.some(c => Number(c.id) === Number(tele.id))) {
-          const pheno = tele.phenotype;
-          creatures.push({
-            ...tele,
-            phenotype: pheno,
-            neuronStates: [],
-            neuronActivations: []
-          });
-          safeInvoke("handle_client_action", { 
-            action: JSON.stringify({ 
-              type: "CLIENT_LOG", 
-              message: `[CLIENT] Successfully registered newborn creature #${tele.id} (${pheno.latinName})` 
-            }) 
-          }).catch(() => {});
-        }
-      });
-    }
+    data.newCreatures.forEach((tele) => {
+      if (!creatures.some(c => Number(c.id) === Number(tele.id))) {
+        creatures.push(toLocalCreature(tele));
+      }
+    });
 
     // In-place positional update of existing local creatures to KEEP their precompiled .phenotype!
-    incoming.forEach((tele: any) => {
+    incoming.forEach((tele) => {
       const local = creatures.find(c => Number(c.id) === Number(tele.id));
       if (local) {
         local.px = tele.px;
@@ -560,7 +524,7 @@ listen("simulation-state", (event: any) => {
       }
     });
 
-    const serverIds = new Set(incoming.map((c: any) => Number(c.id)));
+    const serverIds = new Set(incoming.map((c) => Number(c.id)));
     creatures = creatures.filter(c => serverIds.has(Number(c.id)));
 
     // Connect real-time selected vitals to Preact Signals
@@ -601,8 +565,6 @@ listen("simulation-state", (event: any) => {
   else if (data.type === "LOG_EVENT") {
     logToTerminal(data.message, data.logType);
   }
-}).catch(err => {
-  console.error("Failed to subscribe to tauri simulation-state stream:", err);
 });
 
 // Primary Render Engine Frame-Step loop (updates viewport canvas at 60Hz/120Hz/144Hz)
@@ -752,12 +714,10 @@ camera.setupEventListeners(
       }
     });
 
+    // A click on empty water does nothing: the former `SPAWN_FOOD` action was never handled by the engine (RV-B09)
+    // and was removed with the typed action set (TCK-157)
     if (closestAgent) {
       selectSpecimen(closestAgent);
-    } else {
-      invoke("handle_client_action", { action: JSON.stringify({ type: "SPAWN_FOOD", x: mx, y: my }) }).catch(err => {
-        console.error("Tauri invoke error SPAWN_FOOD:", err);
-      });
     }
   }
 );
@@ -805,11 +765,9 @@ speciesRoster.addEventListener("click", (e) => {
         selectedGenome.value = record.genome;
         selectedMethylations.value = Array(256).fill(0);
         selectedPhenotype.value = null;
-        safeInvoke("get_fossil_phenotype", { genome: record.genome }).then((pheno) => {
-          if (pheno) {
-            selectedPhenotype.value = pheno;
-          }
-        });
+        call("get_fossil_phenotype", { genome: record.genome }).then((pheno) => {
+          selectedPhenotype.value = pheno;
+        }).catch(() => {});
         selectedMaxEnergy.value = 100;
         selectedStatus.value = "Extinct (Fossil)";
         selectedEnergy.value = 0;
@@ -828,9 +786,7 @@ function selectSpecimen(agent: CreatureAgent) {
   selectedPhenotype.value = agent.phenotype;
   selectedMaxEnergy.value = agent.phenotype.stomachCapacity;
 
-  safeInvoke("handle_client_action", { action: JSON.stringify({ type: "SELECT_AGENT", id: agent.id }) }).catch(err => {
-    console.error("Tauri invoke error SELECT_AGENT:", err);
-  });
+  send({ type: "SELECT_AGENT", id: agent.id });
 }
 
 function logToTerminal(message: string, logType: string = "system") {

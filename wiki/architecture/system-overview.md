@@ -11,15 +11,15 @@ Pixel DNA Life is a single-user desktop app: **Tauri v2** shell, **Rust 2024** s
 ```
 Tauri main.rs
  ├─ setup: resolve app_data_dir DB path, migrate legacy DB, init schema once, manage DbState
- ├─ invoke_handler: 15 commands (src/server/api.rs), shared mutex-guarded DB connection
+ ├─ invoke_handler: 12 commands (src/server/api/), typed results + IpcError, shared mutex-guarded DB connection
  └─ spawn_simulation_thread(window, rx)            (src/server/engine.rs)
       ├─ own SQLite connection to the same file
-      ├─ rx: client actions (mpsc) from handle_client_action
+      ├─ rx: typed ClientActions (mpsc) from handle_client_action / set_mode / catalogue spawn
       ├─ Ocean step | Trainer step  (one engine, mode switch)
-      └─ window.emit("simulation-state", ...)      buffered, flushed once per frame
+      └─ window.emit("simulation-state", UiEvent)  buffered, flushed once per frame
 Webview (frontend/)
- ├─ invoke(...)  -> commands
- └─ listen("simulation-state") -> render loops (Canvas 2D) + signals HUD
+ ├─ core/ipc.ts call / send / setMode -> commands
+ └─ core/ipc.ts onUiEvent("simulation-state") -> render loops (Canvas 2D) + signals HUD
 ```
 
 ## Layers
@@ -27,7 +27,7 @@ Webview (frontend/)
 - **Shell** — `src/main.rs`: Tauri builder, command registration, DB setup, starts the simulation thread.
 - **Engine** — `src/server/engine.rs`: Ocean and Trainer loop (~60 Hz), see [[wiki/architecture/simulation-engine]].
 - **Headless runner** — `src/bin/trainer_runner.rs`: trainer runs and mechanics probes without UI, see [[wiki/simulation/analytics-and-balancing]].
-- **API** — `src/server/api.rs`: Tauri commands, see [[wiki/architecture/ipc-protocol]].
+- **API** — `src/server/api/`: Tauri commands; protocol types in `src/server/ipc.rs`, `ocean_ipc.rs`, `trainer_ipc.rs`; see [[wiki/architecture/ipc-protocol]] and [[wiki/contracts/ipc-message]].
 - **Domain** — `src/biology/` (genome compiler, creature factory, IO-free trainer `TrainerSim`, sandboxes, scenarios, runner report, probes) and `src/shared/` (brain, physics, spatial grid, world generation, IPC structs `dto`, geometry/time/JSON-column helpers, seeded RNG, deterministic math). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
 - **Persistence** — `src/persistence/` (repository traits, the only module with SQL), see [[wiki/architecture/persistence]] and [[wiki/contracts/persistence-repo]].
 - **Frontend** — `frontend/`, see [[wiki/frontend/structure]].

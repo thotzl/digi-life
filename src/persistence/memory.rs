@@ -30,7 +30,6 @@ struct Tables {
     genomes: Vec<GenomeRow>,
     run_states: HashMap<String, TrainerRunStateRow>,
     snapshot: Option<String>,
-    progenitor: Option<String>,
 }
 
 #[derive(Default)]
@@ -298,15 +297,8 @@ impl OceanSnapshotRepo for MemoryDb {
         Ok(self.tables.borrow().snapshot.clone())
     }
 
-    fn save_progenitor_genome(&self, genome: &str) -> RepoResult<()> {
-        self.tables.borrow_mut().progenitor = Some(genome.to_string());
-        Ok(())
-    }
-
     fn clear_ocean_state(&self) -> RepoResult<()> {
-        let mut t = self.tables.borrow_mut();
-        t.snapshot = None;
-        t.progenitor = None;
+        self.tables.borrow_mut().snapshot = None;
         Ok(())
     }
 }

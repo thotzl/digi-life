@@ -9,28 +9,27 @@ use src_tauri::config::AppConfig;
 use src_tauri::persistence;
 use src_tauri::server::api;
 use src_tauri::server::engine::spawn_simulation_thread;
+use src_tauri::server::ipc::ClientAction;
 
 fn main() {
-    let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+    // Typed client actions from the commands to the engine thread (TCK-157)
+    let (tx, rx): (Sender<ClientAction>, Receiver<ClientAction>) = channel();
 
     tauri::Builder::default()
         .manage(tx)
         .invoke_handler(tauri::generate_handler![
-            api::handle_client_action,
-            api::get_registered_species,
-            api::get_trainer_runs,
-            api::get_trainer_population,
-            api::get_trainer_hof,
-            api::save_trainer_generation,
-            api::clear_trainer_history,
-            api::apply_champion,
-            api::get_fossil_phenotype,
-            api::get_catalogue_creatures,
-            api::save_to_catalogue,
-            api::delete_from_catalogue,
-            api::rename_catalogue_creature,
-            api::spawn_catalogue_creature_to_ocean,
-            api::add_catalogue_creature_to_training
+            api::actions::handle_client_action,
+            api::actions::set_mode,
+            api::species::get_registered_species,
+            api::species::get_fossil_phenotype,
+            api::trainer::get_trainer_runs,
+            api::trainer::clear_trainer_history,
+            api::catalogue::get_catalogue_creatures,
+            api::catalogue::save_to_catalogue,
+            api::catalogue::delete_from_catalogue,
+            api::catalogue::rename_catalogue_creature,
+            api::catalogue::spawn_catalogue_creature_to_ocean,
+            api::catalogue::add_catalogue_creature_to_training
         ])
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;

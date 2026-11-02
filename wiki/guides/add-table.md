@@ -20,7 +20,7 @@ Read first: [[wiki/contracts/persistence-repo]] and [[wiki/architecture/invarian
    `biology::trainer_store`).
 5. Trait methods on the owning trait in `persistence/repos.rs` (or a new trait), implemented for `Db` in the module
    and for `MemoryDb` in `memory.rs`. Repositories set their own timestamps.
-6. Callers: commands in `src/server/api.rs` return the error text; engine calls use `log_db_err`. No call per
+6. Callers: commands in `src/server/api/` go through `with_store` / `collect_rows` (typed `IpcError`); engine calls use `log_db_err`. No call per
    physics step.
 7. Retention: if the table grows with play time, bound it (config key in the owning section, see
    `wiki/guides/add-config-key.md`) and prune on a timer or event.

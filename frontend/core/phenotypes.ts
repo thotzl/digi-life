@@ -1,15 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-
-export async function safeInvoke(cmd: string, args?: any): Promise<any> {
-  try {
-    if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__ && typeof invoke !== "undefined") {
-      return await invoke(cmd, args);
-    }
-  } catch (e) {
-    console.warn(`[Tauri API] Bypassed or failed native command '${cmd}':`, e);
-  }
-  return Promise.resolve(null);
-}
+// Phenotype cache: decoded phenotypes per genome from `get_fossil_phenotype` (moved from api.ts, TCK-157)
+import { call } from "./ipc";
 
 export const phenotypeCache = new Map<string, any>();
 // Bounded: a long trainer run produces new genomes every generation
@@ -24,6 +14,7 @@ function cachePhenotype(genome: string, pheno: any) {
   phenotypeCache.set(genome, pheno);
 }
 
+/** Phenotype of `genome` (cached); `null` if the backend call failed (already reported through the IPC error hook). */
 export async function getPhenotype(genome: string): Promise<any> {
   if (phenotypeCache.has(genome)) {
     return phenotypeCache.get(genome);
@@ -34,13 +25,10 @@ export async function getPhenotype(genome: string): Promise<any> {
   }
   const request = (async () => {
     try {
-      const pheno = await safeInvoke("get_fossil_phenotype", { genome });
-      if (pheno) {
-        cachePhenotype(genome, pheno);
-      }
+      const pheno = await call("get_fossil_phenotype", { genome });
+      cachePhenotype(genome, pheno);
       return pheno;
-    } catch (e) {
-      console.error("[Tauri API] Error loading phenotype from Rust backend:", e);
+    } catch {
       return null;
     } finally {
       pendingPhenotypes.delete(genome);

@@ -9,7 +9,8 @@ description: Rules for changing the Pixel DNA Life webview UI - views, router, C
 - IPC contract: `wiki/architecture/ipc-protocol.md`
 
 ## II. Rules
-- Only `navigateTo` in `frontend/core/router.ts` sends `SET_MODE`; `trainer.ts` must never send `SET_MODE: trainer` on load.
+- Only `navigateTo` in `frontend/core/router.ts` switches the backend mode (`setMode` → command `set_mode`); `trainer.ts` must never set the trainer mode on load.
+- Talk to the backend only through `frontend/core/ipc.ts` (`call`, `send`, `onUiEvent`), never `invoke`/`listen` directly; errors are reported by its toast hook. New messages: guide `wiki/guides/add-ipc-message.md`, contract `wiki/contracts/ipc-message.md`.
 - The client is a renderer: never mutate authoritative simulation state, only send actions.
 - Untrusted strings (names, genomes, logs) go through `textContent` or `escapeHtml` (`frontend/core/escape.ts`), never raw `innerHTML`.
 - `styled` children: strings are always text; static markup (icon SVG) only through `html()` from `frontend/core/styled.ts`. Never wrap user or backend data in `html()`. The CSP in `tauri.conf.json` forbids inline scripts and remote origins.

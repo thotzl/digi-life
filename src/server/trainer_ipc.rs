@@ -1,6 +1,6 @@
-//! Typed trainer IPC (TCK-177, trainer subset of TCK-157): the trainer events on `simulation-state` and the trainer
-//! actions of `handle_client_action`. Both are tagged by `type`; the TypeScript types are generated into `bindings/`
-//! by ts-rs (`cargo test`) and imported by the trainer view.
+//! Typed trainer IPC (TCK-177, TCK-157): the trainer events on `simulation-state` (`UiEvent::Trainer`) and the
+//! trainer actions of `handle_client_action` (`ClientAction::Trainer`). Both are tagged by `type`; the TypeScript
+//! types are generated into `bindings/` by ts-rs (`cargo test`). Contract: `wiki/contracts/ipc-message.md`.
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -18,16 +18,6 @@ pub enum TrainerUiEvent {
     TrainerGenerationCompleted(TrainerGenerationCompleted),
     TrainerStateChanged(TrainerState),
     TrainerResetCompleted(TrainerState),
-}
-
-impl TrainerUiEvent {
-    /// JSON payload for the engine's event buffer.
-    pub fn to_payload(&self) -> serde_json::Value {
-        serde_json::to_value(self).unwrap_or_else(|e| {
-            log::error!("serializing a trainer event failed: {}", e);
-            serde_json::Value::Null
-        })
-    }
 }
 
 /// Slot indices of the displayed sandboxes (TCK-194): a sample of `n` slots with every origin group (elite, hall of
@@ -238,7 +228,7 @@ pub struct TrainerState {
     pub generation: u32,
 }
 
-/// Trainer actions from the UI (`handle_client_action`, tag `type`). Other action types stay untyped in the engine.
+/// Trainer actions from the UI (`handle_client_action`, tag `type`; one group of `ClientAction`).
 #[derive(Debug, Clone, PartialEq, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "SCREAMING_SNAKE_CASE")]
 #[ts(export)]
@@ -415,7 +405,7 @@ mod tests {
             pending_mode: None,
             generation: 4,
         };
-        let v = TrainerUiEvent::TrainerStateChanged(state.clone()).to_payload();
+        let v = serde_json::to_value(TrainerUiEvent::TrainerStateChanged(state.clone())).unwrap();
         assert_eq!(v["type"], "TRAINER_STATE_CHANGED");
         assert_eq!(v["N"], 16);
         assert_eq!(v["population"], 100);
@@ -424,17 +414,17 @@ mod tests {
         assert_eq!(v["trainingMode"], "curriculum");
         assert_eq!(v["levelAuto"], true);
         assert!(v["pendingMode"].is_null());
-        let reset = TrainerUiEvent::TrainerResetCompleted(state).to_payload();
+        let reset = serde_json::to_value(TrainerUiEvent::TrainerResetCompleted(state)).unwrap();
         assert_eq!(reset["type"], "TRAINER_RESET_COMPLETED");
 
-        let tick = TrainerUiEvent::TrainerTelemetryTick(TrainerTelemetryTick {
+        let tick = serde_json::to_value(TrainerUiEvent::TrainerTelemetryTick(TrainerTelemetryTick {
             generation: 2,
             is_running: false,
             time_str: "5.0s".to_string(),
             sandboxes: vec![],
             selected_brain: Some(TrainerSelectedBrain { id: 1, activations: vec![0.5] }),
-        })
-        .to_payload();
+        }))
+        .unwrap();
         assert_eq!(tick["type"], "TRAINER_TELEMETRY_TICK");
         assert_eq!(tick["timeStr"], "5.0s");
         assert_eq!(tick["selectedBrain"]["id"], 1);
