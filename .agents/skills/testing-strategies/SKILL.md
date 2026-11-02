@@ -10,7 +10,7 @@ description: Testing rules for Pixel DNA Life - reproduction-first tests, pure-f
 ## II. Rules
 - **Reproduction first:** before fixing a behavioural bug, write a failing test that reproduces it; record the failure message in the ticket's `## Verification`.
 - **Fast and pure:** test pure functions (`parse_genome`, `execute_brain_with_learning`, `compute_sensory_inputs`, `step_creature_kinematics`, scenario `calculate_fitness`) directly. The engine closure needs a Tauri window; extract logic into pure functions instead of launching the app.
-- **No production DB in tests:** use `init_db(":memory:")`.
+- **No production DB in tests:** use `init_db(":memory:")` or `persistence::MemoryDb`.
 - **Fixtures:** build `CreatureAgent` fixtures from `parse_genome` output with fixed inputs.
 - **CTRNN checks:** `tau` within `[0.1, 2.5]`, no NaN/inf after many steps, output range per activation, bit-identical results for identical inputs.
 - **Golden master:** a changed fingerprint is either a bug or an intended model change — never update it silently.

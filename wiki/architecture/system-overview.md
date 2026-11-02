@@ -29,7 +29,7 @@ Webview (frontend/)
 - **Headless runner** — `src/bin/trainer_runner.rs`: trainer runs and mechanics probes without UI, see [[wiki/simulation/analytics-and-balancing]].
 - **API** — `src/server/api.rs`: Tauri commands, see [[wiki/architecture/ipc-protocol]].
 - **Domain** — `src/biology/` (genome compiler, creature factory, IO-free trainer `TrainerSim`, sandboxes, scenarios, runner report, probes) and `src/shared/` (brain, physics, spatial grid, world generation, IPC structs `dto`, geometry/time/JSON-column helpers, seeded RNG, deterministic math). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
-- **Persistence** — `src/database.rs`, see [[wiki/architecture/persistence]].
+- **Persistence** — `src/persistence/` (repository traits, the only module with SQL), see [[wiki/architecture/persistence]] and [[wiki/contracts/persistence-repo]].
 - **Frontend** — `frontend/`, see [[wiki/frontend/structure]].
 - **Config** — root `config.json`, one section per subsystem, compiled into the binary, loaded only by the entry points (`main.rs`, `trainer_runner.rs`) and passed explicitly; see [[wiki/architecture/configuration]] and [[wiki/contracts/config-section]].
 - **Logging** — `log` facade, backend `src/logging.rs` (TCK-198): dev builds and the runner log to stderr; the release app (no console, `windows_subsystem = "windows"`) writes `<app data dir>/logs/broodbattle.log`, rotated at 1 MiB into `broodbattle.log.1`.

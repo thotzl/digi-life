@@ -1,5 +1,5 @@
 pub mod config;
-pub mod database;
+pub mod persistence;
 pub mod logging;
 pub mod server;
 pub mod biology {
@@ -7,6 +7,7 @@ pub mod biology {
     pub mod trainer_config;
     pub mod trainer_engine;
     pub mod trainer_sim;
+    pub mod trainer_store;
     pub mod trainer_report;
     pub mod scenarios;
     pub mod creature_factory;

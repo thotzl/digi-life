@@ -61,6 +61,8 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
   0.35; `biteCooldownTicks` 60 per attacker/victim pair (TCK-145).
 - Corpse meat spores `floor(length · radius / decompositionSizeRatio (1200))` clamped to
   [`decompositionSporeMin` 1, `decompositionSporeMax` 5].
+- `speciesRecordRetention` 2000: extinct `species_records` rows kept (newest extinction first; alive species always
+  stay), pruned with the 10 s Ocean snapshot (TCK-159, [[wiki/architecture/persistence]]).
 
 ### `trainer`
 

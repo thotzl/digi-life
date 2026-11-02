@@ -106,26 +106,13 @@ pub fn run_probe(name: &str, opts: &ProbeOptions) -> Result<serde_json::Value, S
 
 /// Best distinct trainer genomes of all runs, opened strictly read-only.
 pub fn load_hof_genomes(db_path: &str, limit: usize) -> Result<Vec<HofGenome>, String> {
-    use rusqlite::{Connection, OpenFlags};
-    let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
-        .map_err(|e| format!("cannot open DB {} read-only: {}", db_path, e))?;
-    let mut stmt = conn
-        .prepare("SELECT genome, fitness, run_id, generation FROM trainer_genomes ORDER BY fitness DESC, id ASC")
-        .map_err(|e| format!("cannot read trainer_genomes: {}", e))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(HofGenome {
-                genome: row.get(0)?,
-                fitness: row.get::<_, f64>(1)? as f32,
-                run_id: row.get(2)?,
-                generation: row.get::<_, i64>(3)? as u32,
-            })
-        })
-        .map_err(|e| format!("cannot read trainer_genomes: {}", e))?;
+    use crate::persistence::{open_read_only, TrainerRepo};
+    let db = open_read_only(db_path).map_err(|e| format!("cannot open DB {} read-only: {}", db_path, e))?;
+    let rows = db.ranked_trainer_genomes().map_err(|e| format!("cannot read trainer_genomes: {}", e))?;
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for row in rows {
-        let record = row.map_err(|e| e.to_string())?;
+        let record = HofGenome { genome: row.genome, fitness: row.fitness as f32, run_id: row.run_id, generation: row.generation as u32 };
         if !record.genome.is_empty() && seen.insert(record.genome.clone()) {
             out.push(record);
             if out.len() >= limit {

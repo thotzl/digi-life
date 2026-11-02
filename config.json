@@ -23,7 +23,8 @@
     "reproductionRecoilVelocityScale": 15.0,
     "decompositionSporeMin": 1,
     "decompositionSporeMax": 5,
-    "decompositionSizeRatio": 1200
+    "decompositionSizeRatio": 1200,
+    "speciesRecordRetention": 2000
   },
   "trainer": {
     "trainerPopulation": 100,

@@ -10,7 +10,8 @@ use src_tauri::biology::probes::{load_hof_genomes, run_probe, ProbeOptions, PROB
 use src_tauri::biology::scenarios::Scenario;
 use src_tauri::biology::trainer_report::{run_trainer, RunConfig, ScheduleSpan};
 use src_tauri::biology::trainer_sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrialAggregation};
-use src_tauri::database::{init_db, save_trainer_elites, save_trainer_run_state};
+use src_tauri::biology::trainer_store;
+use src_tauri::persistence::init_db;
 use src_tauri::config::AppConfig;
 
 const USAGE: &str = "Usage:
@@ -228,8 +229,8 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
             stats.level_move.map(|m| format!(", gate {:?}", m)).unwrap_or_default()
         );
         if let Some(conn) = &conn {
-            save_trainer_elites(conn, &run_id, *generation, elites, retention);
-            save_trainer_run_state(conn, &run_id, sim);
+            trainer_store::save_elites(conn, &run_id, *generation, elites, retention);
+            trainer_store::save_run_state(conn, &run_id, sim);
         }
     });
     for eval in &report.final_eval {

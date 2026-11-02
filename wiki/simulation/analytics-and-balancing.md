@@ -105,8 +105,7 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 | Table | Useful columns |
 | :--- | :--- |
 | `simulation_state` | `state_json` → `creatures[]` (`energy`, `age`, `generation`, `neuronStates`), `foodPellets`, `highestGeneration` |
-| `simulation_history` | `generation`, `population_count`, `average_fitness`/`max_fitness` (actually avg/max energy) |
-| `species_records` | `latin_name`, `parent_name`, `status`, `peak_population`, `generation`, `carnivory`, `birth_time`, `extinction_time` |
+| `species_records` | `latin_name`, `parent_name`, `status`, `peak_population`, `generation`, `carnivory`, `birth_time`, `extinction_time` (all alive + newest 2000 extinct, TCK-159) |
 | `trainer_genomes` | `run_id`, `generation`, `fitness`, `active`, `genome`, `methylations`, `synapse_weights` (best 200 per run, TCK-183) |
 | `creature_catalogue` | `source`, `fitness`, `carnivory` |
 

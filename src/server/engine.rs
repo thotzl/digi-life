@@ -3,21 +3,21 @@ use std::thread;
 use std::time::{Duration, Instant};
 use serde_json::json;
 use std::sync::mpsc::Receiver;
-use rusqlite::params;
 use rand::Rng;
 
 use crate::config::AppConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore, TelemetryCreature};
-use crate::shared::{geom, json_col, time};
+use crate::shared::{geom, time};
 use crate::shared::physics::{step_food_spore_physics, SporePusher};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
 use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_sim::{run_seed, TrainerEvent, TrainerParams, TrainerSim};
+use crate::biology::trainer_sim::{run_seed, GenomeRecord, TrainerEvent, TrainerParams, TrainerSim};
 use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
-use crate::database::{delete_trainer_run, init_db, load_trainer_genomes, load_trainer_run_state, save_trainer_elites, save_trainer_run_state, LogDbError};
+use crate::biology::trainer_store;
+use crate::persistence::{init_db, CatalogueRepo, Db, LogDbError, NewSpecies, OceanSnapshotRepo, SpeciesRepo, SpeciesStatus, TrainerRepo};
 
 /// Per-step snapshot of the fields other creatures read (prey search, bite targets).
 struct PeerSnapshot {
@@ -114,8 +114,8 @@ fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, w
 pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>, config: AppConfig) {
     thread::spawn(move || {
         let app_config = &config;
-        let db_path = crate::database::db_path();
-        let conn = init_db(&db_path).expect("Failed to initialize local DB");
+        let db_path = crate::persistence::db_path();
+        let db = init_db(&db_path).expect("Failed to initialize local DB");
 
         // Events are buffered and flushed once per frame (in order); repeated DATABASE_CHANGED
         // notifications within one frame are coalesced since the UI only refetches the roster.
@@ -148,8 +148,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         let mut nearby_foods: Vec<u32> = Vec::new();
         let mut nearby_peers: Vec<u32> = Vec::new();
 
-        // Mirror of species_records (id, status, peak) in SELECT order; reloaded only after inserts/resets
-        let mut species_cache: Vec<(String, String, i32)> = Vec::new();
+        // Mirror of species_records (id, status, peak) in insertion order (`SpeciesRepo::species_states`); reloaded only after inserts/resets
+        let mut species_cache: Vec<(String, SpeciesStatus, i32)> = Vec::new();
         let mut species_cache_dirty = true;
 
         let mut is_running = false;
@@ -195,18 +195,18 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         // the run replace the current ones (no row: current params, layout 0); otherwise the current params and layout
         // continue, so unsaved UI changes since the last generation end are kept. The run seed follows the same rule:
         // stored seed (else `trainer_seed`) on load, the current trainer's seed otherwise (TCK-194).
-        let restore_trainer = |current: &TrainerSim, run_id: &str, generation: u32, load_run_state: bool, db_conn: &rusqlite::Connection| -> TrainerSim {
+        let restore_trainer = |current: &TrainerSim, run_id: &str, generation: u32, load_run_state: bool, db: &Db| -> TrainerSim {
             let mut params = current.params.clone();
             let (layout_id, seed) = if load_run_state {
-                load_trainer_run_state(db_conn, run_id).map_or((0, trainer_seed(run_id)), |state| {
+                trainer_store::load_run_state(db, run_id).map_or((0, trainer_seed(run_id)), |state| {
                     state.apply(&mut params, app_config);
                     (state.layout_id, state.seed.unwrap_or_else(|| trainer_seed(run_id)))
                 })
             } else {
                 (current.layout_id(), current.seed())
             };
-            let parents = load_trainer_genomes(db_conn, run_id, true, params.population);
-            let hof = load_trainer_genomes(db_conn, run_id, false, trainer_retention);
+            let parents = trainer_store::load_genomes(db, run_id, true, params.population);
+            let hof = trainer_store::load_genomes(db, run_id, false, trainer_retention);
             let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
             TrainerSim::restore_at_layout(params, seed, generation, layout_id, parents, hof, trainer_retention, app_config)
         };
@@ -214,27 +214,31 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         // Whether `trainer` holds the run state of `trainer_run_id` (false until the first restore loads it)
         let mut trainer_run_state_loaded = false;
 
-        // Ensure the default desktop session exists to satisfy foreign key constraints
-        conn.execute(
-            "INSERT OR IGNORE INTO sessions (id, name, config_json) VALUES (?1, ?2, ?3)",
-            params!["desktop-session-001", "Tauri Desktop Laboratory Studio", "{}"],
-        ).log_db_err("INSERT OR IGNORE INTO sessions");
-
-        // Try restoring previous simulation state on startup (session persistence!)
+        // Try restoring previous simulation state on startup (session persistence!); failures are logged and the Ocean
+        // starts fresh
         let mut loaded_state_success = false;
-        if let Ok(mut state_stmt) = conn.prepare("SELECT state_json FROM simulation_state WHERE key = 'current_state'") {
-            if let Ok(state_str) = state_stmt.query_row([], |row| row.get::<_, String>(0)) {
-                if let Ok(state_val) = serde_json::from_str::<serde_json::Value>(&state_str) {
+        let snapshot = db.ocean_snapshot().unwrap_or_else(|e| {
+            log::error!("reading the Ocean snapshot failed: {}", e);
+            None
+        });
+        if let Some(state_str) = snapshot {
+            match serde_json::from_str::<serde_json::Value>(&state_str) {
+                Err(e) => log::error!("Ocean snapshot is not valid JSON, starting fresh: {}", e),
+                Ok(state_val) => {
                     if let Some(restored_creatures) = state_val["creatures"].as_array() {
-                        if let Ok(creatures_list) = serde_json::from_value::<Vec<CreatureAgent>>(serde_json::Value::Array(restored_creatures.clone())) {
-                            creatures = creatures_list;
-                            loaded_state_success = true;
-                            log::info!("restored {} creatures from the database", creatures.len());
+                        match serde_json::from_value::<Vec<CreatureAgent>>(serde_json::Value::Array(restored_creatures.clone())) {
+                            Ok(creatures_list) => {
+                                creatures = creatures_list;
+                                loaded_state_success = true;
+                                log::info!("restored {} creatures from the database", creatures.len());
+                            }
+                            Err(e) => log::error!("Ocean snapshot creatures unreadable, starting fresh: {}", e),
                         }
                     }
                     if let Some(restored_spores) = state_val["foodPellets"].as_array() {
-                        if let Ok(spores_list) = serde_json::from_value::<Vec<FoodSpore>>(serde_json::Value::Array(restored_spores.clone())) {
-                            food_pellets = spores_list;
+                        match serde_json::from_value::<Vec<FoodSpore>>(serde_json::Value::Array(restored_spores.clone())) {
+                            Ok(spores_list) => food_pellets = spores_list,
+                            Err(e) => log::error!("Ocean snapshot food spores unreadable: {}", e),
                         }
                     }
                     if let Some(gen_val) = state_val["highestGeneration"].as_u64() {
@@ -282,11 +286,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                 creatures.push(new_agent.clone());
 
-                let now_secs = time::now_secs();
-                conn.execute(
-                    "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                    params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_secs, random_pheno.carnivory],
-                ).log_db_err("INSERT OR IGNORE INTO species_records");
+                db.insert_species(&NewSpecies { genome: mutated_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
+                    .log_db_err("inserting a species");
                 species_cache_dirty = true;
 
                 next_creature_id += 1;
@@ -314,7 +315,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
         let mut last_emit_time = Instant::now();
         let mut last_food_emit_time = Instant::now();
-        let mut last_history_log_time = Instant::now();
+        let mut last_snapshot_time = Instant::now();
         let emit_interval = Duration::from_millis(40); // 25Hz broadcast rate
         let food_emit_interval = Duration::from_millis(500); // 2Hz food broadcast rate
 
@@ -357,7 +358,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     trainer_is_running = false;
 
                                     // Delete the saved genomes and run state of the current run_id in SQLite (hard reset!)
-                                    delete_trainer_run(&conn, &trainer_run_id).log_db_err("DELETE trainer run");
+                                    db.delete_trainer_run(&trainer_run_id).log_db_err("deleting the trainer run");
                                     // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
                                     let mut fresh_params = trainer.params.clone();
                                     if fresh_params.level_auto {
@@ -367,7 +368,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     // before the first generation end continues this run (TCK-194)
                                     let nonce = time::now_nanos();
                                     trainer = TrainerSim::new(fresh_params, run_seed(&app_config.core.seed, &trainer_run_id, Some(nonce)), trainer_retention, app_config);
-                                    save_trainer_run_state(&conn, &trainer_run_id, &trainer);
+                                    trainer_store::save_run_state(&db, &trainer_run_id, &trainer);
                                     trainer_run_state_loaded = true;
 
                                     let state = trainer_state(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id);
@@ -389,27 +390,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                     let generation = trainer.generation;
                                     if let Some(sb) = trainer.assign_creature(sb_id, &assign.genome, m_opt, s_opt) {
-                                        // Also save this assigned creature as active in trainer_genomes SQLite database for this run!
-                                        let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, generation, sb_id);
-                                        let methylations_json = json_col::encode(&sb.agent.phenotype.methylations, "trainer_genomes.methylations");
-                                        let synapse_weights_json = json_col::encode(&sb.agent.synapse_weights, "trainer_genomes.synapse_weights");
-                                        let now_secs = time::now_secs();
-
-                                        conn.execute(
-                                            "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
-                                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
-                                            params![
-                                                unique_id,
-                                                trainer_run_id,
-                                                generation as i32,
-                                                sb.agent.phenotype.latin_name,
-                                                sb.agent.genome,
-                                                0.0,
-                                                now_secs,
-                                                methylations_json,
-                                                synapse_weights_json
-                                            ],
-                                        ).log_db_err("INSERT OR REPLACE INTO trainer_genomes");
+                                        // Also save this assigned creature as an active parent of this run
+                                        let record = GenomeRecord {
+                                            genome: sb.agent.genome.clone(),
+                                            name: sb.agent.phenotype.latin_name.clone(),
+                                            fitness: 0.0,
+                                            generation,
+                                            methylations: sb.agent.phenotype.methylations.clone(),
+                                            synapse_weights: sb.agent.synapse_weights.clone(),
+                                        };
+                                        trainer_store::save_assigned(&db, &trainer_run_id, generation, sb_id, &record);
                                     }
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
                                 }
@@ -467,7 +457,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     }
 
                                     if grid_changed {
-                                        trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &conn);
+                                        trainer = restore_trainer(&trainer, &trainer_run_id, generation_base, !trainer_run_state_loaded, &db);
                                         trainer_run_state_loaded = true;
                                     }
                                     trainer_display_count = trainer_display_count.min(trainer.params.population);
@@ -541,11 +531,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 creatures.push(new_agent.clone());
                                 newly_spawned_creatures.push(new_agent.clone());
 
-                                let now_secs = time::now_secs();
-                                conn.execute(
-                                    "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                    params![&random_dna, &random_pheno.latin_name, &random_dna, None::<String>, now_secs, random_pheno.carnivory],
-                                ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                db.insert_species(&NewSpecies { genome: random_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
+                                    .log_db_err("inserting a species");
                                 species_cache_dirty = true;
 
                                 emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -593,11 +580,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     newly_spawned_creatures.push(new_agent);
 
                                     // Record the newly released clone in species_records if not exists
-                                    let now_secs = time::now_secs();
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                        params![genome, &pheno.latin_name, genome, None::<String>, now_secs, pheno.carnivory],
-                                    ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                    db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
+                                        .log_db_err("inserting a species");
                                     species_cache_dirty = true;
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -613,10 +597,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 log::info!("evolution reset");
                                 
                                 // Wipe old species records, histories, and state caches from SQLite database
-                                conn.execute("DELETE FROM species_records", []).log_db_err("DELETE FROM species_records");
+                                db.clear_species().log_db_err("clearing species_records");
                                 species_cache_dirty = true;
-                                conn.execute("DELETE FROM simulation_history", []).log_db_err("DELETE FROM simulation_history");
-                                conn.execute("DELETE FROM simulation_state", []).log_db_err("DELETE FROM simulation_state");
+                                db.clear_ocean_state().log_db_err("clearing the Ocean snapshot");
 
                                 creatures.clear();
                                 food_pellets.clear();
@@ -628,31 +611,18 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 let mut rng = rand::thread_rng();
 
                                 // Query all saved catalogue creatures
-                                let mut catalogue_creatures = Vec::new();
-                                if let Ok(mut stmt) = conn.prepare("SELECT genome, name, methylations, synapse_weights FROM creature_catalogue") {
-                                    if let Ok(rows) = stmt.query_map([], |row| {
-                                        Ok((
-                                            row.get::<_, String>(0)?,
-                                            row.get::<_, String>(1)?,
-                                            row.get::<_, String>(2)?,
-                                            row.get::<_, String>(3)?
-                                        ))
-                                    }) {
-                                        for row in rows {
-                                            if let Ok(data) = row {
-                                                catalogue_creatures.push(data);
-                                            }
-                                        }
-                                    }
-                                }
+                                let catalogue_creatures = db.list_catalogue().unwrap_or_else(|e| {
+                                    log::error!("reading the catalogue failed: {}", e);
+                                    Vec::new()
+                                });
 
                                 if !catalogue_creatures.is_empty() {
                                     for _ in 0..25 {
                                         let idx = rng.gen_range(0..catalogue_creatures.len());
-                                        let (genome, _name, m_str, s_str) = &catalogue_creatures[idx];
-                                        
-                                        let m_arr: Vec<f32> = json_col::decode(m_str, "creature_catalogue.methylations").unwrap_or_default();
-                                        let s_arr: Vec<f32> = json_col::decode(s_str, "creature_catalogue.synapse_weights").unwrap_or_default();
+                                        let entry = &catalogue_creatures[idx];
+                                        let genome = &entry.genome;
+                                        let m_arr: Vec<f32> = entry.methylations.clone();
+                                        let s_arr: Vec<f32> = entry.synapse_weights.clone();
                                         let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
                                         
                                         let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
@@ -675,11 +645,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                         creatures.push(new_agent.clone());
 
-                                        let now_secs = time::now_secs();
-                                        conn.execute(
-                                            "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                            params![genome, &pheno.latin_name, genome, None::<String>, now_secs, pheno.carnivory],
-                                        ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                        db.insert_species(&NewSpecies { genome: genome.to_string(), latin_name: pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: pheno.carnivory as f64 })
+                                            .log_db_err("inserting a species");
                                         species_cache_dirty = true;
                                         next_creature_id += 1;
                                     }
@@ -709,11 +676,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                         creatures.push(new_agent.clone());
 
-                                        let now_secs = time::now_secs();
-                                        conn.execute(
-                                            "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                            params![founder_dna, &random_pheno.latin_name, founder_dna, None::<String>, now_secs, random_pheno.carnivory],
-                                        ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                        db.insert_species(&NewSpecies { genome: founder_dna.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: 1, carnivory: random_pheno.carnivory as f64 })
+                                            .log_db_err("inserting a species");
                                         species_cache_dirty = true;
                                         next_creature_id += 1;
                                     }
@@ -781,7 +745,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     if mode == "trainer" {
                                         is_trainer_active = true;
                                         // Rebuild the population from the DB when entering the trainer
-                                        trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &conn);
+                                        trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &db);
                                         trainer_run_state_loaded = true;
                                         log::info!("rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
@@ -1137,11 +1101,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                 if is_mutation {
                                     // Save new mutated child species into SQLite database
-                                    let now_secs = time::now_secs();
-                                    conn.execute(
-                                        "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
-                                        params![&child.genome, &child.phenotype.latin_name, &child.genome, Some(agent.phenotype.latin_name.clone()), now_secs, child.generation, child.phenotype.carnivory],
-                                    ).log_db_err("INSERT OR IGNORE INTO species_records");
+                                    db.insert_species(&NewSpecies { genome: child.genome.to_string(), latin_name: child.phenotype.latin_name.clone(), parent_name: Some(agent.phenotype.latin_name.clone()), generation: child.generation as i64, carnivory: child.phenotype.carnivory as f64 })
+                                        .log_db_err("inserting a species");
                                     species_cache_dirty = true;
 
                                     emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -1215,14 +1176,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     // The engine is the only writer of species_records, so the table is only re-read after inserts/resets
                     if species_cache_dirty {
                         species_cache.clear();
-                        if let Ok(mut stmt) = conn.prepare("SELECT id, status, peak_population FROM species_records") {
-                            if let Ok(rows) = stmt.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i32>(2)?))) {
-                                for row in rows {
-                                    if let Ok(item) = row {
-                                        species_cache.push(item);
-                                    }
-                                }
-                            }
+                        match db.species_states() {
+                            Ok(states) => species_cache.extend(states.into_iter().map(|s| (s.id, s.status, s.peak_population))),
+                            Err(e) => log::error!("reading species_records failed: {}", e),
                         }
                         species_cache_dirty = false;
                     }
@@ -1242,39 +1198,36 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 peak_updates.push((id.clone(), active_count));
                                 *peak_pop = active_count;
                             }
-                            if status == "extinct" {
+                            if *status == SpeciesStatus::Extinct {
                                 // Re-sprout resurrected species
-                                conn.execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id.as_str()]).log_db_err("UPDATE species_records");
-                                *status = "alive".to_string();
+                                db.mark_species_alive(id).log_db_err("marking a species alive");
+                                *status = SpeciesStatus::Alive;
                                 db_changed = true;
                             }
                         } else {
-                            if status == "alive" {
+                            if *status == SpeciesStatus::Alive {
                                 extinction_updates.push(id.clone());
-                                *status = "extinct".to_string();
+                                *status = SpeciesStatus::Extinct;
                             }
                         }
                     }
 
                     for (id, peak) in peak_updates {
-                        conn.execute("UPDATE species_records SET peak_population = ?1 WHERE id = ?2", params![peak, id]).log_db_err("UPDATE species_records");
+                        db.set_species_peak(&id, peak).log_db_err("updating a species peak");
                         db_changed = true;
                     }
 
                     for id in extinction_updates {
-                        let now_secs = time::now_secs();
-                        conn.execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![now_secs, id]).log_db_err("UPDATE species_records");
+                        db.mark_species_extinct(&id).log_db_err("marking a species extinct");
                         db_changed = true;
 
                         // Fetch name for logging
-                        if let Ok(mut n_stmt) = conn.prepare("SELECT latin_name FROM species_records WHERE id = ?1") {
-                            if let Ok(name) = n_stmt.query_row(params![id], |r| r.get::<_, String>(0)) {
-                                emit_state(json!({
-                                    "type": "LOG_EVENT",
-                                    "message": format!("✝️ Extinction Event! Species '{}' has gone completely extinct. The only relics remain in the silent fossil archive.", name),
-                                    "logType": "mutation"
-                                }));
-                            }
+                        if let Ok(Some(name)) = db.species_name(&id) {
+                            emit_state(json!({
+                                "type": "LOG_EVENT",
+                                "message": format!("✝️ Extinction Event! Species '{}' has gone completely extinct. The only relics remain in the silent fossil archive.", name),
+                                "logType": "mutation"
+                            }));
                         }
                     }
 
@@ -1288,22 +1241,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     // Query all saved catalogue creatures once per restock pass
                     let mut catalogue_creatures = Vec::new();
                     if creatures.len() < target_population {
-                        if let Ok(mut stmt) = conn.prepare("SELECT genome, name, methylations, synapse_weights FROM creature_catalogue") {
-                            if let Ok(rows) = stmt.query_map([], |row| {
-                                Ok((
-                                    row.get::<_, String>(0)?,
-                                    row.get::<_, String>(1)?,
-                                    row.get::<_, String>(2)?,
-                                    row.get::<_, String>(3)?
-                                ))
-                            }) {
-                                for row in rows {
-                                    if let Ok(data) = row {
-                                        catalogue_creatures.push(data);
-                                    }
-                                }
-                            }
-                        }
+                        catalogue_creatures = db.list_catalogue().unwrap_or_else(|e| {
+                            log::error!("reading the catalogue failed: {}", e);
+                            Vec::new()
+                        });
                     }
 
                     while creatures.len() < target_population {
@@ -1311,10 +1252,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         let (g, random_pheno, _m_vec, s_vec, source_tag, generation_val) = if !catalogue_creatures.is_empty() {
                             let idx = rng.gen_range(0..catalogue_creatures.len());
-                            let (genome, name, m_str, s_str) = &catalogue_creatures[idx];
-                            
-                            let m_arr: Vec<f32> = json_col::decode(m_str, "creature_catalogue.methylations").unwrap_or_default();
-                            let s_arr: Vec<f32> = json_col::decode(s_str, "creature_catalogue.synapse_weights").unwrap_or_default();
+                            let entry = &catalogue_creatures[idx];
+                            let (genome, name) = (&entry.genome, &entry.name);
+                            let m_arr: Vec<f32> = entry.methylations.clone();
+                            let s_arr: Vec<f32> = entry.synapse_weights.clone();
                             let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
                             
                             let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
@@ -1346,11 +1287,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         newly_spawned_creatures.push(new_restocked.clone());
 
                         // Seed each unique species into local SQLite database if not exists
-                        let now_secs = time::now_secs();
-                        conn.execute(
-                            "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
-                            params![&g, &random_pheno.latin_name, &g, None::<String>, now_secs, generation_val, random_pheno.carnivory],
-                        ).log_db_err("INSERT OR IGNORE INTO species_records");
+                        db.insert_species(&NewSpecies { genome: g.to_string(), latin_name: random_pheno.latin_name.clone(), parent_name: None, generation: generation_val as i64, carnivory: random_pheno.carnivory as f64 })
+                            .log_db_err("inserting a species");
                         species_cache_dirty = true;
 
                         emit_state(json!({ "type": "DATABASE_CHANGED" }));
@@ -1407,24 +1345,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     last_food_emit_time = Instant::now();
                 }
 
-                // Log Simulation History to SQLite DB every 10 seconds (continuous time-series)
-                if last_history_log_time.elapsed() >= Duration::from_secs(10) {
+                // Every 10 seconds: Ocean snapshot and species retention (the energy time series `simulation_history`
+                // had no reader and was removed, TCK-159)
+                if last_snapshot_time.elapsed() >= Duration::from_secs(10) {
                     if !creatures.is_empty() {
-                        let pop_count = creatures.len() as i32;
-                        let avg_energy: f32 = creatures.iter().map(|c| c.energy).sum::<f32>() / pop_count as f32;
-                        let max_energy: f32 = creatures.iter().map(|c| c.energy).fold(0.0, |a, b| a.max(b));
-
-                        conn.execute(
-                            "INSERT INTO simulation_history (session_id, generation, average_fitness, max_fitness, population_count) VALUES (?1, ?2, ?3, ?4, ?5)",
-                            params![
-                                "desktop-session-001",
-                                highest_generation as i32,
-                                avg_energy,
-                                max_energy,
-                                pop_count
-                            ],
-                        ).log_db_err("INSERT INTO simulation_history");
-
                         // Save current simulation state JSON to the database (session persistence!)
                         let state_val = json!({
                             "creatures": creatures,
@@ -1434,14 +1358,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "nextSporeId": next_spore_id
                         });
                         if let Ok(state_str) = serde_json::to_string(&state_val) {
-                            let now_ms = time::now_ms();
-                            conn.execute(
-                                "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('current_state', ?1, ?2)",
-                                params![state_str, now_ms],
-                            ).log_db_err("INSERT OR REPLACE INTO simulation_state");
+                            db.save_ocean_snapshot(&state_str).log_db_err("saving the Ocean snapshot");
                         }
                     }
-                    last_history_log_time = Instant::now();
+                    match db.prune_extinct_species(app_config.ocean.species_record_retention) {
+                        Ok(0) => {}
+                        Ok(_) => species_cache_dirty = true,
+                        Err(e) => log::error!("species retention failed: {}", e),
+                    }
+                    last_snapshot_time = Instant::now();
                 }
             }
 
@@ -1474,9 +1399,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
 
                             // Save the elite champions (once per generation) and re-trigger roster refreshes
-                            save_trainer_elites(&conn, &trainer_run_id, generation, &elites, trainer_retention);
+                            trainer_store::save_elites(&db, &trainer_run_id, generation, &elites, trainer_retention);
                             // Run state after the boundary (TCK-191); a switch requested later stays pending until its generation ends
-                            save_trainer_run_state(&conn, &trainer_run_id, &trainer);
+                            trainer_store::save_run_state(&db, &trainer_run_id, &trainer);
                             emit_state(json!({ "type": "DATABASE_CHANGED" }));
                         }
                     }

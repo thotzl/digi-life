@@ -31,7 +31,7 @@ The open-world mode: a closed basin with a free-living population.
 
 ## Auto-save
 
-- Every 10 s `simulation_state` (`current_state`) and a `simulation_history` row; loaded on startup ([[wiki/architecture/persistence]]).
+- Every 10 s `simulation_state` (`current_state`) is saved and extinct species beyond `speciesRecordRetention` are pruned; the snapshot is loaded on startup, failures are logged ([[wiki/architecture/persistence]]).
 
 ## Observed behaviour
 

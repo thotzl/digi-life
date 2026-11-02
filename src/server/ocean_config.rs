@@ -38,4 +38,7 @@ pub struct OceanConfig {
     pub decomposition_spore_min: i32,
     pub decomposition_spore_max: i32,
     pub decomposition_size_ratio: f32,
+    /// Retention of `species_records` (TCK-159): extinct species kept, newest extinction first; alive ones always stay.
+    /// Pruned with the 10 s Ocean snapshot.
+    pub species_record_retention: usize,
 }

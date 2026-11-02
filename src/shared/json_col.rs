@@ -24,9 +24,23 @@ pub fn decode<T: DeserializeOwned>(text: &str, column: &str) -> Option<T> {
     }
 }
 
+/// JSON array of `values` with each number in its shortest f32 spelling (the value an IPC payload had when it was
+/// parsed from the stored column text). A direct `json!(values)` widens f32 to f64 (0.9 -> 0.8999999761581421).
+pub fn f32_values(values: &[f32]) -> serde_json::Value {
+    serde_json::from_str(&encode(values, "f32 values")).unwrap_or_else(|_| serde_json::Value::Array(Vec::new()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_f32_values_keep_the_column_spelling() {
+        let stored = "[0.5,0.0,0.9,-2.0]";
+        let values: Vec<f32> = decode(stored, "w").unwrap();
+        assert_eq!(f32_values(&values), serde_json::from_str::<serde_json::Value>(stored).unwrap());
+        assert_eq!(f32_values(&values).to_string(), "[0.5,0.0,0.9,-2.0]");
+    }
 
     #[test]
     fn test_roundtrip_and_failure() {

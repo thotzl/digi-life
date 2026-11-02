@@ -16,6 +16,6 @@ description: Rules for changing the Rust simulation engine thread, physics, Taur
 - No SQL, grid allocation or agent clone per physics step; emit through the event buffer (`emit_state`), never directly from the step loop.
 - `RESET_EVOLUTION` must clear `newly_spawned_creatures`.
 - Thrust is always scaled through `step_creature_kinematics`; never apply raw activations as force.
-- New actions: handle them in the engine match; unknown types must stay logged. New commands: register in `main.rs` and use the shared `DbState` connection.
-- Log DB errors via `log_db_err`; never discard `conn.execute` results.
+- New actions: handle them in the engine match; unknown types must stay logged. New commands: register in `main.rs` and use the shared `DbState` store.
+- No SQL outside `src/persistence/`: call the repository traits (contract `wiki/contracts/persistence-repo.md`, guide `wiki/guides/add-table.md`). Log fire-and-forget DB errors via `log_db_err`; never discard a repository result.
 - Performance changes must be behaviour-preserving and keep iteration order (golden master and equivalence tests green).

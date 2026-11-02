@@ -6,7 +6,7 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::Mutex;
 
 use src_tauri::config::AppConfig;
-use src_tauri::database;
+use src_tauri::persistence;
 use src_tauri::server::api;
 use src_tauri::server::engine::spawn_simulation_thread;
 
@@ -42,16 +42,16 @@ fn main() {
             app.manage(config.clone());
 
             // Persist the database in the per-user app data dir instead of the working directory
-            let db_path = data_dir.join(database::DB_FILE_NAME);
-            match database::migrate_legacy_db(std::path::Path::new(database::LEGACY_DB_PATH), &db_path) {
-                Ok(true) => log::info!("copied legacy database '{}' to '{}'", database::LEGACY_DB_PATH, db_path.display()),
+            let db_path = data_dir.join(persistence::DB_FILE_NAME);
+            match persistence::migrate_legacy_db(std::path::Path::new(persistence::LEGACY_DB_PATH), &db_path) {
+                Ok(true) => log::info!("copied legacy database '{}' to '{}'", persistence::LEGACY_DB_PATH, db_path.display()),
                 Ok(false) => {}
                 Err(e) => log::error!("legacy database migration failed: {}", e),
             }
             log::info!("using database '{}'", db_path.display());
-            database::set_db_path(db_path.clone());
-            let conn = database::init_db(&db_path)?;
-            app.manage(database::DbState(Mutex::new(conn)));
+            persistence::set_db_path(db_path.clone());
+            let conn = persistence::init_db(&db_path)?;
+            app.manage(persistence::DbState(Mutex::new(conn)));
 
             let window = app.get_webview_window("main").expect("Failed to locate main window");
 

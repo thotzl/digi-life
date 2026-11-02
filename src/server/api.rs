@@ -1,11 +1,10 @@
 use tauri::{AppHandle, Manager, State};
 use serde_json::json;
 use std::sync::mpsc::Sender;
-use rusqlite::params;
-use crate::database::{delete_trainer_run, DbState};
+use crate::persistence::{CatalogueRepo, DbState, NewCatalogueEntry, OceanSnapshotRepo, SpeciesRepo, TrainerGenome, TrainerRepo};
 use crate::biology::dna::parse_genome;
 use crate::config::AppConfig;
-use crate::shared::{json_col, time};
+use crate::shared::json_col;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrainerGenomeInput {
@@ -25,177 +24,87 @@ pub fn handle_client_action(action: String, app_handle: AppHandle) -> Result<(),
 
 #[tauri::command]
 pub fn get_registered_species(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-    
-    let mut stmt = conn
-        .prepare("SELECT id, latin_name, genome_string, parent_name, status, peak_population, birth_time, extinction_time, generation, carnivory FROM species_records")
-        .map_err(|e| e.to_string())?;
-        
-    let rows = stmt.query_map([], |row| {
-        let birth_time: i64 = row.get(6)?;
-        let extinction_time: Option<i64> = row.get(7)?;
-        Ok(json!({
-            "id": row.get::<_, String>(0)?,
-            "name": row.get::<_, String>(1)?,
-            "genome": row.get::<_, String>(2)?,
-            "antisense": "",
-            "parentSpeciesId": row.get::<_, Option<String>>(3)?,
-            "status": row.get::<_, String>(4)?,
-            "peakPopulation": row.get::<_, i32>(5)?,
-            "birthTime": birth_time,
-            "extinctionTime": extinction_time,
-            "generation": row.get::<_, i32>(8)?,
-            "carnivory": row.get::<_, f64>(9)?
-        }))
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        match row {
-            Ok(item) => list.push(item),
-            Err(e) => log::warn!("skipping unreadable row: {}", e),
-        }
-    }
-    
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = store
+        .list_species()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|s| {
+            json!({
+                "id": s.id,
+                "name": s.latin_name,
+                "genome": s.genome,
+                "antisense": "",
+                "parentSpeciesId": s.parent_name,
+                "status": s.status.as_str(),
+                "peakPopulation": s.peak_population,
+                "birthTime": s.birth_time,
+                "extinctionTime": s.extinction_time,
+                "generation": s.generation,
+                "carnivory": s.carnivory
+            })
+        })
+        .collect();
     Ok(json!(list))
 }
 
 #[tauri::command]
 pub fn get_trainer_runs(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = store
+        .trainer_runs()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|run| json!({ "run_id": run.run_id, "max_gen": run.max_generation, "max_fit": run.max_fitness }))
+        .collect();
+    Ok(json!(list))
+}
 
-    let mut stmt = conn
-        .prepare("SELECT run_id, MAX(generation) as max_gen, MAX(fitness) as max_fit FROM trainer_genomes GROUP BY run_id")
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt.query_map([], |row| {
-        Ok(json!({
-            "run_id": row.get::<_, String>(0)?,
-            "max_gen": row.get::<_, i32>(1)?,
-            "max_fit": row.get::<_, f64>(2)?
-        }))
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        match row {
-            Ok(item) => list.push(item),
-            Err(e) => log::warn!("skipping unreadable row: {}", e),
-        }
-    }
-
+/// Name, genome and fitness of the best `limit` genomes of a run (active parents or hall of fame).
+fn trainer_genome_list(db: &State<'_, DbState>, run_id: &str, active_only: bool, limit: i32) -> Result<serde_json::Value, String> {
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = store
+        .trainer_genomes(run_id, active_only, limit as i64)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|g| json!({ "name": g.name, "genome": g.genome, "fitness": g.fitness }))
+        .collect();
     Ok(json!(list))
 }
 
 #[tauri::command]
 pub fn get_trainer_population(db: State<'_, DbState>, run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let mut stmt = conn
-        .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 AND active = 1 ORDER BY fitness DESC LIMIT ?2")
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt.query_map(params![run_id, limit], |row| {
-        Ok(json!({
-            "name": row.get::<_, String>(0)?,
-            "genome": row.get::<_, String>(1)?,
-            "fitness": row.get::<_, f64>(2)?
-        }))
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        match row {
-            Ok(item) => list.push(item),
-            Err(e) => log::warn!("skipping unreadable row: {}", e),
-        }
-    }
-
-    Ok(json!(list))
+    trainer_genome_list(&db, &run_id, true, limit)
 }
 
 #[tauri::command]
 pub fn get_trainer_hof(db: State<'_, DbState>, run_id: String, limit: i32) -> Result<serde_json::Value, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let mut stmt = conn
-        .prepare("SELECT name, genome, fitness FROM trainer_genomes WHERE run_id = ?1 ORDER BY fitness DESC LIMIT ?2")
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt.query_map(params![run_id, limit], |row| {
-        Ok(json!({
-            "name": row.get::<_, String>(0)?,
-            "genome": row.get::<_, String>(1)?,
-            "fitness": row.get::<_, f64>(2)?
-        }))
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        match row {
-            Ok(item) => list.push(item),
-            Err(e) => log::warn!("skipping unreadable row: {}", e),
-        }
-    }
-
-    Ok(json!(list))
+    trainer_genome_list(&db, &run_id, false, limit)
 }
 
 #[tauri::command]
 pub fn save_trainer_generation(db: State<'_, DbState>, run_id: String, generation: i32, population: Vec<TrainerGenomeInput>) -> Result<bool, String> {
-    let mut conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let tx = conn.transaction().map_err(|e| e.to_string())?;
-
-    tx.execute(
-        "UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1",
-        params![run_id],
-    ).map_err(|e| e.to_string())?;
-
-    let now_secs = time::now_secs();
-
-    for (idx, gen_input) in population.iter().enumerate() {
-        let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_secs);
-        tx.execute(
-            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
-            params![
-                unique_id,
-                run_id,
-                generation,
-                gen_input.name,
-                gen_input.genome,
-                gen_input.fitness,
-                now_secs
-            ],
-        ).map_err(|e| e.to_string())?;
-    }
-
-    tx.commit().map_err(|e| e.to_string())?;
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let rows: Vec<TrainerGenome> = population
+        .into_iter()
+        .map(|g| TrainerGenome { name: g.name, genome: g.genome, fitness: g.fitness, generation: generation as i64, methylations: Vec::new(), synapse_weights: Vec::new() })
+        .collect();
+    store.save_trainer_generation(&run_id, &rows, None).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
 pub fn clear_trainer_history(db: State<'_, DbState>, run_id: String) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
     // Genomes and run state (TCK-191)
-    delete_trainer_run(&conn, &run_id).map_err(|e| e.to_string())?;
-
+    store.delete_trainer_run(&run_id).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
 pub fn apply_champion(db: State<'_, DbState>, genome: String) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let now_secs = time::now_secs();
-
-    conn.execute(
-        "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('progenitor_genome', ?1, ?2)",
-        params![genome, now_secs],
-    ).map_err(|e| e.to_string())?;
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    store.save_progenitor_genome(&genome).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -209,47 +118,25 @@ pub async fn get_fossil_phenotype(genome: String, config: State<'_, AppConfig>) 
 
 #[tauri::command]
 pub fn get_catalogue_creatures(db: State<'_, DbState>) -> Result<serde_json::Value, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let mut stmt = conn
-        .prepare("SELECT id, name, genome, source, fitness, carnivory, methylations, synapse_weights, created_at FROM creature_catalogue ORDER BY created_at DESC")
-        .map_err(|e| e.to_string())?;
-
-    let rows = stmt.query_map([], |row| {
-        let id: String = row.get(0)?;
-        let name: String = row.get(1)?;
-        let genome: String = row.get(2)?;
-        let source: String = row.get(3)?;
-        let fitness: f64 = row.get(4)?;
-        let carnivory: f64 = row.get(5)?;
-        let methylations_str: String = row.get(6)?;
-        let synapse_weights_str: String = row.get(7)?;
-        let created_at: String = row.get(8)?;
-
-        let methylations: serde_json::Value = json_col::decode(&methylations_str, "creature_catalogue.methylations").unwrap_or(json!([]));
-        let synapse_weights: serde_json::Value = json_col::decode(&synapse_weights_str, "creature_catalogue.synapse_weights").unwrap_or(json!([]));
-
-        Ok(json!({
-            "id": id,
-            "name": name,
-            "genome": genome,
-            "source": source,
-            "fitness": fitness,
-            "carnivory": carnivory,
-            "methylations": methylations,
-            "synapseWeights": synapse_weights,
-            "createdAt": created_at
-        }))
-    }).map_err(|e| e.to_string())?;
-
-    let mut list = Vec::new();
-    for row in rows {
-        match row {
-            Ok(item) => list.push(item),
-            Err(e) => log::warn!("skipping unreadable row: {}", e),
-        }
-    }
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let list: Vec<serde_json::Value> = store
+        .list_catalogue()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|c| {
+            json!({
+                "id": c.id,
+                "name": c.name,
+                "genome": c.genome,
+                "source": c.source,
+                "fitness": c.fitness,
+                "carnivory": c.carnivory,
+                "methylations": json_col::f32_values(&c.methylations),
+                "synapseWeights": json_col::f32_values(&c.synapse_weights),
+                "createdAt": c.created_at
+            })
+        })
+        .collect();
     Ok(json!(list))
 }
 
@@ -265,40 +152,25 @@ pub fn save_to_catalogue(
     methylations: Vec<f32>,
     synapse_weights: Vec<f32>,
 ) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let pheno = parse_genome(&genome, None, None, &config.brain);
-    let carnivory = pheno.carnivory as f64;
-
-    let methylations_json = serde_json::to_string(&methylations).map_err(|e| e.to_string())?;
-    let synapse_weights_json = serde_json::to_string(&synapse_weights).map_err(|e| e.to_string())?;
-
-    conn.execute(
-        "INSERT OR REPLACE INTO creature_catalogue (id, name, genome, source, fitness, carnivory, methylations, synapse_weights, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, CURRENT_TIMESTAMP)",
-        params![id, name, genome, source, fitness, carnivory, methylations_json, synapse_weights_json],
-    ).map_err(|e| e.to_string())?;
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let carnivory = parse_genome(&genome, None, None, &config.brain).carnivory as f64;
+    store
+        .save_catalogue_entry(&NewCatalogueEntry { id, name, genome, source, fitness, carnivory, methylations, synapse_weights })
+        .map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
 pub fn delete_from_catalogue(db: State<'_, DbState>, id: String) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    conn.execute("DELETE FROM creature_catalogue WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    store.delete_catalogue_entry(&id).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
 #[tauri::command]
 pub fn rename_catalogue_creature(db: State<'_, DbState>, id: String, new_name: String) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    conn.execute("UPDATE creature_catalogue SET name = ?1 WHERE id = ?2", params![new_name, id])
-        .map_err(|e| e.to_string())?;
-
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    store.rename_catalogue_entry(&id, &new_name).map_err(|e| e.to_string())?;
     Ok(true)
 }
 
@@ -309,36 +181,23 @@ pub fn spawn_catalogue_creature_to_ocean(
     load_learned_synapses: bool,
     app_handle: AppHandle,
 ) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let Some(entry) = store.catalogue_entry(&id).map_err(|e| e.to_string())? else {
+        return Err("Creature not found in catalogue".to_string());
+    };
+    let action = json!({
+        "type": "SPAWN_CLONE",
+        "genome": entry.genome,
+        "methylations": json_col::f32_values(&entry.methylations),
+        "synapse_weights": json_col::f32_values(&entry.synapse_weights),
+        "load_learned_synapses": load_learned_synapses
+    });
 
-    let mut stmt = conn
-        .prepare("SELECT genome, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-
-    let mut rows = stmt.query_map(params![id], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
-    }).map_err(|e| e.to_string())?;
-
-    if let Some(Ok((genome, methylations_str, synapse_weights_str))) = rows.next() {
-        let methylations: serde_json::Value = json_col::decode(&methylations_str, "creature_catalogue.methylations").unwrap_or(json!([]));
-        let synapse_weights: serde_json::Value = json_col::decode(&synapse_weights_str, "creature_catalogue.synapse_weights").unwrap_or(json!([]));
-
-        let action = json!({
-            "type": "SPAWN_CLONE",
-            "genome": genome,
-            "methylations": methylations,
-            "synapse_weights": synapse_weights,
-            "load_learned_synapses": load_learned_synapses
-        });
-
-        let tx: State<Sender<String>> = app_handle.state();
-        if let Err(e) = tx.send(action.to_string()) {
-            return Err(format!("Failed to send spawn action to simulation thread: {}", e));
-        }
-        Ok(true)
-    } else {
-        Err("Creature not found in catalogue".to_string())
+    let tx: State<Sender<String>> = app_handle.state();
+    if let Err(e) = tx.send(action.to_string()) {
+        return Err(format!("Failed to send spawn action to simulation thread: {}", e));
     }
+    Ok(true)
 }
 
 #[tauri::command]
@@ -348,44 +207,18 @@ pub fn add_catalogue_creature_to_training(
     run_id: String,
     generation: i32,
 ) -> Result<bool, String> {
-    let conn = db.0.lock().map_err(|e| e.to_string())?;
-
-    let mut stmt = conn
-        .prepare("SELECT name, genome, fitness, methylations, synapse_weights FROM creature_catalogue WHERE id = ?1")
-        .map_err(|e| e.to_string())?;
-
-    let mut rows = stmt.query_map(params![creature_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, f64>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?
-        ))
-    }).map_err(|e| e.to_string())?;
-
-    if let Some(Ok((name, genome, fitness, methylations, synapse_weights))) = rows.next() {
-        let now_ms = time::now_ms();
-        let unique_id = format!("{}-{}-added-{}", run_id, generation, now_ms);
-
-        conn.execute(
-            "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
-            params![
-                unique_id,
-                run_id,
-                generation,
-                name,
-                genome,
-                fitness,
-                now_ms / 1000,
-                methylations,
-                synapse_weights
-            ],
-        ).map_err(|e| e.to_string())?;
-
-        Ok(true)
-    } else {
-        Err("Creature not found in catalogue".to_string())
-    }
+    let store = db.0.lock().map_err(|e| e.to_string())?;
+    let Some(entry) = store.catalogue_entry(&creature_id).map_err(|e| e.to_string())? else {
+        return Err("Creature not found in catalogue".to_string());
+    };
+    let row = TrainerGenome {
+        name: entry.name,
+        genome: entry.genome,
+        fitness: entry.fitness,
+        generation: generation as i64,
+        methylations: entry.methylations,
+        synapse_weights: entry.synapse_weights,
+    };
+    store.add_trainer_genome(&run_id, &row).map_err(|e| e.to_string())?;
+    Ok(true)
 }
