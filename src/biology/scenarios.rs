@@ -5,7 +5,11 @@ use crate::biology::trainer_config::TrainerFitnessConfig;
 use crate::config::AppConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::geom;
-use rand::Rng;
+use crate::sim::systems::death::DeathPolicy;
+use crate::sim::systems::eat::{spawn_at_min_distance, EatRadiusRule, RespawnPolicy, SPAWN_MAX_TRIES};
+use crate::sim::systems::food_drift::FoodDriftOrder;
+use crate::sim::systems::sense::{ClockVariant, TargetSelector};
+use crate::sim::{WorldSettings, TRAINER_SYSTEMS};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -81,29 +85,6 @@ impl DietClass {
     }
 }
 
-/// Upper bound for spawn rejection sampling; afterwards the farthest candidate is used.
-pub const SPAWN_MAX_TRIES: u32 = 1000;
-
-/// Random point in the chamber (25 px margin) at least `min_dist` away from `from`.
-/// After `max_tries` rejected candidates the farthest one found is returned.
-pub fn spawn_at_min_distance(rng: &mut SimRng, chamber_size: f32, from: (f32, f32), min_dist: f32, max_tries: u32) -> (f32, f32) {
-    let mut best = (from.0, from.1);
-    let mut best_dist = -1.0;
-    for _ in 0..max_tries {
-        let x = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
-        let y = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
-        let dist = geom::dist(from.0, from.1, x, y);
-        if dist >= min_dist {
-            return (x, y);
-        }
-        if dist > best_dist {
-            best = (x, y);
-            best_dist = dist;
-        }
-    }
-    best
-}
-
 /// Distance from the agent to the nearest food its diet targets (plants = type 1, meat = type 2;
 /// omnivores take the nearer of both). `f32::MAX` if no such food exists.
 pub fn target_distance_by_diet(agent: &CreatureAgent, foods: &[FoodSpore]) -> f32 {
@@ -122,8 +103,8 @@ pub fn target_distance_by_diet(agent: &CreatureAgent, foods: &[FoodSpore]) -> f3
     }
 }
 
-/// Interface of a training room (scenario plugin). The shared trainer loop (`step_physics`,
-/// `step_trainer_sandbox_physics`, `TrainerSim`) only calls these hooks; it has no room-specific branches.
+/// Interface of a training room (scenario plugin). The shared trainer loop (`step_trainer_sandbox_physics` on the
+/// shared creature systems of `crate::sim`, `TrainerSim`) only calls these hooks; it has no room-specific branches.
 pub trait TrainingScenarioPlugin: Send + Sync {
     /// Edge length of the square chamber in px
     fn chamber_size(&self) -> f32;
@@ -143,9 +124,9 @@ pub trait TrainingScenarioPlugin: Send + Sync {
     /// re-trial (`TrainerSandbox::reset_trial`) and room switches.
     fn initialize(&self, sb: &mut TrainerSandbox, rng: &mut SimRng);
 
-    /// Food the creature's sensors see this tick (hook of the shared `step_physics`);
-    /// `scratch` is a reused buffer for foods built per tick
-    fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore];
+    /// Rules of the room's world for the shared creature tick (`sim::step_creature`): which food the sensors see,
+    /// the drain factor and the trainer's side of the Ocean/trainer divergences (`sim::WorldSettings`).
+    fn world_settings(&self, config: &AppConfig) -> WorldSettings;
 }
 
 /// Geometric interpolation `start · (end / start)^d`, exact at both ends (linear if `start` is not positive).
@@ -245,40 +226,22 @@ impl TrainingScenarioPlugin for LevelScenario {
         sb.reset_approach();
     }
 
-    fn visible_foods<'a>(&self, agent: &CreatureAgent, foods: &'a [FoodSpore], scratch: &'a mut Vec<FoodSpore>) -> &'a [FoodSpore] {
-        // One food per type: the nearest of each type is all food (plant, meat), passed through without a copy
-        if self.food_per_type <= 1 {
-            return foods;
+    /// Sensors see the nearest food of each type; with one food per type that is all food, passed through without a
+    /// copy. Drain `trainerMetabolicScale · metabolic_scale`; trainer divergences: `fmath::sin` clock, food drift after
+    /// the creature moved, diet eat radius, starvation freezes the creature; eaten food respawns at
+    /// `spawn_min_distance` from it.
+    fn world_settings(&self, config: &AppConfig) -> WorldSettings {
+        WorldSettings {
+            systems: TRAINER_SYSTEMS,
+            clock: ClockVariant::Fmath,
+            targets: if self.food_per_type <= 1 { TargetSelector::All } else { TargetSelector::NearestPerType },
+            metabolic_scale: config.metabolism.trainer_metabolic_scale * self.metabolic_scale,
+            energy_modifiers: Vec::new(),
+            death: DeathPolicy::Freeze,
+            food_drift: FoodDriftOrder::AfterEachCreature,
+            eat_radius: EatRadiusRule::TrainerDiet,
+            respawn: RespawnPolicy::MinDistance { min_distance: self.spawn_min_distance },
         }
-        // Sensors see only the closest plant and the closest meat spore
-        let mut nearest_plant: Option<&FoodSpore> = None;
-        let mut min_plant_dist = f32::MAX;
-        let mut nearest_meat: Option<&FoodSpore> = None;
-        let mut min_meat_dist = f32::MAX;
-
-        for f in foods {
-            let dist_sq = geom::dist_sq(agent.px, agent.py, f.x, f.y);
-            if f.type_id == 1 {
-                if dist_sq < min_plant_dist {
-                    min_plant_dist = dist_sq;
-                    nearest_plant = Some(f);
-                }
-            } else if f.type_id == 2 {
-                if dist_sq < min_meat_dist {
-                    min_meat_dist = dist_sq;
-                    nearest_meat = Some(f);
-                }
-            }
-        }
-
-        let absent = |id: u32, type_id: u32| FoodSpore { id, type_id, x: -99999.0, y: -99999.0, amount: 0.0, vx: 0.0, vy: 0.0 };
-        let plant_target = nearest_plant.cloned().unwrap_or_else(|| absent(1, 1));
-        let meat_target = nearest_meat.cloned().unwrap_or_else(|| absent(2, 2));
-
-        scratch.clear();
-        scratch.push(plant_target);
-        scratch.push(meat_target);
-        scratch
     }
 }
 
@@ -308,81 +271,10 @@ pub fn calculate_fitness(sb: &TrainerSandbox, epoch_ticks: u32, weights: &Traine
     if fit.is_finite() { fit } else { 0.0 }
 }
 
-/// One tick of sensing, brain, metabolism, kinematics and food drift; shared by all scenarios.
-/// Metabolism (TCK-178): the shared energy function drains `trainerMetabolicScale` times the room's `metabolic_scale`
-/// (curriculum pressure ramp, TCK-176; 1 in the fixed rooms) times the Ocean cost; at 0 energy
-/// the creature starves (`sb.starved`): it stops at once and does nothing else for the rest of the trial.
-/// Returns whether the creature hit a wall.
-pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
-    if sb.starved {
-        return false;
-    }
-    let plugin = sb.room;
-    let size = plugin.chamber_size();
-
-    let clock_val = 0.5 + 0.5 * fmath::sin((sb.agent.age as f32) * 0.1);
-    let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut sb.visible_scratch);
-    crate::shared::brain::compute_sensory_inputs_into(&sb.agent, clock_val, visible, &[], size, size, &mut sb.sensor_inputs);
-
-    use crate::shared::brain::execute_brain_with_learning;
-    let motors = execute_brain_with_learning(
-        &sb.agent.phenotype.brain,
-        &sb.sensor_inputs,
-        &mut sb.agent.neuron_states,
-        &mut sb.agent.neuron_activations,
-        &mut sb.agent.synapse_weights,
-        &mut sb.agent.brain_runtime,
-        app_config.brain.hebbian_learning_rate_base,
-    );
-    let out_thrust = motors.thrust;
-    let out_left = motors.bend;
-
-    let metabolic_scale = app_config.metabolism.trainer_metabolic_scale * plugin.metabolic_scale();
-    crate::biology::metabolism::drain_energy(&mut sb.agent, out_thrust, &app_config.metabolism, metabolic_scale);
-    if sb.agent.energy <= 0.0 {
-        sb.agent.energy = 0.0;
-        sb.agent.vx = 0.0;
-        sb.agent.vy = 0.0;
-        sb.starved = true;
-        return false;
-    }
-
-    let old_heading = sb.agent.heading_angle;
-    use crate::shared::physics::step_creature_kinematics;
-    let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, &app_config.physics, &[], size, size);
-
-    // Track absolute heading change (cumulative rotation in radians)
-    sb.cumulative_rotation += geom::wrap_angle(sb.agent.heading_angle - old_heading).abs();
-
-    let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
-    sb.distance_traveled += movement;
-
-    use crate::shared::physics::{step_food_spore_physics, SporePusher};
-    let temp_creatures = [SporePusher::from(&sb.agent)];
-    for pellet in &mut sb.foods {
-        step_food_spore_physics(pellet, &temp_creatures, &[], size, size);
-    }
-
-    hit_wall
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::shared::rng::seeded;
-
-    #[test]
-    fn test_spawn_at_min_distance_respects_limit_and_terminates() {
-        let mut rng = seeded(7);
-        for _ in 0..50 {
-            let (x, y) = spawn_at_min_distance(&mut rng, 1000.0, (500.0, 500.0), 200.0, SPAWN_MAX_TRIES);
-            assert!(((x - 500.0).powi(2) + (y - 500.0).powi(2)).sqrt() >= 200.0);
-            assert!((25.0..=975.0).contains(&x) && (25.0..=975.0).contains(&y));
-        }
-        // Unreachable distance: returns the farthest candidate instead of looping forever
-        let (x, y) = spawn_at_min_distance(&mut rng, 1000.0, (500.0, 500.0), 5000.0, 20);
-        assert!((25.0..=975.0).contains(&x) && (25.0..=975.0).contains(&y));
-    }
 
     #[test]
     fn test_diet_class_thresholds() {
@@ -505,8 +397,11 @@ mod tests {
     #[test]
     fn test_sensors_see_the_nearest_food_per_type_and_all_food_with_one_per_type() {
         let mut scratch = Vec::new();
+        let config = crate::config::test_config();
         let small = sandbox(Scenario::Standard);
-        let visible = Scenario::Standard.plugin(crate::config::test_config()).visible_foods(&small.agent, &small.foods, &mut scratch).to_vec();
+        let targets = Scenario::Standard.plugin(config).world_settings(config).targets;
+        assert_eq!(targets, TargetSelector::All);
+        let visible = targets.select(&small.agent, &small.foods, &[], &mut scratch).to_vec();
         assert_eq!(visible.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>(), small.foods.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>());
         let mid = LevelScenario::at(0.5, crate::config::test_config());
         let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, mid, None, None, &mut seeded(4), crate::config::test_config());
@@ -517,7 +412,7 @@ mod tests {
         sb.foods[1].y = py;
         sb.foods[2].x = px;
         sb.foods[2].y = py + 1.0;
-        let visible = mid.visible_foods(&sb.agent, &sb.foods, &mut scratch);
+        let visible = mid.world_settings(config).targets.select(&sb.agent, &sb.foods, &[], &mut scratch);
         assert_eq!(visible.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2, 3]);
     }
 

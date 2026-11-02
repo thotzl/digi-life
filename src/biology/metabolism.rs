@@ -150,42 +150,20 @@ pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &MetabolismCo
         .min(victim_energy.max(0.0))
 }
 
-/// Typical brain behaviour of `genome` over one trial of `scenario` (fresh trainer sandbox, learning per `config`,
-/// no metabolic drain so the brain runs the whole trial): mean synaptic activity `Σ|w·a|` per tick and mean
-/// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration.
-pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::scenarios::Scenario, config: &crate::config::AppConfig, rng: &mut crate::shared::rng::SimRng) -> (f32, f32) {
-    use crate::biology::brain::Motor;
-    use crate::biology::scenarios::TrainingScenarioPlugin;
-    use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
-    let mut config = config.clone();
-    config.metabolism.trainer_metabolic_scale = 0.0;
-    let room = scenario.plugin(&config);
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, room, None, None, rng, &config);
-    let thrust_neuron = sb.agent.phenotype.brain.neurons.iter().position(|n| n.role == NeuronRole::Motor { motor: Motor::Thrust });
-    let ticks = room.epoch_ticks();
-    let (mut activity, mut thrust) = (0.0, 0.0);
-    for _ in 0..ticks {
-        step_trainer_sandbox_physics(&mut sb, &config);
-        activity += sb.agent.brain_runtime.activity();
-        thrust += thrust_neuron.map_or(0.0, |i| sb.agent.neuron_activations[i].abs());
-    }
-    (activity / ticks as f32, thrust / ticks as f32)
-}
-
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::biology::phenotype::parse_genome;
-    use crate::biology::scenarios::Scenario;
     use crate::shared::rng::derive;
 
     /// Old median Ocean drain of structured genomes (module docs), the absolute scale of the calibration.
-    const PRE_P6_MEDIAN_OCEAN_DRAIN: f32 = 0.0243;
-    /// Typical activity and |thrust| of the derivation (medians over one standard-room trial, module docs).
-    const TYPICAL_ACTIVITY: f32 = 4.98867;
-    const TYPICAL_THRUST: f32 = 0.6406;
+    pub(crate) const PRE_P6_MEDIAN_OCEAN_DRAIN: f32 = 0.0243;
+    /// Typical activity and |thrust| of the derivation (medians over one standard-room trial, module docs; measured by
+    /// `probes::mean_trial_activity_and_thrust`, test `probes::tests::test_typical_total_cost_matches_the_old_ocean_drain`).
+    pub(crate) const TYPICAL_ACTIVITY: f32 = 4.98867;
+    pub(crate) const TYPICAL_THRUST: f32 = 0.6406;
 
-    fn median(mut v: Vec<f32>) -> f32 {
+    pub(crate) fn median(mut v: Vec<f32>) -> f32 {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let n = v.len();
         if n % 2 == 1 { v[n / 2] } else { 0.5 * (v[n / 2 - 1] + v[n / 2]) }
@@ -213,29 +191,6 @@ mod tests {
         // Per-genome shares: the median creature also lies in the band
         let per_genome = median(costs.iter().map(|c| (c.senses + c.brain()) / c.resting()).collect());
         assert!((0.10..=0.20).contains(&per_genome), "median per-genome brain + senses share {}", per_genome);
-    }
-
-    #[test]
-    fn test_typical_total_cost_matches_the_old_ocean_drain() {
-        // Real structured brains over a standard trial (200 genomes): the documented typical activity and |thrust| still
-        // hold (±15 %), and the median typical total cost (resting at the own activity + movement at the own mean
-        // |thrust|) equals the pre-P6 median Ocean drain (±10 %), the absolute scale of the calibration.
-        let config = crate::config::test_config();
-        let composition = &config.genome.genome_composition;
-        let rows: Vec<(f32, f32, f32)> = (0..200)
-            .map(|i| {
-                let genome = crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
-                let (activity, thrust) = mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
-                let total = tick_cost(&parse_genome(&genome, None, None, &crate::config::test_config().brain), activity, thrust, &config.metabolism).total();
-                (activity, thrust, total)
-            })
-            .collect();
-        let activity = median(rows.iter().map(|r| r.0).collect());
-        let thrust = median(rows.iter().map(|r| r.1).collect());
-        let total = median(rows.iter().map(|r| r.2).collect());
-        assert!((activity / TYPICAL_ACTIVITY - 1.0).abs() < 0.15, "median trial activity {}", activity);
-        assert!((thrust / TYPICAL_THRUST - 1.0).abs() < 0.15, "median trial |thrust| {}", thrust);
-        assert!((total / PRE_P6_MEDIAN_OCEAN_DRAIN - 1.0).abs() < 0.10, "median typical total cost {}", total);
     }
 
     #[test]

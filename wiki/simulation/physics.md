@@ -1,17 +1,17 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md]
+sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/TCK-104-better-steering-and-neurons.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-135-wall-reflection-sign-fix.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, src/sim/systems/move.rs, src/sim/systems/food_drift.rs]
 ---
 
 # Physics
 
-`src/shared/physics.rs`, shared by Ocean and Trainer. `sin`/`cos`/`atan2`/`powf` go through `src/shared/fmath.rs` (pure-Rust `libm`), so kinematics are bit-identical across platforms (TCK-173).
+`src/shared/physics.rs`, shared by Ocean and Trainer. `sin`/`cos`/`atan2`/`powf` go through `src/shared/fmath.rs` (pure-Rust `libm`), so kinematics are bit-identical across platforms (TCK-173). The per-creature tick calls the kinematics through the movement system `src/sim/systems/move.rs` and the spore physics through `src/sim/systems/food_drift.rs` (TCK-200, [[wiki/contracts/creature-system]]); the Ocean step in `server/engine.rs` still calls them directly until TCK-156.
 
 ## Functions
 
 - `step_creature_kinematics` — motor outputs → motion. Derives the thrust magnitude from the genome's speed band and multiplies it by `out_thrust` (motor 0) ([[wiki/architecture/invariants]] rule 4).
 - `locomotion_drive`, `target_terminal_speed`, `thrust_for_terminal_speed` — speed band and thrust inversion (TCK-150, below).
 - `apply_creature_physics` — bending, turning, drag, lock-on heading, wall reflection, reef collision (circle-circle, push-out, normal deflection).
-- `step_food_spore_physics` — spore drift and push by creatures via `SporePusher` snapshots.
+- `step_food_spore_physics` — spore drift and push by creatures via `SporePusher` snapshots. When spores drift is a world setting (`FoodDriftOrder`): trainer after each creature's move, pushed by that creature; Ocean once per tick before all creatures, pushed by the creatures within 80 px.
 
 ## Steering model (TCK-104, TCK-150)
 

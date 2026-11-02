@@ -2,6 +2,7 @@ pub mod config;
 pub mod persistence;
 pub mod logging;
 pub mod server;
+pub mod sim;
 pub mod biology {
     pub mod brain;
     pub mod genome;

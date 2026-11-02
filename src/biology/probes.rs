@@ -9,7 +9,7 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
-use crate::biology::brain::{MotorOutputs, NeuronRole};
+use crate::biology::brain::{Motor, NeuronRole};
 use crate::biology::genome::{
     extract_raw_gene_payloads, generate_random_genome, generate_structured_genome, mutate_genome, mutate_genome_with_kind, normalize_genome,
     MutationKind, MutationOperators, WILDTYPE_GENOME,
@@ -20,13 +20,18 @@ use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim, IMMOBILE_DISTANCE_PX};
-use crate::shared::brain::{compute_sensory_inputs_into, execute_brain_with_learning};
+use crate::shared::brain::compute_sensory_inputs_into;
 use crate::shared::fmath;
 use crate::shared::physics::step_creature_kinematics;
 use crate::shared::rng::{derive, seed_from_str, SimRng};
 use crate::config::AppConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::geom::wrap_angle;
+use crate::sim::systems::death::DeathPolicy;
+use crate::sim::systems::eat::{EatRadiusRule, RespawnPolicy};
+use crate::sim::systems::food_drift::FoodDriftOrder;
+use crate::sim::systems::sense::{ClockVariant, TargetSelector, ABSENT_POS};
+use crate::sim::{step_creature, CreatureStep, TickCtx, World, WorldSettings, BRAIN_ONLY_SYSTEMS};
 
 pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology", "metabolism"];
 
@@ -218,22 +223,21 @@ fn speed_of(agent: &CreatureAgent) -> f32 {
     (agent.vx * agent.vx + agent.vy * agent.vy).sqrt()
 }
 
-/// One tick of sensing, brain (with the config's Hebbian rate) and kinematics, food fixed.
-/// Mirrors `scenarios::step_physics` without food drift; returns the motor outputs and the wall flag.
-fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config: &AppConfig, inputs: &mut Vec<f32>) -> (MotorOutputs, bool) {
-    let clock_val = 0.5 + 0.5 * fmath::sin((agent.age as f32) * 0.1);
-    compute_sensory_inputs_into(agent, clock_val, foods, &[], size, size, inputs);
-    let outputs = execute_brain_with_learning(
-        &agent.phenotype.brain,
-        inputs,
-        &mut agent.neuron_states,
-        &mut agent.neuron_activations,
-        &mut agent.synapse_weights,
-        &mut agent.brain_runtime,
-        config.brain.hebbian_learning_rate_base,
-    );
-    let hit_wall = step_creature_kinematics(agent, outputs.thrust, outputs.bend, &config.physics, &[], size, size);
-    (outputs, hit_wall)
+/// World of the brain probes: sensing (all food as laid out, `fmath` clock), brain with the config's Hebbian rate and
+/// kinematics; no drain, death or food interaction (`BRAIN_ONLY_SYSTEMS`; the settings of the systems it does not run
+/// are not read). The creature's age is not advanced, so the clock input stays 0.5.
+fn brain_world() -> WorldSettings {
+    WorldSettings {
+        systems: BRAIN_ONLY_SYSTEMS,
+        clock: ClockVariant::Fmath,
+        targets: TargetSelector::All,
+        metabolic_scale: 0.0,
+        energy_modifiers: Vec::new(),
+        death: DeathPolicy::Freeze,
+        food_drift: FoodDriftOrder::AfterEachCreature,
+        eat_radius: EatRadiusRule::TrainerDiet,
+        respawn: RespawnPolicy::MinDistance { min_distance: 0.0 },
+    }
 }
 
 /// Whether any distance sense (`OrganKind::is_distance`: eye, nose, thermal organ) registers food in `inputs`.
@@ -853,7 +857,7 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
                     let mut rng = if set_id == 0 { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64]) } else { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64, set_id]) };
                     let sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, plugin, None, None, &mut rng, config);
                     let mut scratch = Vec::new();
-                    let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut scratch).to_vec();
+                    let visible = plugin.world_settings(config).targets.select(&sb.agent, &sb.foods, &[], &mut scratch).to_vec();
                     let agent = &sb.agent;
                     let in_range = agent.phenotype.organelles.iter().filter(|o| o.kind.is_distance()).any(|o| {
                         visible.iter().take(2).any(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt() <= o.range())
@@ -926,23 +930,23 @@ fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> S
     let mut agent = agent_at(genome, cx, cy, 0.0, config);
     let (fx, fy) = match bearing_deg {
         Some(b) => (cx + STEERING_DISTANCE * b.to_radians().cos(), cy + STEERING_DISTANCE * b.to_radians().sin()),
-        None => (-99999.0, -99999.0),
+        None => (ABSENT_POS, ABSENT_POS),
     };
-    let foods = [
+    let mut foods = [
         FoodSpore { id: 1, type_id: 1, x: fx, y: fy, amount: 15.0, vx: 0.0, vy: 0.0 },
         FoodSpore { id: 2, type_id: 2, x: fx, y: fy, amount: 15.0, vx: 0.0, vy: 0.0 },
     ];
-    let mut inputs = Vec::new();
+    let (settings, mut step) = (brain_world(), CreatureStep::default());
     let (mut heading_change, mut turn_deg, mut distance, mut thrust_sum) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
     let (mut sees_food_at_start, mut reached, mut min_abs_bearing) = (false, false, f32::MAX);
     let reach_dist = agent.phenotype.spinal_harmonics.mean_radius + 10.0;
     for tick in 1..=STEERING_TICKS {
         let before = agent.heading_angle;
-        let (outputs, _) = brain_tick(&mut agent, &foods, size, config, &mut inputs);
+        step_creature(&mut World::single(&mut agent, &mut foods, size, &settings), 0, &TickCtx::new(config, tick as u64), &mut step);
         if tick == 1 {
-            sees_food_at_start = senses_food(&agent.phenotype, &inputs);
+            sees_food_at_start = senses_food(&agent.phenotype, &step.inputs);
         }
-        thrust_sum += outputs.thrust;
+        thrust_sum += step.motors.thrust;
         heading_change += wrap_angle(agent.heading_angle - before);
         distance += speed_of(&agent);
         if tick == STEERING_TURN_WINDOW {
@@ -1067,13 +1071,14 @@ fn wall_run(genome: &str, angle_deg: f32, brain: bool, rng: &mut SimRng, config:
     sb.agent.px = size / 2.0;
     sb.agent.py = r + 2.0;
     sb.agent.heading_angle = -angle_deg.to_radians();
-    let foods = sb.foods.clone();
+    let mut foods = sb.foods.clone();
     let mut agent = sb.agent;
-    let mut inputs = Vec::new();
+    let (settings, mut step) = (brain_world(), CreatureStep::default());
     let mut run = WallRun { freed_at: None, contact_ticks: 0, stalled_contact_ticks: 0, contact_speed_sum: 0.0, reached_corner: false };
     for tick in 1..=WALL_TICKS {
         let hit_wall = if brain {
-            brain_tick(&mut agent, &foods, size, config, &mut inputs).1
+            step_creature(&mut World::single(&mut agent, &mut foods, size, &settings), 0, &TickCtx::new(config, tick as u64), &mut step);
+            step.hit_wall
         } else {
             step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], size, size)
         };
@@ -1481,9 +1486,28 @@ pub struct MetabolismReport {
     pub sets: Vec<MetabolismSet>,
 }
 
+/// Typical brain behaviour of `genome` over one trial of `scenario` (fresh trainer sandbox, learning per `config`,
+/// no metabolic drain so the brain runs the whole trial): mean synaptic activity `Σ|w·a|` per tick and mean
+/// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration (`biology::metabolism` docs).
+pub fn mean_trial_activity_and_thrust(genome: &str, scenario: Scenario, config: &AppConfig, rng: &mut SimRng) -> (f32, f32) {
+    let mut config = config.clone();
+    config.metabolism.trainer_metabolic_scale = 0.0;
+    let room = scenario.plugin(&config);
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, room, None, None, rng, &config);
+    let thrust_neuron = sb.agent.phenotype.brain.neurons.iter().position(|n| n.role == NeuronRole::Motor { motor: Motor::Thrust });
+    let ticks = room.epoch_ticks();
+    let (mut activity, mut thrust) = (0.0, 0.0);
+    for _ in 0..ticks {
+        step_trainer_sandbox_physics(&mut sb, &config);
+        activity += sb.agent.brain_runtime.activity();
+        thrust += thrust_neuron.map_or(0.0, |i| sb.agent.neuron_activations[i].abs());
+    }
+    (activity / ticks as f32, thrust / ticks as f32)
+}
+
 /// Inputs of the metabolic cost calibration (TCK-151): distributions of the cost terms over random genomes.
 pub fn probe_metabolism(opts: &ProbeOptions) -> MetabolismReport {
-    use crate::biology::metabolism::{body_mass, brain_neurons, mean_trial_activity_and_thrust, organ_load, tick_cost};
+    use crate::biology::metabolism::{body_mass, brain_neurons, organ_load, tick_cost};
     let seed = seed_from_str(&opts.seed);
     let config = &opts.config;
     let sets = random_populations(seed, opts.samples.unwrap_or(1000), config)
@@ -1579,5 +1603,30 @@ mod tests {
         assert_eq!(pearson(&[(1.0, 1.0), (1.0, 2.0)]), None);
         let d = Distribution::of(&[0.0, 10.0, 20.0, 30.0, 40.0]).unwrap();
         assert_eq!((d.p50, d.p10, d.mean), (20.0, 4.0, 20.0));
+    }
+
+    #[test]
+    fn test_typical_total_cost_matches_the_old_ocean_drain() {
+        // Real structured brains over a standard trial (200 genomes): the documented typical activity and |thrust| still
+        // hold (±15 %), and the median typical total cost (resting at the own activity + movement at the own mean
+        // |thrust|) equals the pre-P6 median Ocean drain (±10 %), the absolute scale of the calibration.
+        use crate::biology::metabolism::tests::{median, PRE_P6_MEDIAN_OCEAN_DRAIN, TYPICAL_ACTIVITY, TYPICAL_THRUST};
+        use crate::biology::metabolism::tick_cost;
+        let config = crate::config::test_config();
+        let composition = &config.genome.genome_composition;
+        let rows: Vec<(f32, f32, f32)> = (0..200)
+            .map(|i| {
+                let genome = crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
+                let (activity, thrust) = mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
+                let total = tick_cost(&parse_genome(&genome, None, None, &crate::config::test_config().brain), activity, thrust, &config.metabolism).total();
+                (activity, thrust, total)
+            })
+            .collect();
+        let activity = median(rows.iter().map(|r| r.0).collect());
+        let thrust = median(rows.iter().map(|r| r.1).collect());
+        let total = median(rows.iter().map(|r| r.2).collect());
+        assert!((activity / TYPICAL_ACTIVITY - 1.0).abs() < 0.15, "median trial activity {}", activity);
+        assert!((thrust / TYPICAL_THRUST - 1.0).abs() < 0.15, "median trial |thrust| {}", thrust);
+        assert!((total / PRE_P6_MEDIAN_OCEAN_DRAIN - 1.0).abs() < 0.10, "median typical total cost {}", total);
     }
 }

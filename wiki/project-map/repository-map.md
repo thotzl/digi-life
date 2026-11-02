@@ -41,13 +41,14 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `biology/organs/` | organ registry: `OrganKind`, `OrganSpec`, one file per kind, shared spectral/contact sensing | [[wiki/contracts/organ-kind]], [[wiki/biology/sensing]] |
 | `biology/brain/` | brain model types (roles, motors, `MotorOutputs`, `Activation`) and the Brain v2 compiler (`compile.rs`) | [[wiki/biology/ctrnn-brain]] |
 | `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers); Lamarckian weight inheritance by synapse key | [[wiki/biology/metabolism-and-reproduction]] |
-| `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig`, cost-calibration helper | [[wiki/biology/metabolism-and-reproduction]] |
+| `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig` | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, layout policy, curriculum gate, rehearsal, pending room switches, breeding, hall of fame, generation stats, population evaluation | [[wiki/simulation/trainer]] |
-| `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox physics step | [[wiki/simulation/trainer]] |
-| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait and its one implementation `LevelScenario` (room at a difficulty level), shared sandbox step, shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
+| `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox tick (shared creature systems + trainer bookkeeping) | [[wiki/simulation/trainer]] |
+| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait and its one implementation `LevelScenario` (room at a difficulty level, its `WorldSettings`), shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
 | `biology/trainer_report.rs` | headless trainer run (room schedule, final evaluation) and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
 | `biology/trainer_store.rs` | IO side of `TrainerSim`: `GenomeRecord`/`TrainerRunState` ↔ `TrainerRepo` (engine and runner, TCK-159) | [[wiki/architecture/persistence]] |
-| `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology, metabolism) | [[wiki/simulation/analytics-and-balancing]] |
+| `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology, metabolism), cost-calibration helper `mean_trial_activity_and_thrust` | [[wiki/simulation/analytics-and-balancing]] |
+| `sim/` | shared simulation kernel (TCK-200): `World`, `WorldSettings` (Ocean/trainer divergences as named fields), `TickCtx`, `step_creature`; `systems/` one module per dynamic (sense, think, metabolize, death, move, food_drift, eat, bite, reproduce) | [[wiki/contracts/creature-system]] |
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |

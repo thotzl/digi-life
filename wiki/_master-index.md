@@ -9,7 +9,7 @@ Project knowledge for Pixel DNA Life (Tauri v2 + Rust + SQLite + Preact Signals)
 - [[wiki/frontend/_index|Frontend]] — webview structure and rendering
 - [[wiki/quality/_index|Quality]] — testing, CI and tooling, runtime verification
 - [[wiki/project-map/_index|Project Map]] — module-level code map
-- Contracts and guides (TCK-203, filled per extension point): [[wiki/contracts/config-section|config section]] / [[wiki/guides/add-config-key|add a config key]], [[wiki/contracts/persistence-repo|persistence repository]] / [[wiki/guides/add-table|add a table]]; [[wiki/contracts/organ-kind|organ kind]] / [[wiki/guides/add-organ-kind|add an organ kind]]; templates [[wiki/contracts/_template]], [[wiki/guides/_template]]
+- Contracts and guides (TCK-203, filled per extension point): [[wiki/contracts/config-section|config section]] / [[wiki/guides/add-config-key|add a config key]], [[wiki/contracts/persistence-repo|persistence repository]] / [[wiki/guides/add-table|add a table]]; [[wiki/contracts/organ-kind|organ kind]] / [[wiki/guides/add-organ-kind|add an organ kind]]; [[wiki/contracts/creature-system|creature system]] / [[wiki/guides/add-dynamic|add a dynamic]]; templates [[wiki/contracts/_template]], [[wiki/guides/_template]]
 - [[wiki/research/_index|Research]] — Alife references and porting ideas (from `ideas.md`), neuroevolution and training literature
 - [[wiki/decisions/_index|Decisions]] — ADRs (taken decisions) and template; latest: [[wiki/decisions/adr-002-brain-v2|ADR-002 Brain v2]]
 

@@ -37,7 +37,7 @@ A section struct derives `Debug, Clone, PartialEq, Serialize, Deserialize` and c
 Nested blocks (`trainerCurriculum`, `genomeComposition`) are structs with the same attributes.
 
 Code receives configuration as a parameter, never from a global:
-- the whole `&AppConfig` where several sections are read (`init_rust_sandbox`, `step_trainer_sandbox_physics`,
+- the whole `&AppConfig` where several sections are read (`init_rust_sandbox`, `step_trainer_sandbox_physics`, `sim::TickCtx::new`,
   `spawn_creature`, `Scenario::plugin`, `LevelScenario::at`, `TrainerParams::from_config`, `TrainerSim::new`);
 - one section where only that one is read (`parse_genome(.., &BrainConfig)`, `step_creature_kinematics(..,
   &PhysicsConfig, ..)`, `start_energy(.., &MetabolismConfig)`, `food_energy(.., &MetabolismConfig)`).

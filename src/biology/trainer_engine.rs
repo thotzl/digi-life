@@ -10,9 +10,11 @@ use crate::biology::genome::{classify_mutation, generate_structured_genome, muta
 use crate::biology::organs::OrganKind;
 use crate::biology::phenotype::parse_genome;
 use crate::biology::creature_factory::{spawn_creature, start_energy, SpawnOptions};
-use crate::biology::scenarios::{spawn_at_min_distance, target_distance_by_diet, LevelScenario, Scenario, TrainingScenarioPlugin, SPAWN_MAX_TRIES};
+use crate::biology::scenarios::{target_distance_by_diet, LevelScenario, Scenario, TrainingScenarioPlugin};
 use crate::shared::brain::food_sense_range;
 use crate::shared::rng::seeded;
+use crate::sim::systems::eat::respawn;
+use crate::sim::{step_creature, CreatureEvent, CreatureStep, TickCtx, World};
 use rand::{Rng, RngCore};
 
 /// How a sandbox's genome was produced by the breeding slot plan.
@@ -58,11 +60,9 @@ pub struct TrainerSandbox {
     /// generation has the same seed (TCK-174, see `TrainerSim`).
     #[serde(default)]
     pub respawn_seed: u64,
-    /// Per-tick buffers of `scenarios::step_physics` (reused, not state)
+    /// Scratch and result of the shared creature tick (`sim::step_creature`; reused buffers, not state)
     #[serde(skip)]
-    pub sensor_inputs: Vec<f32>,
-    #[serde(skip)]
-    pub visible_scratch: Vec<FoodSpore>,
+    pub step: CreatureStep,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -246,8 +246,7 @@ pub fn init_rust_sandbox(
         coverage_mask: 0,
         starved: false,
         respawn_seed: 0,
-        sensor_inputs: Vec::new(),
-        visible_scratch: Vec::new(),
+        step: CreatureStep::default(),
     };
 
     room.initialize(&mut sb, rng);
@@ -326,13 +325,28 @@ impl TrainerSandbox {
     }
 }
 
-/// One tick of one sandbox. Deterministic without an RNG argument: respawns after eating use `sb.respawn_seed`.
-/// Probes pass a modified config (e.g. Hebbian learning off; TCK-172).
+/// One tick of one sandbox: the shared creature systems of the room's world (`sim::step_creature` with
+/// `TrainingScenarioPlugin::world_settings`: sensing, brain, drain, starvation, movement, food drift, eating), then the
+/// trainer's bookkeeping (age, coverage, wall counter, approach tracking) and the catches (yield, first-catch tick,
+/// respawn). Deterministic without an RNG argument: respawns after eating use `sb.respawn_seed`.
+/// At 0 energy the creature starves (`sb.starved`, TCK-178): it stops at once and does nothing else for the rest of
+/// the trial. Probes pass a modified config (e.g. Hebbian learning off; TCK-172).
 pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) {
     sb.epoch_ticks += 1;
-    let plugin = sb.room;
-    let size = plugin.chamber_size();
-    let hit_wall = crate::biology::scenarios::step_physics(sb, app_config);
+    let room = sb.room;
+    let size = room.chamber_size();
+    let settings = room.world_settings(app_config);
+    if !sb.starved {
+        let mut world = World::single(&mut sb.agent, &mut sb.foods, size, &settings);
+        step_creature(&mut world, 0, &TickCtx::new(app_config, sb.epoch_ticks as u64), &mut sb.step);
+        if sb.step.died {
+            sb.starved = true;
+        } else {
+            // Track absolute heading change (cumulative rotation in radians) and path length
+            sb.cumulative_rotation += geom::wrap_angle(sb.agent.heading_angle - sb.step.old_heading).abs();
+            sb.distance_traveled += (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
+        }
+    }
     // Age per trainer tick after the brain step, as in the Ocean (drives the clock input; reset per trial, TCK-174)
     sb.agent.age += 1;
     if sb.starved {
@@ -346,7 +360,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, app_config: &AppCon
     let sector_idx = sec_y * 8 + sec_x;
     sb.coverage_mask |= 1 << sector_idx;
 
-    if hit_wall {
+    if sb.step.hit_wall {
         if sb.wall_collision_cooldown == 0 {
             sb.wall_collisions += 1;
             sb.wall_collision_cooldown = 20; // Cooldown to prevent rubbing count
@@ -357,60 +371,35 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, app_config: &AppCon
         sb.wall_collision_cooldown -= 1;
     }
 
-    // Approach towards the nearest diet target in sensor range (fitness shaping, TCK-175)
+    // Approach towards the nearest diet target in sensor range (fitness shaping, TCK-175); the eaten food has not
+    // respawned yet, so this sees the food as it was when the creature reached it
     sb.track_approach();
 
-    // Separately check collisions and consumption for ALL spores in sb.foods
-    let num_foods = sb.foods.len();
-    for target_idx in 0..num_foods {
-        let f = &sb.foods[target_idx];
-        let dist = geom::dist(sb.agent.px, sb.agent.py, f.x, f.y);
+    // Catches of this tick (the eat system already added the energy, shared food rule of the Ocean, TCK-178)
+    let events = std::mem::take(&mut sb.step.events);
+    for event in &events {
+        let CreatureEvent::Ate { food, is_meat, .. } = *event else { continue };
+        let carnivory = sb.agent.phenotype.carnivory;
+        sb.accumulated_yield += if is_meat { carnivory } else { 1.0 - carnivory };
+        sb.consumed_count += 1;
 
-        let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
-        let is_meat = sb.foods[target_idx].type_id == 2;
-        let base_eat_dist = if is_meat {
-            mean_radius * 1.6 * 0.5 + 5.0
-        } else {
-            mean_radius * 1.5 * 0.5 + 8.0
-        };
-        let eat_dist = (mean_radius + 10.0).max(base_eat_dist);
-
-        if dist <= eat_dist {
-            let carnivory = sb.agent.phenotype.carnivory;
-            let yield_val = if is_meat {
-                carnivory // Meat gives C
-            } else {
-                1.0 - carnivory // Plant gives 1 - C
-            };
-
-            sb.accumulated_yield += yield_val;
-            sb.consumed_count += 1;
-            // Refill with the shared food energy rule of the Ocean (TCK-178)
-            let gain = crate::biology::metabolism::food_energy(carnivory, is_meat, &app_config.metabolism);
-            sb.agent.energy = (sb.agent.energy + gain).min(sb.agent.phenotype.stomach_capacity);
-
-            if !sb.finished {
-                sb.finished = true; // Still mark finished as true for green SUCCESS label!
-                sb.finish_tick = Some(sb.epoch_ticks);
-                sb.consumed_spore_type = Some(if is_meat { "meat" } else { "plant" }.to_string());
-                sb.agent.has_eaten = true;
-            }
-
-            // Spore respawn respecting the scenario bounds. Candidate points come from `derive(respawn_seed, [k])` for
-            // catch k of the trial: sandboxes with the same respawn seed draw the same candidates for their k-th catch;
-            // the accepted point also depends on the creature's position (min distance), so identical positions give
-            // identical respawns (TCK-174)
-            let mut respawn_rng = derive(sb.respawn_seed, &[sb.consumed_count as u64]);
-            let from = (sb.agent.px, sb.agent.py);
-            let (x, y) = spawn_at_min_distance(&mut respawn_rng, size, from, plugin.spawn_min_distance(), SPAWN_MAX_TRIES);
-            sb.foods[target_idx].x = x;
-            sb.foods[target_idx].y = y;
-            sb.foods[target_idx].vx = 0.0;
-            sb.foods[target_idx].vy = 0.0;
-            // The shaping now rewards approach to the next food
-            sb.reset_approach();
+        if !sb.finished {
+            sb.finished = true; // Still mark finished as true for green SUCCESS label!
+            sb.finish_tick = Some(sb.epoch_ticks);
+            sb.consumed_spore_type = Some(if is_meat { "meat" } else { "plant" }.to_string());
+            sb.agent.has_eaten = true;
         }
+
+        // Spore respawn respecting the scenario bounds. Candidate points come from `derive(respawn_seed, [k])` for
+        // catch k of the trial: sandboxes with the same respawn seed draw the same candidates for their k-th catch;
+        // the accepted point also depends on the creature's position (min distance), so identical positions give
+        // identical respawns (TCK-174)
+        let mut respawn_rng = derive(sb.respawn_seed, &[sb.consumed_count as u64]);
+        respawn(&mut sb.foods[food], &settings.respawn, (sb.agent.px, sb.agent.py), size, size, &mut respawn_rng);
+        // The shaping now rewards approach to the next food
+        sb.reset_approach();
     }
+    sb.step.events = events;
 }
 
 #[cfg(test)]
@@ -446,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_trainer_drain_equals_the_ocean_energy_function() {
-        // Trainer path: the shared `step_physics`. Ocean path: the same sensing and brain step followed by the Ocean's
+        // Trainer path: the shared creature tick. Ocean path: the same sensing and brain step followed by the Ocean's
         // `drain_energy(.., 1.0)` call. Same agent, tick and outputs → identical drain (trainer scale 1).
         let mut config = crate::config::test_config().clone();
         config.metabolism.trainer_metabolic_scale = 1.0;
@@ -456,7 +445,8 @@ mod tests {
             let mut ocean = sb.agent.clone();
             let foods = sb.foods.clone();
             let start = sb.agent.energy;
-            crate::biology::scenarios::step_physics(&mut sb, &config);
+            step_trainer_sandbox_physics(&mut sb, &config);
+            assert_eq!(sb.consumed_count, 0, "no catch disturbs the energy comparison");
 
             let size = Scenario::Standard.plugin(crate::config::test_config()).chamber_size();
             let clock_val = 0.5 + 0.5 * crate::shared::fmath::sin((ocean.age as f32) * 0.1);
@@ -485,7 +475,7 @@ mod tests {
             let room = Scenario::Standard.plugin(crate::config::test_config()).with_metabolic_scale(factor);
             let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room, None, None, &mut seeded(13), crate::config::test_config());
             let start = sb.agent.energy;
-            crate::biology::scenarios::step_physics(&mut sb, &config);
+            step_trainer_sandbox_physics(&mut sb, &config);
             start - sb.agent.energy
         };
         let (full, half, none) = (drain(1.0), drain(0.5), drain(0.0));
