@@ -13,7 +13,7 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 ## Progress
 - [x] R0 TCK-197 (v1.12.29), TCK-189 (v1.12.28)
 - [ ] R1 TCK-198 (v1.12.30), TCK-159 (v1.12.31) done; TCK-157 next
-- [ ] R2 TCK-199 (branch worktree-agent-a2bf1eef558fa0d34, commit 6f30815, integrate next)
+- [x] R2 TCK-199 (v1.12.32, absorbs TCK-155)
 - [ ] R3 TCK-200, TCK-156, TCK-201, TCK-158
 - [ ] R4 TCK-160, TCK-161
 - [ ] R5 TCK-202, TCK-143

@@ -1,7 +1,7 @@
 ---
 id: TCK-155
 title: Typed Enums for Model Strings
-status: open
+status: closed
 priority: pool
 decision: pending
 assigned: unassigned
@@ -25,3 +25,6 @@ Replace with enums exported via ts-rs.
 
 ## Findings (review 2026-10-19, base commit `998244e`)
 - **RV-S10 · P3** — model semantics in free-text strings: activation (`Option<String>` "relu"/"sigmoid"/...), organ type (emoji label), symmetry (`"vertical"/"quad"`), scenario (`"standard"/"exploration"`), origin (`"elite"/"hof"/...`), diet class. A typo silently falls back to the default. Target: enums with ts-rs export.
+
+## Verification (2026-11-02, v1.12.32)
+- Absorbed by TCK-199: `Activation` and `Symmetry` are serde/ts-rs enums; diet class and habitat strings were dead and removed; `OrganKind`, `Scenario`, `SandboxOrigin` were enums already.

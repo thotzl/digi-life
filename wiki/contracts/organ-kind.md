@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-199-r2-genome-and-organ-registry.md, src/biology/organs/mod.rs, src/shared/brain.rs]
+sources: [tickets/closed/TCK-199-r2-genome-and-organ-registry.md, src/biology/organs/mod.rs, src/shared/brain.rs]
 ---
 
 # Contract: organ kind

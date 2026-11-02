@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.32] - 2026-11-02
+
+Epic TCK-196, phase R2. Structure only: golden master and all trainer references unchanged.
+
+### Changed
+- The creature model is split into modules: genome (alphabet, promoter registry, gene table, generator, mutation), phenotype, organs (one file per organ kind behind a registry) and brain compiler. A new organ kind now touches two files instead of about ten (ref TCK-199, TCK-155).
+- Promoter and organ names shown in the UI come from the backend registries instead of copies in the frontend; motor outputs and activation/symmetry are typed (ref TCK-199).
+
+### Removed
+- Unused phenotype fields that were computed and sent to the UI but never read (segments, hydraulic pressure, survival estimates, habitat, sensory scores and others) (ref TCK-199).
+
 ## [1.12.31] - 2026-11-02
 
 Epic TCK-196, phase R1. Structure only: golden master and all trainer references unchanged. Existing databases are migrated on first start without data loss.

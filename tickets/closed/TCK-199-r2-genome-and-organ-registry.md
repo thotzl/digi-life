@@ -1,7 +1,7 @@
 ---
 id: TCK-199
 title: "R2 Creature Model as Modules: Genome Split, Promoter Registry, Organ Spec, Motor Outputs, Typed Enums"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -38,3 +38,12 @@ Golden master (model-field hash from TCK-197) and trainer references unchanged. 
 - `dna.rs` gone; no module > ~600 lines; promoter, organ, motor data each in one place.
 - Contract `wiki/contracts/organ-kind.md` and guide `wiki/guides/add-organ-kind.md` written in this ticket; `wiki/biology/genome-compiler.md` and `sensing.md` describe the new structure.
 - TCK-155 moved to closed as absorbed.
+
+## Verification (2026-11-02, v1.12.32)
+- `dna.rs` (3,149 lines) removed. New modules in `src/biology/`: `genome/` (`alphabet`, `promoters` with `PROMOTERS: &[PromoterSpec]`, `scan`, `table`, `payload` with `Payload::{h, range, index}`, `generate`, `mutate`, tests), `phenotype/` (`parse_genome`, `CreaturePhenotype`, `Symmetry`, `body.rs` with the `BODY_GENES` decode table, `naming.rs`, tests), `organs/` (`OrganKind`, `spec()`, `classify`, `OrganSpec`, `Organ` (was `SensoryPatch`), `SenseCtx`, `decode_organs`, shared `spectral.rs` / `contact.rs`, one file per kind), `brain/` (roles, `Motor`, `MotorOutputs`, `Activation`, `compile.rs`). Largest file 483 lines (tests).
+- A new organ kind now touches 2 files: `organs/<kind>.rs` and `organs/mod.rs` (mod line, enum variant + `ALL`, exhaustive `spec()` arm, its `classify` region); bindings `OrganKind.ts` / `organRegistry.ts` carry it to the frontend (before: ~10 places incl. sensing chain, physics, metabolism, naming, probes thresholds, frontend name tables). Parity test `organs::tests::test_live_channels_match_sense` over `OrganKind::ALL`.
+- Promoter registry exported (`bindings/promoterRegistry.ts`), `frontend/shared/genome.ts` builds `PROMOTER_MEANINGS`, `ORGAN_KIND_NAMES`, `CHANNEL_NAMES` from the registries (copies removed). `MotorOutputs { thrust, bend }` replaces `[f32; 2]`. Typed `Activation`, `Symmetry` (TCK-155); diet/habitat strings were dead and are removed.
+- Dead phenotype fields removed (Rust, bindings, frontend): `segments`, `hydraulic_pressure`, `rotational_inertia`, `repair_fidelity`, `chromatin_state`, `epigenetic_logs`, `survival_expectation`, `survival_analysis`, `preferred_habitat`, `diet_class`, `sensory_visus/olfaction/tactility/biolum`; `CTRNNNeuron.label`. The golden master still hashes `hydraulic_pressure` / `repair_fidelity`, decoded in the test from the genome exactly as before, so the fingerprint is unchanged.
+- Behaviour bugs left for TCK-202 and marked `// TCK-202` (thermal `-5.0f32.max`, std `cos`, eyes as limbs, pain and predator thresholds).
+- Gate on master (`.agents/artifacts/gate.sh`): `cargo test` 212 passed, 1 ignored; golden master `0x6b78c31a4d19b0e8` unchanged; standard, curriculum, rehearsal references match; `npm test` 13 passed; build ok; doc links OK (84 files); no bindings drift after regeneration. UI smoke OK (0 console errors); selection check (TCK-194 script): inspector shows the clicked sandbox (#63) with name and diet, two resets give different creatures.
+- Docs: `wiki/contracts/organ-kind.md`, `wiki/guides/add-organ-kind.md`; `genome-compiler.md` and `sensing.md` rewritten to the module structure; paths fixed in ctrnn-brain, configuration, simulation-engine, config-section, adr-002, glossary, repository-map, testing, trainer, skill `biology-dna`.
