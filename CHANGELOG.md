@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.33] - 2026-11-03
+
+Epic TCK-196, phase R3. Structure only: golden master, trainer references and probe outputs unchanged.
+
+### Changed
+- One shared creature tick (sense, think, metabolize, death, move, food drift, eat, plus bite and reproduction building blocks) in a new simulation module; the training rooms and the diagnosis probes run on it, and a new dynamic is one system module. The Ocean adopts it in a later step (ref TCK-200).
+
 ## [1.12.32] - 2026-11-02
 
 Epic TCK-196, phase R2. Structure only: golden master and all trainer references unchanged.

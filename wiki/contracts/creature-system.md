@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/biology/trainer_engine.rs, src/biology/scenarios.rs]
+sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/biology/trainer_engine.rs, src/biology/scenarios.rs]
 ---
 
 # Contract: creature system

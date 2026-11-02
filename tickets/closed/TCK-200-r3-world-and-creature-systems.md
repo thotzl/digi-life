@@ -1,7 +1,7 @@
 ---
 id: TCK-200
 title: "R3 Shared World and Creature Systems for Ocean, Trainer and Probes"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -39,3 +39,10 @@ Trainer references and golden master unchanged; probes produce identical numbers
 ## Acceptance
 - One implementation per system; `probes::brain_tick` and `scenarios::step_physics` removed.
 - Contract `wiki/contracts/creature-system.md` + guide `wiki/guides/add-dynamic.md`.
+
+## Verification (2026-11-03, v1.12.33)
+- New `src/sim/`: `mod.rs` (`System` enum Sense/Think/Metabolize/Death/Move/FoodDrift/Eat, `step_creature(world, idx, ctx, step)` running a world's ordered system list, `CreatureStep` with reused buffers and results, `CreatureEvent::{Ate, Decomposed}` applied by the owner after the step), `world.rs` (`World<'a>` borrowed view: creatures, foods, obstacles, peers, optional grid, size, optional `TemperatureField`, `WorldSettings`; `TickCtx` with brain/metabolism/physics sections; system lists `TRAINER_SYSTEMS`, `OCEAN_SYSTEMS`, `BRAIN_ONLY_SYSTEMS`), `systems/` (`sense` with `TargetSelector` and `ClockVariant` and the single absent-target placeholder, `think`, `metabolize` with `EnergyModifier` photosynthesis/thermal, `death` with `DeathPolicy` Freeze/Decompose, `move`, `food_drift` with `FoodDriftOrder`, `eat` with `EatRadiusRule` / `RespawnPolicy` / spawn helpers, `bite`, `reproduce`).
+- Removed duplicate ticks: `scenarios::step_physics`, `probes::brain_tick`; the `visible_foods` plugin hook became `world_settings()`; `metabolism::mean_trial_activity_and_thrust` moved to `probes.rs` (metabolism no longer depends on `trainer_engine`); the trainer sandbox tick calls `step_creature`.
+- Divergences kept as explicit world settings (unified in TCK-202): clock Fmath vs Std, targets All/NearestPerType vs NearestPerTypeWithPrey, metabolic scale, energy modifiers, death Freeze vs Decompose, food drift after vs before, eat radius trainer rule vs linear config, respawn MinDistance vs Patchy. The Ocean step in `engine.rs` is untouched and adopts the systems in TCK-156 (plug-in steps in the agent report, Ocean world test already runs the Ocean settings through `step_creature`).
+- Gate on master (`.agents/artifacts/gate.sh`): `cargo test` 223 passed, 1 ignored (13 new `sim::` tests); golden master `0x6b78c31a4d19b0e8` unchanged; standard, curriculum, rehearsal references match; `npm test` 13 passed; build ok; doc links OK (84 files); no bindings drift. Probes identical: `trainer_runner probe all` before/after for three seed/sample settings, `diff -r` empty over 24 JSON files. UI smoke OK (generation completed, 0 console errors).
+- Docs: `wiki/contracts/creature-system.md`, `wiki/guides/add-dynamic.md`; trainer.md ("Creature tick" with the divergence table), physics.md, repository-map, testing, config-section, master index.
