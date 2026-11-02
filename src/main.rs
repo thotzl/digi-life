@@ -5,6 +5,7 @@ use tauri::Manager;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::Mutex;
 
+use src_tauri::config::AppConfig;
 use src_tauri::database;
 use src_tauri::server::api;
 use src_tauri::server::engine::spawn_simulation_thread;
@@ -32,14 +33,22 @@ fn main() {
             api::add_catalogue_creature_to_training
         ])
         .setup(|app| {
+            let data_dir = app.path().app_data_dir()?;
+            // Release builds log to <app data>/logs/broodbattle.log (no console with windows_subsystem), dev builds to stderr
+            src_tauri::logging::init_app(&data_dir.join("logs"));
+            // Entry point: the one place the app reads the process config; commands get it as managed state and the
+            // engine thread owns a copy
+            let config = AppConfig::global().clone();
+            app.manage(config.clone());
+
             // Persist the database in the per-user app data dir instead of the working directory
-            let db_path = app.path().app_data_dir()?.join(database::DB_FILE_NAME);
+            let db_path = data_dir.join(database::DB_FILE_NAME);
             match database::migrate_legacy_db(std::path::Path::new(database::LEGACY_DB_PATH), &db_path) {
-                Ok(true) => println!("[DB] Copied legacy database '{}' to '{}'.", database::LEGACY_DB_PATH, db_path.display()),
+                Ok(true) => log::info!("copied legacy database '{}' to '{}'", database::LEGACY_DB_PATH, db_path.display()),
                 Ok(false) => {}
-                Err(e) => eprintln!("[DB] Legacy database migration failed: {}", e),
+                Err(e) => log::error!("legacy database migration failed: {}", e),
             }
-            println!("[DB] Using database '{}'.", db_path.display());
+            log::info!("using database '{}'", db_path.display());
             database::set_db_path(db_path.clone());
             let conn = database::init_db(&db_path)?;
             app.manage(database::DbState(Mutex::new(conn)));
@@ -47,7 +56,7 @@ fn main() {
             let window = app.get_webview_window("main").expect("Failed to locate main window");
 
             // Start parallel modularized headless simulation and replication thread
-            spawn_simulation_thread(window, rx);
+            spawn_simulation_thread(window, rx, config);
 
             Ok(())
         })

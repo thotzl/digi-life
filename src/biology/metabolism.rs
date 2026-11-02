@@ -41,9 +41,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::biology::dna::{CreaturePhenotype, NeuronRole};
-use crate::shared::types::{CreatureAgent, SimulationRules};
+use crate::shared::dto::CreatureAgent;
 
-/// Config block `metabolism` (derivation in the module docs).
+/// Config section `metabolism`: the energy function (derivation in the module docs), start energy and the food and
+/// bite energy rules shared by Ocean and trainer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MetabolismConfig {
@@ -54,6 +55,17 @@ pub struct MetabolismConfig {
     pub movement_cost_per_mass: f32,
     /// Factor on the trainer drain (1 = full Ocean cost); ramped by the curriculum (TCK-176)
     pub trainer_metabolic_scale: f32,
+    /// Start energy of every spawned creature, Ocean and trainer: `stomach_capacity · creatureStartStomachRatio`
+    /// (`creature_factory::start_energy`, TCK-185)
+    pub creature_start_stomach_ratio: f32,
+    /// Energy of one food spore before diet efficiency; the one food energy source of Ocean and trainer (TCK-178)
+    pub food_spore_energy: f32,
+    pub grazing_efficiency_herbivore_scale: f32,
+    pub biting_efficiency_carnivore_scale: f32,
+    /// Attacker gain per bite before the caps (TCK-145)
+    pub biting_base_energy_gain: f32,
+    /// Energy a bite takes from the victim; also the cap of the attacker's gain
+    pub biting_energy_damage: f32,
 }
 
 /// Body mass used by the physics (`r^1.5 · L / 25`).
@@ -120,7 +132,7 @@ pub fn drain_energy(agent: &mut CreatureAgent, out_thrust: f32, m: &MetabolismCo
 
 /// Energy of eating one food spore: `foodSporeEnergy · diet efficiency · scale` (meat: carnivory · biting scale,
 /// plant: (1 − carnivory) · grazing scale). The one food energy rule of Ocean and trainer.
-pub fn food_energy(carnivory: f32, is_meat: bool, rules: &SimulationRules) -> f32 {
+pub fn food_energy(carnivory: f32, is_meat: bool, rules: &MetabolismConfig) -> f32 {
     if is_meat {
         rules.food_spore_energy * carnivory * rules.biting_efficiency_carnivore_scale
     } else {
@@ -130,7 +142,7 @@ pub fn food_energy(carnivory: f32, is_meat: bool, rules: &SimulationRules) -> f3
 
 /// Energy an attacker gains from one bite (TCK-145): `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`,
 /// capped by the damage dealt (`bitingEnergyDamage`) and by the victim's energy: a bite moves energy, it never creates it.
-pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &SimulationRules) -> f32 {
+pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &MetabolismConfig) -> f32 {
     (rules.biting_base_energy_gain * carnivory * rules.biting_efficiency_carnivore_scale)
         .min(rules.biting_energy_damage)
         .min(victim_energy.max(0.0))
@@ -139,18 +151,19 @@ pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &SimulationRu
 /// Typical brain behaviour of `genome` over one trial of `scenario` (fresh trainer sandbox, learning per `config`,
 /// no metabolic drain so the brain runs the whole trial): mean synaptic activity `Σ|w·a|` per tick and mean
 /// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration.
-pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::scenarios::Scenario, config: &crate::shared::types::AppConfig, rng: &mut crate::shared::rng::SimRng) -> (f32, f32) {
+pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::scenarios::Scenario, config: &crate::config::AppConfig, rng: &mut crate::shared::rng::SimRng) -> (f32, f32) {
     use crate::biology::dna::Motor;
     use crate::biology::scenarios::TrainingScenarioPlugin;
-    use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics_with_config, SandboxOrigin};
+    use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
     let mut config = config.clone();
     config.metabolism.trainer_metabolic_scale = 0.0;
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, scenario, None, None, rng);
+    let room = scenario.plugin(&config);
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, room, None, None, rng, &config);
     let thrust_neuron = sb.agent.phenotype.brain.neurons.iter().position(|n| n.role == NeuronRole::Motor { motor: Motor::Thrust });
-    let ticks = scenario.plugin().epoch_ticks();
+    let ticks = room.epoch_ticks();
     let (mut activity, mut thrust) = (0.0, 0.0);
     for _ in 0..ticks {
-        step_trainer_sandbox_physics_with_config(&mut sb, &config);
+        step_trainer_sandbox_physics(&mut sb, &config);
         activity += sb.agent.brain_runtime.activity();
         thrust += thrust_neuron.map_or(0.0, |i| sb.agent.neuron_activations[i].abs());
     }
@@ -163,7 +176,6 @@ mod tests {
     use crate::biology::dna::parse_genome;
     use crate::biology::scenarios::Scenario;
     use crate::shared::rng::derive;
-    use crate::shared::types::AppConfig;
 
     /// Old median Ocean drain of structured genomes (module docs), the absolute scale of the calibration.
     const PRE_P6_MEDIAN_OCEAN_DRAIN: f32 = 0.0243;
@@ -178,15 +190,15 @@ mod tests {
     }
 
     fn structured_phenotypes(n: usize) -> Vec<CreaturePhenotype> {
-        let composition = &AppConfig::global().genome_composition;
+        let composition = &crate::config::test_config().genome.genome_composition;
         (0..n)
-            .map(|i| parse_genome(&crate::biology::dna::generate_structured_genome(composition, &mut derive(151, &[i as u64])), None, None))
+            .map(|i| parse_genome(&crate::biology::dna::generate_structured_genome(composition, &mut derive(151, &[i as u64])), None, None, &crate::config::test_config().brain))
             .collect()
     }
 
     #[test]
     fn test_brain_and_senses_share_of_resting_cost_is_in_band() {
-        let m = &AppConfig::global().metabolism;
+        let m = &crate::config::test_config().metabolism;
         let phenotypes = structured_phenotypes(1000);
         let costs: Vec<EnergyCost> = phenotypes.iter().map(|p| tick_cost(p, TYPICAL_ACTIVITY, 0.0, m)).collect();
 
@@ -206,13 +218,13 @@ mod tests {
         // Real structured brains over a standard trial (200 genomes): the documented typical activity and |thrust| still
         // hold (±15 %), and the median typical total cost (resting at the own activity + movement at the own mean
         // |thrust|) equals the pre-P6 median Ocean drain (±10 %), the absolute scale of the calibration.
-        let config = AppConfig::global();
-        let composition = &config.genome_composition;
+        let config = crate::config::test_config();
+        let composition = &config.genome.genome_composition;
         let rows: Vec<(f32, f32, f32)> = (0..200)
             .map(|i| {
                 let genome = crate::biology::dna::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
                 let (activity, thrust) = mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
-                let total = tick_cost(&parse_genome(&genome, None, None), activity, thrust, &config.metabolism).total();
+                let total = tick_cost(&parse_genome(&genome, None, None, &crate::config::test_config().brain), activity, thrust, &config.metabolism).total();
                 (activity, thrust, total)
             })
             .collect();
@@ -226,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_full_thrust_costs_about_the_resting_cost() {
-        let m = &AppConfig::global().metabolism;
+        let m = &crate::config::test_config().metabolism;
         let phenotypes = structured_phenotypes(300);
         let ratio = median(
             phenotypes
@@ -246,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_pruned_and_silent_synapses_cost_nothing() {
-        let m = &AppConfig::global().metabolism;
+        let m = &crate::config::test_config().metabolism;
         let p = &structured_phenotypes(1)[0];
         let silent = tick_cost(p, 0.0, 0.0, m);
         assert_eq!(silent.activity, 0.0);
@@ -258,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_food_and_bite_energy() {
-        let rules = &AppConfig::global().rules;
+        let rules = &crate::config::test_config().metabolism;
         assert_eq!(food_energy(0.0, false, rules), rules.food_spore_energy * rules.grazing_efficiency_herbivore_scale);
         assert_eq!(food_energy(1.0, true, rules), rules.food_spore_energy * rules.biting_efficiency_carnivore_scale);
         assert_eq!(food_energy(0.0, true, rules), 0.0);

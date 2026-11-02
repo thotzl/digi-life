@@ -6,13 +6,16 @@ use std::sync::mpsc::Receiver;
 use rusqlite::params;
 use rand::Rng;
 
-use crate::shared::types::{CreatureAgent, FoodSpore, TelemetryCreature};
-use crate::shared::spatial_grid::SpatialGrid;
+use crate::config::AppConfig;
+use crate::shared::dto::{CreatureAgent, FoodSpore, TelemetryCreature};
+use crate::shared::{geom, json_col, time};
+use crate::shared::physics::{step_food_spore_physics, SporePusher};
+use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
 use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_sim::{run_seed, TrainerEvent, TrainerSim};
+use crate::biology::trainer_sim::{run_seed, TrainerEvent, TrainerParams, TrainerSim};
 use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
 use crate::database::{delete_trainer_run, init_db, load_trainer_genomes, load_trainer_run_state, save_trainer_elites, save_trainer_run_state, LogDbError};
 
@@ -47,7 +50,7 @@ fn bite_target<'a>(
         if victim.id == attacker.id || victim.species_id == attacker.species_id || bitten_recently(victim.id) {
             continue;
         }
-        let dist = ((victim.px - attacker.px).powi(2) + (victim.py - attacker.py).powi(2)).sqrt();
+        let dist = geom::dist(attacker.px, attacker.py, victim.px, victim.py);
         if dist <= bite_range && target.map_or(true, |(_, best)| dist < best) {
             target = Some((victim, dist));
         }
@@ -65,6 +68,22 @@ fn death_log(id: u32, latin_name: &str, bitten: bool) -> (String, &'static str) 
     }
 }
 
+/// Position of a new or respawned Ocean food spore: with probability 0.75 in a ring of 50..600 px around a random
+/// nutrient centre, otherwise uniform; clamped 100 px inside the world.
+fn patchy_spore_position<R: Rng + ?Sized>(rng: &mut R, nutrient_centers: &[(f32, f32)], logical_width: f32, logical_height: f32) -> (f32, f32) {
+    let roll = rng.gen_range(0.0..1.0);
+    if !nutrient_centers.is_empty() && roll < 0.75 {
+        let center_idx = rng.gen_range(0..nutrient_centers.len());
+        let (cx, cy) = nutrient_centers[center_idx];
+        let radius = rng.gen_range(50.0..600.0);
+        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
+        let (dx, dy) = geom::polar_offset(radius, angle);
+        ((cx + dx).clamp(100.0, logical_width - 100.0), (cy + dy).clamp(100.0, logical_height - 100.0))
+    } else {
+        (rng.gen_range(100.0..logical_width - 100.0), rng.gen_range(100.0..logical_height - 100.0))
+    }
+}
+
 /// TRAINER_STATE_CHANGED / TRAINER_RESET_COMPLETED payload: the trainer settings as the UI shows them.
 fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, warp_speed: usize, is_headless: bool, run_id: &str) -> TrainerState {
     let params = &trainer.params;
@@ -76,7 +95,7 @@ fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, w
         elite_ratio: params.elite_ratio,
         mutation_rate: params.mutation_ops_max,
         mutation_ops_min: params.mutation_ops_min.max(1),
-        mutation_ops_limit: crate::shared::types::AppConfig::global().mutation_ops_limit,
+        mutation_ops_limit: trainer.config().trainer.mutation_ops_limit,
         inflow_rate: params.inflow_rate,
         hof_rate: params.hof_rate,
         multi_trial: params.multi_trial,
@@ -91,8 +110,10 @@ fn trainer_state(is_running: bool, trainer: &TrainerSim, display_count: usize, w
     }
 }
 
-pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>) {
+/// Starts the engine thread. `config` is the app config of the entry point (`main.rs`); the thread owns it.
+pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String>, config: AppConfig) {
     thread::spawn(move || {
+        let app_config = &config;
         let db_path = crate::database::db_path();
         let conn = init_db(&db_path).expect("Failed to initialize local DB");
 
@@ -112,16 +133,20 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     database_changed_sent = true;
                 }
                 if let Err(e) = window.emit("simulation-state", payload) {
-                    eprintln!("[SIMULATION] Error emitting 'simulation-state' event: {}", e);
+                    log::error!("emitting 'simulation-state' failed: {}", e);
                 }
             }
         };
 
         let logical_width = 19200.0;
         let logical_height = 10800.0;
-        let app_config = crate::shared::types::AppConfig::global();
-        let ocean_world = generate_world(&app_config.seed, logical_width, logical_height);
+        let ocean_world = generate_world(&app_config.core.seed, logical_width, logical_height);
         let mut grid = SpatialGrid::new(logical_width, logical_height, 80.0);
+        // Reused per-query buffers of the grid lookups (no allocation per spore or creature)
+        let mut nearby_idx: Vec<u32> = Vec::new();
+        let mut nearby_pushers: Vec<SporePusher> = Vec::new();
+        let mut nearby_foods: Vec<u32> = Vec::new();
+        let mut nearby_peers: Vec<u32> = Vec::new();
 
         // Mirror of species_records (id, status, peak) in SELECT order; reloaded only after inserts/resets
         let mut species_cache: Vec<(String, String, i32)> = Vec::new();
@@ -160,9 +185,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         // Displayed sandboxes (UI grid tiles and telemetry, `N`); the population is `trainer.params.population`
         // (config `trainerPopulation`, TCK-192). Only the telemetry reads it, the simulation never does.
         let mut trainer_display_count: usize = 16;
-        let trainer_retention = app_config.trainer_genome_retention_per_run;
+        let trainer_retention = app_config.trainer.trainer_genome_retention_per_run;
         // Seed of a run that never got a reset nonce (TCK-194: a reset stores its own seed with the run state)
-        let trainer_seed = |run_id: &str| run_seed(&app_config.seed, run_id, None);
+        let trainer_seed = |run_id: &str| run_seed(&app_config.core.seed, run_id, None);
 
         // Continues a run from the DB: active parents + hall of fame; the generation counter
         // continues from the newest parent. Run state (TCK-191): with `load_run_state` (the in-memory trainer does not
@@ -174,7 +199,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             let mut params = current.params.clone();
             let (layout_id, seed) = if load_run_state {
                 load_trainer_run_state(db_conn, run_id).map_or((0, trainer_seed(run_id)), |state| {
-                    state.apply(&mut params);
+                    state.apply(&mut params, app_config);
                     (state.layout_id, state.seed.unwrap_or_else(|| trainer_seed(run_id)))
                 })
             } else {
@@ -183,9 +208,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             let parents = load_trainer_genomes(db_conn, run_id, true, params.population);
             let hof = load_trainer_genomes(db_conn, run_id, false, trainer_retention);
             let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
-            TrainerSim::restore_at_layout(params, seed, generation, layout_id, parents, hof, trainer_retention)
+            TrainerSim::restore_at_layout(params, seed, generation, layout_id, parents, hof, trainer_retention, app_config)
         };
-        let mut trainer = TrainerSim::new(Default::default(), trainer_seed(&trainer_run_id), trainer_retention);
+        let mut trainer = TrainerSim::new(TrainerParams::from_config(app_config), trainer_seed(&trainer_run_id), trainer_retention, app_config);
         // Whether `trainer` holds the run state of `trainer_run_id` (false until the first restore loads it)
         let mut trainer_run_state_loaded = false;
 
@@ -204,7 +229,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         if let Ok(creatures_list) = serde_json::from_value::<Vec<CreatureAgent>>(serde_json::Value::Array(restored_creatures.clone())) {
                             creatures = creatures_list;
                             loaded_state_success = true;
-                            println!("[SIMULATION] Restored {} creatures successfully from database!", creatures.len());
+                            log::info!("restored {} creatures from the database", creatures.len());
                         }
                     }
                     if let Some(restored_spores) = state_val["foodPellets"].as_array() {
@@ -233,12 +258,12 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             for _ in 0..15 {
                 let mut mutated_dna = base_dna.to_string();
                 if rng.gen_range(0.0..1.0) < 0.60 {
-                    if let Some(mutation) = mutate_genome(&base_dna, &app_config.mutation_operators, &mut rng) {
+                    if let Some(mutation) = mutate_genome(&base_dna, &app_config.genome.mutation_operators, &mut rng) {
                         mutated_dna = mutation.genome;
                     }
                 }
 
-                let random_pheno = parse_genome(&mutated_dna, None, None);
+                let random_pheno = parse_genome(&mutated_dna, None, None, &app_config.brain);
                 let px = rng.gen_range(500.0..logical_width - 500.0);
                 let py = rng.gen_range(500.0..logical_height - 500.0);
                 let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
@@ -251,19 +276,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     generation: 1,
                     methylations: None,
                     synapse_weights: None,
-                });
+                }, &app_config.metabolism);
                 new_agent.vx = rng.gen_range(-0.4..0.4);
                 new_agent.vy = rng.gen_range(-0.4..0.4);
 
                 creatures.push(new_agent.clone());
 
-                let now_millis = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
+                let now_secs = time::now_secs();
                 conn.execute(
                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                    params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_millis, random_pheno.carnivory],
+                    params![&mutated_dna, &random_pheno.latin_name, &mutated_dna, None::<String>, now_secs, random_pheno.carnivory],
                 ).log_db_err("INSERT OR IGNORE INTO species_records");
                 species_cache_dirty = true;
 
@@ -271,24 +293,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
             }
 
             // Inject Initial Spores with patchy density distribution (nutrient centers!)
-            for _ in 0..app_config.food_spore_count {
-                let (x, y) = {
-                    let mut rng = rand::thread_rng();
-                    let roll = rng.gen_range(0.0..1.0);
-                    if !nutrient_centers.is_empty() && roll < 0.75 {
-                        let center_idx = rng.gen_range(0..nutrient_centers.len());
-                        let (cx, cy) = nutrient_centers[center_idx];
-                        let radius = rng.gen_range(50.0..600.0);
-                        let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                        let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
-                        let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
-                        (px, py)
-                    } else {
-                        let px = rng.gen_range(100.0..logical_width - 100.0);
-                        let py = rng.gen_range(100.0..logical_height - 100.0);
-                        (px, py)
-                    }
-                };
+            for _ in 0..app_config.ocean.food_spore_count {
+                let (x, y) = patchy_spore_position(&mut rand::thread_rng(), &nutrient_centers, logical_width, logical_height);
 
                 food_pellets.push(FoodSpore {
                     id: next_spore_id,
@@ -330,13 +336,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     if scenario != trainer.params.scenario || trainer.pending_scenario().is_some() || (scenario == Scenario::Curriculum && !trainer.params.level_auto) {
                                         trainer.set_scenario(scenario);
                                         let size = trainer.room().chamber_size();
-                                        println!("[TRAINER] Training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
+                                        log::info!("training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, trainer.pending_scenario(), size, size);
                                     }
                                     emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::SetTrainerLevel { level } => {
                                     trainer.set_level(level);
-                                    println!("[TRAINER] Manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
+                                    log::info!("manual level {:.2} requested (pending: {:?})", level, trainer.pending_scenario());
                                     emit_state(state_changed(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id));
                                 }
                                 TrainerAction::StartTraining => {
@@ -359,8 +365,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     }
                                     // A reset starts a new run: fresh seed (clock nonce), stored at once so a restart
                                     // before the first generation end continues this run (TCK-194)
-                                    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
-                                    trainer = TrainerSim::new(fresh_params, run_seed(&app_config.seed, &trainer_run_id, Some(nonce)), trainer_retention);
+                                    let nonce = time::now_nanos();
+                                    trainer = TrainerSim::new(fresh_params, run_seed(&app_config.core.seed, &trainer_run_id, Some(nonce)), trainer_retention, app_config);
                                     save_trainer_run_state(&conn, &trainer_run_id, &trainer);
                                     trainer_run_state_loaded = true;
 
@@ -385,9 +391,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     if let Some(sb) = trainer.assign_creature(sb_id, &assign.genome, m_opt, s_opt) {
                                         // Also save this assigned creature as active in trainer_genomes SQLite database for this run!
                                         let unique_id = format!("{}-{}-assigned-{}", trainer_run_id, generation, sb_id);
-                                        let methylations_json = serde_json::to_string(&sb.agent.phenotype.methylations).unwrap_or_else(|_| "[]".to_string());
-                                        let synapse_weights_json = serde_json::to_string(&sb.agent.synapse_weights).unwrap_or_else(|_| "[]".to_string());
-                                        let now_millis = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+                                        let methylations_json = json_col::encode(&sb.agent.phenotype.methylations, "trainer_genomes.methylations");
+                                        let synapse_weights_json = json_col::encode(&sb.agent.synapse_weights, "trainer_genomes.synapse_weights");
+                                        let now_secs = time::now_secs();
 
                                         conn.execute(
                                             "INSERT OR REPLACE INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
@@ -399,7 +405,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                                 sb.agent.phenotype.latin_name,
                                                 sb.agent.genome,
                                                 0.0,
-                                                now_millis,
+                                                now_secs,
                                                 methylations_json,
                                                 synapse_weights_json
                                             ],
@@ -431,7 +437,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
                                     if let Some(ops) = update.mutation_rate {
                                         let lo = p.mutation_ops_min.max(1);
-                                        p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.mutation_ops_limit.max(lo));
+                                        p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, app_config.trainer.mutation_ops_limit.max(lo));
                                     }
                                     if let Some(i_r) = update.inflow_rate {
                                         p.inflow_rate = i_r;
@@ -476,13 +482,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "CLIENT_READY" => {
                                 // The mode stays with the router (SET_MODE): forcing Ocean here raced a fast
                                 // navigation to the trainer after startup and left the trainer inactive
-                                println!("[SIMULATION] Client Handshake successful! Synchronizing {} creatures and {} spores...", creatures.len(), food_pellets.len());
+                                log::info!("client handshake, synchronizing {} creatures and {} spores", creatures.len(), food_pellets.len());
                                 let world = ocean_world.clone();
                                 let init_json = json!({
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
-                                    "seed": app_config.seed,
+                                    "seed": app_config.core.seed,
                                     "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
@@ -504,17 +510,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     emit_state(json!({ "type": "SIM_STATE", "running": is_running }));
                                 }
                             }
-                            "INJECT_URZELLE" | "SPAWN_CLONE" if creatures.len() >= app_config.max_creatures => {
+                            "INJECT_URZELLE" | "SPAWN_CLONE" if creatures.len() >= app_config.ocean.max_creatures => {
                                 emit_state(json!({
                                     "type": "LOG_EVENT",
-                                    "message": format!("Population cap reached ({} creatures), spawn rejected.", app_config.max_creatures),
+                                    "message": format!("Population cap reached ({} creatures), spawn rejected.", app_config.ocean.max_creatures),
                                     "logType": "system"
                                 }));
                             }
                             "INJECT_URZELLE" => {
                                 let mut rng = rand::thread_rng();
-                                let random_dna = generate_structured_genome(&app_config.genome_composition, &mut rng);
-                                let random_pheno = parse_genome(&random_dna, None, None);
+                                let random_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
+                                let random_pheno = parse_genome(&random_dna, None, None, &app_config.brain);
 
                                 let px = rng.gen_range(500.0..logical_width - 500.0);
                                 let py = rng.gen_range(500.0..logical_height - 500.0);
@@ -528,20 +534,17 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     generation: 1,
                                     methylations: None,
                                     synapse_weights: None,
-                                });
+                                }, &app_config.metabolism);
                                 new_agent.vx = rng.gen_range(-0.4..0.4);
                                 new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                 creatures.push(new_agent.clone());
                                 newly_spawned_creatures.push(new_agent.clone());
 
-                                let now_millis = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs() as i64;
+                                let now_secs = time::now_secs();
                                 conn.execute(
                                     "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                    params![&random_dna, &random_pheno.latin_name, &random_dna, None::<String>, now_millis, random_pheno.carnivory],
+                                    params![&random_dna, &random_pheno.latin_name, &random_dna, None::<String>, now_secs, random_pheno.carnivory],
                                 ).log_db_err("INSERT OR IGNORE INTO species_records");
                                 species_cache_dirty = true;
 
@@ -562,7 +565,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     let m_vec: Vec<f32> = serde_json::from_value(action["methylations"].clone()).unwrap_or_default();
                                     let m_opt = if m_vec.is_empty() { None } else { Some(&m_vec[..]) };
                                     
-                                    let pheno = parse_genome(genome, None, m_opt);
+                                    let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
                                     
                                     let px = rng.gen_range(500.0..logical_width - 500.0);
                                     let py = rng.gen_range(500.0..logical_height - 500.0);
@@ -582,7 +585,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         generation: 1,
                                         methylations: m_opt,
                                         synapse_weights: learned_synapses,
-                                    });
+                                    }, &app_config.metabolism);
                                     new_agent.vx = rng.gen_range(-0.4..0.4);
                                     new_agent.vy = rng.gen_range(-0.4..0.4);
 
@@ -590,13 +593,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     newly_spawned_creatures.push(new_agent);
 
                                     // Record the newly released clone in species_records if not exists
-                                    let now_millis = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs() as i64;
+                                    let now_secs = time::now_secs();
                                     conn.execute(
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                        params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
+                                        params![genome, &pheno.latin_name, genome, None::<String>, now_secs, pheno.carnivory],
                                     ).log_db_err("INSERT OR IGNORE INTO species_records");
                                     species_cache_dirty = true;
 
@@ -610,7 +610,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
                             }
                             "RESET_EVOLUTION" => {
-                                println!("[SIMULATION] Performing complete environmental restoration reset...");
+                                log::info!("evolution reset");
                                 
                                 // Wipe old species records, histories, and state caches from SQLite database
                                 conn.execute("DELETE FROM species_records", []).log_db_err("DELETE FROM species_records");
@@ -651,11 +651,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         let idx = rng.gen_range(0..catalogue_creatures.len());
                                         let (genome, _name, m_str, s_str) = &catalogue_creatures[idx];
                                         
-                                        let m_arr: Vec<f32> = serde_json::from_str(m_str).unwrap_or_default();
-                                        let s_arr: Vec<f32> = serde_json::from_str(s_str).unwrap_or_default();
+                                        let m_arr: Vec<f32> = json_col::decode(m_str, "creature_catalogue.methylations").unwrap_or_default();
+                                        let s_arr: Vec<f32> = json_col::decode(s_str, "creature_catalogue.synapse_weights").unwrap_or_default();
                                         let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
                                         
-                                        let pheno = parse_genome(genome, None, m_opt);
+                                        let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
                                         
                                         let px = rng.gen_range(500.0..logical_width - 500.0);
                                         let py = rng.gen_range(500.0..logical_height - 500.0);
@@ -669,19 +669,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             generation: 1,
                                             methylations: m_opt,
                                             synapse_weights: Some(s_arr),
-                                        });
+                                        }, &app_config.metabolism);
                                         new_agent.vx = rng.gen_range(-0.4..0.4);
                                         new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                         creatures.push(new_agent.clone());
 
-                                        let now_millis = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_secs() as i64;
+                                        let now_secs = time::now_secs();
                                         conn.execute(
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                            params![genome, &pheno.latin_name, genome, None::<String>, now_millis, pheno.carnivory],
+                                            params![genome, &pheno.latin_name, genome, None::<String>, now_secs, pheno.carnivory],
                                         ).log_db_err("INSERT OR IGNORE INTO species_records");
                                         species_cache_dirty = true;
                                         next_creature_id += 1;
@@ -691,9 +688,9 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 } else {
                                     // Fallback to structured random genomes if the catalogue is empty (TCK-184)
                                     for _ in 0..25 {
-                                        let founder_dna = generate_structured_genome(&app_config.genome_composition, &mut rng);
+                                        let founder_dna = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
 
-                                        let random_pheno = parse_genome(&founder_dna, None, None);
+                                        let random_pheno = parse_genome(&founder_dna, None, None, &app_config.brain);
                                         let px = rng.gen_range(500.0..logical_width - 500.0);
                                         let py = rng.gen_range(500.0..logical_height - 500.0);
                                         let heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
@@ -706,19 +703,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                             generation: 1,
                                             methylations: None,
                                             synapse_weights: None,
-                                        });
+                                        }, &app_config.metabolism);
                                         new_agent.vx = rng.gen_range(-0.4..0.4);
                                         new_agent.vy = rng.gen_range(-0.4..0.4);
 
                                         creatures.push(new_agent.clone());
 
-                                        let now_millis = std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .unwrap_or_default()
-                                            .as_secs() as i64;
+                                        let now_secs = time::now_secs();
                                         conn.execute(
                                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, 1, ?6)",
-                                            params![founder_dna, &random_pheno.latin_name, founder_dna, None::<String>, now_millis, random_pheno.carnivory],
+                                            params![founder_dna, &random_pheno.latin_name, founder_dna, None::<String>, now_secs, random_pheno.carnivory],
                                         ).log_db_err("INSERT OR IGNORE INTO species_records");
                                         species_cache_dirty = true;
                                         next_creature_id += 1;
@@ -736,23 +730,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 }
 
                                 // Inject Initial Spores with patchy density distribution (nutrient centers!)
-                                for _ in 0..app_config.food_spore_count {
-                                    let (x, y) = {
-                                        let roll = rng.gen_range(0.0..1.0);
-                                        if !nutrient_centers.is_empty() && roll < 0.75 {
-                                            let center_idx = rng.gen_range(0..nutrient_centers.len());
-                                            let (cx, cy) = nutrient_centers[center_idx];
-                                            let radius = rng.gen_range(50.0..600.0);
-                                            let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                                            let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
-                                            let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
-                                            (px, py)
-                                        } else {
-                                            let px = rng.gen_range(100.0..logical_width - 100.0);
-                                            let py = rng.gen_range(100.0..logical_height - 100.0);
-                                            (px, py)
-                                        }
-                                    };
+                                for _ in 0..app_config.ocean.food_spore_count {
+                                    let (x, y) = patchy_spore_position(&mut rng, &nutrient_centers, logical_width, logical_height);
 
                                     food_pellets.push(FoodSpore {
                                         id: next_spore_id,
@@ -774,7 +753,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     "type": "INIT_STATE",
                                     "highestGeneration": highest_generation,
                                     "running": is_running,
-                                    "seed": app_config.seed,
+                                    "seed": app_config.core.seed,
                                     "world": world,
                                     "rules": {
                                         "sporeEnergy": 15.0
@@ -804,18 +783,18 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                         // Rebuild the population from the DB when entering the trainer
                                         trainer = restore_trainer(&trainer, &trainer_run_id, trainer.generation, !trainer_run_state_loaded, &conn);
                                         trainer_run_state_loaded = true;
-                                        println!("[TRAINER] Rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
+                                        log::info!("rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", trainer.params.population, trainer_run_id, trainer.generation);
 
                                         // Broadcast full hyperparams truth back to the UI!
                                         emit_state(TrainerUiEvent::TrainerStateChanged(trainer_state(trainer_is_running, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id)).to_payload());
                                     } else {
                                         is_trainer_active = false;
-                                        println!("[TRAINER] Leaving trainer mode. Resuming Ocean substrate.");
+                                        log::info!("leaving trainer mode, resuming the Ocean");
                                     }
                                 }
                             }
                             other => {
-                                eprintln!("[SIMULATION] Ignoring unknown or malformed client action type '{}'", other);
+                                log::warn!("ignoring unknown client action type '{}'", other);
                             }
                         }
                     }
@@ -838,22 +817,21 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         }
 
                         // 1. Move, drift, and physically push food spores (using SpatialGrid for O(1) performance!)
-                        use crate::shared::physics::{step_food_spore_physics, SporePusher};
                         for pellet in &mut food_pellets {
                             // Sorted indices keep the original creature order of the push sequence
-                            let mut nearby_idx = grid.get_nearby_creatures(pellet.x, pellet.y, 80.0);
+                            nearby_idx.clear();
+                            grid.for_each_nearby(GridLayer::Creatures, pellet.x, pellet.y, 80.0, |i| nearby_idx.push(i));
                             nearby_idx.sort_unstable();
-                            let nearby_creatures: Vec<SporePusher> = nearby_idx.iter()
-                                .map(|&i| SporePusher::from(&creatures[i as usize]))
-                                .collect();
-                            step_food_spore_physics(pellet, &nearby_creatures, &ocean_world.obstacles, logical_width, logical_height);
+                            nearby_pushers.clear();
+                            nearby_pushers.extend(nearby_idx.iter().map(|&i| SporePusher::from(&creatures[i as usize])));
+                            step_food_spore_physics(pellet, &nearby_pushers, &ocean_world.obstacles, logical_width, logical_height);
                         }
 
                         // Lightweight snapshot of all creatures before this step (prey search and bite targets)
                         let alive_clones: Vec<PeerSnapshot> = creatures.iter().map(PeerSnapshot::from).collect();
                         let mut damage_map = std::collections::HashMap::<u32, f32>::new();
                         ocean_tick += 1;
-                        let bite_cooldown = app_config.rules.bite_cooldown_ticks as u64;
+                        let bite_cooldown = app_config.ocean.bite_cooldown_ticks as u64;
                         bite_ticks.retain(|_, &mut tick| ocean_tick - tick < bite_cooldown);
 
                     let mut next_creatures = Vec::new();
@@ -873,9 +851,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             if spore.type_id == 2 {
                                 continue;
                             }
-                            let dx = spore.x - agent.px;
-                            let dy = spore.y - agent.py;
-                            let dist_sq = dx * dx + dy * dy;
+                            let dist_sq = geom::dist_sq(agent.px, agent.py, spore.x, spore.y);
                             if dist_sq < min_plant_dist {
                                 min_plant_dist = dist_sq;
                                 nearest_plant = Some(spore);
@@ -888,9 +864,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         for spore in &food_pellets {
                             if spore.type_id == 2 {
-                                let dx = spore.x - agent.px;
-                                let dy = spore.y - agent.py;
-                                let dist_sq = dx * dx + dy * dy;
+                                let dist_sq = geom::dist_sq(agent.px, agent.py, spore.x, spore.y);
                                 if dist_sq < min_meat_spore_dist {
                                     min_meat_spore_dist = dist_sq;
                                     nearest_meat_spore = Some(spore);
@@ -905,9 +879,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             if peer.id == agent.id || peer.species_id == agent.species_id {
                                 continue;
                             }
-                            let dx = peer.px - agent.px;
-                            let dy = peer.py - agent.py;
-                            let dist_sq = dx * dx + dy * dy;
+                            let dist_sq = geom::dist_sq(agent.px, agent.py, peer.px, peer.py);
                             if dist_sq < min_prey_peer_dist {
                                 min_prey_peer_dist = dist_sq;
                                 nearest_prey_peer = Some(peer);
@@ -981,7 +953,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             &mut agent.neuron_activations,
                             &mut agent.synapse_weights,
                             &mut agent.brain_runtime,
-                            app_config.rules.hebbian_learning_rate_base,
+                            app_config.brain.hebbian_learning_rate_base,
                         );
                         let out_thrust = outputs[0];
                         let out_left = outputs[1];
@@ -991,10 +963,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         // Photosynthesis for green creatures in light zone
                         let hue = agent.phenotype.primary_color.h;
-                        let is_green_prey = (agent.phenotype.carnivory < app_config.rules.biting_carnivory_threshold) && (hue >= 75.0 && hue <= 175.0);
+                        let is_green_prey = (agent.phenotype.carnivory < app_config.ocean.biting_carnivory_threshold) && (hue >= 75.0 && hue <= 175.0);
                         let in_light_zone = agent.py < logical_height * 0.35;
                         if is_green_prey && in_light_zone {
-                            agent.energy = (agent.energy + app_config.rules.photosynthesis_energy_gain).min(agent.phenotype.stomach_capacity);
+                            agent.energy = (agent.energy + app_config.ocean.photosynthesis_energy_gain).min(agent.phenotype.stomach_capacity);
                         }
 
                         // Spatial Temperature Stratification and Thermal Limits stress penalty
@@ -1003,15 +975,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         let temp_max = agent.phenotype.thermal_tolerance_max;
                         let thermal_stress = if local_temp < temp_min { temp_min - local_temp } else if local_temp > temp_max { local_temp - temp_max } else { 0.0 };
                         if thermal_stress > 0.1 {
-                            agent.energy -= thermal_stress * app_config.rules.thermal_stress_penalty_scale;
+                            agent.energy -= thermal_stress * app_config.ocean.thermal_stress_penalty_scale;
                         }
 
-                        let max_age_ticks = (agent.phenotype.mature_age * app_config.rules.creature_lifespan_mature_age_multiplier)
-                            .min(app_config.rules.creature_max_age_ticks);
+                        let max_age_ticks = (agent.phenotype.mature_age * app_config.ocean.creature_lifespan_mature_age_multiplier)
+                            .min(app_config.ocean.creature_max_age_ticks);
                         if agent.energy <= 0.0 || agent.age >= max_age_ticks {
                             // Decompose corpse into nutrient spores (elastic spore relocation, no array deletion!)
-                            let num_pellets = (((base_length * mean_radius) / app_config.rules.decomposition_size_ratio).floor() as i32)
-                                .clamp(app_config.rules.decomposition_spore_min, app_config.rules.decomposition_spore_max);
+                            let num_pellets = (((base_length * mean_radius) / app_config.ocean.decomposition_size_ratio).floor() as i32)
+                                .clamp(app_config.ocean.decomposition_spore_min, app_config.ocean.decomposition_spore_max);
 
                             let mut rng = rand::thread_rng();
                             for _ in 0..num_pellets {
@@ -1033,44 +1005,28 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         } else {
                             // Apply unified biological and physical kinetics
                             use crate::shared::physics::step_creature_kinematics;
-                            step_creature_kinematics(&mut agent, out_thrust, out_left, &app_config, &ocean_world.obstacles, logical_width, logical_height);
+                            step_creature_kinematics(&mut agent, out_thrust, out_left, &app_config.physics, &ocean_world.obstacles, logical_width, logical_height);
 
                             agent.age += 1;
 
                             // Grazing (Eat Food)
-                            let eat_radius = mean_radius * app_config.rules.grazing_radius_multiplier + app_config.rules.grazing_radius_offset;
-                            let nearby_foods = grid.get_nearby_food(agent.px, agent.py, eat_radius);
-                            for f_idx in nearby_foods {
+                            let eat_radius = mean_radius * app_config.ocean.grazing_radius_multiplier + app_config.ocean.grazing_radius_offset;
+                            nearby_foods.clear();
+                            grid.for_each_nearby(GridLayer::Food, agent.px, agent.py, eat_radius, |i| nearby_foods.push(i));
+                            for &f_idx in &nearby_foods {
                                 if let Some(idx) = Some(f_idx as usize).filter(|&i| i < food_pellets.len()) {
                                     let f = &food_pellets[idx];
-                                    let dx = f.x - agent.px;
-                                    let dy = f.y - agent.py;
-                                    if (dx*dx + dy*dy).sqrt() <= eat_radius {
+                                    if geom::dist(agent.px, agent.py, f.x, f.y) <= eat_radius {
                                         let is_meat = f.type_id == 2;
                                         let old_x = f.x;
                                         let old_y = f.y;
-                                        let energy_gain = crate::biology::metabolism::food_energy(agent.phenotype.carnivory, is_meat, &app_config.rules);
+                                        let energy_gain = crate::biology::metabolism::food_energy(agent.phenotype.carnivory, is_meat, &app_config.metabolism);
                                         agent.energy = (agent.energy + energy_gain).min(agent.phenotype.stomach_capacity);
                                         agent.has_eaten = true;
                                         
                                         // Relocate / biological-respawn the spore (no array deletion!) with patchy density distribution!
                                         let mut rng = rand::thread_rng();
-                                        let (new_x, new_y) = {
-                                            let roll = rng.gen_range(0.0..1.0);
-                                            if !nutrient_centers.is_empty() && roll < 0.75 {
-                                                let center_idx = rng.gen_range(0..nutrient_centers.len());
-                                                let (cx, cy) = nutrient_centers[center_idx];
-                                                let radius = rng.gen_range(50.0..600.0);
-                                                let angle = rng.gen_range(0.0..std::f32::consts::TAU);
-                                                let px = (cx + radius * angle.cos()).clamp(100.0, logical_width - 100.0);
-                                                let py = (cy + radius * angle.sin()).clamp(100.0, logical_height - 100.0);
-                                                (px, py)
-                                            } else {
-                                                let px = rng.gen_range(100.0..logical_width - 100.0);
-                                                let py = rng.gen_range(100.0..logical_height - 100.0);
-                                                (px, py)
-                                            }
-                                        };
+                                        let (new_x, new_y) = patchy_spore_position(&mut rng, &nutrient_centers, logical_width, logical_height);
                                         let new_vx = rng.gen_range(-0.15..0.15);
                                         let new_vy = rng.gen_range(-0.15..0.15);
 
@@ -1098,18 +1054,19 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             // Fight Biting (Predation, TCK-145): at most one bite per attacker and tick, on the nearest victim in
                             // range that this attacker has not bitten within `biteCooldownTicks`; the attacker gains
                             // `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`, capped by the victim's energy
-                            if agent.phenotype.carnivory >= app_config.rules.biting_carnivory_threshold {
-                                let bite_range = mean_radius * app_config.rules.biting_radius_multiplier + app_config.rules.biting_radius_offset;
-                                let nearby = grid.get_nearby_creatures(agent.px, agent.py, bite_range);
-                                let candidates = nearby.iter().filter_map(|&v_idx| alive_clones.get(v_idx as usize));
+                            if agent.phenotype.carnivory >= app_config.ocean.biting_carnivory_threshold {
+                                let bite_range = mean_radius * app_config.ocean.biting_radius_multiplier + app_config.ocean.biting_radius_offset;
+                                nearby_peers.clear();
+                                grid.for_each_nearby(GridLayer::Creatures, agent.px, agent.py, bite_range, |i| nearby_peers.push(i));
+                                let candidates = nearby_peers.iter().filter_map(|&v_idx| alive_clones.get(v_idx as usize));
                                 if let Some(victim) = bite_target(&agent, candidates, bite_range, |victim_id| bite_ticks.contains_key(&(agent.id, victim_id))) {
                                     // Gain is capped by what the victim still has after earlier bites in this tick,
                                     // so several attackers together cannot take more than the victim had
                                     let damage_taken = damage_map.entry(victim.id).or_insert(0.0);
                                     let remaining = victim.energy - *damage_taken;
-                                    *damage_taken += app_config.rules.biting_energy_damage;
+                                    *damage_taken += app_config.metabolism.biting_energy_damage;
                                     bite_ticks.insert((agent.id, victim.id), ocean_tick);
-                                    let gain = crate::biology::metabolism::bite_energy_gain(agent.phenotype.carnivory, remaining, &app_config.rules);
+                                    let gain = crate::biology::metabolism::bite_energy_gain(agent.phenotype.carnivory, remaining, &app_config.metabolism);
                                     agent.energy = (agent.energy + gain).min(agent.phenotype.stomach_capacity);
                                     agent.has_eaten = true;
 
@@ -1124,23 +1081,23 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                                     emit_state(json!({
                                         "type": "LOG_EVENT",
-                                        "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.rules.biting_energy_damage, gain),
+                                        "message": format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", agent.phenotype.latin_name.chars().take(16).collect::<String>(), agent.id, victim.id, app_config.metabolism.biting_energy_damage, gain),
                                         "logType": "mutation"
                                     }));
                                 }
                             }
 
                             // Asexual Reproduction (Mitosis)
-                            let mature_age = agent.phenotype.mature_age.max(app_config.rules.creature_mature_age_floor);
-                            let repro_threshold = agent.phenotype.repro_threshold.max(app_config.rules.reproduction_stomach_threshold_floor);
-                            let can_reproduce = agent.age >= mature_age && agent.has_eaten && population < app_config.max_creatures;
+                            let mature_age = agent.phenotype.mature_age.max(app_config.ocean.creature_mature_age_floor);
+                            let repro_threshold = agent.phenotype.repro_threshold.max(app_config.ocean.reproduction_stomach_threshold_floor);
+                            let can_reproduce = agent.age >= mature_age && agent.has_eaten && population < app_config.ocean.max_creatures;
                             let threshold = agent.phenotype.stomach_capacity * repro_threshold;
                             
                             if can_reproduce && agent.energy >= threshold {
-                                agent.energy *= app_config.rules.reproduction_split_loss_ratio;
+                                agent.energy *= app_config.ocean.reproduction_split_loss_ratio;
                                 agent.has_eaten = false;
                                 
-                                let recoil = agent.phenotype.split_loss * app_config.rules.reproduction_recoil_velocity_scale;
+                                let recoil = agent.phenotype.split_loss * app_config.ocean.reproduction_recoil_velocity_scale;
                                 agent.vx += recoil * (agent.heading_angle + std::f32::consts::PI).cos();
                                 agent.vy += recoil * (agent.heading_angle + std::f32::consts::PI).sin();
 
@@ -1149,8 +1106,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 let mut rng = rand::thread_rng();
                                 let is_mutation = rng.gen_range(0.0..1.0) < 0.35;
                                 let (child_genome, child_phenotype) = if is_mutation {
-                                    let genome = mutate_genome(&agent.genome, &app_config.mutation_operators, &mut rng).map_or_else(|| agent.genome.clone(), |m| m.genome);
-                                    let phenotype = parse_genome(&genome, None, None);
+                                    let genome = mutate_genome(&agent.genome, &app_config.genome.mutation_operators, &mut rng).map_or_else(|| agent.genome.clone(), |m| m.genome);
+                                    let phenotype = parse_genome(&genome, None, None, &app_config.brain);
                                     (genome, phenotype)
                                 } else {
                                     (agent.genome.clone(), agent.phenotype.clone())
@@ -1158,13 +1115,13 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                 // Lamarckian assimilation (TCK-152): per plastic synapse with the same key, with probability
                                 // `lamarckianAssimilationChance`, the parent's learned offset; only from parents old enough to
                                 // have learned something. Clones and mutants alike.
-                                let assimilate = agent.age >= app_config.rules.lamarckian_assimilation_age_floor;
+                                let assimilate = agent.age >= app_config.ocean.lamarckian_assimilation_age_floor;
                                 let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate { (&agent.phenotype.brain.synapses, &agent.synapse_weights) } else { (&[], &[]) };
                                 let child_weights = inherit_learned_weights(
                                     parent_synapses,
                                     parent_weights,
                                     &child_phenotype.brain.synapses,
-                                    app_config.rules.lamarckian_assimilation_chance,
+                                    app_config.genome.lamarckian_assimilation_chance,
                                     &mut rng,
                                 );
                                 let mut child = spawn_from_phenotype(&child_genome, child_phenotype, SpawnOptions {
@@ -1175,18 +1132,15 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     generation: agent.generation + 1,
                                     methylations: None,
                                     synapse_weights: Some(child_weights),
-                                });
+                                }, &app_config.metabolism);
                                 child.energy = agent.energy;
 
                                 if is_mutation {
                                     // Save new mutated child species into SQLite database
-                                    let now_millis = std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_secs() as i64;
+                                    let now_secs = time::now_secs();
                                     conn.execute(
                                         "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
-                                        params![&child.genome, &child.phenotype.latin_name, &child.genome, Some(agent.phenotype.latin_name.clone()), now_millis, child.generation, child.phenotype.carnivory],
+                                        params![&child.genome, &child.phenotype.latin_name, &child.genome, Some(agent.phenotype.latin_name.clone()), now_secs, child.generation, child.phenotype.carnivory],
                                     ).log_db_err("INSERT OR IGNORE INTO species_records");
                                     species_cache_dirty = true;
 
@@ -1230,8 +1184,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             // Decompose carcass into nutrient meat spores (elastic spore relocation, no array deletion!)
                             let base_length = agent.phenotype.spinal_harmonics.base_length;
                             let mean_radius = agent.phenotype.spinal_harmonics.mean_radius;
-                            let num_pellets = (((base_length * mean_radius) / app_config.rules.decomposition_size_ratio).floor() as i32)
-                                .clamp(app_config.rules.decomposition_spore_min, app_config.rules.decomposition_spore_max);
+                            let num_pellets = (((base_length * mean_radius) / app_config.ocean.decomposition_size_ratio).floor() as i32)
+                                .clamp(app_config.ocean.decomposition_spore_min, app_config.ocean.decomposition_spore_max);
 
                             let mut rng = rand::thread_rng();
                             for _ in 0..num_pellets {
@@ -1308,11 +1262,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     }
 
                     for id in extinction_updates {
-                        let now_millis = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs() as i64;
-                        conn.execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![now_millis, id]).log_db_err("UPDATE species_records");
+                        let now_secs = time::now_secs();
+                        conn.execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![now_secs, id]).log_db_err("UPDATE species_records");
                         db_changed = true;
 
                         // Fetch name for logging
@@ -1332,7 +1283,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     }
 
                     // Maintain population (restocking founder cells up to config, matches TS index.ts!)
-                    let target_population = app_config.target_population;
+                    let target_population = app_config.ocean.target_population;
 
                     // Query all saved catalogue creatures once per restock pass
                     let mut catalogue_creatures = Vec::new();
@@ -1362,16 +1313,16 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             let idx = rng.gen_range(0..catalogue_creatures.len());
                             let (genome, name, m_str, s_str) = &catalogue_creatures[idx];
                             
-                            let m_arr: Vec<f32> = serde_json::from_str(m_str).unwrap_or_default();
-                            let s_arr: Vec<f32> = serde_json::from_str(s_str).unwrap_or_default();
+                            let m_arr: Vec<f32> = json_col::decode(m_str, "creature_catalogue.methylations").unwrap_or_default();
+                            let s_arr: Vec<f32> = json_col::decode(s_str, "creature_catalogue.synapse_weights").unwrap_or_default();
                             let m_opt = if m_arr.is_empty() { None } else { Some(&m_arr[..]) };
                             
-                            let pheno = parse_genome(genome, None, m_opt);
+                            let pheno = parse_genome(genome, None, m_opt, &app_config.brain);
                             (genome.clone(), pheno, m_arr, s_arr, format!("📚 Catalog Clonal '{}'", name), 1)
                         } else {
                             // Fallback to a structured random founder if the catalogue is empty
-                            let genome = generate_structured_genome(&app_config.genome_composition, &mut rng);
-                            let pheno = parse_genome(&genome, None, None);
+                            let genome = generate_structured_genome(&app_config.genome.genome_composition, &mut rng);
+                            let pheno = parse_genome(&genome, None, None, &app_config.brain);
                             (genome, pheno, Vec::new(), Vec::new(), "🌱 Random Founder".to_string(), 1)
                         };
 
@@ -1387,7 +1338,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             generation: generation_val,
                             methylations: None,
                             synapse_weights: Some(s_vec),
-                        });
+                        }, &app_config.metabolism);
                         new_restocked.vx = rng.gen_range(-0.4..0.4);
                         new_restocked.vy = rng.gen_range(-0.4..0.4);
 
@@ -1395,13 +1346,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                         newly_spawned_creatures.push(new_restocked.clone());
 
                         // Seed each unique species into local SQLite database if not exists
-                        let now_millis = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs() as i64;
+                        let now_secs = time::now_secs();
                         conn.execute(
                             "INSERT OR IGNORE INTO species_records (id, latin_name, genome_string, parent_name, status, peak_population, birth_time, generation, carnivory) VALUES (?1, ?2, ?3, ?4, 'alive', 1, ?5, ?6, ?7)",
-                            params![&g, &random_pheno.latin_name, &g, None::<String>, now_millis, generation_val, random_pheno.carnivory],
+                            params![&g, &random_pheno.latin_name, &g, None::<String>, now_secs, generation_val, random_pheno.carnivory],
                         ).log_db_err("INSERT OR IGNORE INTO species_records");
                         species_cache_dirty = true;
 
@@ -1486,13 +1434,10 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             "nextSporeId": next_spore_id
                         });
                         if let Ok(state_str) = serde_json::to_string(&state_val) {
-                            let now_millis = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64;
+                            let now_ms = time::now_ms();
                             conn.execute(
                                 "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('current_state', ?1, ?2)",
-                                params![state_str, now_millis],
+                                params![state_str, now_ms],
                             ).log_db_err("INSERT OR REPLACE INTO simulation_state");
                         }
                     }
@@ -1512,7 +1457,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                     for _step in 0..steps_this_frame {
                         if let Some(event) = trainer.step(true) { // parallel == sequential (seeded per-sandbox and per-slot streams)
                             let TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats } = event;
-                            println!("[TRAINER RUN] Gen {} completed! Best Fit: {:.2}, Avg Fit: {:.2}", generation, best_fitness, avg_fitness);
+                            log::info!("generation {} completed, best fitness {:.2}, mean {:.2}", generation, best_fitness, avg_fitness);
 
                             // Broadcast completion metadata back to UI instantly
                             emit_state(TrainerUiEvent::TrainerGenerationCompleted(TrainerGenerationCompleted {
@@ -1579,7 +1524,7 @@ mod tests {
 
     #[test]
     fn test_bite_target_is_nearest_eligible_victim_and_respects_cooldown() {
-        let attacker = spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px: 0.0, py: 0.0, heading_angle: 0.0, generation: 1, methylations: None, synapse_weights: None });
+        let attacker = spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px: 0.0, py: 0.0, heading_angle: 0.0, generation: 1, methylations: None, synapse_weights: None }, crate::config::test_config());
         let peers = vec![
             peer(1, "other", 0.0),             // the attacker itself
             peer(2, &attacker.species_id, 1.0), // same species

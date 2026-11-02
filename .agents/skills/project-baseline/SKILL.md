@@ -19,7 +19,7 @@ description: Baseline rules for working in the Pixel DNA Life repository (Tauri 
 | Invariants that must not regress | `wiki/architecture/invariants.md` |
 
 ## III. Mandates
-- **config.json is SSOT:** do not hardcode new tunables in Rust; add them to `config.json` + `SimulationRules`. Verify a key is read in `src/` before tuning it (`wiki/architecture/configuration.md`).
+- **config.json is SSOT:** do not hardcode new tunables in Rust; add them to the owning section of `config.json` and its section struct, and pass the config explicitly (no `AppConfig::global()` below `main.rs` / the runner). Guide: `wiki/guides/add-config-key.md`; keys: `wiki/architecture/configuration.md`.
 - **No DB work in the hot loop:** keep SQLite out of the per-step physics path; batch writes on timers or events.
 - **Bindings:** after changing a `#[derive(TS)]` struct run `cargo test` and commit the regenerated `bindings/`.
 - **Versioning:** one patch bump per closed ticket in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, plus a `CHANGELOG.md` entry referencing the ticket.

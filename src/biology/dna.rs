@@ -603,7 +603,7 @@ pub fn generate_random_genome<R: rand::Rng + ?Sized>(length: usize, rng: &mut R)
 }
 
 /// Composition of `generate_structured_genome` (config `genomeComposition`, TCK-184).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenomeComposition {
     /// Total length the intergenic filler aims for (clamped to [128, 512]); gene sets longer than this get no filler
@@ -626,7 +626,7 @@ pub struct GenomeComposition {
 
 /// Operator weights of `mutate_genome` (config `mutationOperators`, TCK-184). One call applies one operator,
 /// drawn with these relative weights; the `EVO` gene scales the insertion/deletion weights by 2h (h = 0.5: as configured).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MutationOperators {
     /// Letter moved by 1..=creep_max_step alphabet steps (small value change)
@@ -642,6 +642,19 @@ pub struct MutationOperators {
     /// A whole non-essential gene removed
     pub gene_deletion: f32,
     pub creep_max_step: usize,
+}
+
+/// Config section `genome`: random genome composition, mutation operators and Lamarckian inheritance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenomeConfig {
+    /// Probability per plastic synapse with a homologue that a child takes the parent's learned offset (TCK-152;
+    /// `creature_factory::inherit_learned_weights`, Ocean mitosis and trainer breeding)
+    pub lamarckian_assimilation_chance: f32,
+    /// Random genomes of trainer generation 1, immigrants and Ocean founders (TCK-184)
+    pub genome_composition: GenomeComposition,
+    /// Operator weights of `mutate_genome` (TCK-184)
+    pub mutation_operators: MutationOperators,
 }
 
 /// Body trait genes `parse_genome` reads (first copy each); with `OUT` the genes every structured genome carries.
@@ -1615,7 +1628,7 @@ fn thalamus_label_prefix(og: &OrganGene, organelles: &[SensoryPatch]) -> String 
 /// - thalamus/systemic → hidden and hidden → motor: the hidden neuron's `NEU` gene;
 /// - systemic → motor: the `OUT` brain-base gene (not wired without one);
 /// - explicit `SY` genes override or add one synapse each (first `SY` gene per pair wins).
-fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[OrganGene]) -> BrainTopology {
+fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[OrganGene], brain_config: &crate::shared::brain::BrainConfig) -> BrainTopology {
     let input_count = organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
     let neuron = |id: usize, neuron_type: NeuronType, label: String, role: NeuronRole, tau: f32, bias: f32, activation: Option<&str>, x: f32, y: f32| CTRNNNeuron {
         id,
@@ -1661,7 +1674,7 @@ fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[
             for channel in (0..CHANNELS_PER_ORGANELLE).filter(|&c| live[g][c]) {
                 let id = neurons.len();
                 let (name, activation) = match node {
-                    ThalamusKind::Sum => ("Sum", crate::shared::types::AppConfig::global().thalamus_sum_activation.label()),
+                    ThalamusKind::Sum => ("Sum", brain_config.thalamus_sum_activation.label()),
                     ThalamusKind::Diff => ("Diff", "tanh"),
                 };
                 let label = format!("🧠 Thalamus {} {} ({})", name, prefix, channel_name(channel));
@@ -1829,7 +1842,7 @@ fn compile_brain(genes: &GeneTable, organelles: &[SensoryPatch], organ_genes: &[
 }
 
 /// DNA De-compiler & Phenotype De-compiler (Genotype to Epigenetic Phenotype Compiler)
-pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>) -> CreaturePhenotype {
+pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>, brain_config: &crate::shared::brain::BrainConfig) -> CreaturePhenotype {
     let clean_genome = normalize_genome(genome);
     let current_length = clean_genome.len();
 
@@ -2032,7 +2045,7 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
     let repair_fidelity = 0.15 + h_fidelity * 0.8;
 
     // 15. CTRNN brain (Brain v2: roles, targeted wiring, gene-owned weights)
-    let brain = compile_brain(&gene_table, &organelles, &organ_genes);
+    let brain = compile_brain(&gene_table, &organelles, &organ_genes, brain_config);
 
     // --- RECALCULATE EMERGENCE CHAMBERS ---
     let mut peaks_count = 0;
@@ -2237,16 +2250,16 @@ mod tests {
     }
 
     fn ops() -> &'static MutationOperators {
-        &crate::shared::types::AppConfig::global().mutation_operators
+        &crate::config::test_config().genome.mutation_operators
     }
 
     fn composition() -> &'static GenomeComposition {
-        &crate::shared::types::AppConfig::global().genome_composition
+        &crate::config::test_config().genome.genome_composition
     }
 
     fn promoter_counts(genome: &str) -> std::collections::BTreeMap<String, usize> {
         let mut counts = std::collections::BTreeMap::new();
-        for span in parse_genome(genome, None, None).genes {
+        for span in parse_genome(genome, None, None, &crate::config::test_config().brain).genes {
             *counts.entry(span.gene.promoter).or_insert(0) += 1;
         }
         counts
@@ -2302,7 +2315,7 @@ mod tests {
             let organs = plan.iter().filter(|(p, _)| ORGAN_PROMOTERS.contains(p)).count();
             assert!((c.organ_count_min..=c.organ_count_max).contains(&organs));
 
-            let phenotype = parse_genome(&genome, None, None);
+            let phenotype = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             // Distinct promoter spellings: every gene has occurrence 0 (stable identity, TCK-179)
             assert!(phenotype.genes.iter().all(|s| s.gene.occurrence == 0), "repeated spelling: {}", genome);
             for (promoter, kind) in plan.iter().filter_map(|(p, k)| k.map(|k| (p, k))) {
@@ -2368,13 +2381,13 @@ mod tests {
         let mut checked = 0;
         for seed in 0..300 {
             let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
-            let parent = parse_genome(&genome, None, None);
+            let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             for _ in 0..5 {
                 let (child_genome, idx) = apply_mutation(&genome, MutationKind::Creep, ops(), None, &mut rng).expect("creep applies");
                 let letter_delta = (char_to_value(child_genome.as_bytes()[idx] as char) as isize - char_to_value(genome.as_bytes()[idx] as char) as isize).unsigned_abs();
                 assert!((1..=step).contains(&letter_delta), "letter step {}", letter_delta);
 
-                let child = parse_genome(&child_genome, None, None);
+                let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
                 if child.genes != parent.genes {
                     continue; // the creep formed a promoter or terminator
                 }
@@ -2413,12 +2426,12 @@ mod tests {
     fn test_progenitor_parse_genome() {
         // High quality test input representing a well-formed progenitor genome
         let progenitor_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
-        let phenotype = parse_genome(progenitor_dna, None, None);
+        let phenotype = parse_genome(progenitor_dna, None, None, &crate::config::test_config().brain);
 
         // Core assertions
         assert!(phenotype.genome_string.starts_with(progenitor_dna));
         assert!(phenotype.spinal_harmonics.mean_radius >= 16.0 && phenotype.spinal_harmonics.mean_radius <= 28.0);
-        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting() > 0.0);
+        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting() > 0.0);
         assert!(phenotype.stiffness >= 0.15 && phenotype.stiffness <= 1.0);
         assert!(phenotype.antisense_strand.starts_with(&get_complementary_string(progenitor_dna)));
 
@@ -2436,7 +2449,7 @@ mod tests {
         assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our generic thalamus sum/diff pre-processor interneurons!
 
         // Verify that the resting metabolic cost is finite
-        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting().is_finite());
+        assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting().is_finite());
         assert!(phenotype.stomach_capacity > 0.0);
     }
 
@@ -2445,7 +2458,7 @@ mod tests {
         // DNA with 3 NEU promoters and 2 SY promoters using degenerate Option A + full wobble matching
         // Ending with Z prevents S-A padding boundary matches, and YNB prevents N-A-A matches.
         let dna = "NEUAAESNEUBBESNEUCCESYBAAESYBBBESZ";
-        let phenotype = parse_genome(dna, None, None);
+        let phenotype = parse_genome(dna, None, None, &crate::config::test_config().brain);
         
         let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
         // Since we have 3 NEU blocks, we should have exactly 3 hidden neurons compiled dynamically!
@@ -2460,7 +2473,7 @@ mod tests {
         use crate::shared::brain::execute_brain_with_learning;
 
         let dna = "NEUAAESNEUBBESZZSYBCAESYBBBES"; // 3 hiddens, 1 SY
-        let phenotype = parse_genome(dna, None, None);
+        let phenotype = parse_genome(dna, None, None, &crate::config::test_config().brain);
         let brain = phenotype.brain;
 
         let mut states = vec![0.0; brain.neurons.len()];
@@ -2493,7 +2506,7 @@ mod tests {
         use crate::shared::brain::execute_brain_with_learning;
 
         let dna = "NEUAAESNEUBBESZZSYBCAESYBBBES"; // 3 NEU genes (one inside an SY payload), 2 SY genes, no organ, no OUT gene
-        let phenotype = parse_genome(dna, None, None);
+        let phenotype = parse_genome(dna, None, None, &crate::config::test_config().brain);
         let brain = &phenotype.brain;
         let role = |i: usize| &brain.neurons[i].role;
         let of_role = |pred: fn(&NeuronRole) -> bool| (0..brain.neurons.len()).filter(|&i| pred(role(i))).collect::<Vec<usize>>();
@@ -2590,8 +2603,8 @@ mod tests {
             }
 
             // A. Assert compilation robustness: must NEVER panic, crash or deadlock
-            let phenotype = parse_genome(&genome, None, None);
-            let resting_cost = crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::shared::types::AppConfig::global().metabolism).resting();
+            let phenotype = parse_genome(&genome, None, None, &crate::config::test_config().brain);
+            let resting_cost = crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting();
             let brain = phenotype.brain;
 
             // B. Assert state boundaries are finite
@@ -2641,7 +2654,7 @@ mod tests {
         // A. Without HOX gene (Asymmetric primitive)
         // This genome contains exactly one EYE promoter and no HOX promoter.
         let no_hox_dna = "EYEABCDEFEN";
-        let pheno_no_hox = parse_genome(no_hox_dna, None, None);
+        let pheno_no_hox = parse_genome(no_hox_dna, None, None, &crate::config::test_config().brain);
         // It must compile exactly 1 organelle asymmetrically.
         assert_eq!(pheno_no_hox.organelles.len(), 1);
         let angle = pheno_no_hox.organelles[0].angle;
@@ -2652,7 +2665,7 @@ mod tests {
         // Let's craft a genome with both HOX and EYE promoters.
         // We set index 0 of the eye payload to 'K' to yield -170.0 deg exactly.
         let hox_paired_dna = "HOXABCDEZENEYEKAAAAAAAEN"; 
-        let pheno_paired = parse_genome(hox_paired_dna, None, None);
+        let pheno_paired = parse_genome(hox_paired_dna, None, None, &crate::config::test_config().brain);
         // It should contain exactly 2 organelles due to bilateral symmetry (Left + Right mirror)
         assert_eq!(pheno_paired.organelles.len(), 2);
         assert_eq!(pheno_paired.organelles[0].angle, -170.0);
@@ -2662,7 +2675,7 @@ mod tests {
         // Let's craft a genome with both HOX and EYE promoters.
         // We place 'X' at index 16 of the eye payload to yield 6.8 deg, snapping to 0.0 deg.
         let hox_midline_dna = "HOXABCDEZENEYEAAAAAAAAAAAAAAAAXAEN"; 
-        let pheno_midline = parse_genome(hox_midline_dna, None, None);
+        let pheno_midline = parse_genome(hox_midline_dna, None, None, &crate::config::test_config().brain);
         // Coalescence/Fusion check: It must snap to exactly 0.0 degrees (straight ahead) and NOT duplicate!
         assert_eq!(pheno_midline.organelles.len(), 1);
         assert_eq!(pheno_midline.organelles[0].angle, 0.0);
@@ -2672,7 +2685,7 @@ mod tests {
         // It must fall back to reading exactly 15 characters of payload ("AKAAAAAAAAAAAAA").
         // Index 16 % 15 = 1. Since index 1 of the payload is 'K', the angle evaluates to -170.0 deg.
         let hox_open_dna = "HOXABCDEZENEYEAKAAAAAAAAAAAAA"; // No trailing "EN"!
-        let pheno_open = parse_genome(hox_open_dna, None, None);
+        let pheno_open = parse_genome(hox_open_dna, None, None, &crate::config::test_config().brain);
         // Bilateral symmetry must still work on the 15-char fallback payload!
         assert_eq!(pheno_open.organelles.len(), 2);
         assert_eq!(pheno_open.organelles[0].angle, -170.0);
@@ -2782,7 +2795,7 @@ mod tests {
         for _ in 0..400 {
             let len = rng.gen_range(0..=1024);
             let genome: String = (0..len).map(|_| rng.gen_range(0u8..128) as char).collect();
-            let p = parse_genome(&genome, None, None);
+            let p = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             let n = p.brain.neurons.len();
             assert!(p.brain.synapses.iter().all(|s| s.from_node < n && s.to_node < n && s.owner < p.genes.len() && s.weight.is_finite()));
         }
@@ -2805,10 +2818,10 @@ mod tests {
         let mut tested = 0;
         for g in golden_genomes() {
             let parent_genome = normalize_genome(&g);
-            let parent = parse_genome(&parent_genome, None, None);
+            let parent = parse_genome(&parent_genome, None, None, &crate::config::test_config().brain);
             let covered = |i: usize| parent.genes.iter().any(|s| (s.start..s.end).contains(&i));
             for pos in (0..parent_genome.len()).filter(|&i| !covered(i)).step_by(2) {
-                let child = parse_genome(&point_mutant(&parent_genome, pos, 11), None, None);
+                let child = parse_genome(&point_mutant(&parent_genome, pos, 11), None, None, &crate::config::test_config().brain);
                 if child.genes != parent.genes {
                     continue; // the mutation created or re-terminated a gene
                 }
@@ -2826,11 +2839,11 @@ mod tests {
         let mut tested = 0;
         for g in golden_genomes().into_iter().step_by(30) {
             let parent_genome = normalize_genome(&g);
-            let parent = parse_genome(&parent_genome, None, None);
+            let parent = parse_genome(&parent_genome, None, None, &crate::config::test_config().brain);
             let parent_brain = brain_by_key(&parent);
             for span in &parent.genes {
                 for pos in (span.start + span.gene.promoter.len()..span.end).step_by(3) {
-                    let child = parse_genome(&point_mutant(&parent_genome, pos, 5), None, None);
+                    let child = parse_genome(&point_mutant(&parent_genome, pos, 5), None, None, &crate::config::test_config().brain);
                     if child.genes != parent.genes {
                         continue; // the mutation broke the terminator or created a gene
                     }
@@ -2885,13 +2898,13 @@ mod tests {
         for g in golden_genomes() {
             // A trailing Z spacer (no motif) in the parent: its unterminated genes end there, not in the new gene
             let parent_genome = format!("{}{}", normalize_genome(&g), "Z".repeat(30));
-            let parent = parse_genome(&parent_genome, None, None);
+            let parent = parse_genome(&parent_genome, None, None, &crate::config::test_config().brain);
             let parent_brain = brain_by_key(&parent);
             for organ in organ_genes {
                 if parent_genome.len() + organ.len() > 512 {
                     continue;
                 }
-                let child = parse_genome(&format!("{}{}", parent_genome, organ), None, None);
+                let child = parse_genome(&format!("{}{}", parent_genome, organ), None, None, &crate::config::test_config().brain);
                 // Appended as the last gene of its type: all parent genes unchanged, exactly one new gene
                 if child.genes.len() != parent.genes.len() + 1 || !parent.genes.iter().all(|s| child.genes.contains(s)) {
                     continue;
@@ -2919,7 +2932,7 @@ mod tests {
         let mut rng = crate::shared::rng::seeded(14);
         let mut checked = 0;
         for genome in golden_genomes().into_iter().map(|g| normalize_genome(&g)).chain((0..100).map(|seed| generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed)))) {
-            let promoters: Vec<std::ops::Range<usize>> = parse_genome(&genome, None, None).genes.iter().map(|s| s.start..s.start + s.gene.promoter.len()).collect();
+            let promoters: Vec<std::ops::Range<usize>> = parse_genome(&genome, None, None, &crate::config::test_config().brain).genes.iter().map(|s| s.start..s.start + s.gene.promoter.len()).collect();
             for kind in [MutationKind::Creep, MutationKind::Point, MutationKind::Insertion, MutationKind::Deletion] {
                 for _ in 0..20 {
                     let Some((_, idx)) = apply_mutation(&genome, kind, ops(), None, &mut rng) else { continue };
@@ -2941,8 +2954,8 @@ mod tests {
             for seed in 0..300 {
                 let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
                 let Some((child_genome, start)) = apply_mutation(&genome, kind, ops(), None, &mut crate::shared::rng::seeded(seed + 7_000)) else { continue };
-                let parent = parse_genome(&genome, None, None);
-                let child = parse_genome(&child_genome, None, None);
+                let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
+                let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
                 let g = parent.genes.iter().position(|s| s.start == start).expect("mutated gene");
                 if parent.genes[g].gene.promoter == "HOX" {
                     continue;
@@ -2988,8 +3001,8 @@ mod tests {
             for seed in 0..1000 {
                 let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
                 let Some((child_genome, start)) = apply_mutation(&genome, kind, ops(), None, &mut crate::shared::rng::seeded(seed + 1_000_000)) else { continue };
-                let parent = parse_genome(&genome, None, None);
-                let child = parse_genome(&child_genome, None, None);
+                let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
+                let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
                 let g = parent.genes.iter().position(|s| s.start == start).expect("mutated gene");
                 if parent.genes[g].gene.promoter == "HOX" {
                     hox += 1; // HOX pairs or unpairs every organ: touches all organ synapses
@@ -3078,7 +3091,7 @@ mod tests {
     fn test_parse_genome_golden_master() {
         let mut combined = Vec::new();
         for g in golden_genomes() {
-            model_fields(&parse_genome(&g, None, None), &mut combined);
+            model_fields(&parse_genome(&g, None, None, &crate::config::test_config().brain), &mut combined);
         }
         let fingerprint = fnv1a(&combined);
         println!("GOLDEN_FINGERPRINT={:#018x}", fingerprint);
@@ -3088,7 +3101,7 @@ mod tests {
     #[test]
     fn test_read_evolution_rates_matches_parse_genome() {
         for g in golden_genomes() {
-            let pheno = parse_genome(&g, None, None);
+            let pheno = parse_genome(&g, None, None, &crate::config::test_config().brain);
             assert_eq!(read_evolution_rates(&g), (pheno.insertion_rate, pheno.deletion_rate));
         }
     }
@@ -3096,9 +3109,9 @@ mod tests {
     #[test]
     fn test_latin_name_is_deterministic() {
         for g in golden_genomes() {
-            let first = parse_genome(&g, None, None).latin_name;
+            let first = parse_genome(&g, None, None, &crate::config::test_config().brain).latin_name;
             for _ in 0..4 {
-                assert_eq!(parse_genome(&g, None, None).latin_name, first, "genome {}", g);
+                assert_eq!(parse_genome(&g, None, None, &crate::config::test_config().brain).latin_name, first, "genome {}", g);
             }
         }
     }

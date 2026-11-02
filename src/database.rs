@@ -1,6 +1,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use crate::biology::scenarios::Scenario;
 use crate::biology::trainer_sim::{GenomeRecord, TrainerRunState, TrainerSim};
+use crate::shared::json_col;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -30,7 +31,7 @@ const MODEL_TABLES: [&str; 6] = ["trainer_genomes", "trainer_run_state", "creatu
 /// Sets the database location once at startup (the desktop app passes its app data dir).
 pub fn set_db_path(path: PathBuf) {
     if DB_PATH.set(path).is_err() {
-        eprintln!("[DB] Database path was already set; ignoring second assignment.");
+        log::warn!("database path was already set; ignoring the second assignment");
     }
 }
 
@@ -62,7 +63,7 @@ pub trait LogDbError {
 impl<T> LogDbError for Result<T> {
     fn log_db_err(self, context: &str) {
         if let Err(e) = self {
-            eprintln!("[DB] {} failed: {}", context, e);
+            log::error!("{} failed: {}", context, e);
         }
     }
 }
@@ -241,8 +242,8 @@ fn backup_before_model_reset(conn: &Connection, old_version: &str) {
         return;
     }
     match conn.execute("VACUUM INTO ?1", params![backup.to_string_lossy()]) {
-        Ok(_) => println!("[DB] Backup before the model reset: '{}'", backup.display()),
-        Err(e) => eprintln!("[DB] Backup before the model reset failed ({}); resetting anyway", e),
+        Ok(_) => log::info!("backup before the model reset: '{}'", backup.display()),
+        Err(e) => log::error!("backup before the model reset failed ({}); resetting anyway", e),
     }
 }
 
@@ -274,7 +275,7 @@ fn reset_model_tables_on_version_change(conn: &Connection) -> Result<()> {
     tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('model_version', ?1)", params![MODEL_VERSION.to_string()])?;
     tx.commit()?;
     if reset {
-        println!("[DB] Model version {} -> {}: model tables reset", stored.as_deref().unwrap_or("none"), MODEL_VERSION);
+        log::info!("model version {} -> {}: model tables reset", stored.as_deref().unwrap_or("none"), MODEL_VERSION);
     }
     Ok(())
 }
@@ -288,15 +289,12 @@ fn reset_model_tables_on_version_change(conn: &Connection) -> Result<()> {
 pub fn save_trainer_elites(conn: &Connection, run_id: &str, generation: u32, elites: &[GenomeRecord], retention: usize) {
     conn.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![run_id]).log_db_err("UPDATE trainer_genomes");
 
-    let now_secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now_secs = crate::shared::time::now_secs();
 
     for (idx, elite) in elites.iter().enumerate() {
         let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_secs);
-        let methylations_json = serde_json::to_string(&elite.methylations).unwrap_or_else(|_| "[]".to_string());
-        let synapse_weights_json = serde_json::to_string(&elite.synapse_weights).unwrap_or_else(|_| "[]".to_string());
+        let methylations_json = json_col::encode(&elite.methylations, "trainer_genomes.methylations");
+        let synapse_weights_json = json_col::encode(&elite.synapse_weights, "trainer_genomes.synapse_weights");
         conn.execute(
             "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
@@ -331,7 +329,7 @@ pub fn prune_trainer_genomes(conn: &Connection, run_id: &str, retention: usize) 
 /// the state the next generation runs with.
 pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim) {
     let state = TrainerRunState::of(sim);
-    let now_secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
+    let now_secs = crate::shared::time::now_secs();
     conn.execute(
         "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at, population, seed)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -380,7 +378,7 @@ pub fn load_trainer_run_state(conn: &Connection, run_id: &str) -> Option<Trainer
         }),
         Ok(None) => None,
         Err(e) => {
-            eprintln!("[DB] SELECT FROM trainer_run_state failed: {}", e);
+            log::error!("SELECT FROM trainer_run_state failed: {}", e);
             None
         }
     }
@@ -409,16 +407,16 @@ pub fn load_trainer_genomes(conn: &Connection, run_id: &str, active_only: bool, 
                     name: row.get(1)?,
                     fitness: row.get::<_, f64>(2)? as f32,
                     generation: row.get::<_, i32>(3)? as u32,
-                    methylations: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
-                    synapse_weights: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                    methylations: json_col::decode(&row.get::<_, String>(4)?, "trainer_genomes.methylations").unwrap_or_default(),
+                    synapse_weights: json_col::decode(&row.get::<_, String>(5)?, "trainer_genomes.synapse_weights").unwrap_or_default(),
                 })
             });
             match rows {
                 Ok(rows) => records.extend(rows.flatten()),
-                Err(e) => eprintln!("[DB] SELECT FROM trainer_genomes failed: {}", e),
+                Err(e) => log::error!("SELECT FROM trainer_genomes failed: {}", e),
             }
         }
-        Err(e) => eprintln!("[DB] SELECT FROM trainer_genomes failed: {}", e),
+        Err(e) => log::error!("SELECT FROM trainer_genomes failed: {}", e),
     }
     records
 }
@@ -693,8 +691,8 @@ mod tests {
     /// A trainer at generation 2 with non-default run state (curriculum, manual level, layout 7, 5 ops).
     fn trainer_with_state(layout_id: u64) -> TrainerSim {
         use crate::biology::trainer_sim::TrainerParams;
-        let params = TrainerParams { population: 2, scenario: Scenario::Curriculum, level: 0.4, level_auto: false, mutation_ops_max: 5, ..TrainerParams::default() };
-        TrainerSim::restore_at_layout(params, 3, 2, layout_id, Vec::new(), Vec::new(), 10)
+        let params = TrainerParams { population: 2, scenario: Scenario::Curriculum, level: 0.4, level_auto: false, mutation_ops_max: 5, ..TrainerParams::from_config(crate::config::test_config()) };
+        TrainerSim::restore_at_layout(params, 3, 2, layout_id, Vec::new(), Vec::new(), 10, crate::config::test_config())
     }
 
     #[test]
@@ -709,7 +707,7 @@ mod tests {
         assert_eq!(loaded, TrainerRunState::of(&sim));
         assert_eq!((loaded.scenario, loaded.level, loaded.level_auto, loaded.layout_id, loaded.mutation_ops_max), (Scenario::Curriculum, 0.4, false, u64::MAX - 1, 5));
         // The run seed (TCK-194) survives the text column beyond i64 too
-        let reseeded = TrainerSim::restore_at_layout(sim.params.clone(), u64::MAX - 2, 2, 0, Vec::new(), Vec::new(), 10);
+        let reseeded = TrainerSim::restore_at_layout(sim.params.clone(), u64::MAX - 2, 2, 0, Vec::new(), Vec::new(), 10, crate::config::test_config());
         save_trainer_run_state(&conn, "run", &reseeded);
         assert_eq!(load_trainer_run_state(&conn, "run").unwrap().seed, Some(u64::MAX - 2));
 

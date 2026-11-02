@@ -42,9 +42,10 @@ use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, 
 use crate::biology::dna::{parse_genome, CTRNNSynapse, MutationChannel, MutationTouch, OrganKind, WILDTYPE_GENOME};
 use crate::biology::scenarios::{calculate_fitness, LevelScenario, Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{breed_genome_traced, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
+use crate::config::AppConfig;
 use crate::shared::rng::{derive, seed_from_str, SimRng};
-use crate::shared::types::{AppConfig, TrainerCurriculumConfig};
-pub use crate::shared::types::{LayoutPolicy, MutationChannelMode, TrialAggregation};
+use crate::biology::trainer_config::TrainerCurriculumConfig;
+pub use crate::biology::trainer_config::{LayoutPolicy, MutationChannelMode, TrialAggregation};
 use rand::Rng;
 
 /// Stream index of the breeding RNGs (`derive(seed, [generation, BREED_STREAM, slot])`).
@@ -207,28 +208,27 @@ pub struct TrainerParams {
     pub level_auto: bool,
 }
 
-impl Default for TrainerParams {
-    /// Defaults of the trainer UI (population, trials, aggregation and mutation ops from config.json).
-    fn default() -> Self {
-        let config = AppConfig::global();
+impl TrainerParams {
+    /// Defaults of the trainer UI (population, trials, aggregation and mutation ops from config section `trainer`).
+    pub fn from_config(config: &AppConfig) -> Self {
         Self {
-            population: config.trainer_population.max(1),
+            population: config.trainer.trainer_population.max(1),
             elite_ratio: 0.25,
-            mutation_ops_min: config.mutation_ops_min,
-            mutation_ops_max: config.mutation_ops_max,
-            one_fifth_rule: config.mutation_one_fifth_rule,
+            mutation_ops_min: config.trainer.mutation_ops_min,
+            mutation_ops_max: config.trainer.mutation_ops_max,
+            one_fifth_rule: config.trainer.mutation_one_fifth_rule,
             inflow_rate: 0.15,
             hof_rate: 0.15,
             multi_trial: true,
-            trials: config.trainer_trials,
-            trial_aggregation: config.trainer_trial_aggregation,
+            trials: config.trainer.trainer_trials,
+            trial_aggregation: config.trainer.trainer_trial_aggregation,
             lamarckian: false,
             scenario: Scenario::Standard,
-            minimal_criterion: config.trainer_minimal_criterion.enabled,
-            mutation_channels: config.mutation_channels,
-            layout_policy: config.trainer_layout_policy,
-            curriculum: CurriculumParams::from_config(&config.trainer_curriculum),
-            level: snap_level(config.trainer_curriculum.start_level),
+            minimal_criterion: config.trainer.trainer_minimal_criterion.enabled,
+            mutation_channels: config.trainer.mutation_channels,
+            layout_policy: config.trainer.trainer_layout_policy,
+            curriculum: CurriculumParams::from_config(&config.trainer.trainer_curriculum),
+            level: snap_level(config.trainer.trainer_curriculum.start_level),
             level_auto: true,
         }
     }
@@ -405,6 +405,8 @@ pub struct TrainerSim {
     rehearsal: Vec<u32>,
     /// Room switch requested during the current generation; applied at its end
     pending: Option<RoomSwitch>,
+    /// Config of the run (sections `trainer`, `genome`, `brain`, `metabolism`, `physics` are read)
+    config: AppConfig,
 }
 
 /// Linear-interpolated quantile of an ascending slice (non-empty).
@@ -558,12 +560,12 @@ impl TrainerRunState {
 
     /// Writes the state into `params` (the layout goes to `TrainerSim::restore_at_layout`). `mutation_ops_max` is
     /// clamped to the current `[mutationOpsMin, mutationOpsLimit]` like the UI field.
-    pub fn apply(&self, params: &mut TrainerParams) {
+    pub fn apply(&self, params: &mut TrainerParams, config: &AppConfig) {
         let lo = params.mutation_ops_min.max(1);
         params.scenario = self.scenario;
         params.level = snap_level(self.level);
         params.level_auto = self.level_auto;
-        params.mutation_ops_max = self.mutation_ops_max.clamp(lo, AppConfig::global().mutation_ops_limit.max(lo));
+        params.mutation_ops_max = self.mutation_ops_max.clamp(lo, config.trainer.mutation_ops_limit.max(lo));
         if let Some(population) = self.population {
             params.population = population.max(1);
         }
@@ -571,24 +573,27 @@ impl TrainerRunState {
 }
 
 impl TrainerSim {
-    /// Generation 1: all sandboxes are structured random genomes (`breed_genome`, origin Random).
-    pub fn new(params: TrainerParams, seed: u64, hof_retention: usize) -> Self {
-        Self::restore(params, seed, 1, Vec::new(), Vec::new(), hof_retention)
+    /// Generation 1: all sandboxes are structured random genomes (`breed_genome`, origin Random). `config` is copied
+    /// into the sim.
+    pub fn new(params: TrainerParams, seed: u64, hof_retention: usize, config: &AppConfig) -> Self {
+        Self::restore(params, seed, 1, Vec::new(), Vec::new(), hof_retention, config)
     }
 
     /// Continues a run: breeds `generation` from `parents` (fitness descending) and `hof` on shared layout 0.
-    pub fn restore(params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
-        Self::restore_at_layout(params, seed, generation, 0, parents, hof, hof_retention)
+    pub fn restore(params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, hof: Vec<GenomeRecord>, hof_retention: usize, config: &AppConfig) -> Self {
+        Self::restore_at_layout(params, seed, generation, 0, parents, hof, hof_retention, config)
     }
 
     /// `restore` on shared layout `layout_id` (the persisted run state, TCK-191, `TrainerRunState`).
-    pub fn restore_at_layout(mut params: TrainerParams, seed: u64, generation: u32, layout_id: u64, parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_at_layout(mut params: TrainerParams, seed: u64, generation: u32, layout_id: u64, parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize, config: &AppConfig) -> Self {
         params.population = params.population.max(1);
         params.level = snap_level(params.level);
         sort_desc_by_fitness(&mut hof);
         hof.truncate(hof_retention);
-        let room = params.scenario.plugin();
+        let room = params.scenario.plugin(config);
         let mut sim = Self {
+            config: config.clone(),
             room,
             rehearsal: Vec::new(),
             pending: None,
@@ -624,6 +629,11 @@ impl TrainerSim {
         self.layout_id
     }
 
+    /// Config the sim runs with.
+    pub fn config(&self) -> &AppConfig {
+        &self.config
+    }
+
     /// One tick for all sandboxes incl. trial reset and breeding at epoch end.
     /// `parallel` steps the sandboxes (the tick uses no RNG) and breeds the next generation (each breeding slot with
     /// its own RNG streams) on the rayon pool; results never depend on it.
@@ -632,12 +642,13 @@ impl TrainerSim {
         let epoch_duration = self.room.epoch_ticks();
 
         let live_fitness = self.track_live_fitness;
-        let weights = &AppConfig::global().trainer_fitness;
+        let config = &self.config;
+        let weights = &config.trainer.trainer_fitness;
         let step_one = |sb: &mut TrainerSandbox| {
             if live_fitness {
                 sb.current_fitness = calculate_fitness(sb, epoch_duration, weights);
             }
-            step_trainer_sandbox_physics(sb);
+            step_trainer_sandbox_physics(sb, config);
         };
         if parallel {
             self.sandboxes.par_iter_mut().for_each(step_one);
@@ -707,7 +718,7 @@ impl TrainerSim {
         self.room = room;
         for sb in self.sandboxes.iter_mut() {
             sb.room = room;
-            sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, 0));
+            sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, 0), &self.config);
         }
     }
 
@@ -730,11 +741,11 @@ impl TrainerSim {
     fn trial_room(&self, trial: u32) -> LevelScenario {
         let p = &self.params;
         if p.scenario.fixed_level().is_some() {
-            return p.scenario.plugin();
+            return p.scenario.plugin(&self.config);
         }
         let c = &p.curriculum;
         let level = if self.rehearsal.contains(&trial) { c.rehearsal_level.min(p.level) } else { p.level };
-        LevelScenario::at(level).with_metabolic_scale(metabolic_ramp(p.level, c.metabolic_ramp_start))
+        LevelScenario::at(level, &self.config).with_metabolic_scale(metabolic_ramp(p.level, c.metabolic_ramp_start))
     }
 
     /// Level of the generation's non-rehearsal trials.
@@ -749,7 +760,8 @@ impl TrainerSim {
     pub fn evaluate_population(&self, room: LevelScenario, trials: Option<u32>, parallel: bool) -> PopulationEval {
         let trials = trials.unwrap_or_else(|| self.trial_count()).max(1);
         let epoch = room.epoch_ticks();
-        let weights = &AppConfig::global().trainer_fitness;
+        let config = &self.config;
+        let weights = &config.trainer.trainer_fitness;
         let (seed, aggregation) = (self.seed, self.params.trial_aggregation);
         let evaluate = |sb: &TrainerSandbox| -> (f32, u32, bool) {
             let mut sb = sb.clone();
@@ -757,9 +769,9 @@ impl TrainerSim {
             let mut fitness = Vec::with_capacity(trials as usize);
             let mut successes = 0;
             for trial in 0..trials {
-                sb.reset_trial(&mut derive(seed, &[EVAL_STREAM, trial as u64]));
+                sb.reset_trial(&mut derive(seed, &[EVAL_STREAM, trial as u64]), config);
                 for _ in 0..epoch {
-                    step_trainer_sandbox_physics(&mut sb);
+                    step_trainer_sandbox_physics(&mut sb, config);
                 }
                 fitness.push(calculate_fitness(&sb, epoch, weights));
                 successes += sb.finished as u32;
@@ -799,7 +811,7 @@ impl TrainerSim {
             generation: old.generation,
             methylations,
             synapse_weights,
-        });
+        }, &self.config);
         agent.vx = old.vx;
         agent.vy = old.vy;
         agent.bend_angle = old.bend_angle;
@@ -828,7 +840,7 @@ impl TrainerSim {
         if self.acc_eaten.len() != n {
             self.acc_eaten = vec![0; n];
         }
-        let weights = &AppConfig::global().trainer_fitness;
+        let weights = &self.config.trainer.trainer_fitness;
         let rehearsal = self.rehearsal.contains(&self.trial_index);
         for (idx, sb) in self.sandboxes.iter_mut().enumerate() {
             sb.current_fitness = calculate_fitness(sb, epoch_duration, weights);
@@ -853,7 +865,7 @@ impl TrainerSim {
             self.room = room;
             for sb in self.sandboxes.iter_mut() {
                 sb.room = room;
-                sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, self.trial_index));
+                sb.reset_trial(&mut layout_rng(self.seed, self.layout_id, self.trial_index), &self.config);
             }
             return None;
         }
@@ -954,9 +966,9 @@ impl TrainerSim {
             self.layout_id += 1;
         }
         if self.params.one_fifth_rule {
-            let config = AppConfig::global();
+            let limit = self.config.trainer.mutation_ops_limit;
             let p = &mut self.params;
-            p.mutation_ops_max = one_fifth_update(p.mutation_ops_max, better, total, p.mutation_ops_min.max(1), config.mutation_ops_limit);
+            p.mutation_ops_max = one_fifth_update(p.mutation_ops_max, better, total, p.mutation_ops_min.max(1), limit);
         }
         // Curriculum gate on the non-rehearsal trials; a pending manual switch replaces it (module doc)
         if self.params.scenario == Scenario::Curriculum && self.params.level_auto && self.pending.is_none() {
@@ -1025,12 +1037,14 @@ impl TrainerSim {
         let (seed, generation, parents, lamarckian) = (self.seed, self.generation as u64, &self.parents, p.lamarckian);
         let (ops_min, ops_max, layout_id, minimal_criterion) = (p.mutation_ops_min, p.mutation_ops_max, self.layout_id, p.minimal_criterion);
         let (channel_mode, parent_last_mutation) = (p.mutation_channels, &self.parent_last_mutation);
-        let lamarck_chance = AppConfig::global().rules.lamarckian_assimilation_chance;
+        let config = &self.config;
+        let brain_config = &config.brain;
+        let lamarck_chance = config.genome.lamarckian_assimilation_chance;
         // Lamarckian sources: each parent's synapses (keys and genome weights) for matching by key
-        let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian { parents.iter().map(|r| parse_genome(&r.genome, None, None).brain.synapses).collect() } else { Vec::new() };
+        let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian { parents.iter().map(|r| parse_genome(&r.genome, None, None, brain_config).brain.synapses).collect() } else { Vec::new() };
         let build_slot = |(idx, &(source, origin, parent_idx)): (usize, &(&str, SandboxOrigin, Option<usize>))| {
             let mut breed_rng = derive(seed, &[generation, BREED_STREAM, idx as u64]);
-            let (genome, own) = breed_genome_traced(source, origin, ops_min, ops_max, minimal_criterion, channel_mode, &mut breed_rng);
+            let (genome, own) = breed_genome_traced(source, origin, ops_min, ops_max, minimal_criterion, channel_mode, &mut breed_rng, config);
             let last = match own {
                 Some(touch) => Some(touch.channel()),
                 None if origin == SandboxOrigin::Elite => parent_idx.and_then(|i| parent_last_mutation.get(i).copied().flatten()),
@@ -1044,12 +1058,12 @@ impl TrainerSim {
             let inherited = if lamarckian { parent_idx } else { None };
             let methylations = inherited.map(|i| &parents[i].methylations[..]).filter(|m| !m.is_empty());
             let synapse_weights = inherited.filter(|&i| !parents[i].synapse_weights.is_empty()).map(|i| {
-                let child = parse_genome(&genome, None, None).brain.synapses;
+                let child = parse_genome(&genome, None, None, brain_config).brain.synapses;
                 inherit_learned_weights(&parent_synapses[i], &parents[i].synapse_weights, &child, lamarck_chance, &mut breed_rng)
             });
 
             // Shared layout of trial 0: heading, food and respawn seed identical for every slot
-            let sandbox = init_rust_sandbox((idx + 1) as u32, &genome, generation as u32, origin, room, methylations, synapse_weights, &mut layout_rng(seed, layout_id, 0));
+            let sandbox = init_rust_sandbox((idx + 1) as u32, &genome, generation as u32, origin, room, methylations, synapse_weights, &mut layout_rng(seed, layout_id, 0), config);
             (sandbox, lineage)
         };
         let (sandboxes, lineage): (Vec<TrainerSandbox>, Vec<SlotLineage>) = if parallel {
@@ -1074,7 +1088,7 @@ mod tests {
     use crate::biology::dna::parse_genome;
 
     fn small_params() -> TrainerParams {
-        TrainerParams { population: 8, ..TrainerParams::default() }
+        TrainerParams { population: 8, ..TrainerParams::from_config(crate::config::test_config()) }
     }
 
     /// Runs until `generations` generations completed; returns the stats and elite genomes per generation.
@@ -1094,23 +1108,23 @@ mod tests {
 
     #[test]
     fn test_same_seed_same_generations_different_seed_differs() {
-        let a = run(&mut TrainerSim::new(small_params(), 42, 200), 3);
-        let b = run(&mut TrainerSim::new(small_params(), 42, 200), 3);
+        let a = run(&mut TrainerSim::new(small_params(), 42, 200, crate::config::test_config()), 3);
+        let b = run(&mut TrainerSim::new(small_params(), 42, 200, crate::config::test_config()), 3);
         assert_eq!(a, b);
         assert_eq!(a.iter().map(|(s, _)| s.generation).collect::<Vec<_>>(), vec![1, 2, 3]);
 
-        let c = run(&mut TrainerSim::new(small_params(), 43, 200), 1);
+        let c = run(&mut TrainerSim::new(small_params(), 43, 200, crate::config::test_config()), 1);
         assert_ne!(a[0], c[0]);
     }
 
     #[test]
     fn test_restore_continues_with_given_parents() {
         let params = TrainerParams { multi_trial: false, ..small_params() };
-        let mut original = TrainerSim::new(params.clone(), 9, 200);
+        let mut original = TrainerSim::new(params.clone(), 9, 200, crate::config::test_config());
         run(&mut original, 1);
         assert_eq!(original.generation, 2);
 
-        let restored = TrainerSim::restore(params, 9, 2, original.parents.clone(), original.hof.clone(), 200);
+        let restored = TrainerSim::restore(params, 9, 2, original.parents.clone(), original.hof.clone(), 200, crate::config::test_config());
         assert_eq!(restored.generation, 2);
         assert_eq!(genomes(&restored), genomes(&original));
         // Elite slots carry the parents unmodified
@@ -1121,7 +1135,7 @@ mod tests {
 
     fn lamarck_parent() -> GenomeRecord {
         let len = WILDTYPE_GENOME.len();
-        let synapses = parse_genome(WILDTYPE_GENOME, None, None).brain.synapses.len();
+        let synapses = parse_genome(WILDTYPE_GENOME, None, None, &crate::config::test_config().brain).brain.synapses.len();
         GenomeRecord {
             genome: WILDTYPE_GENOME.to_string(),
             name: "parent".to_string(),
@@ -1136,16 +1150,16 @@ mod tests {
     fn test_lamarck_fallback_mutants_and_phenotype_matches_genome() {
         // hof_rate > elite_ratio with a single parent and empty hof: elite and hof slots fall back to
         // mutants of parent 0 (used to underflow the Lamarck source index)
-        let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.5, inflow_rate: 0.0, lamarckian: true, ..TrainerParams::default() };
+        let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.5, inflow_rate: 0.0, lamarckian: true, ..TrainerParams::from_config(crate::config::test_config()) };
         let parent = lamarck_parent();
-        let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200);
+        let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200, crate::config::test_config());
 
         assert_eq!(sim.sandboxes[0].origin_type, SandboxOrigin::Elite);
         assert!(sim.sandboxes[1..].iter().all(|s| s.origin_type == SandboxOrigin::Mutant));
         assert!(sim.sandboxes.iter().any(|s| s.agent.genome != parent.genome));
 
         for sb in &sim.sandboxes {
-            let expected = parse_genome(&sb.agent.genome, None, Some(&parent.methylations));
+            let expected = parse_genome(&sb.agent.genome, None, Some(&parent.methylations), &crate::config::test_config().brain);
             assert_eq!(sb.agent.phenotype, expected, "sandbox {} phenotype does not match its genome", sb.id);
             assert_eq!(sb.agent.antisense, sb.agent.phenotype.antisense_strand);
             assert_eq!(sb.agent.neuron_states.len(), sb.agent.phenotype.brain.neurons.len());
@@ -1163,9 +1177,9 @@ mod tests {
 
     /// Structured parent genome with learned weights = genome weight + a distinct offset per synapse.
     fn learned_parent(seed: u64) -> (GenomeRecord, Vec<CTRNNSynapse>, Vec<f32>) {
-        let config = crate::shared::types::AppConfig::global();
-        let genome = crate::biology::dna::generate_structured_genome(&config.genome_composition, &mut crate::shared::rng::seeded(seed));
-        let synapses = parse_genome(&genome, None, None).brain.synapses;
+        let config = crate::config::test_config();
+        let genome = crate::biology::dna::generate_structured_genome(&config.genome.genome_composition, &mut crate::shared::rng::seeded(seed));
+        let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain.synapses;
         let offsets: Vec<f32> = (0..synapses.len()).map(|i| 0.01 * (i + 1) as f32).collect();
         let learned = synapses.iter().zip(&offsets).map(|(s, o)| s.weight + o).collect();
         let record = GenomeRecord { genome, name: "parent".to_string(), fitness: 100.0, generation: 1, methylations: Vec::new(), synapse_weights: learned };
@@ -1174,18 +1188,18 @@ mod tests {
 
     /// Learned offset per key that `weights` carry over the genome weights of `genome`.
     fn offsets_by_key(genome: &str, weights: &[f32]) -> std::collections::BTreeMap<u64, f32> {
-        parse_genome(genome, None, None).brain.synapses.iter().zip(weights).map(|(s, w)| (s.key, w - s.weight)).collect()
+        parse_genome(genome, None, None, &crate::config::test_config().brain).brain.synapses.iter().zip(weights).map(|(s, w)| (s.key, w - s.weight)).collect()
     }
 
     #[test]
     fn test_lamarck_offsets_follow_synapse_keys_across_gene_duplication() {
         use crate::biology::dna::{mutate_genome_with_kind, MutationKind};
-        let ops = &crate::shared::types::AppConfig::global().mutation_operators;
+        let ops = &crate::config::test_config().genome.mutation_operators;
         let mut checked = 0;
         for seed in 0..40 {
             let (parent, synapses, offsets) = learned_parent(seed);
             let Some(child_genome) = mutate_genome_with_kind(&parent.genome, MutationKind::GeneDuplication, ops, &mut crate::shared::rng::seeded(seed)) else { continue };
-            let child = parse_genome(&child_genome, None, None).brain.synapses;
+            let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain).brain.synapses;
             let inherited = inherit_learned_weights(&synapses, &parent.synapse_weights, &child, 1.0, &mut crate::shared::rng::seeded(seed));
             let child_offsets = offsets_by_key(&child_genome, &inherited);
             // The duplication shifts synapse indices, but every plastic parent offset lands on its own key; fixed reflexes
@@ -1204,9 +1218,9 @@ mod tests {
 
     #[test]
     fn test_lamarck_breeding_matches_learned_offsets_by_key() {
-        let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.0, inflow_rate: 0.0, lamarckian: true, ..TrainerParams::default() };
+        let params = TrainerParams { population: 8, elite_ratio: 0.25, hof_rate: 0.0, inflow_rate: 0.0, lamarckian: true, ..TrainerParams::from_config(crate::config::test_config()) };
         let (parent, synapses, offsets) = learned_parent(3);
-        let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200);
+        let sim = TrainerSim::restore(params, 5, 2, vec![parent.clone()], Vec::new(), 200, crate::config::test_config());
         // Plastic parent offsets only; each homologous child synapse takes the full offset or none (TCK-152)
         let parent_offsets: std::collections::BTreeMap<u64, f32> = synapses.iter().zip(&offsets).filter(|(s, _)| s.plastic).map(|(s, o)| (s.key, *o)).collect();
         let (mut matched, mut taken) = (0, 0);
@@ -1219,7 +1233,7 @@ mod tests {
             }
         }
         let share = taken as f32 / matched as f32;
-        let chance = crate::shared::types::AppConfig::global().rules.lamarckian_assimilation_chance;
+        let chance = crate::config::test_config().genome.lamarckian_assimilation_chance;
         assert!(matched > 200, "{} homologous synapses", matched);
         assert!((share - chance).abs() < 0.08, "inherited share {} vs chance {}", share, chance);
     }
@@ -1227,7 +1241,7 @@ mod tests {
     #[test]
     fn test_phenotype_matches_genome_after_breeding() {
         let params = TrainerParams { multi_trial: false, lamarckian: true, ..small_params() };
-        let mut sim = TrainerSim::new(params, 11, 200);
+        let mut sim = TrainerSim::new(params, 11, 200, crate::config::test_config());
         run(&mut sim, 1);
         let parents = sim.parents.clone();
 
@@ -1235,21 +1249,21 @@ mod tests {
             // Lamarckian sources are the parents (elites and mutants); hof and random get no methylations
             let methylations = match sb.origin_type {
                 SandboxOrigin::Elite | SandboxOrigin::Mutant => parents.iter().map(|p| p.methylations.clone()).find(|m| {
-                    parse_genome(&sb.agent.genome, None, Some(m)) == sb.agent.phenotype
+                    parse_genome(&sb.agent.genome, None, Some(m), &crate::config::test_config().brain) == sb.agent.phenotype
                 }),
                 _ => None,
             };
-            let expected = parse_genome(&sb.agent.genome, None, methylations.as_deref());
+            let expected = parse_genome(&sb.agent.genome, None, methylations.as_deref(), &crate::config::test_config().brain);
             assert_eq!(sb.agent.phenotype, expected, "sandbox {} phenotype does not match its genome", sb.id);
         }
     }
 
     #[test]
     fn test_assign_creature_rebuilds_agent() {
-        let mut sim = TrainerSim::new(TrainerParams { population: 2, ..TrainerParams::default() }, 3, 200);
+        let mut sim = TrainerSim::new(TrainerParams { population: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 3, 200, crate::config::test_config());
         let (px, heading) = (sim.sandboxes[1].agent.px, sim.sandboxes[1].agent.heading_angle);
         let sb = sim.assign_creature(2, WILDTYPE_GENOME, None, None).unwrap();
-        assert_eq!(sb.agent.phenotype, parse_genome(WILDTYPE_GENOME, None, None));
+        assert_eq!(sb.agent.phenotype, parse_genome(WILDTYPE_GENOME, None, None, &crate::config::test_config().brain));
         assert_eq!(sb.agent.antisense, sb.agent.phenotype.antisense_strand);
         assert_eq!(sb.agent.neuron_states.len(), sb.agent.phenotype.brain.neurons.len());
         assert_eq!((sb.agent.px, sb.agent.heading_angle), (px, heading));
@@ -1258,9 +1272,9 @@ mod tests {
 
     #[test]
     fn test_parallel_step_equals_sequential() {
-        let params = TrainerParams { population: 12, ..TrainerParams::default() };
-        let mut seq = TrainerSim::new(params.clone(), 77, 200);
-        let mut par = TrainerSim::new(params, 77, 200);
+        let params = TrainerParams { population: 12, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut seq = TrainerSim::new(params.clone(), 77, 200, crate::config::test_config());
+        let mut par = TrainerSim::new(params, 77, 200, crate::config::test_config());
         let (mut seq_events, mut par_events) = (Vec::new(), Vec::new());
         while seq_events.len() < 2 {
             seq_events.extend(seq.step(false));
@@ -1274,8 +1288,8 @@ mod tests {
 
     #[test]
     fn test_parallel_breeding_equals_sequential() {
-        let params = TrainerParams { population: 20, multi_trial: false, lamarckian: true, ..TrainerParams::default() };
-        let mut sim = TrainerSim::new(params, 21, 200);
+        let params = TrainerParams { population: 20, multi_trial: false, lamarckian: true, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut sim = TrainerSim::new(params, 21, 200, crate::config::test_config());
         run(&mut sim, 1);
         let snapshot = |sim: &TrainerSim| serde_json::to_string(&sim.sandboxes).unwrap();
         let sequential = snapshot(&sim);
@@ -1300,12 +1314,12 @@ mod tests {
     #[test]
     fn test_layout_identical_across_sandboxes_and_trials_differ() {
         for scenario in [Scenario::Standard, Scenario::Exploration] {
-            let mut sim = TrainerSim::new(TrainerParams { population: 6, scenario, ..TrainerParams::default() }, 31, 200);
+            let mut sim = TrainerSim::new(TrainerParams { population: 6, scenario, ..TrainerParams::from_config(crate::config::test_config()) }, 31, 200, crate::config::test_config());
             let first = trial_start(&sim.sandboxes[0]);
             assert!(sim.sandboxes.iter().all(|sb| trial_start(sb) == first), "{:?} trial 0 differs between sandboxes", scenario);
 
             // Next trial: a new shared layout, again identical for all sandboxes
-            let epoch = scenario.plugin().epoch_ticks();
+            let epoch = scenario.plugin(crate::config::test_config()).epoch_ticks();
             for _ in 0..epoch {
                 assert!(sim.step(false).is_none());
             }
@@ -1317,9 +1331,9 @@ mod tests {
 
     #[test]
     fn test_layout_persists_across_generations_until_solved() {
-        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Hold, ..TrainerParams::default() };
-        let epoch = params.scenario.plugin().epoch_ticks();
-        let mut sim = TrainerSim::new(params, 32, 200);
+        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Hold, ..TrainerParams::from_config(crate::config::test_config()) };
+        let epoch = params.scenario.plugin(crate::config::test_config()).epoch_ticks();
+        let mut sim = TrainerSim::new(params, 32, 200, crate::config::test_config());
         let layout0 = trial_start(&sim.sandboxes[0]);
         // Runs one generation; at the end of every trial all sandboxes are marked as (not) having caught food
         let run_generation = |sim: &mut TrainerSim, caught: bool| loop {
@@ -1367,9 +1381,9 @@ mod tests {
 
     #[test]
     fn test_one_fifth_rule_adapts_ops_within_bounds() {
-        let limit = crate::shared::types::AppConfig::global().mutation_ops_limit;
-        let params = TrainerParams { population: 10, one_fifth_rule: true, multi_trial: false, ..TrainerParams::default() };
-        let mut sim = TrainerSim::new(params, 33, 200);
+        let limit = crate::config::test_config().trainer.mutation_ops_limit;
+        let params = TrainerParams { population: 10, one_fifth_rule: true, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut sim = TrainerSim::new(params, 33, 200, crate::config::test_config());
         let mut k_before = sim.params.mutation_ops_max;
         for _ in 0..4 {
             let (stats, _) = run(&mut sim, 1).remove(0);
@@ -1385,7 +1399,7 @@ mod tests {
             k_before = k;
         }
         // Without the rule the ops bound stays fixed
-        let mut fixed = TrainerSim::new(TrainerParams { population: 10, one_fifth_rule: false, multi_trial: false, ..TrainerParams::default() }, 33, 200);
+        let mut fixed = TrainerSim::new(TrainerParams { population: 10, one_fifth_rule: false, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) }, 33, 200, crate::config::test_config());
         let k0 = fixed.params.mutation_ops_max;
         run(&mut fixed, 3);
         assert_eq!(fixed.params.mutation_ops_max, k0);
@@ -1393,10 +1407,10 @@ mod tests {
 
     #[test]
     fn test_hof_slots_are_mutated() {
-        let params = TrainerParams { population: 10, elite_ratio: 0.1, hof_rate: 0.5, inflow_rate: 0.0, ..TrainerParams::default() };
+        let params = TrainerParams { population: 10, elite_ratio: 0.1, hof_rate: 0.5, inflow_rate: 0.0, ..TrainerParams::from_config(crate::config::test_config()) };
         let parent = lamarck_parent();
         let hof: Vec<GenomeRecord> = (0..5).map(|i| GenomeRecord { fitness: 50.0 - i as f32, ..parent.clone() }).collect();
-        let sim = TrainerSim::restore(params, 34, 2, vec![parent.clone()], hof, 200);
+        let sim = TrainerSim::restore(params, 34, 2, vec![parent.clone()], hof, 200, crate::config::test_config());
         let hof_slots: Vec<_> = sim.sandboxes.iter().filter(|s| s.origin_type == SandboxOrigin::Hof).collect();
         assert_eq!(hof_slots.len(), 5);
         assert!(hof_slots.iter().filter(|s| s.agent.genome != parent.genome).count() >= 4, "hof slots must be mutated");
@@ -1405,7 +1419,7 @@ mod tests {
 
     #[test]
     fn test_avg_fitness_divides_by_the_sandbox_count() {
-        let mut sim = TrainerSim::new(TrainerParams { population: 6, multi_trial: false, ..TrainerParams::default() }, 35, 200);
+        let mut sim = TrainerSim::new(TrainerParams { population: 6, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) }, 35, 200, crate::config::test_config());
         // A population setting that no longer matches the sandboxes (e.g. changed without a rebuild)
         sim.params.population = 60;
         loop {
@@ -1426,9 +1440,9 @@ mod tests {
 
     #[test]
     fn test_median_aggregation_is_deterministic_and_parallel_safe() {
-        let params = TrainerParams { population: 8, trials: 3, trial_aggregation: TrialAggregation::Median, ..TrainerParams::default() };
-        let mut seq = TrainerSim::new(params.clone(), 36, 200);
-        let mut par = TrainerSim::new(params, 36, 200);
+        let params = TrainerParams { population: 8, trials: 3, trial_aggregation: TrialAggregation::Median, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut seq = TrainerSim::new(params.clone(), 36, 200, crate::config::test_config());
+        let mut par = TrainerSim::new(params, 36, 200, crate::config::test_config());
         let (mut a, mut b) = (Vec::new(), Vec::new());
         while a.is_empty() {
             a.extend(seq.step(false));
@@ -1440,13 +1454,13 @@ mod tests {
     #[test]
     fn test_live_telemetry_fitness_equals_epoch_end_fitness() {
         // UI path (fitness every tick) and runner path (epoch end only) use the same function: same events
-        let params = TrainerParams { population: 8, trials: 2, ..TrainerParams::default() };
-        let mut live = TrainerSim::new(params.clone(), 37, 200);
-        let mut headless = TrainerSim::new(params, 37, 200);
+        let params = TrainerParams { population: 8, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut live = TrainerSim::new(params.clone(), 37, 200, crate::config::test_config());
+        let mut headless = TrainerSim::new(params, 37, 200, crate::config::test_config());
         headless.track_live_fitness = false;
         let (mut a, mut b) = (Vec::new(), Vec::new());
-        let weights = &AppConfig::global().trainer_fitness;
-        let epoch = live.params.scenario.plugin().epoch_ticks();
+        let weights = &crate::config::test_config().trainer.trainer_fitness;
+        let epoch = live.params.scenario.plugin(crate::config::test_config()).epoch_ticks();
         let mut expected_next: Option<Vec<f32>> = None;
         while a.is_empty() {
             a.extend(live.step(false));
@@ -1464,10 +1478,10 @@ mod tests {
 
     #[test]
     fn test_generation_fitness_is_the_trial_mean_without_gate() {
-        let params = TrainerParams { population: 6, trials: 3, ..TrainerParams::default() };
-        let epoch = params.scenario.plugin().epoch_ticks();
-        let mut sim = TrainerSim::new(params, 38, 200);
-        let weights = AppConfig::global().trainer_fitness.clone();
+        let params = TrainerParams { population: 6, trials: 3, ..TrainerParams::from_config(crate::config::test_config()) };
+        let epoch = params.scenario.plugin(crate::config::test_config()).epoch_ticks();
+        let mut sim = TrainerSim::new(params, 38, 200, crate::config::test_config());
+        let weights = crate::config::test_config().trainer.trainer_fitness.clone();
         let mut per_trial: Vec<Vec<f32>> = vec![Vec::new(); 6];
         loop {
             for _ in 0..epoch - 1 {
@@ -1476,7 +1490,7 @@ mod tests {
             for (i, sb) in sim.sandboxes.iter().enumerate() {
                 // The last tick is stepped below; record the fitness the sim will compute at its end
                 let mut probe = sb.clone();
-                crate::biology::trainer_engine::step_trainer_sandbox_physics(&mut probe);
+                crate::biology::trainer_engine::step_trainer_sandbox_physics(&mut probe, crate::config::test_config());
                 per_trial[i].push(calculate_fitness(&probe, epoch, &weights));
             }
             if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.step(false) {
@@ -1491,24 +1505,24 @@ mod tests {
 
     #[test]
     fn test_minimal_criterion_population_is_deterministic_and_parallel_safe() {
-        let params = TrainerParams { population: 10, minimal_criterion: true, multi_trial: false, ..TrainerParams::default() };
-        let seq = TrainerSim::new(params.clone(), 39, 200);
-        let mut par = TrainerSim::new(params.clone(), 39, 200);
+        let params = TrainerParams { population: 10, minimal_criterion: true, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) };
+        let seq = TrainerSim::new(params.clone(), 39, 200, crate::config::test_config());
+        let mut par = TrainerSim::new(params.clone(), 39, 200, crate::config::test_config());
         par.breed(true);
         assert_eq!(genomes(&seq), genomes(&par));
-        let config = AppConfig::global();
+        let config = crate::config::test_config();
         assert!(seq.sandboxes.iter().all(|sb| crate::biology::trainer_engine::meets_minimal_criterion(&sb.agent.genome, config)));
         // Off: other genomes from the same seed (the plain generator)
-        let plain = TrainerSim::new(TrainerParams { minimal_criterion: false, ..params }, 39, 200);
+        let plain = TrainerSim::new(TrainerParams { minimal_criterion: false, ..params }, 39, 200, crate::config::test_config());
         assert_ne!(genomes(&seq), genomes(&plain));
     }
 
     #[test]
     fn test_mutation_channel_stats_count_mutants_and_separate_is_parallel_safe() {
         for mode in [MutationChannelMode::Mixed, MutationChannelMode::Separate] {
-            let params = TrainerParams { population: 12, multi_trial: false, mutation_channels: mode, ..TrainerParams::default() };
-            let mut seq = TrainerSim::new(params.clone(), 55, 200);
-            let mut par = TrainerSim::new(params, 55, 200);
+            let params = TrainerParams { population: 12, multi_trial: false, mutation_channels: mode, ..TrainerParams::from_config(crate::config::test_config()) };
+            let mut seq = TrainerSim::new(params.clone(), 55, 200, crate::config::test_config());
+            let mut par = TrainerSim::new(params, 55, 200, crate::config::test_config());
             let (mut seq_events, mut par_events) = (Vec::new(), Vec::new());
             while seq_events.len() < 3 {
                 seq_events.extend(seq.step(false));
@@ -1542,7 +1556,7 @@ mod tests {
     }
 
     fn curriculum_params(population: usize, level: f32, level_auto: bool) -> TrainerParams {
-        TrainerParams { population, scenario: Scenario::Curriculum, curriculum: plain_curriculum(), level, level_auto, ..TrainerParams::default() }
+        TrainerParams { population, scenario: Scenario::Curriculum, curriculum: plain_curriculum(), level, level_auto, ..TrainerParams::from_config(crate::config::test_config()) }
     }
 
     /// Events with the training mode blanked (the only field that names the mode).
@@ -1567,9 +1581,9 @@ mod tests {
     #[test]
     fn test_curriculum_levels_zero_and_one_reproduce_the_fixed_rooms() {
         for (level, fixed) in [(0.0, Scenario::Standard), (1.0, Scenario::Exploration)] {
-            let mut room = TrainerSim::new(TrainerParams { population: 4, scenario: fixed, ..TrainerParams::default() }, 61, 200);
-            let mut curriculum = TrainerSim::new(curriculum_params(4, level, false), 61, 200);
-            assert_eq!(curriculum.room(), fixed.plugin(), "level {} is the {:?} room", level, fixed);
+            let mut room = TrainerSim::new(TrainerParams { population: 4, scenario: fixed, ..TrainerParams::from_config(crate::config::test_config()) }, 61, 200, crate::config::test_config());
+            let mut curriculum = TrainerSim::new(curriculum_params(4, level, false), 61, 200, crate::config::test_config());
+            assert_eq!(curriculum.room(), fixed.plugin(crate::config::test_config()), "level {} is the {:?} room", level, fixed);
             assert!(curriculum.sandboxes.iter().zip(&room.sandboxes).all(|(a, b)| trial_start(a) == trial_start(b)), "same layouts");
             let (a, b) = (events(&mut room, 2, false), events(&mut curriculum, 2, false));
             assert_eq!(without_mode(a), without_mode(b), "level {} differs from {:?}", level, fixed);
@@ -1620,18 +1634,18 @@ mod tests {
 
     #[test]
     fn test_curriculum_gate_moves_the_level_of_the_next_generation() {
-        let mut sim = TrainerSim::new(TrainerParams { trials: 1, ..curriculum_params(4, 0.0, true) }, 62, 200);
+        let mut sim = TrainerSim::new(TrainerParams { trials: 1, ..curriculum_params(4, 0.0, true) }, 62, 200, crate::config::test_config());
         let stats = forced_generation(&mut sim, true);
         assert_eq!((stats.level, stats.level_move), (0.0, Some(LevelMove::Up)));
         assert_eq!(sim.params.level, 0.1);
-        assert!(sim.sandboxes.iter().all(|sb| sb.room == LevelScenario::at(0.1)), "next generation runs at the new level");
+        assert!(sim.sandboxes.iter().all(|sb| sb.room == LevelScenario::at(0.1, crate::config::test_config())), "next generation runs at the new level");
         assert_eq!(forced_generation(&mut sim, true).level, 0.1);
         let stats = forced_generation(&mut sim, false);
         assert_eq!((stats.level, stats.level_move), (0.2, Some(LevelMove::Down)));
-        assert_eq!(sim.room(), LevelScenario::at(0.1));
+        assert_eq!(sim.room(), LevelScenario::at(0.1, crate::config::test_config()));
         // Manual level: gate off, level fixed; curriculum mode again turns it back on
         sim.set_level(0.7);
-        assert_eq!((sim.params.level, sim.params.level_auto, sim.room()), (0.7, false, LevelScenario::at(0.7)));
+        assert_eq!((sim.params.level, sim.params.level_auto, sim.room()), (0.7, false, LevelScenario::at(0.7, crate::config::test_config())));
         let stats = forced_generation(&mut sim, true);
         assert_eq!((stats.level, stats.level_move, sim.params.level), (0.7, None, 0.7));
         sim.set_scenario(Scenario::Curriculum);
@@ -1639,14 +1653,14 @@ mod tests {
         assert_eq!(forced_generation(&mut sim, true).level_move, Some(LevelMove::Up));
         assert_eq!(sim.params.level, 0.8);
         // Fixed rooms have no gate
-        let mut fixed = TrainerSim::new(TrainerParams { population: 4, trials: 1, ..TrainerParams::default() }, 62, 200);
+        let mut fixed = TrainerSim::new(TrainerParams { population: 4, trials: 1, ..TrainerParams::from_config(crate::config::test_config()) }, 62, 200, crate::config::test_config());
         assert_eq!(forced_generation(&mut fixed, true).level_move, None);
     }
 
     #[test]
     fn test_room_switch_waits_for_the_generation_boundary() {
-        let mut sim = TrainerSim::new(TrainerParams { population: 4, trials: 2, ..TrainerParams::default() }, 63, 200);
-        let standard = Scenario::Standard.plugin();
+        let mut sim = TrainerSim::new(TrainerParams { population: 4, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 63, 200, crate::config::test_config());
+        let standard = Scenario::Standard.plugin(crate::config::test_config());
         for _ in 0..10 {
             sim.step(false);
         }
@@ -1661,7 +1675,7 @@ mod tests {
         }
         let Some(TrainerEvent::GenerationCompleted { stats, .. }) = completed else { unreachable!() };
         assert_eq!(stats.scenario, Scenario::Standard);
-        let exploration = Scenario::Exploration.plugin();
+        let exploration = Scenario::Exploration.plugin(crate::config::test_config());
         assert_eq!((sim.params.scenario, sim.room(), sim.pending_scenario(), sim.epoch_ticks), (Scenario::Exploration, exploration, None, 0));
         assert!(sim.sandboxes.iter().all(|sb| sb.room == exploration && sb.epoch_ticks == 0 && sb.agent.px == exploration.chamber_size() / 2.0));
     }
@@ -1669,10 +1683,10 @@ mod tests {
     #[test]
     fn test_room_switch_at_a_generation_start_applies_at_once() {
         // A fresh generation is at its boundary: switching equals starting in the new room
-        let mut switched = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::default() }, 64, 200);
+        let mut switched = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::from_config(crate::config::test_config()) }, 64, 200, crate::config::test_config());
         switched.set_scenario(Scenario::Exploration);
         assert_eq!(switched.pending_scenario(), None);
-        let mut direct = TrainerSim::new(TrainerParams { population: 4, scenario: Scenario::Exploration, ..TrainerParams::default() }, 64, 200);
+        let mut direct = TrainerSim::new(TrainerParams { population: 4, scenario: Scenario::Exploration, ..TrainerParams::from_config(crate::config::test_config()) }, 64, 200, crate::config::test_config());
         assert!(switched.sandboxes.iter().zip(&direct.sandboxes).all(|(a, b)| trial_start(a) == trial_start(b) && a.room == b.room));
         assert_eq!(events(&mut switched, 1, false), events(&mut direct, 1, false));
     }
@@ -1695,8 +1709,8 @@ mod tests {
 
     #[test]
     fn test_layout_rotates_every_generation_with_rotate_policy() {
-        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Rotate, ..TrainerParams::default() };
-        let mut sim = TrainerSim::new(params, 21, 200);
+        let params = TrainerParams { population: 6, trials: 2, layout_policy: LayoutPolicy::Rotate, ..TrainerParams::from_config(crate::config::test_config()) };
+        let mut sim = TrainerSim::new(params, 21, 200, crate::config::test_config());
         for expected in 1..=3u64 {
             while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
             assert_eq!(sim.layout_id(), expected, "a new layout after every generation");
@@ -1707,7 +1721,7 @@ mod tests {
     fn test_rehearsal_trials_run_at_the_rehearsal_level_and_skip_the_gate() {
         let c = CurriculumParams { rehearsal_share: 1.0 / 3.0, rehearsal_level: 0.0, ..plain_curriculum() };
         let params = TrainerParams { curriculum: c, trials: 3, ..curriculum_params(4, 0.5, false) };
-        let mut sim = TrainerSim::new(params.clone(), 65, 200);
+        let mut sim = TrainerSim::new(params.clone(), 65, 200, crate::config::test_config());
         let rehearsal = rehearsal_trials(65, 0, 3, c.rehearsal_share);
         assert_eq!(rehearsal.len(), 1);
         let mut levels = Vec::new();
@@ -1725,8 +1739,8 @@ mod tests {
         assert_eq!((stats.level, stats.rehearsal_trials), (0.5, 1));
         assert!(stats.rehearsal_success_rate.is_some());
         // Same run, parallel: identical
-        let mut par = TrainerSim::new(params, 65, 200);
-        let mut seq = TrainerSim::new(sim.params.clone(), 65, 200);
+        let mut par = TrainerSim::new(params, 65, 200, crate::config::test_config());
+        let mut seq = TrainerSim::new(sim.params.clone(), 65, 200, crate::config::test_config());
         assert_eq!(events(&mut par, 2, true), events(&mut seq, 2, false));
     }
 
@@ -1736,19 +1750,19 @@ mod tests {
         assert_eq!(metabolic_ramp(1.0, 0.0), 1.0);
         assert_eq!(metabolic_ramp(0.3, 1.0), 1.0, "ramp start 1 = no ramp");
         let c = CurriculumParams { metabolic_ramp_start: 0.0, ..plain_curriculum() };
-        let sim = TrainerSim::new(TrainerParams { curriculum: c, ..curriculum_params(2, 0.4, false) }, 66, 200);
+        let sim = TrainerSim::new(TrainerParams { curriculum: c, ..curriculum_params(2, 0.4, false) }, 66, 200, crate::config::test_config());
         assert!((sim.room().metabolic_scale() - 0.4).abs() < 1e-6);
         assert!(sim.sandboxes.iter().all(|sb| sb.room.metabolic_scale() == sim.room().metabolic_scale()));
-        let fixed = TrainerSim::new(TrainerParams { population: 2, curriculum: c, ..TrainerParams::default() }, 66, 200);
+        let fixed = TrainerSim::new(TrainerParams { population: 2, curriculum: c, ..TrainerParams::from_config(crate::config::test_config()) }, 66, 200, crate::config::test_config());
         assert_eq!(fixed.room().metabolic_scale(), 1.0);
     }
 
     #[test]
     fn test_evaluate_population_is_deterministic_and_leaves_the_sim_unchanged() {
-        let mut sim = TrainerSim::new(TrainerParams { population: 6, trials: 2, ..TrainerParams::default() }, 67, 200);
+        let mut sim = TrainerSim::new(TrainerParams { population: 6, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 67, 200, crate::config::test_config());
         run(&mut sim, 1);
         let before = serde_json::to_string(&sim.sandboxes).unwrap();
-        let room = Scenario::Standard.plugin();
+        let room = Scenario::Standard.plugin(crate::config::test_config());
         let a = sim.evaluate_population(room, None, false);
         assert_eq!(a, sim.evaluate_population(room, None, true));
         assert_eq!(serde_json::to_string(&sim.sandboxes).unwrap(), before);
@@ -1763,15 +1777,15 @@ mod tests {
     #[test]
     fn test_restore_with_run_state_continues_layout_level_mode_and_mutation_ops() {
         let params = TrainerParams { layout_policy: LayoutPolicy::Rotate, mutation_ops_max: 5, trials: 2, ..curriculum_params(6, 0.3, true) };
-        let mut original = TrainerSim::new(params.clone(), 71, 200);
+        let mut original = TrainerSim::new(params.clone(), 71, 200, crate::config::test_config());
         run(&mut original, 2);
         let state = TrainerRunState::of(&original);
         assert_eq!(state.layout_id, 2, "rotate: a new layout after every generation");
 
         // A restore from other params (app start: config defaults, other mode and ops) with the saved state applied
         let mut restored_params = TrainerParams { scenario: Scenario::Standard, level: 0.0, level_auto: false, mutation_ops_max: 2, ..params };
-        state.apply(&mut restored_params);
-        let restored = TrainerSim::restore_at_layout(restored_params, 71, original.generation, state.layout_id, original.parents.clone(), original.hof.clone(), 200);
+        state.apply(&mut restored_params, crate::config::test_config());
+        let restored = TrainerSim::restore_at_layout(restored_params, 71, original.generation, state.layout_id, original.parents.clone(), original.hof.clone(), 200, crate::config::test_config());
         assert_eq!(TrainerRunState::of(&restored), state);
         assert_eq!((restored.params.scenario, restored.params.level_auto), (Scenario::Curriculum, true));
         assert_eq!((restored.room(), &restored.rehearsal), (original.room(), &original.rehearsal));
@@ -1779,16 +1793,16 @@ mod tests {
         assert!(restored.sandboxes.iter().zip(&original.sandboxes).all(|(a, b)| a.agent.px == b.agent.px && a.agent.py == b.agent.py));
 
         // No saved state: today's restore on layout 0
-        let fresh = TrainerSim::restore(params, 71, original.generation, original.parents.clone(), original.hof.clone(), 200);
+        let fresh = TrainerSim::restore(params, 71, original.generation, original.parents.clone(), original.hof.clone(), 200, crate::config::test_config());
         assert_eq!(fresh.layout_id(), 0);
     }
 
     #[test]
     fn test_run_state_apply_clamps_mutation_ops_and_snaps_level() {
         let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000, population: Some(42), seed: Some(7) };
-        let mut params = TrainerParams::default();
-        state.apply(&mut params);
-        let limit = AppConfig::global().mutation_ops_limit.max(params.mutation_ops_min.max(1));
+        let mut params = TrainerParams::from_config(crate::config::test_config());
+        state.apply(&mut params, crate::config::test_config());
+        let limit = crate::config::test_config().trainer.mutation_ops_limit.max(params.mutation_ops_min.max(1));
         assert_eq!((params.scenario, params.level, params.level_auto, params.mutation_ops_max), (Scenario::Exploration, snap_level(0.47), false, limit));
         assert_eq!(params.population, 42, "the stored population is restored (TCK-192)");
     }
@@ -1797,13 +1811,13 @@ mod tests {
     #[test]
     fn test_run_seed_nonce_draws_a_new_generation_one() {
         assert_eq!(run_seed("BASE", "run", None), seed_from_str("BASE:run"));
-        let genomes = |seed: u64| TrainerSim::new(small_params(), seed, 200).sandboxes.iter().map(|sb| sb.agent.genome.clone()).collect::<Vec<_>>();
+        let genomes = |seed: u64| TrainerSim::new(small_params(), seed, 200, crate::config::test_config()).sandboxes.iter().map(|sb| sb.agent.genome.clone()).collect::<Vec<_>>();
         let replay = genomes(run_seed("BASE", "run", None));
         assert_eq!(genomes(run_seed("BASE", "run", None)), replay, "same seed: identical run");
         let reset_a = genomes(run_seed("BASE", "run", Some(1)));
         let reset_b = genomes(run_seed("BASE", "run", Some(2)));
         assert_ne!(reset_a, replay);
         assert_ne!(reset_a, reset_b);
-        assert_eq!(TrainerRunState::of(&TrainerSim::new(small_params(), 99, 200)).seed, Some(99));
+        assert_eq!(TrainerRunState::of(&TrainerSim::new(small_params(), 99, 200, crate::config::test_config())).seed, Some(99));
     }
 }

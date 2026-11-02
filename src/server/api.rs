@@ -4,6 +4,8 @@ use std::sync::mpsc::Sender;
 use rusqlite::params;
 use crate::database::{delete_trainer_run, DbState};
 use crate::biology::dna::parse_genome;
+use crate::config::AppConfig;
+use crate::shared::{json_col, time};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrainerGenomeInput {
@@ -16,7 +18,7 @@ pub struct TrainerGenomeInput {
 pub fn handle_client_action(action: String, app_handle: AppHandle) -> Result<(), String> {
     let tx: State<Sender<String>> = app_handle.state();
     if let Err(e) = tx.send(action) {
-        eprintln!("[TAURI COMMAND] Error sending action to simulation thread: {}", e);
+        log::error!("sending an action to the engine thread failed: {}", e);
     }
     Ok(())
 }
@@ -51,7 +53,7 @@ pub fn get_registered_species(db: State<'_, DbState>) -> Result<serde_json::Valu
     for row in rows {
         match row {
             Ok(item) => list.push(item),
-            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
+            Err(e) => log::warn!("skipping unreadable row: {}", e),
         }
     }
     
@@ -78,7 +80,7 @@ pub fn get_trainer_runs(db: State<'_, DbState>) -> Result<serde_json::Value, Str
     for row in rows {
         match row {
             Ok(item) => list.push(item),
-            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
+            Err(e) => log::warn!("skipping unreadable row: {}", e),
         }
     }
 
@@ -105,7 +107,7 @@ pub fn get_trainer_population(db: State<'_, DbState>, run_id: String, limit: i32
     for row in rows {
         match row {
             Ok(item) => list.push(item),
-            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
+            Err(e) => log::warn!("skipping unreadable row: {}", e),
         }
     }
 
@@ -132,7 +134,7 @@ pub fn get_trainer_hof(db: State<'_, DbState>, run_id: String, limit: i32) -> Re
     for row in rows {
         match row {
             Ok(item) => list.push(item),
-            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
+            Err(e) => log::warn!("skipping unreadable row: {}", e),
         }
     }
 
@@ -150,13 +152,10 @@ pub fn save_trainer_generation(db: State<'_, DbState>, run_id: String, generatio
         params![run_id],
     ).map_err(|e| e.to_string())?;
 
-    let now_millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now_secs = time::now_secs();
 
     for (idx, gen_input) in population.iter().enumerate() {
-        let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_millis);
+        let unique_id = format!("{}-{}-{}-{}", run_id, generation, idx, now_secs);
         tx.execute(
             "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7)",
@@ -167,7 +166,7 @@ pub fn save_trainer_generation(db: State<'_, DbState>, run_id: String, generatio
                 gen_input.name,
                 gen_input.genome,
                 gen_input.fitness,
-                now_millis
+                now_secs
             ],
         ).map_err(|e| e.to_string())?;
     }
@@ -190,14 +189,11 @@ pub fn clear_trainer_history(db: State<'_, DbState>, run_id: String) -> Result<b
 pub fn apply_champion(db: State<'_, DbState>, genome: String) -> Result<bool, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
-    let now_millis = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    let now_secs = time::now_secs();
 
     conn.execute(
         "INSERT OR REPLACE INTO simulation_state (key, state_json, updated_at) VALUES ('progenitor_genome', ?1, ?2)",
-        params![genome, now_millis],
+        params![genome, now_secs],
     ).map_err(|e| e.to_string())?;
 
     Ok(true)
@@ -206,8 +202,8 @@ pub fn apply_champion(db: State<'_, DbState>, genome: String) -> Result<bool, St
 // async: runs on the async runtime instead of the main thread, so a burst of phenotype requests
 // (new genomes every trainer generation) cannot stall other commands and event delivery
 #[tauri::command]
-pub async fn get_fossil_phenotype(genome: String) -> Result<serde_json::Value, String> {
-    let pheno = parse_genome(&genome, None, None);
+pub async fn get_fossil_phenotype(genome: String, config: State<'_, AppConfig>) -> Result<serde_json::Value, String> {
+    let pheno = parse_genome(&genome, None, None, &config.brain);
     serde_json::to_value(&pheno).map_err(|e| e.to_string())
 }
 
@@ -230,8 +226,8 @@ pub fn get_catalogue_creatures(db: State<'_, DbState>) -> Result<serde_json::Val
         let synapse_weights_str: String = row.get(7)?;
         let created_at: String = row.get(8)?;
 
-        let methylations: serde_json::Value = serde_json::from_str(&methylations_str).unwrap_or(json!([]));
-        let synapse_weights: serde_json::Value = serde_json::from_str(&synapse_weights_str).unwrap_or(json!([]));
+        let methylations: serde_json::Value = json_col::decode(&methylations_str, "creature_catalogue.methylations").unwrap_or(json!([]));
+        let synapse_weights: serde_json::Value = json_col::decode(&synapse_weights_str, "creature_catalogue.synapse_weights").unwrap_or(json!([]));
 
         Ok(json!({
             "id": id,
@@ -250,7 +246,7 @@ pub fn get_catalogue_creatures(db: State<'_, DbState>) -> Result<serde_json::Val
     for row in rows {
         match row {
             Ok(item) => list.push(item),
-            Err(e) => eprintln!("[DB] Skipping unreadable row: {}", e),
+            Err(e) => log::warn!("skipping unreadable row: {}", e),
         }
     }
 
@@ -260,6 +256,7 @@ pub fn get_catalogue_creatures(db: State<'_, DbState>) -> Result<serde_json::Val
 #[tauri::command]
 pub fn save_to_catalogue(
     db: State<'_, DbState>,
+    config: State<'_, AppConfig>,
     id: String,
     name: String,
     genome: String,
@@ -270,7 +267,7 @@ pub fn save_to_catalogue(
 ) -> Result<bool, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
 
-    let pheno = parse_genome(&genome, None, None);
+    let pheno = parse_genome(&genome, None, None, &config.brain);
     let carnivory = pheno.carnivory as f64;
 
     let methylations_json = serde_json::to_string(&methylations).map_err(|e| e.to_string())?;
@@ -323,8 +320,8 @@ pub fn spawn_catalogue_creature_to_ocean(
     }).map_err(|e| e.to_string())?;
 
     if let Some(Ok((genome, methylations_str, synapse_weights_str))) = rows.next() {
-        let methylations: serde_json::Value = serde_json::from_str(&methylations_str).unwrap_or(json!([]));
-        let synapse_weights: serde_json::Value = serde_json::from_str(&synapse_weights_str).unwrap_or(json!([]));
+        let methylations: serde_json::Value = json_col::decode(&methylations_str, "creature_catalogue.methylations").unwrap_or(json!([]));
+        let synapse_weights: serde_json::Value = json_col::decode(&synapse_weights_str, "creature_catalogue.synapse_weights").unwrap_or(json!([]));
 
         let action = json!({
             "type": "SPAWN_CLONE",
@@ -368,11 +365,8 @@ pub fn add_catalogue_creature_to_training(
     }).map_err(|e| e.to_string())?;
 
     if let Some(Ok((name, genome, fitness, methylations, synapse_weights))) = rows.next() {
-        let now_millis = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let unique_id = format!("{}-{}-added-{}", run_id, generation, now_millis);
+        let now_ms = time::now_ms();
+        let unique_id = format!("{}-{}-added-{}", run_id, generation, now_ms);
 
         conn.execute(
             "INSERT INTO trainer_genomes (id, run_id, generation, name, genome, fitness, active, created_at, methylations, synapse_weights)
@@ -384,7 +378,7 @@ pub fn add_catalogue_creature_to_training(
                 name,
                 genome,
                 fitness,
-                (now_millis / 1000) as i64,
+                now_ms / 1000,
                 methylations,
                 synapse_weights
             ],

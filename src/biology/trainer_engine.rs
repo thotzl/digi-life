@@ -2,7 +2,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::shared::rng::{derive, SimRng};
-use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore, MutationChannelMode};
+use crate::biology::trainer_config::MutationChannelMode;
+use crate::config::AppConfig;
+use crate::shared::dto::{CreatureAgent, FoodSpore};
+use crate::shared::geom;
 use crate::biology::dna::{
     classify_mutation, generate_structured_genome, mutate_genome, mutate_genome_in_channel, parse_genome, GeneChannel, GenomeComposition, MutationTouch, OrganKind,
 };
@@ -106,8 +109,8 @@ pub fn draw_mutation_ops(ops_min: u32, ops_max: u32, rng: &mut SimRng) -> u32 {
 /// `mutate_genome` (operator mix `mutationOperators`), random immigrants a fresh structured genome (config
 /// `genomeComposition`; `random_genome` with the minimal criterion), elites an unmodified copy. Hof entries are mutated
 /// since TCK-174 (before: unmodified copies).
-pub fn breed_genome(parent_genome: &str, origin: SandboxOrigin, ops_min: u32, ops_max: u32, minimal_criterion: bool, rng: &mut SimRng) -> String {
-    breed_genome_traced(parent_genome, origin, ops_min, ops_max, minimal_criterion, MutationChannelMode::Mixed, rng).0
+pub fn breed_genome(parent_genome: &str, origin: SandboxOrigin, ops_min: u32, ops_max: u32, minimal_criterion: bool, rng: &mut SimRng, config: &AppConfig) -> String {
+    breed_genome_traced(parent_genome, origin, ops_min, ops_max, minimal_criterion, MutationChannelMode::Mixed, rng, config).0
 }
 
 /// Probability that a child in mutation channel mode "separate" mutates its body genes (otherwise its brain genes).
@@ -125,8 +128,8 @@ pub fn breed_genome_traced(
     minimal_criterion: bool,
     mode: MutationChannelMode,
     rng: &mut SimRng,
+    config: &AppConfig,
 ) -> (String, Option<MutationTouch>) {
-    let config = AppConfig::global();
     let mut genome = parent_genome.to_string();
     match origin {
         SandboxOrigin::Mutant | SandboxOrigin::Hof => {
@@ -137,8 +140,8 @@ pub fn breed_genome_traced(
             let mut touch = MutationTouch::default();
             for _ in 0..draw_mutation_ops(ops_min, ops_max, rng) {
                 let mutation = match channel {
-                    None => mutate_genome(&genome, &config.mutation_operators, rng),
-                    Some(c) => mutate_genome_in_channel(&genome, &config.mutation_operators, c, rng),
+                    None => mutate_genome(&genome, &config.genome.mutation_operators, rng),
+                    Some(c) => mutate_genome_in_channel(&genome, &config.genome.mutation_operators, c, rng),
                 };
                 if let Some(mutation) = mutation {
                     touch = touch.union(classify_mutation(&genome, &mutation));
@@ -147,7 +150,7 @@ pub fn breed_genome_traced(
             }
             return (genome, Some(touch));
         }
-        SandboxOrigin::Random => genome = random_genome(minimal_criterion, rng),
+        SandboxOrigin::Random => genome = random_genome(minimal_criterion, rng, config),
         SandboxOrigin::Elite => {}
     }
     (genome, None)
@@ -158,13 +161,12 @@ pub fn breed_genome_traced(
 /// food organ gene in every genome (`pFoodOrgan` = 1.0), redrawn up to `maxRedraws` times until
 /// `meets_minimal_criterion`; if no candidate passes, the last one is kept. All draws come from `rng`, so the result
 /// is deterministic.
-pub fn random_genome(minimal_criterion: bool, rng: &mut SimRng) -> String {
-    let config = AppConfig::global();
+pub fn random_genome(minimal_criterion: bool, rng: &mut SimRng, config: &AppConfig) -> String {
     if !minimal_criterion {
-        return generate_structured_genome(&config.genome_composition, rng);
+        return generate_structured_genome(&config.genome.genome_composition, rng);
     }
-    let criterion = &config.trainer_minimal_criterion;
-    let composition = GenomeComposition { p_food_organ: 1.0, ..config.genome_composition.clone() };
+    let criterion = &config.trainer.trainer_minimal_criterion;
+    let composition = GenomeComposition { p_food_organ: 1.0, ..config.genome.genome_composition.clone() };
     let mut genome = generate_structured_genome(&composition, rng);
     for _ in 0..criterion.max_redraws {
         if meets_minimal_criterion(&genome, config) {
@@ -182,14 +184,14 @@ const MOBILITY_CHECK_SEED: u64 = 0x4D43;
 /// and the creature moves: in a fixed standard-room trial (centre start, `MOBILITY_CHECK_SEED` layout) its own brain
 /// moves it at least `mobilityMinDistance` px within `mobilityTicks` ticks.
 pub fn meets_minimal_criterion(genome: &str, config: &AppConfig) -> bool {
-    let criterion = &config.trainer_minimal_criterion;
-    let phenotype = parse_genome(genome, None, None);
+    let criterion = &config.trainer.trainer_minimal_criterion;
+    let phenotype = parse_genome(genome, None, None, &config.brain);
     if !phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)) {
         return false;
     }
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, Scenario::Standard, None, None, &mut seeded(MOBILITY_CHECK_SEED));
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, Scenario::Standard.plugin(config), None, None, &mut seeded(MOBILITY_CHECK_SEED), config);
     for _ in 0..criterion.mobility_ticks {
-        step_trainer_sandbox_physics_with_config(&mut sb, config);
+        step_trainer_sandbox_physics(&mut sb, config);
         if sb.distance_traveled >= criterion.mobility_min_distance {
             return true;
         }
@@ -197,21 +199,20 @@ pub fn meets_minimal_criterion(genome: &str, config: &AppConfig) -> bool {
     false
 }
 
-/// Fresh sandbox in the chamber centre of `room` (a `Scenario` converts to its fixed room) with a random heading and the
-/// room's food layout; draws heading, food positions
-/// and the respawn seed from `rng` in this order (the trainer passes the trial's shared layout stream, TCK-174).
+/// Fresh sandbox in the chamber centre of `room` (a fixed room: `Scenario::plugin`) with a random heading and the
+/// room's food layout; draws heading, food positions and the respawn seed from `rng` in this order (the trainer passes the trial's shared layout stream, TCK-174).
 /// `methylations` / `synapse_weights` carry Lamarckian inheritance into the factory.
 pub fn init_rust_sandbox(
     id: u32,
     genome: &str,
     current_generation: u32,
     origin_type: SandboxOrigin,
-    room: impl Into<LevelScenario>,
+    room: LevelScenario,
     methylations: Option<&[f32]>,
     synapse_weights: Option<Vec<f32>>,
     rng: &mut SimRng,
+    config: &AppConfig,
 ) -> TrainerSandbox {
-    let room: LevelScenario = room.into();
     let size = room.chamber_size();
     let agent = spawn_creature(genome, SpawnOptions {
         id,
@@ -221,7 +222,7 @@ pub fn init_rust_sandbox(
         generation: current_generation,
         methylations,
         synapse_weights,
-    });
+    }, config);
 
     let mut sb = TrainerSandbox {
         id,
@@ -260,7 +261,7 @@ impl TrainerSandbox {
     /// fresh energy, age 0 and cleared neuron state, food respawned (learned synapse weights are kept).
     /// Draws heading, food positions and the respawn seed from `rng` in this order (the trainer passes the trial's
     /// shared layout stream, TCK-174).
-    pub fn reset_trial(&mut self, rng: &mut SimRng) {
+    pub fn reset_trial(&mut self, rng: &mut SimRng, config: &AppConfig) {
         let plugin = self.room;
         let size = plugin.chamber_size();
 
@@ -271,7 +272,7 @@ impl TrainerSandbox {
         self.agent.heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
         self.agent.bend_angle = 0.0;
         self.agent.omega_rot = 0.0;
-        self.agent.energy = start_energy(&self.agent.phenotype);
+        self.agent.energy = start_energy(&self.agent.phenotype, &config.metabolism);
         self.agent.age = 0;
         self.agent.has_eaten = false;
 
@@ -326,12 +327,8 @@ impl TrainerSandbox {
 }
 
 /// One tick of one sandbox. Deterministic without an RNG argument: respawns after eating use `sb.respawn_seed`.
-pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox) {
-    step_trainer_sandbox_physics_with_config(sb, crate::shared::types::AppConfig::global());
-}
-
-/// `step_trainer_sandbox_physics` with an explicit config (probes, e.g. Hebbian learning off; TCK-172).
-pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, app_config: &crate::shared::types::AppConfig) {
+/// Probes pass a modified config (e.g. Hebbian learning off; TCK-172).
+pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) {
     sb.epoch_ticks += 1;
     let plugin = sb.room;
     let size = plugin.chamber_size();
@@ -367,9 +364,7 @@ pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, app_con
     let num_foods = sb.foods.len();
     for target_idx in 0..num_foods {
         let f = &sb.foods[target_idx];
-        let dx = f.x - sb.agent.px;
-        let dy = f.y - sb.agent.py;
-        let dist = (dx*dx + dy*dy).sqrt();
+        let dist = geom::dist(sb.agent.px, sb.agent.py, f.x, f.y);
 
         let mean_radius = sb.agent.phenotype.spinal_harmonics.mean_radius;
         let is_meat = sb.foods[target_idx].type_id == 2;
@@ -391,7 +386,7 @@ pub fn step_trainer_sandbox_physics_with_config(sb: &mut TrainerSandbox, app_con
             sb.accumulated_yield += yield_val;
             sb.consumed_count += 1;
             // Refill with the shared food energy rule of the Ocean (TCK-178)
-            let gain = crate::biology::metabolism::food_energy(carnivory, is_meat, &app_config.rules);
+            let gain = crate::biology::metabolism::food_energy(carnivory, is_meat, &app_config.metabolism);
             sb.agent.energy = (sb.agent.energy + gain).min(sb.agent.phenotype.stomach_capacity);
 
             if !sb.finished {
@@ -427,8 +422,8 @@ mod tests {
     #[test]
     fn test_finish_tick_records_the_tick_of_first_consumption() {
         let mut rng = seeded(1);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
-        let size = Scenario::Standard.plugin().chamber_size();
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
+        let size = Scenario::Standard.plugin(crate::config::test_config()).chamber_size();
 
         // Park all food in the far corner so nothing can be eaten during the first ticks
         for f in &mut sb.foods {
@@ -436,14 +431,14 @@ mod tests {
             f.y = size - 10.0;
         }
         for _ in 0..5 {
-            step_trainer_sandbox_physics(&mut sb);
+            step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         }
         assert!(!sb.finished);
 
         // Drop the plant onto the creature: it is consumed on the 6th tick
         sb.foods[0].x = sb.agent.px;
         sb.foods[0].y = sb.agent.py;
-        step_trainer_sandbox_physics(&mut sb);
+        step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
 
         assert!(sb.finished);
         assert_eq!(sb.finish_tick, Some(6));
@@ -453,17 +448,17 @@ mod tests {
     fn test_trainer_drain_equals_the_ocean_energy_function() {
         // Trainer path: the shared `step_physics`. Ocean path: the same sensing and brain step followed by the Ocean's
         // `drain_energy(.., 1.0)` call. Same agent, tick and outputs → identical drain (trainer scale 1).
-        let mut config = AppConfig::global().clone();
+        let mut config = crate::config::test_config().clone();
         config.metabolism.trainer_metabolic_scale = 1.0;
         let mut rng = seeded(4);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
         for _ in 0..20 {
             let mut ocean = sb.agent.clone();
             let foods = sb.foods.clone();
             let start = sb.agent.energy;
             crate::biology::scenarios::step_physics(&mut sb, &config);
 
-            let size = Scenario::Standard.plugin().chamber_size();
+            let size = Scenario::Standard.plugin(crate::config::test_config()).chamber_size();
             let clock_val = 0.5 + 0.5 * crate::shared::fmath::sin((ocean.age as f32) * 0.1);
             let inputs = crate::shared::brain::compute_sensory_inputs(&ocean, clock_val, &foods, &[], size, size);
             let out = crate::shared::brain::execute_brain_with_learning(
@@ -473,7 +468,7 @@ mod tests {
                 &mut ocean.neuron_activations,
                 &mut ocean.synapse_weights,
                 &mut ocean.brain_runtime,
-                config.rules.hebbian_learning_rate_base,
+                config.brain.hebbian_learning_rate_base,
             );
             let drain = crate::biology::metabolism::drain_energy(&mut ocean, out[0], &config.metabolism, 1.0);
             assert!(drain > 0.0);
@@ -484,11 +479,11 @@ mod tests {
     #[test]
     fn test_room_metabolic_scale_multiplies_the_trainer_drain() {
         // Curriculum ramp (TCK-176): the room factor scales the drain; 0 = no drain, fixed rooms 1
-        let mut config = AppConfig::global().clone();
+        let mut config = crate::config::test_config().clone();
         config.metabolism.trainer_metabolic_scale = 1.0;
         let drain = |factor: f32| {
-            let room = Scenario::Standard.plugin().with_metabolic_scale(factor);
-            let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room, None, None, &mut seeded(13));
+            let room = Scenario::Standard.plugin(crate::config::test_config()).with_metabolic_scale(factor);
+            let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room, None, None, &mut seeded(13), crate::config::test_config());
             let start = sb.agent.energy;
             crate::biology::scenarios::step_physics(&mut sb, &config);
             start - sb.agent.energy
@@ -497,20 +492,20 @@ mod tests {
         assert!(full > 0.0);
         assert_eq!(none, 0.0);
         assert!((half - 0.5 * full).abs() <= 1e-5 * full.max(1.0), "half {} vs full {}", half, full);
-        assert_eq!(Scenario::Standard.plugin().metabolic_scale(), 1.0);
+        assert_eq!(Scenario::Standard.plugin(crate::config::test_config()).metabolic_scale(), 1.0);
     }
 
     #[test]
     fn test_starved_creature_stops_and_cannot_eat() {
         let mut rng = seeded(5);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
-        let size = Scenario::Standard.plugin().chamber_size();
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
+        let size = Scenario::Standard.plugin(crate::config::test_config()).chamber_size();
         for f in &mut sb.foods {
             f.x = size - 10.0;
             f.y = size - 10.0;
         }
         sb.agent.energy = 1e-6;
-        step_trainer_sandbox_physics(&mut sb);
+        step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         assert!(sb.starved);
         assert_eq!((sb.agent.energy, sb.agent.vx, sb.agent.vy), (0.0, 0.0, 0.0));
 
@@ -519,82 +514,82 @@ mod tests {
         sb.foods[0].x = px;
         sb.foods[0].y = py;
         for _ in 0..10 {
-            step_trainer_sandbox_physics(&mut sb);
+            step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         }
         assert_eq!((sb.agent.px, sb.agent.py), (px, py));
         assert!(!sb.finished && sb.consumed_count == 0);
         assert_eq!(sb.epoch_ticks, 11);
 
-        sb.reset_trial(&mut rng);
+        sb.reset_trial(&mut rng, crate::config::test_config());
         assert!(!sb.starved);
-        assert_eq!(sb.agent.energy, crate::biology::creature_factory::start_energy(&sb.agent.phenotype));
+        assert_eq!(sb.agent.energy, crate::biology::creature_factory::start_energy(&sb.agent.phenotype, &crate::config::test_config().metabolism));
     }
 
     #[test]
     fn test_eating_refills_energy_with_the_shared_food_rule() {
         let mut rng = seeded(6);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
-        let size = Scenario::Standard.plugin().chamber_size();
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
+        let size = Scenario::Standard.plugin(crate::config::test_config()).chamber_size();
         for f in &mut sb.foods {
             f.x = size - 10.0;
             f.y = size - 10.0;
         }
-        step_trainer_sandbox_physics(&mut sb);
+        step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         let before = sb.agent.energy;
-        assert!(before < crate::biology::creature_factory::start_energy(&sb.agent.phenotype), "energy drains every tick");
+        assert!(before < crate::biology::creature_factory::start_energy(&sb.agent.phenotype, &crate::config::test_config().metabolism), "energy drains every tick");
 
         sb.agent.energy = 10.0;
         sb.foods[0].x = sb.agent.px;
         sb.foods[0].y = sb.agent.py;
-        step_trainer_sandbox_physics(&mut sb);
+        step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         assert_eq!(sb.consumed_count, 1);
-        let gain = crate::biology::metabolism::food_energy(sb.agent.phenotype.carnivory, false, &AppConfig::global().rules);
+        let gain = crate::biology::metabolism::food_energy(sb.agent.phenotype.carnivory, false, &crate::config::test_config().metabolism);
         assert!(sb.agent.energy > 10.0 + gain - 1.0 && sb.agent.energy < 10.0 + gain, "energy {} after eating (gain {})", sb.agent.energy, gain);
     }
 
     #[test]
     fn test_reset_trial_restores_trial_start_state() {
         let mut rng = seeded(2);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Mutant, Scenario::Exploration, None, None, &mut rng);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Mutant, Scenario::Exploration.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
         for _ in 0..30 {
-            step_trainer_sandbox_physics(&mut sb);
+            step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         }
         let learned = sb.agent.synapse_weights.clone();
         sb.finished = true;
-        sb.reset_trial(&mut rng);
+        sb.reset_trial(&mut rng, crate::config::test_config());
 
-        let size = Scenario::Exploration.plugin().chamber_size();
+        let size = Scenario::Exploration.plugin(crate::config::test_config()).chamber_size();
         assert_eq!((sb.agent.px, sb.agent.py), (size / 2.0, size / 2.0));
         assert_eq!((sb.epoch_ticks, sb.distance_traveled, sb.finished), (0, 0.0, false));
         assert!(sb.agent.neuron_states.is_empty());
         assert_eq!(sb.agent.synapse_weights, learned);
         for f in &sb.foods {
-            assert!(((f.x - sb.agent.px).powi(2) + (f.y - sb.agent.py).powi(2)).sqrt() >= Scenario::Exploration.plugin().spawn_min_distance());
+            assert!(((f.x - sb.agent.px).powi(2) + (f.y - sb.agent.py).powi(2)).sqrt() >= Scenario::Exploration.plugin(crate::config::test_config()).spawn_min_distance());
         }
         assert_eq!((sb.sight_distance, sb.approach_min_distance), (None, f32::MAX));
     }
     #[test]
     fn test_age_increments_every_tick_and_resets_per_trial() {
         let mut rng = seeded(8);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
         assert_eq!(sb.agent.age, 0);
         for tick in 1..=7 {
-            step_trainer_sandbox_physics(&mut sb);
+            step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
             assert_eq!(sb.agent.age, tick);
         }
-        sb.reset_trial(&mut rng);
+        sb.reset_trial(&mut rng, crate::config::test_config());
         assert_eq!(sb.agent.age, 0);
     }
 
     #[test]
     fn test_respawn_depends_only_on_respawn_seed_catch_index_and_position() {
-        let mut a = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut seeded(9));
-        let mut b = init_rust_sandbox(2, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut seeded(9));
+        let mut a = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut seeded(9), crate::config::test_config());
+        let mut b = init_rust_sandbox(2, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut seeded(9), crate::config::test_config());
         assert_eq!(a.respawn_seed, b.respawn_seed);
         let eat_plant = |sb: &mut TrainerSandbox| {
             sb.foods[0].x = sb.agent.px;
             sb.foods[0].y = sb.agent.py;
-            step_trainer_sandbox_physics(sb);
+            step_trainer_sandbox_physics(sb, crate::config::test_config());
             (sb.foods[0].x, sb.foods[0].y)
         };
         // Same seed, same catch index, same position: same respawn point; the next catch draws a new point
@@ -604,7 +599,7 @@ mod tests {
         let second = eat_plant(&mut a);
         assert_ne!(first, second);
         // Another respawn seed draws other candidates
-        let mut c = init_rust_sandbox(3, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut seeded(10));
+        let mut c = init_rust_sandbox(3, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut seeded(10), crate::config::test_config());
         assert_ne!(first, eat_plant(&mut c));
     }
 
@@ -627,13 +622,13 @@ mod tests {
         let mut changed = [0; 3];
         for seed in 0..20 {
             for (i, origin) in [SandboxOrigin::Hof, SandboxOrigin::Mutant, SandboxOrigin::Elite].into_iter().enumerate() {
-                changed[i] += (breed_genome(WILDTYPE_GENOME, origin, 1, 3, false, &mut seeded(seed)) != WILDTYPE_GENOME) as usize;
+                changed[i] += (breed_genome(WILDTYPE_GENOME, origin, 1, 3, false, &mut seeded(seed), crate::config::test_config()) != WILDTYPE_GENOME) as usize;
             }
         }
         assert!(changed[0] >= 15 && changed[1] >= 15, "{:?}", changed);
         assert_eq!(changed[2], 0);
         // Hof and mutant follow the same rule: same stream, same child
-        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Hof, 1, 3, false, &mut seeded(3)), breed_genome(WILDTYPE_GENOME, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(3)));
+        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Hof, 1, 3, false, &mut seeded(3), crate::config::test_config()), breed_genome(WILDTYPE_GENOME, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(3), crate::config::test_config()));
     }
 
     fn food_distance(sb: &TrainerSandbox, f: &FoodSpore) -> f32 {
@@ -644,22 +639,22 @@ mod tests {
     fn test_spawn_distance_identical_for_first_trial_later_trials_and_respawns() {
         // RV-S08: one plugin distance for trial 0, re-trials and respawns after eating
         for scenario in [Scenario::Standard, Scenario::Exploration] {
-            let min_dist = scenario.plugin().spawn_min_distance();
+            let min_dist = scenario.plugin(crate::config::test_config()).spawn_min_distance();
             let expected = match scenario {
-                Scenario::Standard => AppConfig::global().trainer_spawn_min_distance.standard,
-                _ => AppConfig::global().trainer_spawn_min_distance.exploration,
+                Scenario::Standard => crate::config::test_config().trainer.trainer_spawn_min_distance.standard,
+                _ => crate::config::test_config().trainer.trainer_spawn_min_distance.exploration,
             };
             assert_eq!(min_dist, expected);
             for seed in 0..20 {
                 let mut rng = seeded(100 + seed);
-                let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, scenario, None, None, &mut rng);
+                let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, scenario.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
                 assert!(sb.foods.iter().all(|f| food_distance(&sb, f) >= min_dist), "{:?} trial 0", scenario);
-                sb.reset_trial(&mut rng);
+                sb.reset_trial(&mut rng, crate::config::test_config());
                 assert!(sb.foods.iter().all(|f| food_distance(&sb, f) >= min_dist), "{:?} trial 1", scenario);
                 // Respawn after a catch at the creature's position
                 sb.foods[0].x = sb.agent.px;
                 sb.foods[0].y = sb.agent.py;
-                step_trainer_sandbox_physics(&mut sb);
+                step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
                 assert_eq!(sb.consumed_count, 1);
                 assert!(food_distance(&sb, &sb.foods[0]) >= min_dist, "{:?} respawn", scenario);
             }
@@ -669,7 +664,7 @@ mod tests {
     #[test]
     fn test_approach_tracking_opens_in_sensor_range_and_restarts_after_a_catch() {
         let mut rng = seeded(12);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard, None, None, &mut rng);
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Scenario::Standard.plugin(crate::config::test_config()), None, None, &mut rng, crate::config::test_config());
         let range = food_sense_range(&sb.agent.phenotype);
         assert!(range > 0.0, "wildtype has a food-sensing organ");
         let (cx, cy) = (sb.agent.px, sb.agent.py);
@@ -702,27 +697,27 @@ mod tests {
         sb.foods[0].y = sb.agent.py;
         sb.foods[1].x = sb.agent.px;
         sb.foods[1].y = sb.agent.py;
-        step_trainer_sandbox_physics(&mut sb);
+        step_trainer_sandbox_physics(&mut sb, crate::config::test_config());
         assert!(sb.consumed_count >= 1);
         assert!(sb.approach_fraction() < 0.5);
     }
 
     #[test]
     fn test_minimal_criterion_yields_food_organ_and_mobility() {
-        let config = AppConfig::global();
+        let config = crate::config::test_config();
         let mut passed = 0;
         for seed in 0..40 {
-            let genome = random_genome(true, &mut seeded(seed));
+            let genome = random_genome(true, &mut seeded(seed), crate::config::test_config());
             // Deterministic: same stream, same genome
-            assert_eq!(genome, random_genome(true, &mut seeded(seed)));
-            let phenotype = parse_genome(&genome, None, None);
+            assert_eq!(genome, random_genome(true, &mut seeded(seed), crate::config::test_config()));
+            let phenotype = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             assert!(phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)), "seed {} without food organ", seed);
             passed += meets_minimal_criterion(&genome, config) as usize;
         }
         assert_eq!(passed, 40, "every minimal-criterion genome moves");
         // Off: the plain structured generator (same stream as before TCK-175)
-        assert_eq!(random_genome(false, &mut seeded(3)), generate_structured_genome(&config.genome_composition, &mut seeded(3)));
-        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Random, 1, 3, true, &mut seeded(5)), random_genome(true, &mut seeded(5)));
+        assert_eq!(random_genome(false, &mut seeded(3), crate::config::test_config()), generate_structured_genome(&config.genome.genome_composition, &mut seeded(3)));
+        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Random, 1, 3, true, &mut seeded(5), crate::config::test_config()), random_genome(true, &mut seeded(5), crate::config::test_config()));
     }
 
     #[test]
@@ -731,9 +726,9 @@ mod tests {
         let organless = (0..20)
             .map(|seed| crate::biology::probes::letter_soup_genomes(seed, 50))
             .flatten()
-            .find(|g| parse_genome(g, None, None).organelles.is_empty())
+            .find(|g| parse_genome(g, None, None, &crate::config::test_config().brain).organelles.is_empty())
             .expect("letter soup contains organless genomes");
-        assert!(!meets_minimal_criterion(&organless, AppConfig::global()));
+        assert!(!meets_minimal_criterion(&organless, crate::config::test_config()));
     }
 
     #[test]
@@ -741,17 +736,17 @@ mod tests {
         use crate::biology::dna::MutationChannel;
         let mut channels = std::collections::BTreeMap::new();
         for seed in 0..80 {
-            let parent = random_genome(false, &mut seeded(900 + seed));
-            let (mixed, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Mixed, &mut seeded(seed));
-            assert_eq!(mixed, breed_genome(&parent, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(seed)), "mixed draws exactly like breed_genome");
+            let parent = random_genome(false, &mut seeded(900 + seed), crate::config::test_config());
+            let (mixed, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Mixed, &mut seeded(seed), crate::config::test_config());
+            assert_eq!(mixed, breed_genome(&parent, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(seed), crate::config::test_config()), "mixed draws exactly like breed_genome");
             assert!(touch.is_some());
-            let (_, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Separate, &mut seeded(seed));
+            let (_, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Separate, &mut seeded(seed), crate::config::test_config());
             let channel = touch.expect("mutated origin").channel();
             assert_ne!(channel, MutationChannel::Both, "separate child touched both channels");
             *channels.entry(format!("{:?}", channel)).or_insert(0) += 1;
         }
         assert!(channels.get("Body").copied().unwrap_or(0) > 20 && channels.get("Brain").copied().unwrap_or(0) > 20, "{:?}", channels);
         // Unmutated origins carry no channel
-        assert_eq!(breed_genome_traced(WILDTYPE_GENOME, SandboxOrigin::Elite, 1, 3, false, MutationChannelMode::Separate, &mut seeded(1)).1, None);
+        assert_eq!(breed_genome_traced(WILDTYPE_GENOME, SandboxOrigin::Elite, 1, 3, false, MutationChannelMode::Separate, &mut seeded(1), crate::config::test_config()).1, None);
     }
 }

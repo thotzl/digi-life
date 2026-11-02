@@ -38,7 +38,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-a
 
 - **Migrations** are `CREATE TABLE IF NOT EXISTS` plus a manual column check; `ALTER TABLE` errors are discarded (RV-D02). `MODEL_VERSION` versions the simulation model (reset, not migration), not the table schema.
 - **No retention for Ocean tables:** `species_records` and `simulation_history` grow without bound (RV-D03); `trainer_genomes` is bounded per run (TCK-183), but the number of runs is not.
-- **Timestamps:** `species_records` times and `trainer_genomes.created_at` in seconds (variable named `now_millis`); `simulation_state.updated_at` ms (engine) and s (`apply_champion`); catalogue/sessions SQLite text (RV-D04).
+- **Timestamps:** `species_records` times and `trainer_genomes.created_at` in seconds; `simulation_state.updated_at` ms (engine) and s (`apply_champion`); catalogue/sessions SQLite text (RV-D04). All come from `shared::time` (`now_secs`, `now_ms`: the name states the unit, TCK-198). JSON vector columns (methylations, synapse weights) are written and read through `shared::json_col`, which logs a failed encode/decode instead of silently using the default (TCK-198).
 - **Silent JSON fallbacks:** corrupt methylation/synapse JSON is replaced by defaults (`unwrap_or_default`) (RV-D05).
 - **Dead state:** `progenitor_genome` is written by `apply_champion` and never read (RV-D06).
 

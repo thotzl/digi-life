@@ -1,6 +1,26 @@
-use crate::shared::types::{CreatureAgent, FoodSpore, AppConfig};
+use serde::{Deserialize, Serialize};
+
+use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::fmath;
+use crate::shared::geom;
+
+/// Config section `physics`: locomotion speed band, turning, drag and wall contact (TCK-150, TCK-180).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PhysicsConfig {
+    /// Terminal speed at full thrust of the slowest / fastest genome (px/tick); thrust is derived from it (TCK-150)
+    pub locomotion_speed_min: f32,
+    pub locomotion_speed_max: f32,
+    /// Heading change per tick per unit bend independent of speed (rad), allows turning at rest (TCK-150)
+    pub turn_rate_at_rest: f32,
+    pub drag_forward_coefficient: f32,
+    pub drag_forward_stiffness_decay: f32,
+    /// Forward drag added per organ
+    pub receptor_ballast_scale: f32,
+    /// Share of the speed kept when bouncing off a wall or reef
+    pub elastic_wall_restitution: f32,
+}
 
 /// Kinematic snapshot of a creature that can push food spores (avoids cloning whole agents).
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +59,7 @@ pub fn step_food_spore_physics(
         let push_radius = mean_radius + spore_radius;
         let pdx = pellet.x - agent.px;
         let pdy = pellet.y - agent.py;
-        let pd = (pdx * pdx + pdy * pdy).sqrt();
+        let pd = geom::dist(agent.px, agent.py, pellet.x, pellet.y);
 
         if pd < push_radius && pd > 0.1 {
             let overlap = push_radius - pd;
@@ -118,8 +138,8 @@ pub fn locomotion_drive(phenotype: &crate::biology::dna::CreaturePhenotype) -> f
 }
 
 /// Terminal speed at full thrust (px/tick): `locomotionSpeedMin + (locomotionSpeedMax - locomotionSpeedMin) * g`.
-pub fn target_terminal_speed(phenotype: &crate::biology::dna::CreaturePhenotype, app_config: &AppConfig) -> f32 {
-    let (min, max) = (app_config.rules.locomotion_speed_min, app_config.rules.locomotion_speed_max);
+pub fn target_terminal_speed(phenotype: &crate::biology::dna::CreaturePhenotype, physics: &PhysicsConfig) -> f32 {
+    let (min, max) = (physics.locomotion_speed_min, physics.locomotion_speed_max);
     min + (max - min) * locomotion_drive(phenotype)
 }
 
@@ -129,12 +149,12 @@ pub fn body_mass(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
 }
 
 /// Mass and forward drag coefficient of a body (receptor ballast raises drag, stiffness lowers it).
-fn mass_and_drag(phenotype: &crate::biology::dna::CreaturePhenotype, app_config: &AppConfig) -> (f32, f32) {
+fn mass_and_drag(phenotype: &crate::biology::dna::CreaturePhenotype, physics: &PhysicsConfig) -> (f32, f32) {
     let mean_radius = phenotype.spinal_harmonics.mean_radius;
     let mass = body_mass(phenotype);
-    let receptor_ballast = phenotype.organelles.len() as f32 * app_config.rules.receptor_ballast_scale;
-    let drag_forward = (mean_radius * app_config.rules.drag_forward_coefficient + receptor_ballast)
-        * (1.0 - phenotype.stiffness * app_config.rules.drag_forward_stiffness_decay);
+    let receptor_ballast = phenotype.organelles.len() as f32 * physics.receptor_ballast_scale;
+    let drag_forward = (mean_radius * physics.drag_forward_coefficient + receptor_ballast)
+        * (1.0 - phenotype.stiffness * physics.drag_forward_stiffness_decay);
     (mass, drag_forward)
 }
 
@@ -149,14 +169,14 @@ pub fn step_creature_kinematics(
     agent: &mut CreatureAgent,
     out_thrust: f32,
     out_left: f32,
-    app_config: &AppConfig,
+    physics: &PhysicsConfig,
     obstacles: &[ProceduralObstacle],
     world_width: f32,
     world_height: f32,
 ) -> bool {
     // 1. Thrust from the genome's speed band (TCK-150): full thrust reaches the target terminal speed
-    let (mass, drag_forward) = mass_and_drag(&agent.phenotype, app_config);
-    let thrust_mag = thrust_for_terminal_speed(target_terminal_speed(&agent.phenotype, app_config), mass, drag_forward);
+    let (mass, drag_forward) = mass_and_drag(&agent.phenotype, physics);
+    let thrust_mag = thrust_for_terminal_speed(target_terminal_speed(&agent.phenotype, physics), mass, drag_forward);
     let net_thrust_force = out_thrust * thrust_mag;
 
     // 2. Apply native boundary reflections and physics kinematics
@@ -166,7 +186,7 @@ pub fn step_creature_kinematics(
         out_left,
         mass,
         drag_forward,
-        app_config.rules.turn_rate_at_rest,
+        physics,
         0.0,
         0.0,
         obstacles,
@@ -190,7 +210,7 @@ pub fn apply_creature_physics(
     out_bending: f32,
     mass: f32,
     drag_forward: f32,
-    turn_rate_at_rest: f32,
+    physics: &PhysicsConfig,
     external_force_x: f32,
     external_force_y: f32,
     obstacles: &[ProceduralObstacle],
@@ -216,7 +236,7 @@ pub fn apply_creature_physics(
 
     // Turning: a speed-coupled part (curvature) plus a base rate that also works at rest (TCK-150)
     let curvature_factor = 0.015;
-    let delta_heading = agent.bend_angle * (v_forward * curvature_factor + turn_rate_at_rest);
+    let delta_heading = agent.bend_angle * (v_forward * curvature_factor + physics.turn_rate_at_rest);
     agent.heading_angle += delta_heading;
     agent.heading_angle = fmath::atan2(fmath::sin(agent.heading_angle), fmath::cos(agent.heading_angle));
 
@@ -240,10 +260,9 @@ pub fn apply_creature_physics(
     agent.vx += external_force_x;
     agent.vy += external_force_y;
 
-    // Boundary bounces (Hard boundaries, aligned with config rules!)
-    let app_config = crate::shared::types::AppConfig::global();
+    // Boundary bounces (hard boundaries, config `physics.elasticWallRestitution`)
     let mean_radius = pheno.spinal_harmonics.mean_radius;
-    let restitution = app_config.rules.elastic_wall_restitution;
+    let restitution = physics.elastic_wall_restitution;
     let mut hit_wall = false;
 
     // Wall contact (TCK-180): velocity and heading are reflected at the wall normal when moving into the wall
@@ -312,14 +331,15 @@ mod tests {
     fn agent_moving(px: f32, py: f32, heading_angle: f32, speed: f32) -> CreatureAgent {
         let mut agent = spawn_creature("EYEABCDEFEN", SpawnOptions {
             id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None,
-        });
+        }, crate::config::test_config());
         agent.vx = speed * heading_angle.cos();
         agent.vy = speed * heading_angle.sin();
         agent
     }
 
     fn step_without_forces(agent: &mut CreatureAgent, size: f32) -> bool {
-        apply_creature_physics(agent, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, &[], size, size)
+        let physics = PhysicsConfig { turn_rate_at_rest: 0.0, ..crate::config::test_config().physics.clone() };
+        apply_creature_physics(agent, 0.0, 0.0, 1.0, 0.0, &physics, 0.0, 0.0, &[], size, size)
     }
 
     #[test]
@@ -403,14 +423,14 @@ mod tests {
 
     #[test]
     fn test_full_thrust_terminal_speed_stays_in_config_band() {
-        let config = AppConfig::global();
-        let (min, max) = (config.rules.locomotion_speed_min, config.rules.locomotion_speed_max);
+        let config = crate::config::test_config();
+        let (min, max) = (config.physics.locomotion_speed_min, config.physics.locomotion_speed_max);
         // Slowest and fastest locomotion traits, each on light/heavy and few/many-organ bodies
         for &(pulse, stiffness, parapodia, limbs, expected) in &[(0.0015, 0.15, 0.0, false, min), (0.009, 1.0, 0.45, true, max), (0.005, 0.6, 0.2, false, f32::NAN)] {
             for &(radius, length, organs) in &[(16.0, 90.0, 2), (28.0, 200.0, 2), (16.0, 200.0, 12), (28.0, 90.0, 12)] {
                 let mut agent = body(pulse, stiffness, parapodia, limbs, radius, length, organs);
                 for _ in 0..1800 {
-                    step_creature_kinematics(&mut agent, 1.0, 0.0, config, &[], 1.0e7, 1.0e7);
+                    step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], 1.0e7, 1.0e7);
                 }
                 let v = speed_of(&agent);
                 assert!(v >= min * 0.98 && v <= max * 1.02, "terminal speed {v} outside [{min}, {max}] (pulse {pulse}, r {radius}, L {length}, organs {organs})");
@@ -431,23 +451,23 @@ mod tests {
 
     #[test]
     fn test_bending_turns_the_heading_at_rest() {
-        let config = AppConfig::global();
+        let config = crate::config::test_config();
         let mut agent = agent_moving(500.0, 500.0, 0.0, 0.0);
         for _ in 0..30 {
-            step_creature_kinematics(&mut agent, 0.0, 1.0, config, &[], 1000.0, 1000.0);
+            step_creature_kinematics(&mut agent, 0.0, 1.0, &config.physics, &[], 1000.0, 1000.0);
         }
         assert_eq!(speed_of(&agent), 0.0, "bending alone must not move the body");
         assert!(agent.heading_angle > 0.1, "full bend at rest must turn the heading, got {}", agent.heading_angle);
         let mut mirrored = agent_moving(500.0, 500.0, 0.0, 0.0);
         for _ in 0..30 {
-            step_creature_kinematics(&mut mirrored, 0.0, -1.0, config, &[], 1000.0, 1000.0);
+            step_creature_kinematics(&mut mirrored, 0.0, -1.0, &config.physics, &[], 1000.0, 1000.0);
         }
         assert!((mirrored.heading_angle + agent.heading_angle).abs() < 1e-5, "turning at rest must be symmetric");
     }
 
     #[test]
     fn test_wall_contact_reflects_heading_and_forced_thrust_leaves_every_wall() {
-        let config = AppConfig::global();
+        let config = crate::config::test_config();
         let size = 1000.0;
         let r = agent_moving(0.0, 0.0, 0.0, 0.0).phenotype.spinal_harmonics.mean_radius;
         let pi = std::f32::consts::PI;
@@ -462,7 +482,7 @@ mod tests {
                 let mut contact = false;
                 let mut freed = false;
                 for _ in 0..600 {
-                    if step_creature_kinematics(&mut agent, 1.0, 0.0, config, &[], size, size) && !contact {
+                    if step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], size, size) && !contact {
                         contact = true;
                         let (hx, hy) = (agent.heading_angle.cos(), agent.heading_angle.sin());
                         assert!(hx * nx + hy * ny > 0.0, "heading must point away from the wall after contact (normal {nx},{ny}, angle {angle_deg})");
@@ -480,7 +500,7 @@ mod tests {
 
     #[test]
     fn test_reef_contact_reflects_heading_like_a_wall() {
-        let config = AppConfig::global();
+        let config = crate::config::test_config();
         let reef = ProceduralObstacle { id: 1, x: 600.0, y: 500.0, radius: 60.0, obstacle_type: "rock".to_string(), color: String::new(), vertices: Vec::new() };
         let r = agent_moving(0.0, 0.0, 0.0, 0.0).phenotype.spinal_harmonics.mean_radius;
         // Head-on and oblique approach towards the reef centre
@@ -489,7 +509,7 @@ mod tests {
             let mut agent = agent_moving(start_x, reef.y + offset_y, 0.0, 0.0);
             let mut contact = false;
             for _ in 0..300 {
-                if step_creature_kinematics(&mut agent, 1.0, 0.0, config, std::slice::from_ref(&reef), 1.0e4, 1.0e4) && !contact {
+                if step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, std::slice::from_ref(&reef), 1.0e4, 1.0e4) && !contact {
                     contact = true;
                     let (nx, ny) = ((agent.px - reef.x), (agent.py - reef.y));
                     let (hx, hy) = (agent.heading_angle.cos(), agent.heading_angle.sin());

@@ -1,76 +1,106 @@
 {
-  "seed": "ALIFE_BASIN_77A",
-  "targetPopulation": 25,
-  "foodSporeCount": 300,
-  "maxCreatures": 45,
-  "trainerPopulation": 100,
-  "trainerGenomeRetentionPerRun": 200,
-  "trainerTrials": 8,
-  "trainerTrialAggregation": "mean",
-  "mutationOpsMin": 1,
-  "mutationOpsMax": 3,
-  "mutationOneFifthRule": true,
-  "mutationOpsLimit": 8,
-  "mutationChannels": "mixed",
-  "trainerLayoutPolicy": "rotate",
-  "thalamusSumActivation": "tanh",
-  "trainerFitness": {
-    "firstCatchBonus": 0.5,
-    "approachBonus": 0.3
+  "core": {
+    "seed": "ALIFE_BASIN_77A"
   },
-  "trainerSpawnMinDistance": {
-    "standard": 200.0,
-    "exploration": 500.0
+  "ocean": {
+    "targetPopulation": 25,
+    "foodSporeCount": 300,
+    "maxCreatures": 45,
+    "creatureMaxAgeTicks": 36000,
+    "creatureLifespanMatureAgeMultiplier": 12,
+    "creatureMatureAgeFloor": 600,
+    "lamarckianAssimilationAgeFloor": 1200,
+    "thermalStressPenaltyScale": 0.0012,
+    "photosynthesisEnergyGain": 0.20,
+    "grazingRadiusMultiplier": 1.5,
+    "grazingRadiusOffset": 4.0,
+    "bitingCarnivoryThreshold": 0.35,
+    "bitingRadiusMultiplier": 1.6,
+    "bitingRadiusOffset": 5.0,
+    "biteCooldownTicks": 60,
+    "reproductionStomachThresholdFloor": 0.60,
+    "reproductionSplitLossRatio": 0.4,
+    "reproductionRecoilVelocityScale": 15.0,
+    "decompositionSporeMin": 1,
+    "decompositionSporeMax": 5,
+    "decompositionSizeRatio": 1200
   },
-  "trainerCurriculum": {
-    "upper": 0.3,
-    "lower": 0.1,
-    "step": 0.1,
-    "startLevel": 0.0,
-    "rehearsalShare": 0.0,
-    "rehearsalLevel": 0.0,
-    "metabolicRampStart": 1.0,
-    "chamberSize": {
-      "standard": 1000.0,
-      "exploration": 3500.0
+  "trainer": {
+    "trainerPopulation": 100,
+    "trainerGenomeRetentionPerRun": 200,
+    "trainerTrials": 8,
+    "trainerTrialAggregation": "mean",
+    "mutationOpsMin": 1,
+    "mutationOpsMax": 3,
+    "mutationOneFifthRule": true,
+    "mutationOpsLimit": 8,
+    "mutationChannels": "mixed",
+    "trainerLayoutPolicy": "rotate",
+    "trainerFitness": {
+      "firstCatchBonus": 0.5,
+      "approachBonus": 0.3
     },
-    "epochTicks": {
-      "standard": 300,
-      "exploration": 1800
+    "trainerSpawnMinDistance": {
+      "standard": 200.0,
+      "exploration": 500.0
     },
-    "foodPerType": {
-      "standard": 1,
-      "exploration": 3
+    "trainerCurriculum": {
+      "upper": 0.3,
+      "lower": 0.1,
+      "step": 0.1,
+      "startLevel": 0.0,
+      "rehearsalShare": 0.0,
+      "rehearsalLevel": 0.0,
+      "metabolicRampStart": 1.0,
+      "chamberSize": {
+        "standard": 1000.0,
+        "exploration": 3500.0
+      },
+      "epochTicks": {
+        "standard": 300,
+        "exploration": 1800
+      },
+      "foodPerType": {
+        "standard": 1,
+        "exploration": 3
+      }
+    },
+    "trainerMinimalCriterion": {
+      "enabled": true,
+      "maxRedraws": 50,
+      "mobilityTicks": 100,
+      "mobilityMinDistance": 5.0
     }
   },
-  "trainerMinimalCriterion": {
-    "enabled": true,
-    "maxRedraws": 50,
-    "mobilityTicks": 100,
-    "mobilityMinDistance": 5.0
+  "genome": {
+    "lamarckianAssimilationChance": 0.25,
+    "genomeComposition": {
+      "targetLength": 256,
+      "payloadLengthMin": 8,
+      "payloadLengthMax": 16,
+      "organCountMin": 1,
+      "organCountMax": 3,
+      "pFoodOrgan": 0.9,
+      "foodOrganEyeShare": 0.5,
+      "pHox": 0.3,
+      "neuCountMin": 1,
+      "neuCountMax": 3,
+      "syCountMin": 0,
+      "syCountMax": 2
+    },
+    "mutationOperators": {
+      "creep": 0.6,
+      "point": 0.15,
+      "insertion": 0.05,
+      "deletion": 0.05,
+      "geneDuplication": 0.075,
+      "geneDeletion": 0.075,
+      "creepMaxStep": 2
+    }
   },
-  "genomeComposition": {
-    "targetLength": 256,
-    "payloadLengthMin": 8,
-    "payloadLengthMax": 16,
-    "organCountMin": 1,
-    "organCountMax": 3,
-    "pFoodOrgan": 0.9,
-    "foodOrganEyeShare": 0.5,
-    "pHox": 0.3,
-    "neuCountMin": 1,
-    "neuCountMax": 3,
-    "syCountMin": 0,
-    "syCountMax": 2
-  },
-  "mutationOperators": {
-    "creep": 0.6,
-    "point": 0.15,
-    "insertion": 0.05,
-    "deletion": 0.05,
-    "geneDuplication": 0.075,
-    "geneDeletion": 0.075,
-    "creepMaxStep": 2
+  "brain": {
+    "thalamusSumActivation": "tanh",
+    "hebbianLearningRateBase": 0.00015
   },
   "metabolism": {
     "bodyCostPerMass": 2.241e-5,
@@ -78,41 +108,21 @@
     "neuronCost": 1.639e-5,
     "activityCost": 1.84e-4,
     "movementCostPerMass": 2.636e-5,
-    "trainerMetabolicScale": 1.0
-  },
-  "rules": {
-    "creatureMaxAgeTicks": 36000,
-    "creatureLifespanMatureAgeMultiplier": 12,
-    "creatureMatureAgeFloor": 600,
-    "lamarckianAssimilationAgeFloor": 1200,
-    "lamarckianAssimilationChance": 0.25,
-    "thermalStressPenaltyScale": 0.0012,
-    "photosynthesisEnergyGain": 0.20,
-    "grazingRadiusMultiplier": 1.5,
-    "grazingRadiusOffset": 4.0,
-    "grazingEfficiencyHerbivoreScale": 1.50,
-    "bitingCarnivoryThreshold": 0.35,
-    "bitingRadiusMultiplier": 1.6,
-    "bitingRadiusOffset": 5.0,
-    "bitingEnergyDamage": 35.0,
-    "bitingBaseEnergyGain": 35.0,
-    "bitingEfficiencyCarnivoreScale": 1.25,
-    "biteCooldownTicks": 60,
+    "trainerMetabolicScale": 1.0,
+    "creatureStartStomachRatio": 0.60,
     "foodSporeEnergy": 15.0,
-    "reproductionStomachThresholdFloor": 0.60,
-    "reproductionSplitLossRatio": 0.4,
-    "reproductionRecoilVelocityScale": 15.0,
+    "grazingEfficiencyHerbivoreScale": 1.50,
+    "bitingEfficiencyCarnivoreScale": 1.25,
+    "bitingBaseEnergyGain": 35.0,
+    "bitingEnergyDamage": 35.0
+  },
+  "physics": {
     "locomotionSpeedMin": 1.0,
     "locomotionSpeedMax": 5.0,
     "turnRateAtRest": 0.008,
     "dragForwardCoefficient": 0.015,
     "dragForwardStiffnessDecay": 0.3,
     "receptorBallastScale": 0.18,
-    "elasticWallRestitution": 0.5,
-    "hebbianLearningRateBase": 0.00015,
-    "decompositionSporeMin": 1,
-    "decompositionSporeMax": 5,
-    "decompositionSizeRatio": 1200,
-    "creatureStartStomachRatio": 0.60
+    "elasticWallRestitution": 0.5
   }
 }

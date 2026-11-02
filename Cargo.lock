@@ -3045,6 +3045,7 @@ name = "src-tauri"
 version = "1.12.29"
 dependencies = [
  "libm",
+ "log",
  "rand",
  "rand_chacha",
  "rayon",

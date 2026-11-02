@@ -1,7 +1,10 @@
 use crate::biology::trainer_engine::TrainerSandbox;
 use crate::shared::fmath;
 use crate::shared::rng::SimRng;
-use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore, TrainerFitnessConfig};
+use crate::biology::trainer_config::TrainerFitnessConfig;
+use crate::config::AppConfig;
+use crate::shared::dto::{CreatureAgent, FoodSpore};
+use crate::shared::geom;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -49,14 +52,8 @@ impl Scenario {
 
     /// Room plugin of a fixed room. For `Curriculum` the room at config `trainerCurriculum.startLevel` without
     /// metabolic ramp; the trainer builds the curriculum rooms itself (`TrainerSim::room`).
-    pub fn plugin(self) -> LevelScenario {
-        LevelScenario::at(self.fixed_level().unwrap_or(AppConfig::global().trainer_curriculum.start_level))
-    }
-}
-
-impl From<Scenario> for LevelScenario {
-    fn from(scenario: Scenario) -> Self {
-        scenario.plugin()
+    pub fn plugin(self, config: &AppConfig) -> LevelScenario {
+        LevelScenario::at(self.fixed_level().unwrap_or(config.trainer.trainer_curriculum.start_level), config)
     }
 }
 
@@ -95,7 +92,7 @@ pub fn spawn_at_min_distance(rng: &mut SimRng, chamber_size: f32, from: (f32, f3
     for _ in 0..max_tries {
         let x = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
         let y = 25.0 + rng.gen_range(0.0..(chamber_size - 50.0));
-        let dist = ((x - from.0) * (x - from.0) + (y - from.1) * (y - from.1)).sqrt();
+        let dist = geom::dist(from.0, from.1, x, y);
         if dist >= min_dist {
             return (x, y);
         }
@@ -114,7 +111,7 @@ pub fn target_distance_by_diet(agent: &CreatureAgent, foods: &[FoodSpore]) -> f3
         foods
             .iter()
             .filter(|f| f.type_id == type_id)
-            .map(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt())
+            .map(|f| geom::dist(agent.px, agent.py, f.x, f.y))
             .fold(f32::MAX, f32::min)
     };
     let (dist_plant, dist_meat) = (nearest(1), nearest(2));
@@ -184,15 +181,12 @@ pub struct LevelScenario {
 }
 
 impl LevelScenario {
-    /// Room at `level` (clamped to [0, 1]; non-finite = 0) from the global config, metabolic factor 1.
-    pub fn at(level: f32) -> Self {
-        Self::from_config(level, AppConfig::global())
-    }
-
-    pub fn from_config(level: f32, config: &AppConfig) -> Self {
+    /// Room at `level` (clamped to [0, 1]; non-finite = 0) from config `trainerCurriculum` and
+    /// `trainerSpawnMinDistance`, metabolic factor 1.
+    pub fn at(level: f32, config: &AppConfig) -> Self {
         let d = if level.is_finite() { level.clamp(0.0, 1.0) } else { 0.0 };
-        let c = &config.trainer_curriculum;
-        let spawn = &config.trainer_spawn_min_distance;
+        let c = &config.trainer.trainer_curriculum;
+        let spawn = &config.trainer.trainer_spawn_min_distance;
         let (food_lo, food_hi) = (c.food_per_type.standard as f32, c.food_per_type.exploration as f32);
         Self {
             level: d,
@@ -263,9 +257,7 @@ impl TrainingScenarioPlugin for LevelScenario {
         let mut min_meat_dist = f32::MAX;
 
         for f in foods {
-            let dx = f.x - agent.px;
-            let dy = f.y - agent.py;
-            let dist_sq = dx * dx + dy * dy;
+            let dist_sq = geom::dist_sq(agent.px, agent.py, f.x, f.y);
             if f.type_id == 1 {
                 if dist_sq < min_plant_dist {
                     min_plant_dist = dist_sq;
@@ -340,7 +332,7 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
         &mut sb.agent.neuron_activations,
         &mut sb.agent.synapse_weights,
         &mut sb.agent.brain_runtime,
-        app_config.rules.hebbian_learning_rate_base,
+        app_config.brain.hebbian_learning_rate_base,
     );
     let out_thrust = outputs[0];
     let out_left = outputs[1];
@@ -357,13 +349,10 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
 
     let old_heading = sb.agent.heading_angle;
     use crate::shared::physics::step_creature_kinematics;
-    let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, app_config, &[], size, size);
+    let hit_wall = step_creature_kinematics(&mut sb.agent, out_thrust, out_left, &app_config.physics, &[], size, size);
 
     // Track absolute heading change (cumulative rotation in radians)
-    let mut diff = sb.agent.heading_angle - old_heading;
-    while diff > std::f32::consts::PI { diff -= std::f32::consts::TAU; }
-    while diff < -std::f32::consts::PI { diff += std::f32::consts::TAU; }
-    sb.cumulative_rotation += diff.abs();
+    sb.cumulative_rotation += geom::wrap_angle(sb.agent.heading_angle - old_heading).abs();
 
     let movement = (sb.agent.vx.powi(2) + sb.agent.vy.powi(2)).sqrt();
     sb.distance_traveled += movement;
@@ -407,7 +396,7 @@ mod tests {
     use crate::biology::trainer_engine::{init_rust_sandbox, SandboxOrigin};
 
     fn sandbox(scenario: Scenario) -> TrainerSandbox {
-        init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, scenario, None, None, &mut seeded(3))
+        init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, scenario.plugin(crate::config::test_config()), None, None, &mut seeded(3), crate::config::test_config())
     }
 
     fn weights() -> TrainerFitnessConfig {
@@ -416,14 +405,14 @@ mod tests {
 
     #[test]
     fn test_configured_bonuses_stay_below_one_catch() {
-        let w = &AppConfig::global().trainer_fitness;
+        let w = &crate::config::test_config().trainer.trainer_fitness;
         assert!((0.0..1.0).contains(&w.first_catch_bonus) && (0.0..1.0).contains(&w.approach_bonus), "{:?}", w);
     }
 
     #[test]
     fn test_one_catch_is_one_and_bonuses_are_bounded() {
         for scenario in [Scenario::Standard, Scenario::Exploration] {
-            let epoch = scenario.plugin().epoch_ticks();
+            let epoch = scenario.plugin(crate::config::test_config()).epoch_ticks();
             let mut sb = sandbox(scenario);
             assert_eq!(calculate_fitness(&sb, epoch, &weights()), 0.0, "nothing done, nothing earned");
 
@@ -464,7 +453,7 @@ mod tests {
     #[test]
     fn test_no_cliffs_for_walls_looping_standstill_or_centre_distance() {
         for scenario in [Scenario::Standard, Scenario::Exploration] {
-            let epoch = scenario.plugin().epoch_ticks();
+            let epoch = scenario.plugin(crate::config::test_config()).epoch_ticks();
             let mut sb = sandbox(scenario);
             sb.accumulated_yield = 1.0;
             sb.finish_tick = Some(100);
@@ -484,16 +473,16 @@ mod tests {
 
     #[test]
     fn test_fixed_rooms_are_the_level_ends_with_their_p7_values() {
-        let spawn = &AppConfig::global().trainer_spawn_min_distance;
-        let small = Scenario::Standard.plugin();
+        let spawn = &crate::config::test_config().trainer.trainer_spawn_min_distance;
+        let small = Scenario::Standard.plugin(crate::config::test_config());
         assert_eq!((small.level(), small.chamber_size(), small.epoch_ticks(), small.food_per_type()), (0.0, 1000.0, 300, 1));
         assert_eq!((small.spawn_min_distance(), small.metabolic_scale()), (spawn.standard, 1.0));
-        let large = Scenario::Exploration.plugin();
+        let large = Scenario::Exploration.plugin(crate::config::test_config());
         assert_eq!((large.level(), large.chamber_size(), large.epoch_ticks(), large.food_per_type()), (1.0, 3500.0, 1800, 3));
         assert_eq!((large.spawn_min_distance(), large.metabolic_scale()), (spawn.exploration, 1.0));
-        assert_eq!(LevelScenario::at(-0.5), small);
-        assert_eq!(LevelScenario::at(7.0), large);
-        assert_eq!(LevelScenario::at(f32::NAN), small);
+        assert_eq!(LevelScenario::at(-0.5, crate::config::test_config()), small);
+        assert_eq!(LevelScenario::at(7.0, crate::config::test_config()), large);
+        assert_eq!(LevelScenario::at(f32::NAN, crate::config::test_config()), small);
         // Food layout of the fixed rooms: plants first, ids in order
         let types = |sb: &TrainerSandbox| sb.foods.iter().map(|f| (f.id, f.type_id)).collect::<Vec<_>>();
         assert_eq!(types(&sandbox(Scenario::Standard)), vec![(1, 1), (2, 2)]);
@@ -502,7 +491,7 @@ mod tests {
 
     #[test]
     fn test_level_rooms_interpolate_monotonically() {
-        let rooms: Vec<LevelScenario> = (0..=10).map(|i| LevelScenario::at(i as f32 / 10.0)).collect();
+        let rooms: Vec<LevelScenario> = (0..=10).map(|i| LevelScenario::at(i as f32 / 10.0, crate::config::test_config())).collect();
         for pair in rooms.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             assert!(b.chamber_size() > a.chamber_size() && b.epoch_ticks() > a.epoch_ticks() && b.spawn_min_distance() > a.spawn_min_distance(), "{:?} -> {:?}", a, b);
@@ -517,10 +506,10 @@ mod tests {
     fn test_sensors_see_the_nearest_food_per_type_and_all_food_with_one_per_type() {
         let mut scratch = Vec::new();
         let small = sandbox(Scenario::Standard);
-        let visible = Scenario::Standard.plugin().visible_foods(&small.agent, &small.foods, &mut scratch).to_vec();
+        let visible = Scenario::Standard.plugin(crate::config::test_config()).visible_foods(&small.agent, &small.foods, &mut scratch).to_vec();
         assert_eq!(visible.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>(), small.foods.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>());
-        let mid = LevelScenario::at(0.5);
-        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, mid, None, None, &mut seeded(4));
+        let mid = LevelScenario::at(0.5, crate::config::test_config());
+        let mut sb = init_rust_sandbox(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, mid, None, None, &mut seeded(4), crate::config::test_config());
         assert_eq!(sb.foods.len(), 4);
         // Move the second plant and the first meat next to the creature: those are seen
         let (px, py) = (sb.agent.px, sb.agent.py);

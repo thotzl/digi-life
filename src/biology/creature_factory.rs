@@ -2,7 +2,9 @@ use rand::Rng;
 
 use crate::biology::dna::{parse_genome, CTRNNSynapse, CreaturePhenotype};
 use crate::shared::brain::{BrainRuntime, WEIGHT_CLAMP};
-use crate::shared::types::{AppConfig, CreatureAgent};
+use crate::biology::metabolism::MetabolismConfig;
+use crate::config::AppConfig;
+use crate::shared::dto::CreatureAgent;
 
 /// What differs between spawn sites (Ocean seed/inject/clone/reset/restock, trainer sandbox).
 /// Everything else about a fresh agent is defined once in `spawn_from_phenotype`.
@@ -48,18 +50,18 @@ pub fn inherit_learned_weights<R: Rng + ?Sized>(
 }
 
 /// Start energy of a fresh agent: a fixed share of its stomach capacity (config `creatureStartStomachRatio`).
-pub fn start_energy(phenotype: &CreaturePhenotype) -> f32 {
-    phenotype.stomach_capacity * AppConfig::global().rules.creature_start_stomach_ratio
+pub fn start_energy(phenotype: &CreaturePhenotype, metabolism: &MetabolismConfig) -> f32 {
+    phenotype.stomach_capacity * metabolism.creature_start_stomach_ratio
 }
 
 /// Parses the genome (with optional parent methylations) and spawns a fresh agent.
-pub fn spawn_creature(genome: &str, opts: SpawnOptions) -> CreatureAgent {
-    let phenotype = parse_genome(genome, None, opts.methylations);
-    spawn_from_phenotype(genome, phenotype, opts)
+pub fn spawn_creature(genome: &str, opts: SpawnOptions, config: &AppConfig) -> CreatureAgent {
+    let phenotype = parse_genome(genome, None, opts.methylations, &config.brain);
+    spawn_from_phenotype(genome, phenotype, opts, &config.metabolism)
 }
 
 /// Spawns a fresh agent from an already parsed phenotype (`opts.methylations` is not re-applied).
-pub fn spawn_from_phenotype(genome: &str, phenotype: CreaturePhenotype, opts: SpawnOptions) -> CreatureAgent {
+pub fn spawn_from_phenotype(genome: &str, phenotype: CreaturePhenotype, opts: SpawnOptions, metabolism: &MetabolismConfig) -> CreatureAgent {
     let num_neurons = phenotype.brain.neurons.len();
     let synapse_weights = match opts.synapse_weights {
         Some(learned) if learned.len() == phenotype.brain.synapses.len() => learned,
@@ -76,7 +78,7 @@ pub fn spawn_from_phenotype(genome: &str, phenotype: CreaturePhenotype, opts: Sp
         heading_angle: opts.heading_angle,
         bend_angle: 0.0,
         omega_rot: 0.0,
-        energy: start_energy(&phenotype),
+        energy: start_energy(&phenotype, metabolism),
         age: 0,
         generation: opts.generation,
         has_eaten: false,
@@ -103,8 +105,8 @@ mod tests {
     #[test]
     fn test_trainer_and_ocean_spawn_identical_except_placement() {
         // Trainer: chamber centre, generation counter; Ocean: random position, generation 1
-        let trainer = spawn_creature(BASE_DNA, opts(3, 500.0, 500.0, 1.2, 7));
-        let ocean = spawn_creature(BASE_DNA, opts(42, 8123.0, 4210.0, 4.4, 1));
+        let trainer = spawn_creature(BASE_DNA, opts(3, 500.0, 500.0, 1.2, 7), crate::config::test_config());
+        let ocean = spawn_creature(BASE_DNA, opts(42, 8123.0, 4210.0, 4.4, 1), crate::config::test_config());
 
         let normalize = |agent: &CreatureAgent| {
             let mut value = serde_json::to_value(agent).unwrap();
@@ -116,7 +118,7 @@ mod tests {
         assert_eq!(normalize(&trainer), normalize(&ocean));
 
         let num_neurons = trainer.phenotype.brain.neurons.len();
-        assert_eq!(trainer.energy, trainer.phenotype.stomach_capacity * AppConfig::global().rules.creature_start_stomach_ratio);
+        assert_eq!(trainer.energy, trainer.phenotype.stomach_capacity * crate::config::test_config().metabolism.creature_start_stomach_ratio);
         assert_eq!(trainer.antisense, trainer.phenotype.antisense_strand);
         assert_eq!(trainer.neuron_states, vec![0.0; num_neurons]);
         assert_eq!(trainer.neuron_activations, vec![0.0; num_neurons]);
@@ -124,23 +126,23 @@ mod tests {
 
     #[test]
     fn test_mismatching_synapse_weights_fall_back_to_genome() {
-        let genome_weights: Vec<f32> = parse_genome(BASE_DNA, None, None).brain.synapses.iter().map(|s| s.weight).collect();
+        let genome_weights: Vec<f32> = parse_genome(BASE_DNA, None, None, &crate::config::test_config().brain).brain.synapses.iter().map(|s| s.weight).collect();
         assert!(!genome_weights.is_empty());
 
         let mut wrong_len = opts(1, 0.0, 0.0, 0.0, 1);
         wrong_len.synapse_weights = Some(vec![0.5; genome_weights.len() + 1]);
-        assert_eq!(spawn_creature(BASE_DNA, wrong_len).synapse_weights, genome_weights);
+        assert_eq!(spawn_creature(BASE_DNA, wrong_len, crate::config::test_config()).synapse_weights, genome_weights);
 
         let learned = vec![0.25; genome_weights.len()];
         let mut matching = opts(1, 0.0, 0.0, 0.0, 1);
         matching.synapse_weights = Some(learned.clone());
-        assert_eq!(spawn_creature(BASE_DNA, matching).synapse_weights, learned);
+        assert_eq!(spawn_creature(BASE_DNA, matching, crate::config::test_config()).synapse_weights, learned);
     }
 
     /// Structured genome, its synapses and learned weights = genome weight + a distinct non-zero offset per synapse.
     fn learned_parent(seed: u64) -> (Vec<CTRNNSynapse>, Vec<f32>) {
-        let genome = crate::biology::dna::generate_structured_genome(&AppConfig::global().genome_composition, &mut crate::shared::rng::seeded(seed));
-        let synapses = parse_genome(&genome, None, None).brain.synapses;
+        let genome = crate::biology::dna::generate_structured_genome(&crate::config::test_config().genome.genome_composition, &mut crate::shared::rng::seeded(seed));
+        let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain.synapses;
         let learned = synapses.iter().enumerate().map(|(i, s)| s.weight + 0.01 * (i + 1) as f32).collect();
         (synapses, learned)
     }

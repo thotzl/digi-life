@@ -15,13 +15,15 @@ use crate::biology::dna::{
     OUTPUT_MOTOR_NODES_COUNT, WILDTYPE_GENOME,
 };
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics_with_config, SandboxOrigin};
+use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim, IMMOBILE_DISTANCE_PX};
 use crate::shared::brain::{compute_sensory_inputs_into, execute_brain_with_learning};
 use crate::shared::fmath;
 use crate::shared::physics::step_creature_kinematics;
 use crate::shared::rng::{derive, seed_from_str, SimRng};
-use crate::shared::types::{AppConfig, CreatureAgent, FoodSpore};
+use crate::config::AppConfig;
+use crate::shared::dto::{CreatureAgent, FoodSpore};
+use crate::shared::geom::wrap_angle;
 
 pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology", "metabolism"];
 
@@ -57,6 +59,8 @@ pub struct ProbeOptions {
     pub hof: Vec<HofGenome>,
     /// Where the HoF genomes come from (DB path), for the report
     pub hof_source: Option<String>,
+    /// Config the probes run with (the runner passes `AppConfig::global()`)
+    pub config: AppConfig,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -208,32 +212,22 @@ pub fn letter_soup_genomes(seed: u64, n: usize) -> Vec<String> {
 }
 
 /// The same structured genomes (config `genomeComposition`, as trainer generation 1) for every probe.
-pub fn structured_genomes(seed: u64, n: usize) -> Vec<String> {
-    let composition = &AppConfig::global().genome_composition;
+pub fn structured_genomes(seed: u64, n: usize, config: &AppConfig) -> Vec<String> {
+    let composition = &config.genome.genome_composition;
     (0..n).map(|i| generate_structured_genome(composition, &mut derive(seed, &[STREAM_STRUCTURED_GENOMES, i as u64]))).collect()
 }
 
 /// Both random populations, letter soup first.
-fn random_populations(seed: u64, n: usize) -> [(&'static str, Vec<String>); 2] {
-    [(LETTER_SOUP, letter_soup_genomes(seed, n)), (STRUCTURED, structured_genomes(seed, n))]
+fn random_populations(seed: u64, n: usize, config: &AppConfig) -> [(&'static str, Vec<String>); 2] {
+    [(LETTER_SOUP, letter_soup_genomes(seed, n)), (STRUCTURED, structured_genomes(seed, n, config))]
 }
 
-fn agent_at(genome: &str, px: f32, py: f32, heading_angle: f32) -> CreatureAgent {
-    spawn_creature(genome, SpawnOptions { id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None })
+fn agent_at(genome: &str, px: f32, py: f32, heading_angle: f32, config: &AppConfig) -> CreatureAgent {
+    spawn_creature(genome, SpawnOptions { id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None }, config)
 }
 
 fn speed_of(agent: &CreatureAgent) -> f32 {
     (agent.vx * agent.vx + agent.vy * agent.vy).sqrt()
-}
-
-fn wrap_angle(mut a: f32) -> f32 {
-    while a > std::f32::consts::PI {
-        a -= std::f32::consts::TAU;
-    }
-    while a < -std::f32::consts::PI {
-        a += std::f32::consts::TAU;
-    }
-    a
 }
 
 /// One tick of sensing, brain (with the config's Hebbian rate) and kinematics, food fixed.
@@ -248,9 +242,9 @@ fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config:
         &mut agent.neuron_activations,
         &mut agent.synapse_weights,
         &mut agent.brain_runtime,
-        config.rules.hebbian_learning_rate_base,
+        config.brain.hebbian_learning_rate_base,
     );
-    let hit_wall = step_creature_kinematics(agent, outputs[0], outputs[1], config, &[], size, size);
+    let hit_wall = step_creature_kinematics(agent, outputs[0], outputs[1], &config.physics, &[], size, size);
     (outputs, hit_wall)
 }
 
@@ -286,8 +280,8 @@ struct HeredityProfile {
     organs: usize,
 }
 
-fn heredity_profile(genome: &str) -> HeredityProfile {
-    let phenotype = parse_genome(genome, None, None);
+fn heredity_profile(genome: &str, config: &AppConfig) -> HeredityProfile {
+    let phenotype = parse_genome(genome, None, None, &config.brain);
     let synapses = phenotype
         .brain
         .synapses
@@ -307,7 +301,7 @@ fn heredity_profile(genome: &str) -> HeredityProfile {
         phenotype.organelles.len() as f32,
         phenotype.stomach_capacity,
         phenotype.carnivory,
-        straight_run(genome).terminal_speed,
+        straight_run(genome, config).terminal_speed,
     ];
     HeredityProfile { synapses, traits, neurons: phenotype.brain.neurons.len(), organs: phenotype.organelles.len() }
 }
@@ -429,8 +423,8 @@ fn legacy_mutate(genome: &str, ops: &MutationOperators, rng: &mut SimRng) -> Opt
 }
 
 /// Applies `count` ops; returns the child, the applied op count and (mixed/legacy only) per-kind op counts.
-fn mutate_n(parent: &str, kind: HeredityKind, count: usize, rng: &mut SimRng) -> (String, usize, OpCounts) {
-    let ops_config = &AppConfig::global().mutation_operators;
+fn mutate_n(parent: &str, kind: HeredityKind, count: usize, rng: &mut SimRng, config: &AppConfig) -> (String, usize, OpCounts) {
+    let ops_config = &config.genome.mutation_operators;
     let mut genome = parent.to_string();
     let (mut applied, mut ops) = (0, OpCounts::default());
     for _ in 0..count {
@@ -462,8 +456,8 @@ struct ChildComparison {
     ops: OpCounts,
 }
 
-fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, applied: usize, ops: OpCounts) -> ChildComparison {
-    let child = heredity_profile(child_genome);
+fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, applied: usize, ops: OpCounts, config: &AppConfig) -> ChildComparison {
+    let child = heredity_profile(child_genome, config);
     let (mut exuberant, mut explicit) = (SynapseTally::default(), SynapseTally::default());
     for (key, &(pw, is_explicit)) in &parent.synapses {
         let tally = if is_explicit { &mut explicit } else { &mut exuberant };
@@ -539,10 +533,11 @@ struct MixTally {
 }
 
 /// Heredity of `parents` for the given mutation kinds and counts; `children` children per parent and cell.
-fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[usize], seed: u64, group_id: u64, mix: &mut MixTally) -> HeredityGroup {
+#[allow(clippy::too_many_arguments)]
+fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[usize], seed: u64, group_id: u64, mix: &mut MixTally, config: &AppConfig) -> HeredityGroup {
     let kinds: Vec<HeredityKind> =
         MutationKind::ALL.iter().map(|&k| HeredityKind::Forced(k)).chain([HeredityKind::Mixed, HeredityKind::Legacy]).collect();
-    let profiles: Vec<HeredityProfile> = parents.par_iter().map(|g| heredity_profile(g)).collect();
+    let profiles: Vec<HeredityProfile> = parents.par_iter().map(|g| heredity_profile(g, config)).collect();
     let mut cells = Vec::new();
     for (kind_idx, &kind) in kinds.iter().enumerate() {
         for &count in counts {
@@ -551,8 +546,8 @@ fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[us
                 .par_iter()
                 .map(|&(p, c)| {
                     let mut rng = derive(seed, &[STREAM_HEREDITY, group_id, kind_idx as u64, count as u64, p as u64, c as u64]);
-                    let (child, applied, ops) = mutate_n(&parents[p], kind, count, &mut rng);
-                    compare(&profiles[p], &parents[p], &child, applied, ops)
+                    let (child, applied, ops) = mutate_n(&parents[p], kind, count, &mut rng, config);
+                    compare(&profiles[p], &parents[p], &child, applied, ops, config)
                 })
                 .collect();
             let tally = match kind {
@@ -580,17 +575,18 @@ pub fn probe_heredity(opts: &ProbeOptions) -> HeredityReport {
 
 fn heredity_with_counts(opts: &ProbeOptions, counts: &[usize]) -> HeredityReport {
     let seed = seed_from_str(&opts.seed);
+    let config = &opts.config;
     let n = opts.samples.unwrap_or(200);
     let mut mix = MixTally::default();
     let mut groups = vec![
-        heredity_group(LETTER_SOUP, &letter_soup_genomes(seed, n), 4, counts, seed, 0, &mut mix),
-        heredity_group("wildtype", &[WILDTYPE_GENOME.to_string()], 400, counts, seed, 1, &mut mix),
-        heredity_group(STRUCTURED, &structured_genomes(seed, n), 4, counts, seed, 3, &mut mix),
+        heredity_group(LETTER_SOUP, &letter_soup_genomes(seed, n), 4, counts, seed, 0, &mut mix, config),
+        heredity_group("wildtype", &[WILDTYPE_GENOME.to_string()], 400, counts, seed, 1, &mut mix, config),
+        heredity_group(STRUCTURED, &structured_genomes(seed, n, config), 4, counts, seed, 3, &mut mix, config),
     ];
     if !opts.hof.is_empty() {
         let hof: Vec<String> = opts.hof.iter().map(|h| h.genome.clone()).collect();
         let per_parent = (800 / hof.len()).clamp(4, 400);
-        groups.push(heredity_group("hof", &hof, per_parent, counts, seed, 2, &mut mix));
+        groups.push(heredity_group("hof", &hof, per_parent, counts, seed, 2, &mut mix, config));
     }
     let shares = |ops: OpCounts| -> BTreeMap<String, f32> {
         let total: usize = ops.iter().sum();
@@ -628,12 +624,11 @@ pub struct StraightRun {
 }
 
 /// Full constant thrust, no turn, from rest in an open arena.
-pub fn straight_run(genome: &str) -> StraightRun {
-    let config = AppConfig::global();
-    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0);
+pub fn straight_run(genome: &str, config: &AppConfig) -> StraightRun {
+    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0, config);
     let (mut distance, mut distance_300, mut speed_at_1700) = (0.0, 0.0, 0.0);
     for tick in 1..=LONG_EPOCH_TICKS {
-        step_creature_kinematics(&mut agent, 1.0, 0.0, config, &[], OPEN_ARENA, OPEN_ARENA);
+        step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], OPEN_ARENA, OPEN_ARENA);
         distance += speed_of(&agent);
         if tick == 300 {
             distance_300 = distance;
@@ -691,13 +686,12 @@ pub struct TurnAtRest {
 }
 
 /// Thrust 0 and full bend from rest: ticks until the heading has turned 90 degrees (None within 1800 ticks).
-fn turn_from_rest(genome: &str) -> Option<u32> {
-    let config = AppConfig::global();
-    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0);
+fn turn_from_rest(genome: &str, config: &AppConfig) -> Option<u32> {
+    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0, config);
     let mut turned = 0.0f32;
     for tick in 1..=LONG_EPOCH_TICKS {
         let before = agent.heading_angle;
-        step_creature_kinematics(&mut agent, 0.0, 1.0, config, &[], OPEN_ARENA, OPEN_ARENA);
+        step_creature_kinematics(&mut agent, 0.0, 1.0, &config.physics, &[], OPEN_ARENA, OPEN_ARENA);
         turned += wrap_angle(agent.heading_angle - before).abs();
         if turned >= std::f32::consts::FRAC_PI_2 {
             return Some(tick);
@@ -713,14 +707,13 @@ pub struct SpeedReport {
 }
 
 /// Steady turn at full thrust and full bend: (radius px, deg/tick, speed while turning).
-fn full_turn(genome: &str) -> (f32, f32, f32) {
-    let config = AppConfig::global();
-    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0);
+fn full_turn(genome: &str, config: &AppConfig) -> (f32, f32, f32) {
+    let mut agent = agent_at(genome, OPEN_ARENA / 2.0, OPEN_ARENA / 2.0, 0.0, config);
     let (window_start, ticks) = (LONG_EPOCH_TICKS - 200, LONG_EPOCH_TICKS);
     let (mut turned, mut path) = (0.0f32, 0.0f32);
     for tick in 1..=ticks {
         let before = agent.heading_angle;
-        step_creature_kinematics(&mut agent, 1.0, 1.0, config, &[], OPEN_ARENA, OPEN_ARENA);
+        step_creature_kinematics(&mut agent, 1.0, 1.0, &config.physics, &[], OPEN_ARENA, OPEN_ARENA);
         if tick > window_start {
             turned += wrap_angle(agent.heading_angle - before).abs();
             path += speed_of(&agent);
@@ -732,8 +725,8 @@ fn full_turn(genome: &str) -> (f32, f32, f32) {
     (if omega > 0.0 { speed / omega } else { f32::INFINITY }, omega.to_degrees(), speed)
 }
 
-fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
-    let runs: Vec<StraightRun> = genomes.par_iter().map(|g| straight_run(g)).collect();
+fn speed_set(label: &str, genomes: &[String], config: &AppConfig) -> SpeedSet {
+    let runs: Vec<StraightRun> = genomes.par_iter().map(|g| straight_run(g, config)).collect();
     let speeds: Vec<f32> = runs.iter().map(|r| r.terminal_speed).collect();
     let dist = Distribution::of(&speeds);
 
@@ -745,7 +738,7 @@ fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
         .map(|&(band, lo, hi)| {
             let n = order.len();
             let members: Vec<usize> = order[((lo * n as f32) as usize).min(n)..((hi * n as f32).ceil() as usize).min(n)].to_vec();
-            let turns: Vec<(usize, (f32, f32, f32))> = members.par_iter().map(|&i| (i, full_turn(&genomes[i]))).collect();
+            let turns: Vec<(usize, (f32, f32, f32))> = members.par_iter().map(|&i| (i, full_turn(&genomes[i], config))).collect();
             let finite: Vec<&(usize, (f32, f32, f32))> = turns.iter().filter(|(_, t)| t.0.is_finite()).collect();
             TurnStats {
                 band: band.to_string(),
@@ -769,7 +762,7 @@ fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
         share_not_settled: share_where(&runs, |r| !r.settled),
         turning,
         turn_at_rest: {
-            let ticks: Vec<Option<u32>> = genomes.par_iter().map(|g| turn_from_rest(g)).collect();
+            let ticks: Vec<Option<u32>> = genomes.par_iter().map(|g| turn_from_rest(g, config)).collect();
             TurnAtRest {
                 ticks_to_90_deg: Distribution::of(&ticks.iter().flatten().map(|&t| t as f32).collect::<Vec<_>>()),
                 share_reached: share_where(&ticks, |t| t.is_some()),
@@ -781,9 +774,10 @@ fn speed_set(label: &str, genomes: &[String]) -> SpeedSet {
 /// Real terminal speed at forced full thrust (thrust = 1, turn = 0) and turning at full bend.
 pub fn probe_speed(opts: &ProbeOptions) -> SpeedReport {
     let seed = seed_from_str(&opts.seed);
-    let mut sets: Vec<SpeedSet> = random_populations(seed, opts.samples.unwrap_or(1000)).iter().map(|(label, genomes)| speed_set(label, genomes)).collect();
+    let config = &opts.config;
+    let mut sets: Vec<SpeedSet> = random_populations(seed, opts.samples.unwrap_or(1000), config).iter().map(|(label, genomes)| speed_set(label, genomes, config)).collect();
     if !opts.hof.is_empty() {
-        sets.push(speed_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>()));
+        sets.push(speed_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), config));
     }
     SpeedReport {
         notes: vec![
@@ -841,18 +835,19 @@ pub struct EquipmentSet {
 /// Organ equipment of letter-soup and structured random genomes and food in sensor range at spawn (real scenario initialisation).
 pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
     let seed = seed_from_str(&opts.seed);
+    let config = &opts.config;
     EquipmentReport {
         notes: vec![
             "Sensors see foods[0] (plant) and foods[1] (meat) of the scenario's visible foods only.".to_string(),
             "eye/nose by affinity (OrganKind Eye >= 0.80, Nose 0.25..=0.65); food detection uses affinity >= 0.25, so 0.65..0.80 organs (OrganKind Thermal) also see food.".to_string(),
             "letter_soup = random letters; structured = generate_structured_genome (config genomeComposition, trainer generation 1 and immigrants).".to_string(),
         ],
-        sets: random_populations(seed, opts.samples.unwrap_or(1000)).iter().enumerate().map(|(set_id, (label, genomes))| equipment_set(label, genomes, seed, set_id as u64)).collect(),
+        sets: random_populations(seed, opts.samples.unwrap_or(1000), config).iter().enumerate().map(|(set_id, (label, genomes))| equipment_set(label, genomes, seed, set_id as u64, config)).collect(),
     }
 }
 
-fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64) -> EquipmentSet {
-    let phenotypes: Vec<CreaturePhenotype> = genomes.par_iter().map(|g| parse_genome(g, None, None)).collect();
+fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &AppConfig) -> EquipmentSet {
+    let phenotypes: Vec<CreaturePhenotype> = genomes.par_iter().map(|g| parse_genome(g, None, None, &config.brain)).collect();
     let food_organs = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).count();
     let ranges: Vec<f32> = phenotypes.iter().flat_map(|p| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).map(|o| o.scale * 550.0)).collect();
 
@@ -860,7 +855,7 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64) -> Equ
         .iter()
         .enumerate()
         .map(|(s_idx, &scenario)| {
-            let plugin = scenario.plugin();
+            let plugin = scenario.plugin(config);
             let size = plugin.chamber_size();
             let results: Vec<(bool, bool)> = genomes
                 .par_iter()
@@ -868,7 +863,7 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64) -> Equ
                 .map(|(i, genome)| {
                     // Letter soup keeps its pre-TCK-184 stream (set 0)
                     let mut rng = if set_id == 0 { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64]) } else { derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64, set_id]) };
-                    let sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, scenario, None, None, &mut rng);
+                    let sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, plugin, None, None, &mut rng, config);
                     let mut scratch = Vec::new();
                     let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut scratch).to_vec();
                     let agent = &sb.agent;
@@ -938,9 +933,9 @@ struct SteeringRun {
 }
 
 fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> SteeringRun {
-    let size = Scenario::Standard.plugin().chamber_size();
+    let size = Scenario::Standard.plugin(config).chamber_size();
     let (cx, cy) = (size / 2.0, size / 2.0);
-    let mut agent = agent_at(genome, cx, cy, 0.0);
+    let mut agent = agent_at(genome, cx, cy, 0.0, config);
     let (fx, fy) = match bearing_deg {
         Some(b) => (cx + STEERING_DISTANCE * b.to_radians().cos(), cy + STEERING_DISTANCE * b.to_radians().sin()),
         None => (-99999.0, -99999.0),
@@ -1009,8 +1004,7 @@ pub struct SteeringReport {
     pub sets: Vec<SteeringSet>,
 }
 
-fn steering_set(label: &str, genomes: &[String]) -> SteeringSet {
-    let config = AppConfig::global();
+fn steering_set(label: &str, genomes: &[String], config: &AppConfig) -> SteeringSet {
     let runs: Vec<[SteeringRun; 3]> = genomes
         .par_iter()
         .map(|g| [steering_run(g, Some(STEERING_BEARING_DEG), config), steering_run(g, Some(-STEERING_BEARING_DEG), config), steering_run(g, None, config)])
@@ -1042,10 +1036,11 @@ fn steering_set(label: &str, genomes: &[String]) -> SteeringSet {
 /// Food fixed at +45 / -45 degrees and 300 px: does the brain turn the creature towards it?
 pub fn probe_steering(opts: &ProbeOptions) -> SteeringReport {
     let seed = seed_from_str(&opts.seed);
+    let config = &opts.config;
     // Runs are fully determined by the genomes (fixed start, no RNG)
-    let mut sets: Vec<SteeringSet> = random_populations(seed, opts.samples.unwrap_or(500)).iter().map(|(label, genomes)| steering_set(label, genomes)).collect();
+    let mut sets: Vec<SteeringSet> = random_populations(seed, opts.samples.unwrap_or(500), config).iter().map(|(label, genomes)| steering_set(label, genomes, config)).collect();
     if !opts.hof.is_empty() {
-        sets.push(steering_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>()));
+        sets.push(steering_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), config));
     }
     SteeringReport {
         notes: vec![
@@ -1078,8 +1073,8 @@ struct WallRun {
 /// `brain`: real brain with the scenario's food layout, else forced outputs (thrust 1, turn 0).
 fn wall_run(genome: &str, angle_deg: f32, brain: bool, rng: &mut SimRng, config: &AppConfig) -> WallRun {
     let scenario = Scenario::Standard;
-    let size = scenario.plugin().chamber_size();
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, scenario, None, None, rng);
+    let size = scenario.plugin(config).chamber_size();
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Random, scenario.plugin(config), None, None, rng, config);
     let r = sb.agent.phenotype.spinal_harmonics.mean_radius;
     sb.agent.px = size / 2.0;
     sb.agent.py = r + 2.0;
@@ -1092,7 +1087,7 @@ fn wall_run(genome: &str, angle_deg: f32, brain: bool, rng: &mut SimRng, config:
         let hit_wall = if brain {
             brain_tick(&mut agent, &foods, size, config, &mut inputs).1
         } else {
-            step_creature_kinematics(&mut agent, 1.0, 0.0, config, &[], size, size)
+            step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], size, size)
         };
         let speed = speed_of(&agent);
         if hit_wall {
@@ -1138,8 +1133,7 @@ pub struct WallReport {
     pub cells: Vec<WallCell>,
 }
 
-fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64) -> Vec<WallCell> {
-    let config = AppConfig::global();
+fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &AppConfig) -> Vec<WallCell> {
     let mut cells = Vec::new();
     for (mode_idx, &(mode, brain)) in [("forced", false), ("brain", true)].iter().enumerate() {
         for (a_idx, &angle) in WALL_ANGLES_DEG.iter().enumerate() {
@@ -1170,12 +1164,13 @@ fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64) -> Vec<Wa
 /// Thrust into the top wall at 30/60/90 degrees: does the creature get free within 600 ticks?
 pub fn probe_wall(opts: &ProbeOptions) -> WallReport {
     let seed = seed_from_str(&opts.seed);
-    let [(soup_label, soup), (structured_label, structured)] = random_populations(seed, opts.samples.unwrap_or(300));
-    let mut cells = wall_cells(soup_label, &soup, seed, 0);
+    let config = &opts.config;
+    let [(soup_label, soup), (structured_label, structured)] = random_populations(seed, opts.samples.unwrap_or(300), config);
+    let mut cells = wall_cells(soup_label, &soup, seed, 0, config);
     if !opts.hof.is_empty() {
-        cells.extend(wall_cells("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), seed, 1));
+        cells.extend(wall_cells("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), seed, 1, config));
     }
-    cells.extend(wall_cells(structured_label, &structured, seed, 2));
+    cells.extend(wall_cells(structured_label, &structured, seed, 2, config));
     WallReport {
         notes: vec![
             "Standard chamber (1000 px); start at the top wall centre, 2 px gap, at rest, heading into the wall at the given angle to the wall surface.".to_string(),
@@ -1288,17 +1283,17 @@ fn weight_stats(samples: &[WeightSample], reflex: bool) -> WeightStats {
 
 /// Learned weights of one genome after `ticks` in `scenario` with consecutive trials (weights carried over).
 fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64], ticks: u32) -> Vec<WeightSample> {
-    let epoch = scenario.plugin().epoch_ticks();
+    let epoch = scenario.plugin(config).epoch_ticks();
     let stream_for = |trial: u32| -> Vec<u64> { stream.iter().copied().chain([trial as u64]).collect() };
     let mut rng = derive(seed, &stream_for(0));
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Elite, scenario, None, None, &mut rng);
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Elite, scenario.plugin(config), None, None, &mut rng, config);
     for trial in 0..ticks.div_ceil(epoch) {
         if trial > 0 {
             rng = derive(seed, &stream_for(trial));
-            sb.reset_trial(&mut rng);
+            sb.reset_trial(&mut rng, config);
         }
         for _ in 0..epoch {
-            step_trainer_sandbox_physics_with_config(&mut sb, config);
+            step_trainer_sandbox_physics(&mut sb, config);
         }
     }
     weight_samples(&sb.agent)
@@ -1307,20 +1302,20 @@ fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed:
 /// (fitness, successful trials, catches, learned weights) of one genome in one scenario, as the trainer scores it
 /// (mean of the trial fitness, `scenarios::calculate_fitness`).
 fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (f32, u32, u32, Vec<WeightSample>) {
-    let epoch = scenario.plugin().epoch_ticks();
+    let epoch = scenario.plugin(config).epoch_ticks();
     let stream_for = |trial: u32| -> Vec<u64> { stream.iter().copied().chain([trial as u64]).collect() };
     let mut rng = derive(seed, &stream_for(0));
-    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Elite, scenario, None, None, &mut rng);
+    let mut sb = init_rust_sandbox(1, genome, 1, SandboxOrigin::Elite, scenario.plugin(config), None, None, &mut rng, config);
     let (mut acc_fitness, mut eaten, mut catches) = (0.0f32, 0u32, 0u32);
     for trial in 0..HEBBIAN_TRIALS {
         if trial > 0 {
             rng = derive(seed, &stream_for(trial));
-            sb.reset_trial(&mut rng); // learned weights are kept across trials, as in the trainer
+            sb.reset_trial(&mut rng, config); // learned weights are kept across trials, as in the trainer
         }
         for _ in 0..epoch {
-            step_trainer_sandbox_physics_with_config(&mut sb, config);
+            step_trainer_sandbox_physics(&mut sb, config);
         }
-        acc_fitness += crate::biology::scenarios::calculate_fitness(&sb, epoch, &config.trainer_fitness);
+        acc_fitness += crate::biology::scenarios::calculate_fitness(&sb, epoch, &config.trainer.trainer_fitness);
         if sb.finished {
             eaten += 1;
         }
@@ -1331,9 +1326,9 @@ fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u
 }
 
 /// Best distinct genomes of a short seeded trainer run (standard room, population 32, 5 generations).
-fn trained_genomes(seed: u64, count: usize) -> Vec<String> {
-    let params = TrainerParams { population: 32, ..TrainerParams::default() };
-    let mut sim = TrainerSim::new(params, seed ^ STREAM_HEBBIAN, 200);
+fn trained_genomes(seed: u64, count: usize, config: &AppConfig) -> Vec<String> {
+    let params = TrainerParams { population: 32, ..TrainerParams::from_config(config) };
+    let mut sim = TrainerSim::new(params, seed ^ STREAM_HEBBIAN, 200, config);
     sim.track_live_fitness = false;
     let mut elites = Vec::new();
     let mut generations = 0;
@@ -1351,15 +1346,16 @@ fn trained_genomes(seed: u64, count: usize) -> Vec<String> {
 /// Same genomes with Hebbian learning on (config default) vs off (rate 0), standard and exploration room.
 pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
     let seed = seed_from_str(&opts.seed);
+    let config = &opts.config;
     let count = opts.samples.unwrap_or(HEBBIAN_GENOMES);
     let (genomes, source) = if opts.hof.is_empty() {
-        (trained_genomes(seed, count), "best elites of a seeded TrainerSim run (standard, population 32, 5 generations)".to_string())
+        (trained_genomes(seed, count, config), "best elites of a seeded TrainerSim run (standard, population 32, 5 generations)".to_string())
     } else {
         (opts.hof.iter().take(count).map(|h| h.genome.clone()).collect::<Vec<_>>(), "hof (DB)".to_string())
     };
-    let on = AppConfig::global().clone();
+    let on = config.clone();
     let mut off = on.clone();
-    off.rules.hebbian_learning_rate_base = 0.0;
+    off.brain.hebbian_learning_rate_base = 0.0;
 
     let mut conditions = Vec::new();
     let mut paired = Vec::new();
@@ -1383,7 +1379,7 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
             });
             if hebbian {
                 let samples: Vec<WeightSample> = results.iter().flat_map(|r| r.3.iter().copied()).collect();
-                let ticks = HEBBIAN_TRIALS * scenario.plugin().epoch_ticks();
+                let ticks = HEBBIAN_TRIALS * scenario.plugin(config).epoch_ticks();
                 weights.push(WeightCondition { scenario, ticks, learned: weight_stats(&samples, false), reflex: weight_stats(&samples, true) });
             }
             per_condition.push(results);
@@ -1407,7 +1403,7 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
         genome_source: source,
         genomes: genomes.len(),
         trials: HEBBIAN_TRIALS,
-        hebbian_learning_rate_base: on.rules.hebbian_learning_rate_base,
+        hebbian_learning_rate_base: on.brain.hebbian_learning_rate_base,
         notes: vec![
             "Each genome is evaluated like a trainer sandbox (multi-trial, weights carried across trials, viability gate); genome only, no Lamarckian methylations/weights.".to_string(),
             "off = hebbian_learning_rate_base 0 (no Oja update, no pruning); everything else identical, same RNG streams.".to_string(),
@@ -1443,13 +1439,14 @@ pub struct TopologySet {
 /// Synapse and neuron counts of letter-soup and structured random genomes (brain size per creature, TCK-182).
 pub fn probe_topology(opts: &ProbeOptions) -> TopologyReport {
     let seed = seed_from_str(&opts.seed);
-    let sets = random_populations(seed, opts.samples.unwrap_or(1000))
+    let config = &opts.config;
+    let sets = random_populations(seed, opts.samples.unwrap_or(1000), config)
         .iter()
         .map(|(label, genomes)| {
             let counts: Vec<[f32; 4]> = genomes
                 .par_iter()
                 .map(|g| {
-                    let p = parse_genome(g, None, None);
+                    let p = parse_genome(g, None, None, &config.brain);
                     [p.brain.synapses.len() as f32, p.brain.neurons.len() as f32, p.organelles.len() as f32, g.len() as f32]
                 })
                 .collect();
@@ -1457,7 +1454,7 @@ pub fn probe_topology(opts: &ProbeOptions) -> TopologyReport {
             TopologySet { genomes: label.to_string(), n: genomes.len(), synapses: column(0), neurons: column(1), organs: column(2), genome_length: column(3) }
         })
         .collect();
-    let wildtype = parse_genome(WILDTYPE_GENOME, None, None);
+    let wildtype = parse_genome(WILDTYPE_GENOME, None, None, &config.brain);
     TopologyReport {
         notes: vec!["letter_soup = random 256-base genomes, structured = generate_structured_genome (same sets as the other probes); counts from parse_genome.".to_string()],
         sets,
@@ -1500,8 +1497,8 @@ pub struct MetabolismReport {
 pub fn probe_metabolism(opts: &ProbeOptions) -> MetabolismReport {
     use crate::biology::metabolism::{body_mass, brain_neurons, mean_trial_activity_and_thrust, organ_load, tick_cost};
     let seed = seed_from_str(&opts.seed);
-    let config = AppConfig::global();
-    let sets = random_populations(seed, opts.samples.unwrap_or(1000))
+    let config = &opts.config;
+    let sets = random_populations(seed, opts.samples.unwrap_or(1000), config)
         .iter()
         .enumerate()
         .map(|(set_id, (label, genomes))| {
@@ -1509,7 +1506,7 @@ pub fn probe_metabolism(opts: &ProbeOptions) -> MetabolismReport {
                 .par_iter()
                 .enumerate()
                 .map(|(i, g)| {
-                    let p = parse_genome(g, None, None);
+                    let p = parse_genome(g, None, None, &config.brain);
                     let (activity, thrust) = mean_trial_activity_and_thrust(g, Scenario::Standard, config, &mut derive(seed, &[STREAM_METABOLISM, set_id as u64, i as u64]));
                     let cost = tick_cost(&p, activity, 1.0, &config.metabolism);
                     let share = (cost.senses + cost.brain()) / cost.resting();
@@ -1547,7 +1544,7 @@ mod tests {
     use super::*;
 
     fn opts(samples: usize) -> ProbeOptions {
-        ProbeOptions { seed: "probe-test".to_string(), samples: Some(samples), hof: Vec::new(), hof_source: None }
+        ProbeOptions { seed: "probe-test".to_string(), samples: Some(samples), hof: Vec::new(), hof_source: None, config: crate::config::test_config().clone() }
     }
 
     #[test]
@@ -1567,7 +1564,7 @@ mod tests {
     #[test]
     fn test_forced_mutation_kinds_change_length_as_named() {
         let mut rng = derive(1, &[]);
-        let ops = &AppConfig::global().mutation_operators;
+        let ops = &crate::config::test_config().genome.mutation_operators;
         let len = WILDTYPE_GENOME.len();
         assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Point, ops, &mut rng).unwrap().len(), len);
         assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Creep, ops, &mut rng).unwrap().len(), len);

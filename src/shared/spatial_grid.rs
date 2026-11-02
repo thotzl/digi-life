@@ -1,3 +1,10 @@
+/// Which bucket set of the grid a query reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridLayer {
+    Creatures,
+    Food,
+}
+
 pub struct SpatialGrid {
     pub cell_size: f32,
     pub cols: usize,
@@ -50,49 +57,47 @@ impl SpatialGrid {
         }
     }
 
-    pub fn get_nearby_creatures(&self, x: f32, y: f32, range: f32) -> Vec<u32> {
-        let start_col = ((x - range) / self.cell_size).floor() as usize;
-        let end_col = ((x + range) / self.cell_size).floor() as usize;
-        let start_row = ((y - range) / self.cell_size).floor() as usize;
-        let end_row = ((y + range) / self.cell_size).floor() as usize;
+    /// Calls `f` with every id of `layer` in the cells overlapping the square `[x ± range] × [y ± range]`, column by
+    /// column, then row, then insertion order (ids outside the range circle included). No allocation.
+    pub fn for_each_nearby(&self, layer: GridLayer, x: f32, y: f32, range: f32, mut f: impl FnMut(u32)) {
+        let buckets = match layer {
+            GridLayer::Creatures => &self.creature_buckets,
+            GridLayer::Food => &self.food_buckets,
+        };
+        let start_col = (((x - range) / self.cell_size).floor() as usize).clamp(0, self.cols.saturating_sub(1));
+        let end_col = (((x + range) / self.cell_size).floor() as usize).clamp(0, self.cols.saturating_sub(1));
+        let start_row = (((y - range) / self.cell_size).floor() as usize).clamp(0, self.rows.saturating_sub(1));
+        let end_row = (((y + range) / self.cell_size).floor() as usize).clamp(0, self.rows.saturating_sub(1));
 
-        let start_col = start_col.clamp(0, self.cols.saturating_sub(1));
-        let end_col = end_col.clamp(0, self.cols.saturating_sub(1));
-        let start_row = start_row.clamp(0, self.rows.saturating_sub(1));
-        let end_row = end_row.clamp(0, self.rows.saturating_sub(1));
-
-        let mut result = Vec::new();
         for c in start_col..=end_col {
             for r in start_row..=end_row {
-                let idx = c * self.rows + r;
-                if idx < self.creature_buckets.len() {
-                    result.extend(&self.creature_buckets[idx]);
+                if let Some(bucket) = buckets.get(c * self.rows + r) {
+                    bucket.iter().for_each(|&id| f(id));
                 }
             }
         }
-        result
     }
+}
 
-    pub fn get_nearby_food(&self, x: f32, y: f32, range: f32) -> Vec<u32> {
-        let start_col = ((x - range) / self.cell_size).floor() as usize;
-        let end_col = ((x + range) / self.cell_size).floor() as usize;
-        let start_row = ((y - range) / self.cell_size).floor() as usize;
-        let end_row = ((y + range) / self.cell_size).floor() as usize;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-        let start_col = start_col.clamp(0, self.cols.saturating_sub(1));
-        let end_col = end_col.clamp(0, self.cols.saturating_sub(1));
-        let start_row = start_row.clamp(0, self.rows.saturating_sub(1));
-        let end_row = end_row.clamp(0, self.rows.saturating_sub(1));
-
-        let mut result = Vec::new();
-        for c in start_col..=end_col {
-            for r in start_row..=end_row {
-                let idx = c * self.rows + r;
-                if idx < self.food_buckets.len() {
-                    result.extend(&self.food_buckets[idx]);
-                }
-            }
-        }
-        result
+    #[test]
+    fn test_for_each_nearby_visits_overlapping_cells_per_layer() {
+        let mut grid = SpatialGrid::new(400.0, 400.0, 100.0);
+        grid.insert_creature(1, 50.0, 50.0);
+        grid.insert_creature(2, 150.0, 50.0);
+        grid.insert_creature(3, 350.0, 350.0);
+        grid.insert_food(7, 60.0, 60.0);
+        let collect = |layer, x, y, range| {
+            let mut ids = Vec::new();
+            grid.for_each_nearby(layer, x, y, range, |id| ids.push(id));
+            ids
+        };
+        assert_eq!(collect(GridLayer::Creatures, 60.0, 60.0, 50.0), vec![1, 2]);
+        assert_eq!(collect(GridLayer::Creatures, 60.0, 60.0, 10.0), vec![1]);
+        assert_eq!(collect(GridLayer::Food, 60.0, 60.0, 10.0), vec![7]);
+        assert_eq!(collect(GridLayer::Creatures, 390.0, 390.0, 5.0), vec![3]);
     }
 }

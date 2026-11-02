@@ -11,7 +11,7 @@ use src_tauri::biology::scenarios::Scenario;
 use src_tauri::biology::trainer_report::{run_trainer, RunConfig, ScheduleSpan};
 use src_tauri::biology::trainer_sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrialAggregation};
 use src_tauri::database::{init_db, save_trainer_elites, save_trainer_run_state};
-use src_tauri::shared::types::AppConfig;
+use src_tauri::config::AppConfig;
 
 const USAGE: &str = "Usage:
   trainer_runner run --seed <str> --generations <N> --scenario standard|exploration|curriculum
@@ -39,11 +39,14 @@ const PROBE_DIR: &str = ".agents/artifacts/probes";
 const SWITCHES: &[&str] = &["persist"];
 
 fn main() -> ExitCode {
+    src_tauri::logging::init_console();
+    // Entry point: the one place the runner reads the process config; everything below receives it
+    let app = AppConfig::global();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some("run") => parse_flags(&args[1..]).and_then(|flags| run(&flags)),
+        Some("run") => parse_flags(&args[1..]).and_then(|flags| run(&flags, app)),
         Some("probe") => match args.get(1) {
-            Some(name) if !name.starts_with("--") => parse_flags(&args[2..]).and_then(|flags| probe(name, &flags)),
+            Some(name) if !name.starts_with("--") => parse_flags(&args[2..]).and_then(|flags| probe(name, &flags, app)),
             _ => Err("probe needs a name".to_string()),
         },
         _ => Err("missing or unknown subcommand".to_string()),
@@ -84,7 +87,7 @@ fn parse<T: std::str::FromStr>(flags: &HashMap<String, String>, key: &str, defau
     }
 }
 
-fn run(flags: &HashMap<String, String>) -> Result<(), String> {
+fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     const KNOWN: &[&str] = &[
         "seed", "generations", "scenario", "population", "trials", "aggregation", "one-fifth", "elite-ratio", "minimal-criterion", "mutation-channels", "layout-policy", "multi-trial", "parallel", "persist", "db",
         "run-id", "out", "schedule", "eval-final", "curriculum-upper", "curriculum-lower", "curriculum-step", "start-level", "rehearsal", "ramp-start", "eval-trials",
@@ -120,7 +123,7 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     if eval_final.contains(&Scenario::Curriculum) {
         return Err("--eval-final takes fixed rooms (standard, exploration)".to_string());
     }
-    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", Some(AppConfig::global().trainer_population))?, generations);
+    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", Some(app.trainer.trainer_population))?, generations, app);
     let c = defaults.curriculum;
     let curriculum = CurriculumParams {
         upper: parse(flags, "curriculum-upper", Some(c.upper))?,
@@ -181,17 +184,17 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
     // The DB is opened only with --persist, and only at an explicit path (never the app DB by default)
     let conn = match (persist, flags.get("db")) {
         (true, Some(path)) => {
-            eprintln!("[runner] persisting elites to {} (run id '{}')", path, run_id);
+            log::info!("persisting elites to {} (run id '{}')", path, run_id);
             Some(init_db(path).map_err(|e| format!("cannot open DB {}: {}", path, e))?)
         }
         (true, None) => return Err("--persist requires --db <path>".to_string()),
         (false, Some(_)) => return Err("--db is only used with --persist".to_string()),
         (false, None) => None,
     };
-    let retention = AppConfig::global().trainer_genome_retention_per_run;
+    let retention = app.trainer.trainer_genome_retention_per_run;
 
-    eprintln!(
-        "[runner] seed '{}', scenario {:?}, population {}, generations {}, trials {} ({:?}), multi-trial {}, elite ratio {}, 1/5 rule {}, minimal criterion {}, mutation channels {:?}, parallel {}",
+    log::info!(
+        "seed '{}', scenario {:?}, population {}, generations {}, trials {} ({:?}), multi-trial {}, elite ratio {}, 1/5 rule {}, minimal criterion {}, mutation channels {:?}, parallel {}",
         config.seed,
         config.scenario,
         config.population,
@@ -206,15 +209,15 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         config.parallel
     );
     if config.scenario == Scenario::Curriculum || config.schedule.iter().any(|span| span.scenario == Scenario::Curriculum) {
-        eprintln!("[runner] curriculum {:?}", config.curriculum);
+        log::info!("curriculum {:?}", config.curriculum);
     }
     if !config.schedule.is_empty() {
-        eprintln!("[runner] schedule {:?}", config.schedule);
+        log::info!("schedule {:?}", config.schedule);
     }
-    let report = run_trainer(&config, |event, sim| {
+    let report = run_trainer(&config, app, |event, sim| {
         let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
-        eprintln!(
-            "[runner] generation {}/{}: {:?} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
+        log::info!(
+            "generation {}/{}: {:?} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
             generation,
             config.generations,
             stats.scenario,
@@ -230,10 +233,10 @@ fn run(flags: &HashMap<String, String>) -> Result<(), String> {
         }
     });
     for eval in &report.final_eval {
-        eprintln!("[runner] final eval {:?}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
+        log::info!("final eval {:?}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
     }
-    eprintln!(
-        "[runner] done in {:.2} s ({:.0} ticks/s total, {:.0} per sandbox; generation ends {:.2} s)",
+    log::info!(
+        "done in {:.2} s ({:.0} ticks/s total, {:.0} per sandbox; generation ends {:.2} s)",
         report.perf.wall_seconds, report.perf.ticks_per_second_total, report.perf.ticks_per_second_per_sandbox, report.perf.generation_end_seconds
     );
 
@@ -278,7 +281,7 @@ fn write_file(path: &str, json: String) -> Result<(), String> {
     std::fs::write(path, json + "\n").map_err(|e| format!("cannot write {}: {}", path, e))
 }
 
-fn probe(name: &str, flags: &HashMap<String, String>) -> Result<(), String> {
+fn probe(name: &str, flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     const KNOWN: &[&str] = &["seed", "out", "db", "hof-limit", "samples"];
     if let Some(unknown) = flags.keys().find(|k| !KNOWN.contains(&k.as_str())) {
         return Err(format!("unknown flag --{}", unknown));
@@ -292,7 +295,7 @@ fn probe(name: &str, flags: &HashMap<String, String>) -> Result<(), String> {
     let hof = match flags.get("db") {
         Some(path) => {
             let hof = load_hof_genomes(path, parse(flags, "hof-limit", Some(64))?)?;
-            eprintln!("[probe] {} distinct HoF genomes from {} (read-only)", hof.len(), path);
+            log::info!("{} distinct HoF genomes from {} (read-only)", hof.len(), path);
             hof
         }
         None => Vec::new(),
@@ -302,6 +305,7 @@ fn probe(name: &str, flags: &HashMap<String, String>) -> Result<(), String> {
         samples: if flags.contains_key("samples") { Some(parse(flags, "samples", None)?) } else { None },
         hof_source: flags.get("db").cloned(),
         hof,
+        config: app.clone(),
     };
 
     for name in names {
@@ -313,7 +317,7 @@ fn probe(name: &str, flags: &HashMap<String, String>) -> Result<(), String> {
         let started = std::time::Instant::now();
         let report = run_probe(name, &opts)?;
         write_file(&path, serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?)?;
-        eprintln!("[probe] {} -> {} ({:.1} s)", name, path, started.elapsed().as_secs_f32());
+        log::info!("probe {} -> {} ({:.1} s)", name, path, started.elapsed().as_secs_f32());
     }
     Ok(())
 }

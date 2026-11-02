@@ -126,6 +126,9 @@ pub const CLIMATE_MATRIX: [ClimatePoint; 4] = [
 // --------------------------------------------------------------------------
 // Deterministic Hash & PRNG
 // --------------------------------------------------------------------------
+// Kept as the world generator's own RNG family (TCK-198 scope 7): routing `generate_world` through `SimRng` would
+// draw different numbers and so change the world layout of every seed (reefs, vents, biomes) and the `world` sent
+// in `INIT_STATE`. Replace it together with an intended Ocean model change (TCK-202), not in a structural refactor.
 pub fn hash_string_to_int(s: &str) -> u32 {
     let mut hash: u32 = 0;
     for c in s.chars() {

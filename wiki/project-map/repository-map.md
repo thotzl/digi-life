@@ -47,8 +47,12 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |
-| `shared/map_generator.rs` | procedural worlds (Mulberry32) | [[wiki/simulation/ocean]] |
-| `shared/types.rs` | agent structs, `AppConfig`/`SimulationRules`, config loading | [[wiki/architecture/configuration]] |
+| `shared/map_generator.rs` | procedural worlds (own Mulberry32 RNG; kept because `SimRng` would change every world layout, TCK-198) | [[wiki/simulation/ocean]] |
+| `config/mod.rs` | `AppConfig` (one field per section), loader (`global()` for entry points only), config tests | [[wiki/architecture/configuration]], [[wiki/contracts/config-section]] |
+| `biology/trainer_config.rs`, `server/ocean_config.rs` | config sections `trainer` and `ocean` (the other sections live in `dna.rs`, `brain.rs`, `metabolism.rs`, `physics.rs`) | [[wiki/architecture/configuration]] |
+| `shared/dto.rs` | IPC structs of the simulation state (`CreatureAgent`, `FoodSpore`, `TelemetryCreature`) | [[wiki/architecture/ipc-protocol]] |
+| `shared/geom.rs`, `shared/time.rs`, `shared/json_col.rs` | shared helpers: distance and angle wrap, timestamps named by unit, JSON columns with logged failures | [[wiki/architecture/system-overview]] |
+| `logging.rs` | `log` backend: stderr (dev, runner), rotating file in the app data dir (release app) | [[wiki/architecture/system-overview]] |
 | `shared/rng.rs` | seeded simulation RNG (`SimRng`, text seeds, sub-streams) | [[wiki/simulation/trainer]] |
 | `shared/fmath.rs` | platform-deterministic math (`libm`) for the per-tick path | [[wiki/architecture/performance]] |
 | `bin/trainer_runner.rs` | headless runner CLI: `run` and `probe` (replaced `cli_trainer`, RV-S11) | [[wiki/simulation/analytics-and-balancing]] |

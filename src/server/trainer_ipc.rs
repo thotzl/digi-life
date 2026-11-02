@@ -24,7 +24,7 @@ impl TrainerUiEvent {
     /// JSON payload for the engine's event buffer.
     pub fn to_payload(&self) -> serde_json::Value {
         serde_json::to_value(self).unwrap_or_else(|e| {
-            eprintln!("[SIMULATION] Failed to serialize trainer event: {}", e);
+            log::error!("serializing a trainer event failed: {}", e);
             serde_json::Value::Null
         })
     }
@@ -365,7 +365,7 @@ mod tests {
     #[test]
     fn test_generation_stats_match_report_serialization() {
         use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
-        let mut sim = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::default() }, 7, 4);
+        let mut sim = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::from_config(crate::config::test_config()) }, 7, 4, crate::config::test_config());
         let stats = loop {
             if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.step(false) {
                 break stats;
@@ -446,7 +446,7 @@ mod tests {
     fn test_telemetry_carries_only_the_displayed_sandboxes() {
         use crate::biology::trainer_engine::SandboxOrigin;
         use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
-        let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::default() }, 11, 200);
+        let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) }, 11, 200, crate::config::test_config());
         while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
         let tick = TrainerTelemetryTick::build(&sim, 5, Some(4), true);
         assert_eq!(tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 4, 6, 8, 9]);
@@ -488,7 +488,7 @@ mod tests {
         let record = |fitness: f32| GenomeRecord { genome: WILDTYPE_GENOME.to_string(), name: "p".to_string(), fitness, generation: 1, methylations: Vec::new(), synapse_weights: Vec::new() };
         let parents: Vec<GenomeRecord> = (0..25).map(|i| record(25.0 - i as f32)).collect();
         let hof: Vec<GenomeRecord> = (0..15).map(|i| record(15.0 - i as f32)).collect();
-        let sim = TrainerSim::restore(TrainerParams { population: 100, ..TrainerParams::default() }, 5, 2, parents, hof, 200);
+        let sim = TrainerSim::restore(TrainerParams { population: 100, ..TrainerParams::from_config(crate::config::test_config()) }, 5, 2, parents, hof, 200, crate::config::test_config());
         let tick = TrainerTelemetryTick::build(&sim, 16, None, true);
         let count = |origin: SandboxOrigin| tick.sandboxes.iter().filter(|s| s.origin_type == origin).count();
         assert_eq!(
@@ -503,7 +503,7 @@ mod tests {
     fn test_display_count_does_not_change_the_simulation() {
         use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
         let run = |display_count: Option<usize>| {
-            let mut sim = TrainerSim::new(TrainerParams { population: 10, trials: 2, ..TrainerParams::default() }, 21, 200);
+            let mut sim = TrainerSim::new(TrainerParams { population: 10, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 21, 200, crate::config::test_config());
             let mut stats = Vec::new();
             while stats.len() < 2 {
                 if let Some(n) = display_count {

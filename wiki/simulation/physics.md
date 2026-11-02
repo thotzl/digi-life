@@ -63,7 +63,7 @@ Probe `trainer_runner probe speed --seed tck172`: forced outputs (thrust 1, bend
 
 ## Spatial grid
 
-- `src/shared/spatial_grid.rs`: 80 px cells (240 × 135 for the Ocean), `insert_creature`/`insert_food`, `get_nearby_*`, `clear()`; allocated once per world (TCK-139).
+- `src/shared/spatial_grid.rs`: 80 px cells (240 × 135 for the Ocean), `insert_creature`/`insert_food`, `for_each_nearby(GridLayer, x, y, range, f)` (no allocation per query, TCK-198), `clear()`; allocated once per world (TCK-139).
 - Nearest-food search does not use the grid (RV-P04).
 
 ## Known limitations

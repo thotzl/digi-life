@@ -3,9 +3,42 @@ use crate::biology::dna::{
     MEAT_EMISSION, MIN_CHANNEL_MATCH, OUTPUT_MOTOR_NODES_COUNT, PLANT_EMISSION, SPECTRAL_CHANNELS, SYSTEMIC_BASE_INPUTS_COUNT,
     TAU_MAX, TAU_MIN,
 };
-use crate::shared::types::{CreatureAgent, FoodSpore};
+use serde::{Deserialize, Serialize};
+
+use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::fmath;
+use crate::shared::geom;
+
+/// Config section `brain`: brain compilation (`dna::parse_genome`) and learning (`execute_brain_with_learning`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainConfig {
+    /// Activation of the thalamus sum nodes: "sigmoid" or "tanh" (TCK-190)
+    pub thalamus_sum_activation: ThalamusSumActivation,
+    /// η of the Oja rule of plastic synapses (TCK-152)
+    pub hebbian_learning_rate_base: f32,
+}
+
+/// Activation of the thalamus sum nodes (TCK-190). Sensor inputs are non-negative, so `Sigmoid` turns a silent
+/// channel into a constant 0.5 drive; `Tanh` keeps a silent channel at 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ThalamusSumActivation {
+    Sigmoid,
+    #[default]
+    Tanh,
+}
+
+impl ThalamusSumActivation {
+    /// Activation label of the compiled neuron (`Activation::from_label`)
+    pub fn label(self) -> &'static str {
+        match self {
+            ThalamusSumActivation::Sigmoid => "sigmoid",
+            ThalamusSumActivation::Tanh => "tanh",
+        }
+    }
+}
 
 /// Gain of the ΔI channel: input = clamp(gain · (I_now − I_prev), −1, 1) (TCK-133, signed since TCK-144).
 const DELTA_GAIN: f32 = 2.5;
@@ -286,16 +319,12 @@ pub fn compute_sensory_inputs_into(
             for (food, emission) in foods.iter().zip([PLANT_EMISSION, MEAT_EMISSION]) {
                 let dx = food.x - agent.px;
                 let dy = food.y - agent.py;
-                let dist = (dx*dx + dy*dy).sqrt();
+                let dist = geom::dist(agent.px, agent.py, food.x, food.y);
                 if dist > range {
                     continue;
                 }
-                let mut angle_rel = fmath::atan2(dy, dx) - agent.heading_angle;
-                while angle_rel > std::f32::consts::PI { angle_rel -= std::f32::consts::TAU; }
-                while angle_rel < -std::f32::consts::PI { angle_rel += std::f32::consts::TAU; }
-                let mut delta_beta = angle_rel - alpha;
-                while delta_beta > std::f32::consts::PI { delta_beta -= std::f32::consts::TAU; }
-                while delta_beta < -std::f32::consts::PI { delta_beta += std::f32::consts::TAU; }
+                let angle_rel = geom::wrap_angle(fmath::atan2(dy, dx) - agent.heading_angle);
+                let delta_beta = geom::wrap_angle(angle_rel - alpha);
 
                 if delta_beta.abs() <= half_cone {
                     let falloff = (1.0 - dist / range) * fmath::cos(delta_beta);
@@ -463,7 +492,7 @@ mod tests {
     #[test]
     fn test_execute_brain_determinism() {
         let d_dna = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
-        let phenotype = parse_genome(d_dna, None, None);
+        let phenotype = parse_genome(d_dna, None, None, &crate::config::test_config().brain);
         let brain = phenotype.brain;
 
         let inputs = vec![1.0, 0.5, -0.2, 0.0]; // shorter than the input layer: the rest stays 0
@@ -488,7 +517,7 @@ mod tests {
     #[test]
     fn test_compute_sensory_inputs_correctness() {
         let d_dna = "EYEABCDEFEN"; // Has at least 1 organelle (EYE)
-        let phenotype = parse_genome(d_dna, None, None);
+        let phenotype = parse_genome(d_dna, None, None, &crate::config::test_config().brain);
         let num_neurons = phenotype.brain.neurons.len();
 
         let agent = CreatureAgent {
@@ -540,7 +569,7 @@ mod tests {
 
     /// Runs the brain with the IR channel of the single organ set to `ir[t]` at tick t; returns the last activations and outputs.
     fn run_ir(ir: &[f32]) -> (Vec<f32>, [f32; OUTPUT_MOTOR_NODES_COUNT]) {
-        let phenotype = parse_genome(EYE_DNA, None, None);
+        let phenotype = parse_genome(EYE_DNA, None, None, &crate::config::test_config().brain);
         let mut inputs = vec![0.0; CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT];
         let (mut states, mut activations) = (Vec::new(), Vec::new());
         let mut weights = phenotype.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
@@ -555,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_delta_channel_and_one_tick_latency() {
-        assert_eq!(parse_genome(EYE_DNA, None, None).organelles[0].kind, OrganKind::Eye);
+        assert_eq!(parse_genome(EYE_DNA, None, None, &crate::config::test_config().brain).organelles[0].kind, OrganKind::Eye);
 
         // ΔI has its own slot (signed); the IR channel keeps its value (TCK-144)
         let (rising, out_stimulus) = run_ir(&[0.0, 0.2]);
@@ -573,13 +602,13 @@ mod tests {
     /// organ + systemic inputs, the ΔI slots are filled by the brain); returns the learned weights.
     fn learn_with_noise(genome: &str, ticks: u32, seed: u64) -> (crate::biology::dna::CreaturePhenotype, Vec<f32>) {
         use rand::Rng;
-        let phenotype = parse_genome(genome, None, None);
+        let phenotype = parse_genome(genome, None, None, &crate::config::test_config().brain);
         let input_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
         let mut rng = crate::shared::rng::seeded(seed);
         let (mut states, mut activations) = (Vec::new(), Vec::new());
         let mut weights = phenotype.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
         let mut runtime = BrainRuntime::default();
-        let rate = crate::shared::types::AppConfig::global().rules.hebbian_learning_rate_base;
+        let rate = crate::config::test_config().brain.hebbian_learning_rate_base;
         // Slowly varying random inputs (a new random level every 20 ticks), so pre and post correlate over time
         let mut inputs = vec![0.0; input_count];
         for tick in 0..ticks {
@@ -593,7 +622,7 @@ mod tests {
 
     #[test]
     fn test_oja_learning_stays_bounded_and_reflexes_stay_fixed() {
-        let composition = &crate::shared::types::AppConfig::global().genome_composition;
+        let composition = &crate::config::test_config().genome.genome_composition;
         let (mut plastic, mut at_clamp, mut changed, mut abs_sum) = (0usize, 0usize, 0usize, 0.0f32);
         for seed in 0..24 {
             let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
@@ -622,10 +651,10 @@ mod tests {
 
     #[test]
     fn test_reflexes_are_fixed_and_the_rest_plastic() {
-        let composition = &crate::shared::types::AppConfig::global().genome_composition;
+        let composition = &crate::config::test_config().genome.genome_composition;
         for seed in 0..20 {
             let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
-            let brain = parse_genome(&genome, None, None).brain;
+            let brain = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain;
             for s in &brain.synapses {
                 let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
                 assert_eq!(s.plastic, !reflex, "{:?}", s);
