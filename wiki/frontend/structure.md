@@ -51,7 +51,7 @@ sources: [.agents/skills/client-rendering/SKILL.md, README.md, docs/revisit/06-f
 ## Hardcoded values
 
 - World size 19200/10800 (5×), population display `/ 25`, fossil fallback `selectedAge = 2700` (RV-F08).
-- `ActiveView` contains `"creator"` without a view; `concurrently`, `tsx` and Stryker are configured but unused (RV-F07).
+- `ActiveView` contains `"creator"` without a view (RV-F07; the unused `concurrently`, `tsx` and Stryker were removed in TCK-189).
 
 ## Key Takeaways
 

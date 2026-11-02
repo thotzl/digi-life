@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.28] - 2026-11-02
+
+Epic TCK-196, phase R0. Dependency security alerts.
+
+### Security
+- `npm audit` from 24 vulnerabilities (5 critical) to 0: removed the unused dev tools `concurrently`, `tsx` and Stryker (`test:mutation`), upgraded Vite 5 -> 6.4 and Vitest 1.6 -> 4.1. `cargo audit`: no vulnerabilities; 8 warnings in Tauri's transitive dependencies (ref TCK-189).
+
 ## [1.12.27] - 2026-11-02
 
 First Windows release build of the alpha under the product name **BroodBattle**. Golden master and CI reference unchanged.
