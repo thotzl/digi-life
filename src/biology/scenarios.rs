@@ -325,7 +325,7 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
     crate::shared::brain::compute_sensory_inputs_into(&sb.agent, clock_val, visible, &[], size, size, &mut sb.sensor_inputs);
 
     use crate::shared::brain::execute_brain_with_learning;
-    let outputs = execute_brain_with_learning(
+    let motors = execute_brain_with_learning(
         &sb.agent.phenotype.brain,
         &sb.sensor_inputs,
         &mut sb.agent.neuron_states,
@@ -334,8 +334,8 @@ pub fn step_physics(sb: &mut TrainerSandbox, app_config: &AppConfig) -> bool {
         &mut sb.agent.brain_runtime,
         app_config.brain.hebbian_learning_rate_base,
     );
-    let out_thrust = outputs[0];
-    let out_left = outputs[1];
+    let out_thrust = motors.thrust;
+    let out_left = motors.bend;
 
     let metabolic_scale = app_config.metabolism.trainer_metabolic_scale * plugin.metabolic_scale();
     crate::biology::metabolism::drain_energy(&mut sb.agent, out_thrust, &app_config.metabolism, metabolic_scale);
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(DietClass::from_carnivory(0.6), DietClass::Carnivore);
     }
 
-    use crate::biology::dna::WILDTYPE_GENOME;
+    use crate::biology::genome::WILDTYPE_GENOME;
     use crate::biology::trainer_engine::{init_rust_sandbox, SandboxOrigin};
 
     fn sandbox(scenario: Scenario) -> TrainerSandbox {

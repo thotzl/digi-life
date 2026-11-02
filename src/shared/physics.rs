@@ -116,8 +116,8 @@ pub fn step_food_spore_physics(
     }
 }
 
-/// Trait ranges of `parse_genome` (`src/biology/dna.rs`): pulse 0.0015 + h * 0.0075, stiffness 0.15 + h * 0.85,
-/// parapodia amplitude h * 0.45.
+/// Trait ranges of the body genes (`src/biology/phenotype/body.rs`): pulse 0.0015 + h * 0.0075, stiffness
+/// 0.15 + h * 0.85, parapodia amplitude h * 0.45.
 const PULSE_MIN: f32 = 0.0015;
 const PULSE_SPAN: f32 = 0.0075;
 const STIFFNESS_MIN: f32 = 0.15;
@@ -127,32 +127,34 @@ const PARAPODIA_MAX: f32 = 0.45;
 const VELOCITY_DAMPING: f32 = 0.94;
 
 /// Normalised locomotion drive `g` in [0, 1] (TCK-150): 0.4 pulse + 0.4 stiffness + 0.2 appendages, each
-/// normalised to its genome range; appendages = half parapodia amplitude, a quarter per limb (at most two).
+/// normalised to its genome range; appendages = half parapodia amplitude, a quarter per limb (at most two; a limb is
+/// an organ whose kind says so, `OrganSpec::limb`).
 /// Monotone in pulse and stiffness; limbs and parapodia are folded in instead of a multiplicative bonus.
-pub fn locomotion_drive(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
+pub fn locomotion_drive(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f32 {
     let pulse = ((phenotype.pulse_speed - PULSE_MIN) / PULSE_SPAN).clamp(0.0, 1.0);
     let stiffness = ((phenotype.stiffness - STIFFNESS_MIN) / STIFFNESS_SPAN).clamp(0.0, 1.0);
-    let limbs = phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count().min(2) as f32;
+    let limbs = phenotype.organelles.iter().filter(|o| (o.kind.spec().limb)(o)).count().min(2) as f32;
     let appendages = (0.5 * phenotype.spinal_harmonics.parapodia_amp / PARAPODIA_MAX + 0.25 * limbs).clamp(0.0, 1.0);
     (0.4 * pulse + 0.4 * stiffness + 0.2 * appendages).clamp(0.0, 1.0)
 }
 
 /// Terminal speed at full thrust (px/tick): `locomotionSpeedMin + (locomotionSpeedMax - locomotionSpeedMin) * g`.
-pub fn target_terminal_speed(phenotype: &crate::biology::dna::CreaturePhenotype, physics: &PhysicsConfig) -> f32 {
+pub fn target_terminal_speed(phenotype: &crate::biology::phenotype::CreaturePhenotype, physics: &PhysicsConfig) -> f32 {
     let (min, max) = (physics.locomotion_speed_min, physics.locomotion_speed_max);
     min + (max - min) * locomotion_drive(phenotype)
 }
 
 /// Body mass `r^1.5 · L / 25` (also the body term of the metabolic cost, TCK-151).
-pub fn body_mass(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
+pub fn body_mass(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f32 {
     fmath::powf(phenotype.spinal_harmonics.mean_radius, 1.5) * (phenotype.spinal_harmonics.base_length / 25.0)
 }
 
-/// Mass and forward drag coefficient of a body (receptor ballast raises drag, stiffness lowers it).
-fn mass_and_drag(phenotype: &crate::biology::dna::CreaturePhenotype, physics: &PhysicsConfig) -> (f32, f32) {
+/// Mass and forward drag coefficient of a body (organ ballast, `OrganSpec::ballast`, raises drag, stiffness lowers it).
+fn mass_and_drag(phenotype: &crate::biology::phenotype::CreaturePhenotype, physics: &PhysicsConfig) -> (f32, f32) {
     let mean_radius = phenotype.spinal_harmonics.mean_radius;
     let mass = body_mass(phenotype);
-    let receptor_ballast = phenotype.organelles.len() as f32 * physics.receptor_ballast_scale;
+    let ballast_units = phenotype.organelles.iter().fold(0.0f32, |sum, o| sum + o.kind.spec().ballast);
+    let receptor_ballast = ballast_units * physics.receptor_ballast_scale;
     let drag_forward = (mean_radius * physics.drag_forward_coefficient + receptor_ballast)
         * (1.0 - phenotype.stiffness * physics.drag_forward_stiffness_decay);
     (mass, drag_forward)

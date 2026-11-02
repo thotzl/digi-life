@@ -1,6 +1,6 @@
 ---
 name: biology-dna
-description: Rules for changing the genome compiler, CTRNN brain, sensing, metabolism, reproduction or species logic of Pixel DNA Life (src/biology/dna.rs, src/shared/brain.rs).
+description: Rules for changing the genome compiler, CTRNN brain, sensing, metabolism, reproduction or species logic of Pixel DNA Life (src/biology/{genome,phenotype,organs,brain}/, src/shared/brain.rs).
 ---
 # biology-dna: Genome, Brain & Evolution Rules
 

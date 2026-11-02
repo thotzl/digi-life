@@ -4,8 +4,10 @@ import type { GeneRef } from "../../bindings/GeneRef";
 import type { GeneSpan } from "../../bindings/GeneSpan";
 import type { Motor } from "../../bindings/Motor";
 import type { NeuronRole } from "../../bindings/NeuronRole";
+import type { Organ } from "../../bindings/Organ";
 import type { OrganKind } from "../../bindings/OrganKind";
-import type { SensoryPatch } from "../../bindings/SensoryPatch";
+import { ORGAN_KINDS } from "../../bindings/organRegistry";
+import { PROMOTERS } from "../../bindings/promoterRegistry";
 import type { SystemicInput } from "../../bindings/SystemicInput";
 
 /**
@@ -13,28 +15,12 @@ import type { SystemicInput } from "../../bindings/SystemicInput";
  * every neuron is; this module only maps promoter and enum values to text. Keep it data: one table per concept.
  */
 
-/** Meaning of each promoter `parse_genome` expresses (`EXPRESSED_PROMOTERS` in `src/biology/dna.rs`).
+/** Meaning of each promoter `parse_genome` expresses, from the backend promoter registry (`PROMOTERS` in
+ * `src/biology/genome/promoters.rs`, generated into `bindings/promoterRegistry.ts`).
  * `firstOnly`: the compiler reads only the first gene of this promoter; later copies are silent. */
-export const PROMOTER_MEANINGS: Record<string, { meaning: string; firstOnly?: boolean }> = {
-  COL: { meaning: "Colour hue and symmetry (body)", firstOnly: true },
-  SIZ: { meaning: "Body radius, length and body seed (body)", firstOnly: true },
-  STF: { meaning: "Stiffness and hydraulic pressure (body)", firstOnly: true },
-  WAV: { meaning: "Spinal curve and parapodia waves (body)", firstOnly: true },
-  PUL: { meaning: "Pulse speed, wave phase, wiggle, head shape (body)", firstOnly: true },
-  STM: { meaning: "Stomach capacity (body)", firstOnly: true },
-  TEM: { meaning: "Thermal tolerance (body)", firstOnly: true },
-  CAR: { meaning: "Carnivory (diet)", firstOnly: true },
-  REP: { meaning: "Maturity age, mitosis threshold, split loss (reproduction)", firstOnly: true },
-  EVO: { meaning: "Indel rates and repair fidelity (evolvability)", firstOnly: true },
-  HOX: { meaning: "Symmetry: organs form left/right pairs (HOX)" },
-  EYE: { meaning: "Sensory organ (EYE)" },
-  NOS: { meaning: "Sensory organ (NOS)" },
-  TAC: { meaning: "Sensory organ (TAC)" },
-  LUM: { meaning: "Sensory organ (LUM)" },
-  NEU: { meaning: "Hidden neuron and its synapses (NEU)" },
-  SY: { meaning: "Explicit synapse (SY)" },
-  OUT: { meaning: "Brain base: motor bias/tau, systemic to motor weights (OUT)", firstOnly: true },
-};
+export const PROMOTER_MEANINGS: Record<string, { meaning: string; firstOnly?: boolean }> = Object.fromEntries(
+  PROMOTERS.map(p => [p.motif, p.expression === "firstOnly" ? { meaning: p.meaning, firstOnly: true } : { meaning: p.meaning }]),
+);
 
 export const SYSTEMIC_NAMES: Record<SystemicInput, string> = {
   clock: "Hunger clock",
@@ -45,26 +31,15 @@ export const SYSTEMIC_NAMES: Record<SystemicInput, string> = {
   searchArousal: "Search arousal",
 };
 
-export const ORGAN_KIND_NAMES: Record<OrganKind, string> = {
-  eye: "Eye",
-  nose: "Nose",
-  thermal: "Thermal organ",
-  bristle: "Bristle",
-  lateralLine: "Lateral line",
-  proprioceptor: "Proprioceptor",
-};
-
-const TACTILE_CHANNELS = ["Hardness", "Flow", "Temperature", "Strain", "Pain"];
-/** Spectral channel names per organ kind (channels 0..4); channel 5 is the temporal change ΔI. */
-export const CHANNEL_NAMES: Record<OrganKind, string[]> = {
-  eye: ["UV", "Blue", "Green", "Red", "IR"],
-  nose: ["Acid", "Sugar", "Ketone", "Protein", "Pheromone"],
-  thermal: ["UV heat", "Blue heat", "Green heat", "Red heat", "IR heat"],
-  bristle: TACTILE_CHANNELS,
-  lateralLine: TACTILE_CHANNELS,
-  proprioceptor: TACTILE_CHANNELS,
-};
-/** Index of the ΔI channel (`DELTA_CHANNEL` in `src/biology/dna.rs`). */
+/** Display names per organ kind and its spectral channels 0..4 (channel 5 is the temporal change ΔI), from the
+ * backend organ registry (`OrganSpec` in `src/biology/organs/`, generated into `bindings/organRegistry.ts`). */
+export const ORGAN_KIND_NAMES = Object.fromEntries(
+  Object.entries(ORGAN_KINDS).map(([kind, info]) => [kind, info.name]),
+) as Record<OrganKind, string>;
+export const CHANNEL_NAMES = Object.fromEntries(
+  Object.entries(ORGAN_KINDS).map(([kind, info]) => [kind, info.channels]),
+) as Record<OrganKind, string[]>;
+/** Index of the ΔI channel (`DELTA_CHANNEL` in `src/biology/organs/mod.rs`). */
 export const DELTA_CHANNEL = 5;
 
 export const MOTOR_NAMES: Record<Motor, string> = {
@@ -113,12 +88,12 @@ export function geneIndexByPosition(genes: GeneSpan[], length: number): Int32Arr
 }
 
 /** Organs a gene produced (matched by gene start). */
-function organsOf(span: GeneSpan, organelles: SensoryPatch[]): SensoryPatch[] {
+function organsOf(span: GeneSpan, organelles: Organ[]): Organ[] {
   return organelles.filter(o => o.geneStartIndex === span.start);
 }
 
 /** Full description of one gene for tooltips, e.g. "EYE 1: Sensory organ (EYE) - Eye pair". */
-export function describeGene(genes: GeneSpan[], index: number, organelles: SensoryPatch[] = []): string {
+export function describeGene(genes: GeneSpan[], index: number, organelles: Organ[] = []): string {
   const span = genes[index];
   let text = `${geneName(genes, index)}: ${geneMeaning(span.gene.promoter)}`;
   const organs = organsOf(span, organelles);
@@ -129,7 +104,7 @@ export function describeGene(genes: GeneSpan[], index: number, organelles: Senso
 
 export interface RoleContext {
   genes: GeneSpan[];
-  organelles: SensoryPatch[];
+  organelles: Organ[];
 }
 
 function geneIndexOf(ctx: RoleContext, gene: GeneRef): number {

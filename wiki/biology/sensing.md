@@ -4,26 +4,26 @@ sources: [tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md, 
 
 # Sensing
 
-Computed in `compute_sensory_inputs` (`src/shared/brain.rs`), one implementation for Ocean and Trainer (TCK-129). `compute_sensory_inputs_into` writes into a reused buffer (trainer sandboxes, probes); `compute_sensory_inputs` wraps it with a fresh vector (Ocean) (TCK-173). Angles and cone falloff use `src/shared/fmath.rs` (`libm`) for platform-identical results.
+Computed in `compute_sensory_inputs` (`src/shared/brain.rs`), one implementation for Ocean and Trainer (TCK-129). It builds one `SenseCtx{agent, foods, obstacles, width, height}` per tick and calls each organ kind's `OrganSpec::sense` (TCK-199, [[wiki/contracts/organ-kind]]); the organ files are `src/biology/organs/{eye,nose,thermal,bristle,lateral_line,proprioceptor}.rs`, with the shared spectral sense in `spectral.rs` and the tactile quantities in `contact.rs`. `compute_sensory_inputs_into` writes into a reused buffer (trainer sandboxes, probes); `compute_sensory_inputs` wraps it with a fresh vector (Ocean) (TCK-173). Angles and cone falloff use `src/shared/fmath.rs` (`libm`) for platform-identical results.
 
 ## Organelles
 
 - Compiled from `EYE`/`NOS`/`TAC`/`LUM` genes, one organ (or a `HOX` pair) per gene ([[wiki/biology/genome-compiler]]). The promoter does not decide the type; affinity and expression style do.
 - Each organ compiles `spectral_affinity` `[0, 1]` and `bandwidth` `[0.05, 0.90]` freely from its payload (TCK-122).
-- **`OrganKind`** (enum in `SensoryPatch.kind`, decided once at compile time, TCK-144): `Eye` affinity ≥ 0.80, `Thermal` 0.65–0.80, `Nose` 0.25–0.65, below 0.25 by expression style E: `Bristle` E < 0.35, `LateralLine` 0.35 ≤ E < 0.70, `Proprioceptor` E ≥ 0.70. `Eye`, `Nose`, `Thermal` are distance senses. No emoji label matching remains in the model (RV-S10 organ part).
-- `SensoryPatch.side`: `single`, or `left`/`right` of a `HOX` pair.
-- Sensor range per organ `scale · 550`; measured over letter-soup genomes 256 / 575 / 926 px (p10/p50/p90), 193–990 px overall (TCK-172).
-- Each organ provides **6 input slots** (`CHANNELS_PER_ORGANELLE`): 5 spectral receptive-field channels (1 UV/pressure 0.10, 2 blue/ester 0.30, 3 green/sugar 0.50, 4 red/amino acid 0.70, 5 IR/pheromone 0.90) plus slot 6 ΔI. Organ slots are clamped to `[0, 1]` except ΔI.
+- **`OrganKind`** (enum in `Organ.kind`, decided once at compile time by `OrganKind::classify`, TCK-144): `Eye` affinity ≥ 0.80, `Thermal` 0.65–0.80, `Nose` 0.25–0.65, below 0.25 by expression style E: `Bristle` E < 0.35, `LateralLine` 0.35 ≤ E < 0.70, `Proprioceptor` E ≥ 0.70. `Eye`, `Nose`, `Thermal` are distance senses (`OrganSpec::distance`). No emoji label matching remains in the model (RV-S10 organ part).
+- `Organ.side`: `single`, or `left`/`right` of a `HOX` pair.
+- Sensor range per organ `scale · 550` (`Organ::range`, `SENSOR_RANGE_PER_SCALE`); measured over letter-soup genomes 256 / 575 / 926 px (p10/p50/p90), 193–990 px overall (TCK-172).
+- Each organ provides **6 input slots** (`CHANNELS_PER_ORGANELLE`): 5 spectral receptive-field channels (1 UV/pressure 0.10, 2 blue/ester 0.30, 3 green/sugar 0.50, 4 red/amino acid 0.70, 5 IR/pheromone 0.90) plus slot 6 ΔI. Input slot of organ `i`, channel `c` = `i · 6 + c`. Organ slots are clamped to `[0, 1]` except ΔI.
 
 ## Emission spectra
 
 - Algae/plants: 1.0 on channel 2, 0.5 on channel 3. Meat/prey: 1.0 on channel 5, 0.5 on channel 4.
-- Distance senses: tuning curve `1 − |f_c − affinity| / (1.8 · bandwidth + 0.12)` per channel; a channel registers food when sensitivity × emission > 0.05. Only these channels (plus ΔI) get thalamus nodes ([[wiki/biology/ctrnn-brain]], TCK-182).
+- Distance senses: tuning curve `1 − |f_c − affinity| / (1.8 · bandwidth + 0.12)` per channel; a channel registers food when sensitivity × emission > 0.05. Only these channels (plus ΔI) get thalamus nodes ([[wiki/biology/ctrnn-brain]], TCK-182). Each kind's `live_channels` must agree with its `sense` (test `test_live_channels_match_sense`).
 
 ## Tactile organs (affinity < 0.25)
 
 - Channels: 1 mechanical hardness (walls 1.0, spores 0.3, reefs 1.0 on proximity — FIX-131), 2 fluid drag, 3 water temperature (center gradient), 4 spine strain, 5 impact pain.
-- Subtypes (TCK-133): `Bristle` hardness + pain (channels 1, 5), `LateralLine` flow + pain (channels 2, 5; flow computed signed but clamped to `[0, 1]` at write), `Proprioceptor` temperature + spine flexion (channels 3, 4). Only these two channels per subtype are wired; tactile organs have no ΔI.
+- Subtypes (TCK-133): `Bristle` hardness + pain (channels 1, 5), `LateralLine` flow + pain (channels 2, 5; flow computed signed but clamped to `[0, 1]` at write), `Proprioceptor` temperature + spine flexion (channels 3, 4). Only these two channels per subtype are wired; tactile organs have no ΔI. Pain thresholds (speed 1.5, wall pressure 0.3) are reviewed in TCK-202.
 
 ## Motion vision ΔI (TCK-144)
 
@@ -48,7 +48,7 @@ Six inputs after all organ slots (`SystemicInput`, `SYSTEMIC_BASE_INPUTS_COUNT`)
 | Property | Letter soup | Structured |
 | :--- | :--- | :--- |
 | No organ | 21 % | 0 % |
-| ≥ 1 food-sensing organ (affinity ≥ 0.25) | 67 % | 99 % |
+| ≥ 1 food-sensing organ (distance sense) | 67 % | 99 % |
 | `HOX` organ pair | 21 % | 31 % |
 | Food in sensor range at spawn: small / large room | 57 % / 14 % | 86 % / 24 % |
 | Non-zero food stimulus at spawn: small / large room | 31 % / 4.8 % | 46 % / 7.5 % |

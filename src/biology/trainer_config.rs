@@ -125,7 +125,7 @@ pub enum TrialAggregation {
 
 /// Mutation channels of the trainer's mutated children (TCK-181): `Mixed` lets every operator call hit any gene;
 /// `Separate` gives each child one channel (body or brain genes, drawn per child from its breeding stream) and
-/// restricts all its operator calls to genes of that channel (`dna::mutate_genome_in_channel`).
+/// restricts all its operator calls to genes of that channel (`genome::mutate_genome_in_channel`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MutationChannelMode {

@@ -35,7 +35,7 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
 | `core` | `CoreConfig` (`src/config/mod.rs`) | Ocean world generation, `INIT_STATE.seed`, trainer run seeds |
 | `ocean` | `OceanConfig` (`src/server/ocean_config.rs`) | Ocean step in `server::engine` |
 | `trainer` | `TrainerConfig` (`src/biology/trainer_config.rs`) | `trainer_sim`, `trainer_engine`, `scenarios`, runner defaults |
-| `genome` | `GenomeConfig` (`src/biology/dna.rs`) | genome generator, mutation, Lamarckian inheritance |
+| `genome` | `GenomeConfig` (`src/biology/genome/mod.rs`) | genome generator, mutation, Lamarckian inheritance |
 | `brain` | `BrainConfig` (`src/shared/brain.rs`) | `parse_genome` (brain compile), brain step (learning) |
 | `metabolism` | `MetabolismConfig` (`src/biology/metabolism.rs`) | energy function, start energy, food and bite energy |
 | `physics` | `PhysicsConfig` (`src/shared/physics.rs`) | `step_creature_kinematics`, wall and reef contact |

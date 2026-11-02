@@ -40,7 +40,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::biology::dna::{CreaturePhenotype, NeuronRole};
+use crate::biology::brain::NeuronRole;
+use crate::biology::phenotype::CreaturePhenotype;
 use crate::shared::dto::CreatureAgent;
 
 /// Config section `metabolism`: the energy function (derivation in the module docs), start energy and the food and
@@ -73,9 +74,10 @@ pub fn body_mass(phenotype: &CreaturePhenotype) -> f32 {
     crate::shared::physics::body_mass(phenotype)
 }
 
-/// Organ load `Σ scale² · (1.1 − bandwidth)`: big, sharply tuned organs cost most (shape of the former vestigial organ tax).
+/// Organ load: sum of the organs' `OrganSpec::cost_load` (every kind today: `scale² · (1.1 − bandwidth)`, big, sharply
+/// tuned organs cost most; shape of the former vestigial organ tax).
 pub fn organ_load(phenotype: &CreaturePhenotype) -> f32 {
-    phenotype.organelles.iter().map(|o| o.scale * o.scale * (1.1 - o.bandwidth)).sum()
+    phenotype.organelles.iter().map(|o| (o.kind.spec().cost_load)(o)).sum()
 }
 
 /// Neurons that integrate (thalamus, hidden, motors). Sensor and systemic slots are inputs written by the
@@ -152,7 +154,7 @@ pub fn bite_energy_gain(carnivory: f32, victim_energy: f32, rules: &MetabolismCo
 /// no metabolic drain so the brain runs the whole trial): mean synaptic activity `Σ|w·a|` per tick and mean
 /// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration.
 pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::scenarios::Scenario, config: &crate::config::AppConfig, rng: &mut crate::shared::rng::SimRng) -> (f32, f32) {
-    use crate::biology::dna::Motor;
+    use crate::biology::brain::Motor;
     use crate::biology::scenarios::TrainingScenarioPlugin;
     use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
     let mut config = config.clone();
@@ -173,7 +175,7 @@ pub fn mean_trial_activity_and_thrust(genome: &str, scenario: crate::biology::sc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::dna::parse_genome;
+    use crate::biology::phenotype::parse_genome;
     use crate::biology::scenarios::Scenario;
     use crate::shared::rng::derive;
 
@@ -192,7 +194,7 @@ mod tests {
     fn structured_phenotypes(n: usize) -> Vec<CreaturePhenotype> {
         let composition = &crate::config::test_config().genome.genome_composition;
         (0..n)
-            .map(|i| parse_genome(&crate::biology::dna::generate_structured_genome(composition, &mut derive(151, &[i as u64])), None, None, &crate::config::test_config().brain))
+            .map(|i| parse_genome(&crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64])), None, None, &crate::config::test_config().brain))
             .collect()
     }
 
@@ -222,7 +224,7 @@ mod tests {
         let composition = &config.genome.genome_composition;
         let rows: Vec<(f32, f32, f32)> = (0..200)
             .map(|i| {
-                let genome = crate::biology::dna::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
+                let genome = crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
                 let (activity, thrust) = mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
                 let total = tick_cost(&parse_genome(&genome, None, None, &crate::config::test_config().brain), activity, thrust, &config.metabolism).total();
                 (activity, thrust, total)

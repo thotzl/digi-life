@@ -17,7 +17,7 @@
 //! aggregate of its trial fitness (`aggregate_trials`), without a gate or bonus per successful trial.
 //!
 //! Mutation channels (TCK-181): every mutated child (mutant, hof) records the gene channels its operator calls touched
-//! (`dna::classify_mutation`: body / brain / both / neutral); elites carry the channel of the last mutation in their
+//! (`genome::classify_mutation`: body / brain / both / neutral); elites carry the channel of the last mutation in their
 //! lineage. `GenerationStats::mutation_channels` covers the mutant slots (origin `Mutant`, the population of the 1/5
 //! rule); `elite_last_mutation` covers the elites. Mode `TrainerParams::mutation_channels` (config `mutationChannels`).
 //!
@@ -39,7 +39,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, SpawnOptions};
-use crate::biology::dna::{parse_genome, CTRNNSynapse, MutationChannel, MutationTouch, OrganKind, WILDTYPE_GENOME};
+use crate::biology::brain::CTRNNSynapse;
+use crate::biology::genome::{MutationChannel, MutationTouch, WILDTYPE_GENOME};
+use crate::biology::organs::OrganKind;
+use crate::biology::phenotype::parse_genome;
 use crate::biology::scenarios::{calculate_fitness, LevelScenario, Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{breed_genome_traced, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
 use crate::config::AppConfig;
@@ -320,7 +323,7 @@ pub struct ChannelStats {
     pub elite_share: Option<f32>,
 }
 
-/// `ChannelStats` per channel of a child's mutations (union of its operator calls, `dna::classify_mutation`).
+/// `ChannelStats` per channel of a child's mutations (union of its operator calls, `genome::classify_mutation`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MutationChannelStats {
     pub body: ChannelStats,
@@ -1085,7 +1088,7 @@ impl TrainerSim {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::dna::parse_genome;
+    use crate::biology::phenotype::parse_genome;
 
     fn small_params() -> TrainerParams {
         TrainerParams { population: 8, ..TrainerParams::from_config(crate::config::test_config()) }
@@ -1178,7 +1181,7 @@ mod tests {
     /// Structured parent genome with learned weights = genome weight + a distinct offset per synapse.
     fn learned_parent(seed: u64) -> (GenomeRecord, Vec<CTRNNSynapse>, Vec<f32>) {
         let config = crate::config::test_config();
-        let genome = crate::biology::dna::generate_structured_genome(&config.genome.genome_composition, &mut crate::shared::rng::seeded(seed));
+        let genome = crate::biology::genome::generate_structured_genome(&config.genome.genome_composition, &mut crate::shared::rng::seeded(seed));
         let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain.synapses;
         let offsets: Vec<f32> = (0..synapses.len()).map(|i| 0.01 * (i + 1) as f32).collect();
         let learned = synapses.iter().zip(&offsets).map(|(s, o)| s.weight + o).collect();
@@ -1193,7 +1196,7 @@ mod tests {
 
     #[test]
     fn test_lamarck_offsets_follow_synapse_keys_across_gene_duplication() {
-        use crate::biology::dna::{mutate_genome_with_kind, MutationKind};
+        use crate::biology::genome::{mutate_genome_with_kind, MutationKind};
         let ops = &crate::config::test_config().genome.mutation_operators;
         let mut checked = 0;
         for seed in 0..40 {

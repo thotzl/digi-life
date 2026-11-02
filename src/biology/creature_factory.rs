@@ -1,6 +1,7 @@
 use rand::Rng;
 
-use crate::biology::dna::{parse_genome, CTRNNSynapse, CreaturePhenotype};
+use crate::biology::brain::CTRNNSynapse;
+use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
 use crate::shared::brain::{BrainRuntime, WEIGHT_CLAMP};
 use crate::biology::metabolism::MetabolismConfig;
 use crate::config::AppConfig;
@@ -141,7 +142,7 @@ mod tests {
 
     /// Structured genome, its synapses and learned weights = genome weight + a distinct non-zero offset per synapse.
     fn learned_parent(seed: u64) -> (Vec<CTRNNSynapse>, Vec<f32>) {
-        let genome = crate::biology::dna::generate_structured_genome(&crate::config::test_config().genome.genome_composition, &mut crate::shared::rng::seeded(seed));
+        let genome = crate::biology::genome::generate_structured_genome(&crate::config::test_config().genome.genome_composition, &mut crate::shared::rng::seeded(seed));
         let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain.synapses;
         let learned = synapses.iter().enumerate().map(|(i, s)| s.weight + 0.01 * (i + 1) as f32).collect();
         (synapses, learned)

@@ -36,7 +36,10 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `server/api.rs` | Tauri commands (species, trainer, catalogue, phenotype) | [[wiki/architecture/ipc-protocol]] |
 | `server/trainer_ipc.rs` | typed trainer events (`TrainerUiEvent`) and actions (`TrainerAction`), ts-rs exported (TCK-177) | [[wiki/architecture/ipc-protocol]] |
 | `persistence/` | the only module with SQL: DB path, `init_db` (WAL, `user_version` migrations, model-version reset), repository traits `SpeciesRepo`/`CatalogueRepo`/`TrainerRepo`/`OceanSnapshotRepo` with SQLite (`Db`) and in-memory (`MemoryDb`) implementations, DTOs, `DbState`, error logging (TCK-159) | [[wiki/architecture/persistence]] |
-| `biology/dna.rs` | genome compiler (gene table and identity, traits, organs), Brain v2 topology (roles, keys, owners, weight tapes), structured genome generator, mutation operators, Latin names | [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]] |
+| `biology/genome/` | alphabet, promoter registry (`promoters.rs`), gene scan and table (identity), payload reader, structured genome generator, mutation operators and channels | [[wiki/biology/genome-compiler]] |
+| `biology/phenotype/` | `parse_genome`, `CreaturePhenotype`, body trait decoders (`body.rs`), Latin names (`naming.rs`) | [[wiki/biology/genome-compiler]] |
+| `biology/organs/` | organ registry: `OrganKind`, `OrganSpec`, one file per kind, shared spectral/contact sensing | [[wiki/contracts/organ-kind]], [[wiki/biology/sensing]] |
+| `biology/brain/` | brain model types (roles, motors, `MotorOutputs`, `Activation`) and the Brain v2 compiler (`compile.rs`) | [[wiki/biology/ctrnn-brain]] |
 | `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers); Lamarckian weight inheritance by synapse key | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig`, cost-calibration helper | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, layout policy, curriculum gate, rehearsal, pending room switches, breeding, hall of fame, generation stats, population evaluation | [[wiki/simulation/trainer]] |
@@ -50,7 +53,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |
 | `shared/map_generator.rs` | procedural worlds (own Mulberry32 RNG; kept because `SimRng` would change every world layout, TCK-198) | [[wiki/simulation/ocean]] |
 | `config/mod.rs` | `AppConfig` (one field per section), loader (`global()` for entry points only), config tests | [[wiki/architecture/configuration]], [[wiki/contracts/config-section]] |
-| `biology/trainer_config.rs`, `server/ocean_config.rs` | config sections `trainer` and `ocean` (the other sections live in `dna.rs`, `brain.rs`, `metabolism.rs`, `physics.rs`) | [[wiki/architecture/configuration]] |
+| `biology/trainer_config.rs`, `server/ocean_config.rs` | config sections `trainer` and `ocean` (the other sections live in `genome/mod.rs`, `brain.rs`, `metabolism.rs`, `physics.rs`) | [[wiki/architecture/configuration]] |
 | `shared/dto.rs` | IPC structs of the simulation state (`CreatureAgent`, `FoodSpore`, `TelemetryCreature`) | [[wiki/architecture/ipc-protocol]] |
 | `shared/geom.rs`, `shared/time.rs`, `shared/json_col.rs` | shared helpers: distance and angle wrap, timestamps named by unit, JSON columns with logged failures | [[wiki/architecture/system-overview]] |
 | `logging.rs` | `log` backend: stderr (dev, runner), rotating file in the app data dir (release app) | [[wiki/architecture/system-overview]] |
@@ -58,7 +61,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `shared/fmath.rs` | platform-deterministic math (`libm`) for the per-tick path | [[wiki/architecture/performance]] |
 | `bin/trainer_runner.rs` | headless runner CLI: `run` and `probe` (replaced `cli_trainer`, RV-S11) | [[wiki/simulation/analytics-and-balancing]] |
 
-Largest files: `dna.rs` (~3,000 lines, ~900 of them tests), `engine.rs` (~1,500), `probes.rs` (~1,400).
+Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400); no genome/phenotype/organ/brain module exceeds ~500 lines (TCK-199).
 
 ## Frontend (`frontend/`)
 

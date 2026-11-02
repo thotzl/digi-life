@@ -8,7 +8,7 @@
 //! | `core`       | `config::CoreConfig`                         |
 //! | `ocean`      | `server::ocean_config::OceanConfig`          |
 //! | `trainer`    | `biology::trainer_config::TrainerConfig`     |
-//! | `genome`     | `biology::dna::GenomeConfig`                 |
+//! | `genome`     | `biology::genome::GenomeConfig`              |
 //! | `brain`      | `shared::brain::BrainConfig`                 |
 //! | `metabolism` | `biology::metabolism::MetabolismConfig`      |
 //! | `physics`    | `shared::physics::PhysicsConfig`             |
@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::biology::dna::GenomeConfig;
+use crate::biology::genome::GenomeConfig;
 use crate::biology::metabolism::MetabolismConfig;
 use crate::biology::trainer_config::TrainerConfig;
 use crate::server::ocean_config::OceanConfig;

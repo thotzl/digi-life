@@ -2,7 +2,7 @@
 //! via ts-rs.
 
 use serde::{Deserialize, Serialize};
-use crate::biology::dna::CreaturePhenotype;
+use crate::biology::phenotype::CreaturePhenotype;
 use crate::shared::brain::BrainRuntime;
 use ts_rs::TS;
 

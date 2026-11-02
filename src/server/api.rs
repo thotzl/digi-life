@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager, State};
 use serde_json::json;
 use std::sync::mpsc::Sender;
 use crate::persistence::{CatalogueRepo, DbState, NewCatalogueEntry, OceanSnapshotRepo, SpeciesRepo, TrainerGenome, TrainerRepo};
-use crate::biology::dna::parse_genome;
+use crate::biology::phenotype::parse_genome;
 use crate::config::AppConfig;
 use crate::shared::json_col;
 

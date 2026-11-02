@@ -11,7 +11,8 @@ use crate::shared::{geom, time};
 use crate::shared::physics::{step_food_spore_physics, SporePusher};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
 use crate::shared::map_generator::generate_world;
-use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
+use crate::biology::genome::{generate_structured_genome, mutate_genome};
+use crate::biology::phenotype::parse_genome;
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_sim::{run_seed, GenomeRecord, TrainerEvent, TrainerParams, TrainerSim};
@@ -910,7 +911,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 
                         // Execute Recurrent CTRNN Brain Euler Integration with live Hebbian learning
                         use crate::shared::brain::execute_brain_with_learning;
-                        let outputs = execute_brain_with_learning(
+                        let motors = execute_brain_with_learning(
                             &agent.phenotype.brain,
                             &inputs,
                             &mut agent.neuron_states,
@@ -919,8 +920,8 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                             &mut agent.brain_runtime,
                             app_config.brain.hebbian_learning_rate_base,
                         );
-                        let out_thrust = outputs[0];
-                        let out_left = outputs[1];
+                        let out_thrust = motors.thrust;
+                        let out_left = motors.bend;
 
                         // Metabolism: the shared energy function of Ocean and trainer (body, organs, neurons, activity, thrust; TCK-151)
                         crate::biology::metabolism::drain_energy(&mut agent, out_thrust, &app_config.metabolism, 1.0);
@@ -1433,7 +1434,7 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
 mod tests {
     use super::*;
     use crate::biology::creature_factory::spawn_creature;
-    use crate::biology::dna::WILDTYPE_GENOME;
+    use crate::biology::genome::WILDTYPE_GENOME;
 
     fn peer(id: u32, species: &str, px: f32) -> PeerSnapshot {
         PeerSnapshot { id, species_id: species.to_string(), px, py: 0.0, vx: 0.0, vy: 0.0, energy: 50.0 }

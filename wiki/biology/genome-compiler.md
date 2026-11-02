@@ -4,22 +4,36 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 
 # Genome Compiler
 
-`src/biology/dna.rs` — turns a genome string into a `CreaturePhenotype` (body, organs, brain). Model since Brain v2 (TCK-171 P3, [[wiki/decisions/adr-002-brain-v2]]).
+Turns a genome string into a `CreaturePhenotype` (body, organs, brain). Model since Brain v2 (TCK-171 P3, [[wiki/decisions/adr-002-brain-v2]]).
+
+## Module map (TCK-199)
+
+| Module | Content |
+| :--- | :--- |
+| `src/biology/genome/alphabet.rs` | letters, biochemical classes, `matches_degenerate`, complement, `normalize_genome`, letter soup |
+| `src/biology/genome/promoters.rs` | promoter registry `PROMOTERS: &[PromoterSpec{motif, role, channel, expression, essential, wobble, meaning}]`; every promoter list derives from it; exported to `bindings/promoterRegistry.ts` |
+| `src/biology/genome/scan.rs`, `table.rs` | `scan_genes`, `GeneTable` (spans, `GeneRef` identity, owners), `first_payload` |
+| `src/biology/genome/payload.rs` | `Payload` reader: `h(locus)`, `range(locus, min, span)`, `index(locus)` |
+| `src/biology/genome/generate.rs`, `mutate.rs` | structured genomes; mutation operators and channels |
+| `src/biology/phenotype/mod.rs` | `CreaturePhenotype`, `parse_genome` (assembles body, organs, brain, name) |
+| `src/biology/phenotype/body.rs` | `BODY_GENES`: one decoder per body promoter; chamber count; `read_evolution_rates` |
+| `src/biology/phenotype/naming.rs` | Latin name |
+| `src/biology/organs/` | organ registry (`OrganKind::spec`), organ decoding ([[wiki/contracts/organ-kind]]) |
+| `src/biology/brain/` | brain model types and `compile.rs` ([[wiki/biology/ctrnn-brain]]) |
 
 ## Genome
 
 - **Sense strand:** uppercase `A-Z` string; `normalize_genome` uppercases and pads/truncates to `[128, 512]` before compiling.
 - **Antisense:** `get_complementary_string`; passed to `parse_genome` as optional second strand. Traits are read from the sense strand only.
-- **Entry point:** `parse_genome(genome, antisense_input, parent_methylations) -> CreaturePhenotype` — pure and deterministic. Exposed to the frontend via the `get_fossil_phenotype` command.
+- **Entry point:** `parse_genome(genome, antisense_input, parent_methylations, &BrainConfig) -> CreaturePhenotype` — pure and deterministic. Exposed to the frontend via the `get_fossil_phenotype` command.
 
 ## Promoter/terminator genes (since TCK-116)
 
 - A gene is a promoter motif, a payload and the terminator `EN` (degenerate; searched within 40 letters, otherwise a 15-letter payload is read). There are no positional loci; anything referring to "locus N" predates TCK-116.
-- Expressed promoters: body `COL`, `SIZ`, `STF`, `WAV`, `PUL`, `STM`, `TEM`, `CAR`, `REP`, `EVO`; symmetry `HOX`; organs `EYE`, `NOS`, `TAC`, `LUM`; brain `NEU`, `SY`, `OUT`.
-- Payload values: `get_payload_linear_value_offset(payload, shift)` reads one letter (`shift mod len`), returns `h ∈ [0, 1]`; an empty payload gives `h = 0.5`.
+- Expressed promoters (registry `PROMOTERS`, in this order): body `COL`, `SIZ`, `STF`, `WAV`, `PUL`, `STM`, `TEM`, `CAR`, `REP`, `EVO`; symmetry `HOX`; organs `EYE`, `NOS`, `TAC`, `LUM`; brain `NEU`, `SY`, `OUT`. Protected motifs (`GENE_MOTIFS`) = registry + legacy `SYM` + terminator `EN`. The frontend reads gene meanings from the generated `bindings/promoterRegistry.ts`.
+- Payload values: `Payload::h(locus)` (= `get_payload_linear_value_offset(payload, shift)`) reads one letter (`shift mod len`), returns `h ∈ [0, 1]`; an empty payload gives `h = 0.5`. `range(locus, min, span) = min + h · span`, `index(locus)` a letter index.
 - `phenotype.genes`: every recognised gene as `GeneSpan{gene: GeneRef, start, end}` in genome order; synapse owners index into this list, the frontend renders it (TCK-187, [[wiki/frontend/structure]]).
 - There is no regulatory cascade (transcription factors binding operators); TCK-116 described one, the code does not implement it.
-- The legacy chromatin scan (`chromatin_state`, also accepting `SP` as terminator) only marks positions for the DNA helix view and logs; it feeds no trait or weight.
 
 ## Gene identity (TCK-179, slice C)
 
@@ -30,13 +44,13 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 ## Degenerate matching / codon groups (TCK-117)
 
 - A–Z split into 5 biochemical groups: Alpha `[A,E,I,O,U]`, Beta `[Y,W,F,H,K,R]`, Gamma `[L,M,V,P,T]`, Delta `[D,N,Q,S,C]`, Epsilon `[B,G,J,X,Z]`.
-- `matches_degenerate(segment, promoter)`: the first letter must match exactly, the others by group (e.g. `EWA` matches `EYE`); `NEU`, `SY` and one-letter motifs match fully by group.
+- `matches_degenerate(segment, promoter)`: the first letter must match exactly, the others by group (e.g. `EWA` matches `EYE`); promoters with `Wobble::Full` (`NEU`, `SY`) and one-letter motifs match fully by group.
 
 ## Trait locality (TCK-179)
 
-- Every body trait is read from the first gene of its own promoter only (`COL` colour/symmetry, `SIZ` radius/length/seed, `STF` stiffness/hydraulics, `WAV` spine waves, `PUL` pulse/phase/wiggle/head, `STM` stomach, `TEM` thermal tolerance, `CAR` carnivory, `REP` maturity/threshold/split loss, `EVO` indel rates/repair fidelity). Later copies of these promoters are silent.
+- Every body trait is read from the first gene of its own promoter only (`COL` colour/symmetry, `SIZ` radius/length/seed, `STF` stiffness, `WAV` spine waves, `PUL` pulse/phase/wiggle/head, `STM` stomach, `TEM` thermal tolerance, `CAR` carnivory, `REP` maturity/threshold/split loss, `EVO` indel rates). Later copies of these promoters are silent. The decoders are the table `BODY_GENES` in `phenotype/body.rs` (one function per promoter; a test checks it against the registry).
 - A missing gene reads the empty payload: every value at the middle of its range (`h = 0.5`), never another gene. `active_dna` and its fallback are removed, so a brain-gene mutation no longer changes body traits.
-- Organs: one per `EYE`/`NOS`/`TAC`/`LUM` gene (organ order: all `EYE` genes, then `NOS`, `TAC`, `LUM`); affinity, bandwidth, expression style, scale, spinal position, angle and hue from fixed payload loci. `OrganKind` is decided once from affinity and expression style ([[wiki/biology/sensing]]).
+- Organs: one per `EYE`/`NOS`/`TAC`/`LUM` gene (organ order: all `EYE` genes, then `NOS`, `TAC`, `LUM`); affinity, bandwidth, expression style, scale, spinal position, angle and hue from fixed payload loci (`organs::decode_organs`). `OrganKind` is decided once from affinity and expression style; everything else about a kind is its `OrganSpec` ([[wiki/contracts/organ-kind]], [[wiki/biology/sensing]]).
 - Property tests: a point mutation outside every gene changes no weight, organ or trait; a point mutation inside gene G changes only synapses owned by or touching G, neurons of G and traits of G (if G is the expressed copy) ([[wiki/quality/testing]]).
 
 ## HOX symmetry (FIX-131)
@@ -57,7 +71,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 | :--- | :--- | :--- |
 | No organ | 21 % | 0 % |
 | ≥ 1 eye / ≥ 1 nose | 29 % / 43 % | 58 % / 66 % |
-| ≥ 1 food-sensing organ (affinity ≥ 0.25) | 67 % | 99 % |
+| ≥ 1 food-sensing organ (distance sense) | 67 % | 99 % |
 | `HOX` organ pair | 21 % | 31 % |
 | Food in range / non-zero stimulus at spawn, small room | 57 % / 31 % | 86 % / 46 % |
 | Food in range / non-zero stimulus at spawn, large room (650 px, before P7; 500 px since: 35 % in range, [[wiki/biology/sensing]]) | 14 % / 4.8 % | 24 % / 7.5 % |
@@ -73,7 +87,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, tickets/closed/TCK-116
 
 ## Gene channels (TCK-181)
 
-- `promoter_channel(promoter) -> Option<GeneChannel>` (`src/biology/dna.rs`): brain = `NEU` (hidden neuron and its synapses), `SY` (explicit synapse), `OUT` (motor bias/τ, systemic → motor weights); body = every other expressed promoter: trait genes `COL SIZ STF WAV PUL STM TEM CAR REP EVO`, `HOX`, organ genes `EYE NOS TAC LUM`; `None` (neutral) for loci outside every gene.
+- `promoter_channel(promoter) -> Option<GeneChannel>` (the registry field `PromoterSpec::channel`, `src/biology/genome/promoters.rs`): brain = `NEU` (hidden neuron and its synapses), `SY` (explicit synapse), `OUT` (motor bias/τ, systemic → motor weights); body = every other expressed promoter: trait genes `COL SIZ STF WAV PUL STM TEM CAR REP EVO`, `HOX`, organ genes `EYE NOS TAC LUM`; `None` (neutral) for loci outside every gene.
 - Organ genes are mixed in the compiler: their payload sets the organ traits and is also the tape of the thalamus → motor weights; they count as body and are flagged separately (`MutationTouch::organ`).
 - `classify_mutation(parent, mutation) -> MutationTouch` uses the compiler's gene table (`GeneTable`, no RNG): every parent gene whose span contains the mutation locus, plus every gene identity (`GeneRef`) present in only one of parent and child (formed, destroyed, duplicated or renumbered); a locus outside every gene with an unchanged gene set is neutral; silent copies count by their promoter. A child's `MutationChannel` (body / brain / both / neutral) is the union over its calls.
 - `mutate_genome_in_channel(genome, ops, channel, rng)` restricts the loci to one channel's genes and redraws a result that still touches the other channel (at most `CHANNEL_MUTATION_ATTEMPTS`); used by the trainer mode `mutationChannels: separate`. The measurement and the decision to keep `mixed` are in [[wiki/simulation/trainer]].
@@ -99,12 +113,13 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 
 ## Latin name
 
-- Derived in `derive_ecological_metrics` from organ-type counts; ties resolve in fixed order light, chem, kinetic, thermal (TCK-162, RV-B11).
+- `phenotype/naming.rs`: chamber prefix, symmetry, and the suffix of the dominant organ group (`OrganSpec::latin_suffix`; ties go to the lower `latin_rank`: eye, nose, tactile kinds, thermal; TCK-162, RV-B11) or `raptor` for carnivory ≥ 0.55.
 - Only ~6,760 strain combinations per prefix/suffix; collisions are silently dropped by `INSERT OR IGNORE` on the UNIQUE `latin_name` (RV-B10).
 
 ## Known limitations
 
-- Activation and symmetry are still free-text strings (`activation_type`, `symmetry`); a typo falls back to the default silently (RV-S10 rest). Organ type is an enum since TCK-144.
+- Activation (`Activation`), symmetry (`Symmetry`) and organ kind are enums (RV-S10 resolved, TCK-155/199). The phenotype no longer carries display labels or dead payload (neuron labels, ecology scores, diet/habitat strings, survival estimate, chromatin logs, hydraulic pressure, repair fidelity; TCK-199); the golden master still hashes the two retired traits, decoded in the test.
+- Chamber count uses std `cos`, `TEM` minimum parses as `-(5.0.max(x))`; both are kept for bit-identity and listed in TCK-202.
 - `SY` genes address roles modulo the size of their role class, so a changed class size re-addresses them (relative addressing: TCK-168).
 - Only the first gene of each body promoter and of `OUT` is expressed; duplicates are silent until the original is deleted.
 

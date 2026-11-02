@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GeneSpan } from "../../bindings/GeneSpan";
-import type { SensoryPatch } from "../../bindings/SensoryPatch";
+import type { Organ } from "../../bindings/Organ";
 import type { BrainTopology } from "../../bindings/BrainTopology";
 import {
   PROMOTER_MEANINGS, describeGene, describeRole, describeSynapse, geneIndexByPosition, geneName, isSilentCopy,
@@ -15,8 +15,8 @@ const genes: GeneSpan[] = [
   span("COL", "CQL", 0, 22, 30),
   span("NEU", "NEU", 0, 32, 40),
 ];
-const eye = { geneStartIndex: 12, kind: "eye", side: "left" } as SensoryPatch;
-const ctx = { genes, organelles: [eye, { ...eye, side: "right" } as SensoryPatch] };
+const eye = { geneStartIndex: 12, kind: "eye", side: "left" } as Organ;
+const ctx = { genes, organelles: [eye, { ...eye, side: "right" } as Organ] };
 
 describe("gene spans", () => {
   it("covers every promoter the compiler expresses", () => {
@@ -55,8 +55,8 @@ describe("neuron roles", () => {
   it("names the owner gene of a synapse", () => {
     const brain: BrainTopology = {
       neurons: [
-        { id: 0, type: "hidden", label: "", role: { role: "hidden", gene: genes[3].gene }, tau: 1, bias: 0, activationType: null, x: null, y: null },
-        { id: 1, type: "output", label: "", role: { role: "motor", motor: "thrust" }, tau: 1, bias: 0, activationType: null, x: null, y: null },
+        { id: 0, type: "hidden", role: { role: "hidden", gene: genes[3].gene }, tau: 1, bias: 0, activationType: null, x: null, y: null },
+        { id: 1, type: "output", role: { role: "motor", motor: "thrust" }, tau: 1, bias: 0, activationType: null, x: null, y: null },
       ],
       synapses: [{ fromNode: 0, toNode: 1, weight: 0.25, key: 7, owner: 3, plastic: true }],
     };

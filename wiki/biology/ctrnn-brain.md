@@ -4,7 +4,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/testing
 
 # CTRNN Brain
 
-`src/shared/brain.rs` (execution) and `compile_brain` in `src/biology/dna.rs` (topology). Model since Brain v2 (TCK-171 P3, [[wiki/decisions/adr-002-brain-v2]]).
+`src/shared/brain.rs` (execution) and `compile_brain` in `src/biology/brain/compile.rs` (topology; model types in `src/biology/brain/mod.rs`). Model since Brain v2 (TCK-171 P3, [[wiki/decisions/adr-002-brain-v2]]).
 
 ## Neuron roles and order (TCK-179, TCK-153)
 

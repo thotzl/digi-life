@@ -3,7 +3,10 @@ pub mod persistence;
 pub mod logging;
 pub mod server;
 pub mod biology {
-    pub mod dna;
+    pub mod brain;
+    pub mod genome;
+    pub mod organs;
+    pub mod phenotype;
     pub mod trainer_config;
     pub mod trainer_engine;
     pub mod trainer_sim;

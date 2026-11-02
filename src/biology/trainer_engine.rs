@@ -6,9 +6,9 @@ use crate::biology::trainer_config::MutationChannelMode;
 use crate::config::AppConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::geom;
-use crate::biology::dna::{
-    classify_mutation, generate_structured_genome, mutate_genome, mutate_genome_in_channel, parse_genome, GeneChannel, GenomeComposition, MutationTouch, OrganKind,
-};
+use crate::biology::genome::{classify_mutation, generate_structured_genome, mutate_genome, mutate_genome_in_channel, GeneChannel, GenomeComposition, MutationTouch};
+use crate::biology::organs::OrganKind;
+use crate::biology::phenotype::parse_genome;
 use crate::biology::creature_factory::{spawn_creature, start_energy, SpawnOptions};
 use crate::biology::scenarios::{spawn_at_min_distance, target_distance_by_diet, LevelScenario, Scenario, TrainingScenarioPlugin, SPAWN_MAX_TRIES};
 use crate::shared::brain::food_sense_range;
@@ -116,10 +116,10 @@ pub fn breed_genome(parent_genome: &str, origin: SandboxOrigin, ops_min: u32, op
 /// Probability that a child in mutation channel mode "separate" mutates its body genes (otherwise its brain genes).
 pub const SEPARATE_BODY_SHARE: f64 = 0.5;
 
-/// `breed_genome` with the gene channels its mutations touched (TCK-181; `dna::classify_mutation` per operator call,
+/// `breed_genome` with the gene channels its mutations touched (TCK-181; `genome::classify_mutation` per operator call,
 /// unioned over the child's calls): `Some` for mutated origins (mutant, hof), `None` otherwise. Mode `Mixed` draws
 /// exactly what `breed_genome` draws (the classification uses no RNG). Mode `Separate` first draws the child's
-/// channel (`SEPARATE_BODY_SHARE`) from `rng`, then restricts every call to it (`dna::mutate_genome_in_channel`).
+/// channel (`SEPARATE_BODY_SHARE`) from `rng`, then restricts every call to it (`genome::mutate_genome_in_channel`).
 pub fn breed_genome_traced(
     parent_genome: &str,
     origin: SandboxOrigin,
@@ -416,7 +416,7 @@ pub fn step_trainer_sandbox_physics(sb: &mut TrainerSandbox, app_config: &AppCon
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::dna::WILDTYPE_GENOME;
+    use crate::biology::genome::WILDTYPE_GENOME;
     use crate::shared::rng::seeded;
 
     #[test]
@@ -470,7 +470,7 @@ mod tests {
                 &mut ocean.brain_runtime,
                 config.brain.hebbian_learning_rate_base,
             );
-            let drain = crate::biology::metabolism::drain_energy(&mut ocean, out[0], &config.metabolism, 1.0);
+            let drain = crate::biology::metabolism::drain_energy(&mut ocean, out.thrust, &config.metabolism, 1.0);
             assert!(drain > 0.0);
             assert_eq!(sb.agent.energy.to_bits(), ocean.energy.to_bits(), "trainer drain {} vs ocean drain {}", start - sb.agent.energy, drain);
         }
@@ -733,7 +733,7 @@ mod tests {
 
     #[test]
     fn test_breed_genome_traced_mixed_matches_breed_genome_and_separate_stays_in_one_channel() {
-        use crate::biology::dna::MutationChannel;
+        use crate::biology::genome::MutationChannel;
         let mut channels = std::collections::BTreeMap::new();
         for seed in 0..80 {
             let parent = random_genome(false, &mut seeded(900 + seed), crate::config::test_config());

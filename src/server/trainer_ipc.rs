@@ -482,7 +482,7 @@ mod tests {
     /// not only the leading elite slots.
     #[test]
     fn test_telemetry_samples_every_origin_group() {
-        use crate::biology::dna::WILDTYPE_GENOME;
+        use crate::biology::genome::WILDTYPE_GENOME;
         use crate::biology::trainer_engine::SandboxOrigin;
         use crate::biology::trainer_sim::{GenomeRecord, TrainerParams};
         let record = |fitness: f32| GenomeRecord { genome: WILDTYPE_GENOME.to_string(), name: "p".to_string(), fitness, generation: 1, methylations: Vec::new(), synapse_weights: Vec::new() };

@@ -2,11 +2,12 @@
 import type { BrainTopology } from "./BrainTopology";
 import type { GeneSpan } from "./GeneSpan";
 import type { HSLColor } from "./HSLColor";
-import type { SensoryPatch } from "./SensoryPatch";
+import type { Organ } from "./Organ";
 import type { SpinalHarmonics } from "./SpinalHarmonics";
+import type { Symmetry } from "./Symmetry";
 
-export type CreaturePhenotype = { symmetry: string, primaryColor: HSLColor, secondaryColor: HSLColor, bodySeed: number, segments: any[], spinalHarmonics: SpinalHarmonics, emergentChambersCount: number, organelles: Array<SensoryPatch>, 
+export type CreaturePhenotype = { symmetry: Symmetry, primaryColor: HSLColor, secondaryColor: HSLColor, bodySeed: number, spinalHarmonics: SpinalHarmonics, emergentChambersCount: number, organelles: Array<Organ>, 
 /**
  * Recognised genes in genome order; synapse owners index into this list
  */
-genes: Array<GeneSpan>, pulseSpeed: number, wavePhase: number, wiggleAmplitude: number, stiffness: number, matureAge: number, reproThreshold: number, splitLoss: number, brain: BrainTopology, carnivory: number, isPredator: boolean, latinName: string, sensoryVisus: number, sensoryOlfaction: number, sensoryTactility: number, sensoryBiolum: number, dietClass: string, preferredHabitat: string, stomachCapacity: number, thermalToleranceMin: number, thermalToleranceMax: number, hydraulicPressure: number, rotationalInertia: number, survivalExpectation: number, survivalAnalysis: string, chromatinState: Array<boolean>, epigeneticLogs: Array<string>, methylations: Array<number>, antisenseStrand: string, repairFidelity: number, insertionRate: number, deletionRate: number, genomeString: string, };
+genes: Array<GeneSpan>, pulseSpeed: number, wavePhase: number, wiggleAmplitude: number, stiffness: number, matureAge: number, reproThreshold: number, splitLoss: number, brain: BrainTopology, carnivory: number, isPredator: boolean, latinName: string, stomachCapacity: number, thermalToleranceMin: number, thermalToleranceMax: number, methylations: Array<number>, antisenseStrand: string, insertionRate: number, deletionRate: number, genomeString: string, };

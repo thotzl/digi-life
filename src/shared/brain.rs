@@ -1,16 +1,15 @@
-use crate::biology::dna::{
-    channel_sensitivity, BrainTopology, Motor, NeuronRole, OrganKind, SystemicInput, CHANNELS_PER_ORGANELLE, DELTA_CHANNEL,
-    MEAT_EMISSION, MIN_CHANNEL_MATCH, OUTPUT_MOTOR_NODES_COUNT, PLANT_EMISSION, SPECTRAL_CHANNELS, SYSTEMIC_BASE_INPUTS_COUNT,
-    TAU_MAX, TAU_MIN,
-};
+use crate::biology::brain::{BrainTopology, Motor, MotorOutputs, NeuronRole, SystemicInput, OUTPUT_MOTOR_NODES_COUNT, SYSTEMIC_BASE_INPUTS_COUNT, TAU_MAX, TAU_MIN};
+use crate::biology::organs::{SenseCtx, CHANNELS_PER_ORGANELLE, DELTA_CHANNEL, SPECTRAL_CHANNELS};
 use serde::{Deserialize, Serialize};
 
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::fmath;
-use crate::shared::geom;
 
-/// Config section `brain`: brain compilation (`dna::parse_genome`) and learning (`execute_brain_with_learning`).
+pub use crate::biology::brain::Activation;
+pub use crate::biology::organs::SENSOR_RANGE_PER_SCALE;
+
+/// Config section `brain`: brain compilation (`phenotype::parse_genome`) and learning (`execute_brain_with_learning`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BrainConfig {
@@ -31,11 +30,11 @@ pub enum ThalamusSumActivation {
 }
 
 impl ThalamusSumActivation {
-    /// Activation label of the compiled neuron (`Activation::from_label`)
-    pub fn label(self) -> &'static str {
+    /// Activation of the compiled sum neurons
+    pub fn activation(self) -> Activation {
         match self {
-            ThalamusSumActivation::Sigmoid => "sigmoid",
-            ThalamusSumActivation::Tanh => "tanh",
+            ThalamusSumActivation::Sigmoid => Activation::Sigmoid,
+            ThalamusSumActivation::Tanh => Activation::Tanh,
         }
     }
 }
@@ -47,48 +46,16 @@ const DELTA_GAIN: f32 = 2.5;
 pub const WEIGHT_CLAMP: f32 = 4.0;
 /// A plastic weight learned below this magnitude is pruned: set to exactly 0 for the rest of the life (TCK-121).
 pub const PRUNE_THRESHOLD: f32 = 0.015;
-/// Sensor range of an organ per unit organ scale (px): range = `scale · SENSOR_RANGE_PER_SCALE`.
-pub const SENSOR_RANGE_PER_SCALE: f32 = 550.0;
 
 /// Largest range (px) at which the phenotype's distance organs (eye, nose, thermal: the organs that see food in
 /// `compute_sensory_inputs`) can detect food; 0 without such an organ. Ignores the view cone.
-pub fn food_sense_range(phenotype: &crate::biology::dna::CreaturePhenotype) -> f32 {
+pub fn food_sense_range(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f32 {
     phenotype
         .organelles
         .iter()
         .filter(|o| o.kind.is_distance())
         .map(|o| o.scale * SENSOR_RANGE_PER_SCALE)
         .fold(0.0, f32::max)
-}
-
-/// Neuron activation function, decoded once from `CTRNNNeuron::activation_type`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Activation {
-    Tanh,
-    Relu,
-    Sigmoid,
-    Sin,
-}
-
-impl Activation {
-    /// Unknown or missing labels fall back to tanh.
-    pub fn from_label(label: Option<&str>) -> Self {
-        match label.unwrap_or("tanh") {
-            "relu" => Activation::Relu,
-            "sigmoid" => Activation::Sigmoid,
-            "sin" => Activation::Sin,
-            _ => Activation::Tanh,
-        }
-    }
-
-    fn apply(self, x: f32) -> f32 {
-        match self {
-            Activation::Relu => x.max(0.0),
-            Activation::Sigmoid => 1.0 / (1.0 + fmath::exp(-x)),
-            Activation::Sin => fmath::sin(x),
-            Activation::Tanh => fmath::tanh(x),
-        }
-    }
 }
 
 /// Factor of the exact exponential step `y += (1 − exp(−dt/τ)) · (target − y)` with dt = 1 (TCK-153):
@@ -129,7 +96,8 @@ struct ActiveSynapse {
 
 impl BrainRuntime {
     fn build(&mut self, brain: &BrainTopology, synapse_weights: &[f32]) {
-        self.activations = brain.neurons.iter().map(|n| Activation::from_label(n.activation_type.as_deref())).collect();
+        // A neuron without an activation (inputs, motors) integrates with tanh
+        self.activations = brain.neurons.iter().map(|n| n.activation_type.unwrap_or(Activation::Tanh)).collect();
         self.alpha = brain.neurons.iter().map(|n| integration_alpha(n.tau)).collect();
         self.input_count = brain.neurons.iter().take_while(|n| matches!(n.role, NeuronRole::Sensor { .. } | NeuronRole::Systemic { .. })).count();
         self.delta_organs = brain
@@ -165,7 +133,7 @@ impl BrainRuntime {
 
 /// One CTRNN tick with lifetime learning. Neurons are integrated in index order, which `parse_genome` makes the
 /// evaluation order Inputs → Thalamus → Hidden (by depth) → Motors: a synapse from a lower index reads this tick's
-/// activation, one from a higher index the previous tick's. Returns the motor outputs `[thrust, bend]`.
+/// activation, one from a higher index the previous tick's. Returns the motor outputs.
 ///
 /// Learning (TCK-152): every plastic synapse follows Oja's rule `Δw = η · post · (pre − post · w)` with
 /// `η = hebbian_rate` (0 disables learning). The `−η · post² · w` term is activity-dependent forgetting that keeps the
@@ -179,7 +147,7 @@ pub fn execute_brain_with_learning(
     synapse_weights: &mut Vec<f32>,
     runtime: &mut BrainRuntime,
     hebbian_rate: f32,
-) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
+) -> MotorOutputs {
     let total_nodes = brain.neurons.len();
     let total_synapses = brain.synapses.len();
 
@@ -273,10 +241,11 @@ pub fn execute_brain_with_learning(
     }
 
     // 4. Motor outputs
-    runtime.motors.map(|m| neuron_activations[m])
+    MotorOutputs::from_fn(|motor| neuron_activations[runtime.motors[motor as usize]])
 }
 
-/// Computes unified, rich multi-channel sensory inputs (Multispectral vision, olfactory chemoreception, haptics, proprioception)
+/// Input layer of one tick: per organ `CHANNELS_PER_ORGANELLE` slots (organ order, written by the organ kind's
+/// `OrganSpec::sense`, clamped to [0, 1]), then the systemic inputs in `SystemicInput::ALL` order.
 pub fn compute_sensory_inputs(
     agent: &CreatureAgent,
     clock_val: f32,
@@ -304,138 +273,11 @@ pub fn compute_sensory_inputs_into(
     inputs.clear();
     inputs.resize(k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT, 0.0);
 
-    for (idx, patch) in agent.phenotype.organelles.iter().enumerate() {
-        let range = patch.scale * SENSOR_RANGE_PER_SCALE;
-        let alpha = patch.angle * (std::f32::consts::PI / 180.0);
-        let half_cone = (patch.bandwidth * 1.5).max(0.1);
-        let organ_power = patch.scale * (1.1 - patch.bandwidth);
-
+    let ctx = SenseCtx { agent, foods, obstacles, width: canvas_width, height: canvas_height };
+    for (idx, organ) in agent.phenotype.organelles.iter().enumerate() {
         // Stimuli per input slot; the ΔI slot stays 0 here (computed in the brain step from consecutive ticks)
         let mut channel_stimuli = [0.0f32; CHANNELS_PER_ORGANELLE];
-
-        if patch.kind.is_distance() {
-            // --- LIGHT AND CHEMICAL SENSORY DETECTION (EYE / NOSE / THERMAL) ---
-            // Plant spore foods[0] and meat spore foods[1], each with its emission spectrum
-            for (food, emission) in foods.iter().zip([PLANT_EMISSION, MEAT_EMISSION]) {
-                let dx = food.x - agent.px;
-                let dy = food.y - agent.py;
-                let dist = geom::dist(agent.px, agent.py, food.x, food.y);
-                if dist > range {
-                    continue;
-                }
-                let angle_rel = geom::wrap_angle(fmath::atan2(dy, dx) - agent.heading_angle);
-                let delta_beta = geom::wrap_angle(angle_rel - alpha);
-
-                if delta_beta.abs() <= half_cone {
-                    let falloff = (1.0 - dist / range) * fmath::cos(delta_beta);
-                    for c in 0..SPECTRAL_CHANNELS {
-                        let match_val = channel_sensitivity(patch.spectral_affinity, patch.bandwidth, c) * emission[c];
-                        if match_val > MIN_CHANNEL_MATCH {
-                            channel_stimuli[c] = channel_stimuli[c].max(match_val * organ_power * falloff);
-                        }
-                    }
-                }
-            }
-        } else {
-            // --- TACTILE AND PROPRIOCEPTIVE SENSORY DETECTION (TACTILE / HAPTIC) ---
-            // A. Mechanical Hardness & Texture (Channel 1, Center 0.10)
-            // Wall warning is hard (1.0). Spores are soft (0.3).
-            let wall_warning_zone = range * 0.5;
-            let mut boundary_pressure = 0.0;
-            if agent.px < wall_warning_zone {
-                boundary_pressure = 1.0 - agent.px / wall_warning_zone;
-            } else if agent.px > canvas_width - wall_warning_zone {
-                boundary_pressure = 1.0 - (canvas_width - agent.px) / wall_warning_zone;
-            }
-            if agent.py < wall_warning_zone {
-                boundary_pressure = boundary_pressure.max(1.0 - agent.py / wall_warning_zone);
-            } else if agent.py > canvas_height - wall_warning_zone {
-                boundary_pressure = boundary_pressure.max(1.0 - (canvas_height - agent.py) / wall_warning_zone);
-            }
-
-            let mut tactile_pressure: f32 = 0.0;
-            if boundary_pressure > 0.0 {
-                // Wall hardness (1.0)
-                tactile_pressure = tactile_pressure.max(boundary_pressure * organ_power * 1.0);
-            }
-
-            // Spore tactile proximity (spores foods[0] and foods[1] emit soft tactile feedback of 0.3)
-            for f in foods {
-                let dx = f.x - agent.px;
-                let dy = f.y - agent.py;
-                let d = (dx*dx + dy*dy).sqrt();
-                if d <= range {
-                    let proximity = (1.0 - d / range).clamp(0.0, 1.0);
-                    // Soft food texture (0.3)
-                    tactile_pressure = tactile_pressure.max(proximity * organ_power * 0.3);
-                }
-            }
-
-            // Obstacle tactile proximity (Treat reefs as circular walls with hardness 1.0)
-            for obs in obstacles {
-                let dx = obs.x - agent.px;
-                let dy = obs.y - agent.py;
-                let dist = (dx*dx + dy*dy).sqrt();
-                let hard_radius = obs.radius + range;
-                if dist <= hard_radius {
-                    let pressure = (1.0 - (dist - obs.radius).max(0.0) / range).clamp(0.0, 1.0);
-                    // Reef hardness (1.0)
-                    tactile_pressure = tactile_pressure.max(pressure * organ_power * 1.0);
-                }
-            }
-
-            // C. Water Temperature
-            let dist_from_center = ((agent.px - canvas_width / 2.0).powi(2) + (agent.py - canvas_height / 2.0).powi(2)).sqrt();
-            let temp_gradient = (1.0 - dist_from_center / (canvas_width * 0.7)).clamp(0.15, 0.95) * organ_power;
-
-            // D. Tactile subtype by expression style (Phase 4 of TCK-133, `OrganKind`)
-            let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
-
-            if patch.kind == OrganKind::Bristle {
-                // 1. Taktile Borsten (Reine Oberflächen-Härte & lokaler Schmerz)
-                channel_stimuli[0] = tactile_pressure;
-                channel_stimuli[1] = 0.0;
-                channel_stimuli[2] = 0.0;
-                channel_stimuli[3] = 0.0;
-                if speed > 1.5 && boundary_pressure > 0.3 {
-                    channel_stimuli[4] = (speed * 0.3).min(1.0);
-                } else {
-                    channel_stimuli[4] = 0.0;
-                }
-            } else if patch.kind == OrganKind::LateralLine {
-                // 2. Seitenlinien-Poren (Vektorielle Strömung & lokaler Schmerz - Rheotaxis/Gyrodämpfung)
-                let organ_heading = agent.heading_angle + patch.angle * (std::f32::consts::PI / 180.0);
-                let flow_x = -agent.vx;
-                let flow_y = -agent.vy;
-                let flow_proj = flow_x * fmath::cos(organ_heading) + flow_y * fmath::sin(organ_heading);
-
-                let organ_rad = patch.angle * (std::f32::consts::PI / 180.0);
-                let rot_flow = -agent.omega_rot * 12.0 * fmath::sin(organ_rad) * 0.4;
-
-                let local_drag = (flow_proj + rot_flow).clamp(-1.0, 1.0);
-
-                channel_stimuli[0] = 0.0;
-                channel_stimuli[1] = local_drag;
-                channel_stimuli[2] = 0.0;
-                channel_stimuli[3] = 0.0;
-                if speed > 1.5 && boundary_pressure > 0.3 {
-                    channel_stimuli[4] = (speed * 0.3).min(1.0);
-                } else {
-                    channel_stimuli[4] = 0.0;
-                }
-            } else {
-                // 3. Thermo-Propriozeptoren (Wirbelsäulen-Biegung & Temperatur)
-                channel_stimuli[0] = 0.0;
-                channel_stimuli[1] = 0.0;
-                channel_stimuli[2] = temp_gradient;
-                // Normalisierte interne Biegung [-1.0 .. 1.0] (max_flexion = 1.2)
-                let flexion = (agent.bend_angle / 1.2).clamp(-1.0, 1.0);
-                channel_stimuli[3] = flexion;
-                channel_stimuli[4] = 0.0;
-            }
-        }
-
-        // Write the compiled channel signals into their respective input neurons!
+        (organ.kind.spec().sense)(&ctx, organ, &mut channel_stimuli);
         for c in 0..CHANNELS_PER_ORGANELLE {
             inputs[idx * CHANNELS_PER_ORGANELLE + c] = channel_stimuli[c].clamp(0.0, 1.0);
         }
@@ -479,7 +321,7 @@ pub fn execute_brain(
     inputs: &[f32],
     neuron_states: &mut Vec<f32>,
     neuron_activations: &mut Vec<f32>,
-) -> [f32; OUTPUT_MOTOR_NODES_COUNT] {
+) -> MotorOutputs {
     let mut temp_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
     execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, &mut BrainRuntime::default(), 0.0)
 }
@@ -487,7 +329,8 @@ pub fn execute_brain(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::dna::parse_genome;
+    use crate::biology::phenotype::parse_genome;
+    use crate::biology::organs::OrganKind;
 
     #[test]
     fn test_execute_brain_determinism() {
@@ -502,10 +345,9 @@ mod tests {
         // Run integration for multiple steps
         for _ in 0..10 {
             let outputs = execute_brain(&brain, &inputs, &mut states, &mut activations);
-            assert_eq!(outputs.len(), OUTPUT_MOTOR_NODES_COUNT);
-            for out in &outputs {
+            for out in outputs.values() {
                 assert!(out.is_finite());
-                assert!(*out >= -1.0 && *out <= 4.0); // Allowed up to 4.0 for ReLU activations
+                assert!(out >= -1.0 && out <= 4.0); // Allowed up to 4.0 for ReLU activations
             }
         }
 
@@ -568,13 +410,13 @@ mod tests {
     const EYE_DNA: &str = "EYEATAAAAAAAAAAAAAAAEN";
 
     /// Runs the brain with the IR channel of the single organ set to `ir[t]` at tick t; returns the last activations and outputs.
-    fn run_ir(ir: &[f32]) -> (Vec<f32>, [f32; OUTPUT_MOTOR_NODES_COUNT]) {
+    fn run_ir(ir: &[f32]) -> (Vec<f32>, MotorOutputs) {
         let phenotype = parse_genome(EYE_DNA, None, None, &crate::config::test_config().brain);
         let mut inputs = vec![0.0; CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT];
         let (mut states, mut activations) = (Vec::new(), Vec::new());
         let mut weights = phenotype.brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
         let mut runtime = BrainRuntime::default();
-        let mut outputs = [0.0; OUTPUT_MOTOR_NODES_COUNT];
+        let mut outputs = MotorOutputs::default();
         for &v in ir {
             inputs[4] = v;
             outputs = execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, 0.0);
@@ -600,7 +442,7 @@ mod tests {
 
     /// Runs `ticks` brain steps with Oja learning (η from config) on irregular inputs in [0, 1] (sensor slots per
     /// organ + systemic inputs, the ΔI slots are filled by the brain); returns the learned weights.
-    fn learn_with_noise(genome: &str, ticks: u32, seed: u64) -> (crate::biology::dna::CreaturePhenotype, Vec<f32>) {
+    fn learn_with_noise(genome: &str, ticks: u32, seed: u64) -> (crate::biology::phenotype::CreaturePhenotype, Vec<f32>) {
         use rand::Rng;
         let phenotype = parse_genome(genome, None, None, &crate::config::test_config().brain);
         let input_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
@@ -625,7 +467,7 @@ mod tests {
         let composition = &crate::config::test_config().genome.genome_composition;
         let (mut plastic, mut at_clamp, mut changed, mut abs_sum) = (0usize, 0usize, 0usize, 0.0f32);
         for seed in 0..24 {
-            let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            let genome = crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
             // A long Ocean life (36,000 ticks)
             let (phenotype, weights) = learn_with_noise(&genome, 36_000, seed);
             for (s, &w) in phenotype.brain.synapses.iter().zip(&weights) {
@@ -653,7 +495,7 @@ mod tests {
     fn test_reflexes_are_fixed_and_the_rest_plastic() {
         let composition = &crate::config::test_config().genome.genome_composition;
         for seed in 0..20 {
-            let genome = crate::biology::dna::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            let genome = crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
             let brain = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain;
             for s in &brain.synapses {
                 let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));

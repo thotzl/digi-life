@@ -9,11 +9,14 @@ use rayon::prelude::*;
 use serde::Serialize;
 
 use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
-use crate::biology::dna::{
+use crate::biology::brain::{MotorOutputs, NeuronRole};
+use crate::biology::genome::{
     extract_raw_gene_payloads, generate_random_genome, generate_structured_genome, mutate_genome, mutate_genome_with_kind, normalize_genome,
-    parse_genome, read_evolution_rates, CreaturePhenotype, MutationKind, MutationOperators, NeuronRole, OrganSide, CHANNELS_PER_ORGANELLE,
-    OUTPUT_MOTOR_NODES_COUNT, WILDTYPE_GENOME,
+    MutationKind, MutationOperators, WILDTYPE_GENOME,
 };
+use crate::biology::organs::{OrganKind, OrganSide, CHANNELS_PER_ORGANELLE};
+use crate::biology::phenotype::body::read_evolution_rates;
+use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin};
 use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim, IMMOBILE_DISTANCE_PX};
@@ -29,8 +32,6 @@ pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering",
 
 /// Length of the letter-soup genomes (the random immigrants before TCK-184).
 const LETTER_SOUP_LENGTH: usize = 256;
-/// Organs with a spectral affinity from here on detect food (light/chemical branch of `compute_sensory_inputs`).
-const FOOD_SENSING_AFFINITY: f32 = 0.25;
 /// Arena edge for wall-free kinematics (creature starts in the centre and never reaches a wall).
 const OPEN_ARENA: f32 = 10_000_000.0;
 /// Ticks of an exploration epoch; also the settle time of the speed probe.
@@ -219,7 +220,7 @@ fn speed_of(agent: &CreatureAgent) -> f32 {
 
 /// One tick of sensing, brain (with the config's Hebbian rate) and kinematics, food fixed.
 /// Mirrors `scenarios::step_physics` without food drift; returns the motor outputs and the wall flag.
-fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config: &AppConfig, inputs: &mut Vec<f32>) -> ([f32; OUTPUT_MOTOR_NODES_COUNT], bool) {
+fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config: &AppConfig, inputs: &mut Vec<f32>) -> (MotorOutputs, bool) {
     let clock_val = 0.5 + 0.5 * fmath::sin((agent.age as f32) * 0.1);
     compute_sensory_inputs_into(agent, clock_val, foods, &[], size, size, inputs);
     let outputs = execute_brain_with_learning(
@@ -231,20 +232,20 @@ fn brain_tick(agent: &mut CreatureAgent, foods: &[FoodSpore], size: f32, config:
         &mut agent.brain_runtime,
         config.brain.hebbian_learning_rate_base,
     );
-    let hit_wall = step_creature_kinematics(agent, outputs[0], outputs[1], &config.physics, &[], size, size);
+    let hit_wall = step_creature_kinematics(agent, outputs.thrust, outputs.bend, &config.physics, &[], size, size);
     (outputs, hit_wall)
 }
 
-/// Whether any light/chemical organ registers food in `inputs` (from `compute_sensory_inputs`).
+/// Whether any distance sense (`OrganKind::is_distance`: eye, nose, thermal organ) registers food in `inputs`.
 fn senses_food(phenotype: &CreaturePhenotype, inputs: &[f32]) -> bool {
     phenotype.organelles.iter().enumerate().any(|(idx, organ)| {
-        organ.spectral_affinity >= FOOD_SENSING_AFFINITY && inputs[idx * CHANNELS_PER_ORGANELLE..(idx + 1) * CHANNELS_PER_ORGANELLE].iter().any(|&v| v > 0.0)
+        organ.kind.is_distance() && inputs[idx * CHANNELS_PER_ORGANELLE..(idx + 1) * CHANNELS_PER_ORGANELLE].iter().any(|&v| v > 0.0)
     })
 }
 
 /// Limbs as counted by `physics::locomotion_drive` (part of the speed band).
 fn limb_count(phenotype: &CreaturePhenotype) -> usize {
-    phenotype.organelles.iter().filter(|o| o.expression_style >= 0.72).count()
+    phenotype.organelles.iter().filter(|o| (o.kind.spec().limb)(o)).count()
 }
 
 // ==========================================================================
@@ -835,8 +836,8 @@ pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
 
 fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &AppConfig) -> EquipmentSet {
     let phenotypes: Vec<CreaturePhenotype> = genomes.par_iter().map(|g| parse_genome(g, None, None, &config.brain)).collect();
-    let food_organs = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).count();
-    let ranges: Vec<f32> = phenotypes.iter().flat_map(|p| p.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).map(|o| o.scale * 550.0)).collect();
+    let food_organs = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| o.kind.is_distance()).count();
+    let ranges: Vec<f32> = phenotypes.iter().flat_map(|p| p.organelles.iter().filter(|o| o.kind.is_distance()).map(|o| o.range())).collect();
 
     let spawn = [Scenario::Standard, Scenario::Exploration]
         .iter()
@@ -854,8 +855,8 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
                     let mut scratch = Vec::new();
                     let visible = plugin.visible_foods(&sb.agent, &sb.foods, &mut scratch).to_vec();
                     let agent = &sb.agent;
-                    let in_range = agent.phenotype.organelles.iter().filter(|o| o.spectral_affinity >= FOOD_SENSING_AFFINITY).any(|o| {
-                        visible.iter().take(2).any(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt() <= o.scale * 550.0)
+                    let in_range = agent.phenotype.organelles.iter().filter(|o| o.kind.is_distance()).any(|o| {
+                        visible.iter().take(2).any(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt() <= o.range())
                     });
                     let mut inputs = Vec::new();
                     compute_sensory_inputs_into(agent, 0.5, &visible, &[], size, size, &mut inputs);
@@ -872,11 +873,11 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
         .collect();
 
     // A HOX pair is the left and right organ of one gene (consecutive in organelles); its thalamus has Diff nodes
-    let pair_organs = |p: &CreaturePhenotype| -> Vec<(f32, f32, f32)> {
+    let pair_organs = |p: &CreaturePhenotype| -> Vec<(bool, f32, f32)> {
         p.organelles
             .windows(2)
             .filter(|w| w[0].side == OrganSide::Left)
-            .map(|w| (w[0].spectral_affinity.min(w[1].spectral_affinity), w[0].angle, w[1].angle))
+            .map(|w| (w[0].kind.is_distance() && w[1].kind.is_distance(), w[0].angle, w[1].angle))
             .collect()
     };
     let thalamus_pairs = |p: &CreaturePhenotype| pair_organs(p).len();
@@ -885,12 +886,12 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
         n: genomes.len(),
         organ_count: Distribution::of(&phenotypes.iter().map(|p| p.organelles.len() as f32).collect::<Vec<_>>()),
         share_no_organ: share_where(&phenotypes, |p| p.organelles.is_empty()),
-        share_with_eye: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.spectral_affinity >= 0.80)),
-        share_with_nose: share_where(&phenotypes, |p| p.organelles.iter().any(|o| (0.25..=0.65).contains(&o.spectral_affinity))),
+        share_with_eye: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.kind == OrganKind::Eye)),
+        share_with_nose: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.kind == OrganKind::Nose)),
         share_with_food_sensor: share_where(&phenotypes, |p| food_organs(p) > 0),
         share_with_hox_gene: share_where(genomes, |g| !extract_raw_gene_payloads(&normalize_genome(g), "HOX", "EN").is_empty()),
         share_with_hox_pair: share_where(&phenotypes, |p| thalamus_pairs(p) > 0),
-        share_with_food_sensing_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(aff, l, r)| aff >= FOOD_SENSING_AFFINITY && l == -r)),
+        share_with_food_sensing_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(distance, l, r)| distance && l == -r)),
         share_with_misaligned_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(_, l, r)| l != -r)),
         sensor_range_px: Distribution::of(&ranges),
         spawn,
@@ -941,7 +942,7 @@ fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> S
         if tick == 1 {
             sees_food_at_start = senses_food(&agent.phenotype, &inputs);
         }
-        thrust_sum += outputs[0];
+        thrust_sum += outputs.thrust;
         heading_change += wrap_angle(agent.heading_angle - before);
         distance += speed_of(&agent);
         if tick == STEERING_TURN_WINDOW {

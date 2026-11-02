@@ -46,7 +46,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-139-ocea
 
 ## Known limitations
 
-- Spore spawn with nutrient centers 3×; `base_dna` literal 1× (fresh-start seeding) in `engine.rs` besides `dna::WILDTYPE_GENOME`; the `RESET_EVOLUTION` copy was replaced by structured random founders (TCK-184) (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185); trainer events and actions are typed (TCK-177).
+- Spore spawn with nutrient centers 3×; `base_dna` literal 1× (fresh-start seeding) in `engine.rs` besides `genome::WILDTYPE_GENOME`; the `RESET_EVOLUTION` copy was replaced by structured random founders (TCK-184) (RV-A01). Creature construction and the trainer state payload exist once (TCK-173, TCK-185); trainer events and actions are typed (TCK-177).
 - Not unit-testable (needs a Tauri window); logic is tested through extracted pure functions ([[wiki/quality/testing]]).
 - World size `19200 × 10800` hardcoded in Rust and TS (RV-A05); trainer chamber size and epoch length come from the scenario plugin (TCK-173).
 - Ocean RNG is `thread_rng` (RV-T04, above).

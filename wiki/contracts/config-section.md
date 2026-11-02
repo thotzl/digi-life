@@ -19,7 +19,7 @@ pub struct AppConfig {
     pub core: CoreConfig,             // src/config/mod.rs
     pub ocean: OceanConfig,           // src/server/ocean_config.rs
     pub trainer: TrainerConfig,       // src/biology/trainer_config.rs
-    pub genome: GenomeConfig,         // src/biology/dna.rs
+    pub genome: GenomeConfig,         // src/biology/genome/mod.rs
     pub brain: BrainConfig,           // src/shared/brain.rs
     pub metabolism: MetabolismConfig, // src/biology/metabolism.rs
     pub physics: PhysicsConfig,       // src/shared/physics.rs

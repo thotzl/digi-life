@@ -35,7 +35,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-
 - **Synapse key / owner / weight tape** — role-based stable synapse identity, the one gene that defines a synapse, and that gene's payload letters as initial weights, see [[wiki/biology/ctrnn-brain]].
 - **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters.
 - **Creep mutation** — a letter moved 1–2 alphabet steps (small value change).
-- **Mutation channel** — which genes a mutation touched: body (trait, `HOX`, organ genes), brain (`NEU`, `SY`, `OUT`), both or neutral (outside every gene) (`dna::promoter_channel`, `classify_mutation`, TCK-181), see [[wiki/biology/genome-compiler]].
+- **Mutation channel** — which genes a mutation touched: body (trait, `HOX`, organ genes), brain (`NEU`, `SY`, `OUT`), both or neutral (outside every gene) (`genome::promoter_channel`, `classify_mutation`, TCK-181), see [[wiki/biology/genome-compiler]].
 - **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key, per plastic synapse with probability `lamarckianAssimilationChance` (TCK-152).
 - **Energy cost** — per-tick drain of the shared energy function (`metabolism::tick_cost`): body, senses, brain (neurons + synaptic activity), movement, see [[wiki/biology/metabolism-and-reproduction]]. Replaced the multiplicative BMR (basal metabolic rate) in P6 (TCK-151).
 - **Starved** — trainer state of a creature at 0 energy: frozen for the rest of the trial (TCK-178), see [[wiki/simulation/trainer]].
