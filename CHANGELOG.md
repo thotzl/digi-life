@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.26] - 2026-11-02
+
+Trainer post-fix of TCK-192 from a user test. Golden master and CI reference unchanged.
+
+### Fixed
+- Trainer tiles showed only "Elite Parent" from generation 2 on: with a population of 100 the 16 tiles displayed the first 16 breeding slots, which are all elites. The tiles now show a sample of every origin group in its population share (pop 100, 16 tiles: 4 elite, 2 hall of fame, 2 random, 8 mutants) with the real sandbox ids; selection and brain view follow the selected tile (ref TCK-194).
+- Trainer reset replayed the same run: every reset produced the identical random generation 1 and the identical run afterwards, because the run seed depended only on the config seed and the run id. A reset now draws a new run seed, stored with the run state (new column `trainer_run_state.seed`) so restarts continue the same run; runs that were never reset keep their seed (ref TCK-194).
+
 ## [1.12.25] - 2026-10-26
 
 Training track wrap-up (epic TCK-171): the app trains with a population of 100 while showing 16 tiles. Final results on unseen layouts (pop 100): small room 0.708, large room 0.376 with the curriculum — both epic targets met.

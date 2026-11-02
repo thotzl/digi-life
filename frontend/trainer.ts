@@ -88,6 +88,13 @@ function sendTrainerAction(action: TrainerAction) {
 let isRunning = false;
 let sandboxes: Sandbox[] = [];
 let selectedSandboxIdx = 0; // index in the sandboxes list (0-based)
+// Sandbox id the backend currently selects (brain view); follows the selected tile's sandbox (TCK-194)
+let selectedSentId = 1;
+
+function selectSandbox(id: number) {
+  selectedSentId = id;
+  sendTrainerAction({ type: "SELECT_TRAINER_SANDBOX", id });
+}
 
 function updateStartButtonUI() {
   if (isRunning) {
@@ -362,18 +369,20 @@ async function rebuildSandboxGrid(push = true, includePopulation = false) {
     // The selected sandbox is no longer displayed: select the first tile (the backend sends brain data only for
     // displayed sandboxes)
     selectedSandboxIdx = 0;
-    sendTrainerAction({ type: "SELECT_TRAINER_SANDBOX", id: 1 });
+    selectSandbox(1);
   }
 
+  // Tiles are keyed by their index; each tile shows the sandbox of the telemetry entry at that index (a sample of
+  // every origin group, TCK-194), its id is known from the first telemetry frame on (slot 0 always has id 1)
   for (let idx = 0; idx < N; idx++) {
     const id = idx + 1;
     const box = document.createElement("div");
     box.className = `sandbox-card ${idx === selectedSandboxIdx ? "selected" : ""}`;
-    box.id = `sandbox-card-${id}`;
+    box.id = `sandbox-card-${idx}`;
 
     const label = document.createElement("div");
     label.className = "sandbox-meta";
-    label.innerHTML = `<span>#${id}</span> <span id="sb-origin-lbl-${id}">${IconPlant} Random</span>`;
+    label.innerHTML = `<span id="sb-id-lbl-${idx}">#${id}</span> <span id="sb-origin-lbl-${idx}">${IconPlant} Random</span>`;
 
     const canvas = document.createElement("canvas");
     canvas.width = canvasWidth;
@@ -381,7 +390,7 @@ async function rebuildSandboxGrid(push = true, includePopulation = false) {
 
     const fitEl = document.createElement("div");
     fitEl.className = "sandbox-meta";
-    fitEl.innerHTML = `<span id="sb-fit-lbl-${id}">F: 0.0</span> <span id="sb-status-lbl-${id}">🏃 T1</span>`;
+    fitEl.innerHTML = `<span id="sb-fit-lbl-${idx}">F: 0.0</span> <span id="sb-status-lbl-${idx}">🏃 T1</span>`;
 
     box.appendChild(label);
     box.appendChild(canvas);
@@ -403,8 +412,9 @@ async function rebuildSandboxGrid(push = true, includePopulation = false) {
       document.querySelectorAll(".sandbox-card").forEach(c => c.classList.remove("selected"));
       box.classList.add("selected");
       selectedSandboxIdx = idx;
-      
-      sendTrainerAction({ type: "SELECT_TRAINER_SANDBOX", id });
+      const id = sandboxes[idx].id;
+
+      selectSandbox(id);
       
       const lastTele = sandboxes[selectedSandboxIdx]?.lastTelemetry;
       if (lastTele) {
@@ -746,13 +756,19 @@ async function setupTauriListeners() {
         statGen.innerText = currentGeneration.toString();
         statTimer.innerText = data.timeStr;
 
-        data.sandboxes.forEach((tele) => {
-          const sb = sandboxes.find(s => s.id === tele.id);
+        data.sandboxes.forEach((tele, idx) => {
+          const sb = sandboxes[idx];
           if (sb) {
+            sb.id = tele.id;
             sb.lastTelemetry = tele;
             scheduleDraw(sb);
 
-            const labelOrigin = document.getElementById(`sb-origin-lbl-${tele.id}`);
+            const labelId = document.getElementById(`sb-id-lbl-${idx}`);
+            if (labelId) {
+              labelId.innerText = `#${tele.id}`;
+            }
+
+            const labelOrigin = document.getElementById(`sb-origin-lbl-${idx}`);
             if (labelOrigin) {
               if (tele.origin_type === "elite") {
                 labelOrigin.innerHTML = `${IconElite} Elite Parent`;
@@ -769,12 +785,12 @@ async function setupTauriListeners() {
               }
             }
 
-            const labelFit = document.getElementById(`sb-fit-lbl-${tele.id}`);
+            const labelFit = document.getElementById(`sb-fit-lbl-${idx}`);
             if (labelFit) {
               labelFit.innerText = `F: ${tele.current_fitness.toFixed(2)}`;
             }
 
-            const labelStatus = document.getElementById(`sb-status-lbl-${tele.id}`);
+            const labelStatus = document.getElementById(`sb-status-lbl-${idx}`);
             if (labelStatus) {
               labelStatus.innerHTML = tele.finished ? `${IconSuccess} SUCCESS` : `${IconActive} Active`;
               labelStatus.style.color = tele.finished ? "#10b981" : "var(--text-muted)";
@@ -784,6 +800,10 @@ async function setupTauriListeners() {
 
         // Select the active sandbox and write its details to the global SSOT signals!
         const activeSb = sandboxes[selectedSandboxIdx];
+        // The selected tile shows another sandbox (new generation): move the backend selection with it
+        if (activeSb && activeSb.lastTelemetry && activeSb.id !== selectedSentId) {
+          selectSandbox(activeSb.id);
+        }
         if (activeSb && activeSb.lastTelemetry) {
           const tele = activeSb.lastTelemetry;
           const pheno = phenotypeCache.get(tele.genome);

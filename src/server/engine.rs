@@ -12,10 +12,9 @@ use crate::shared::map_generator::generate_world;
 use crate::biology::dna::{parse_genome, mutate_genome, generate_structured_genome};
 use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_sim::{TrainerEvent, TrainerSim};
+use crate::biology::trainer_sim::{run_seed, TrainerEvent, TrainerSim};
 use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
 use crate::database::{delete_trainer_run, init_db, load_trainer_genomes, load_trainer_run_state, save_trainer_elites, save_trainer_run_state, LogDbError};
-use crate::shared::rng::seed_from_str;
 
 /// Per-step snapshot of the fields other creatures read (prey search, bite targets).
 struct PeerSnapshot {
@@ -162,27 +161,29 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
         // (config `trainerPopulation`, TCK-192). Only the telemetry reads it, the simulation never does.
         let mut trainer_display_count: usize = 16;
         let trainer_retention = app_config.trainer_genome_retention_per_run;
-        let trainer_seed = |run_id: &str| seed_from_str(&format!("{}:{}", app_config.seed, run_id));
+        // Seed of a run that never got a reset nonce (TCK-194: a reset stores its own seed with the run state)
+        let trainer_seed = |run_id: &str| run_seed(&app_config.seed, run_id, None);
 
         // Continues a run from the DB: active parents + hall of fame; the generation counter
         // continues from the newest parent. Run state (TCK-191): with `load_run_state` (the in-memory trainer does not
         // hold this run's state yet: app start, run switch) the saved mode, level, gate, layout and mutation ops of
         // the run replace the current ones (no row: current params, layout 0); otherwise the current params and layout
-        // continue, so unsaved UI changes since the last generation end are kept.
+        // continue, so unsaved UI changes since the last generation end are kept. The run seed follows the same rule:
+        // stored seed (else `trainer_seed`) on load, the current trainer's seed otherwise (TCK-194).
         let restore_trainer = |current: &TrainerSim, run_id: &str, generation: u32, load_run_state: bool, db_conn: &rusqlite::Connection| -> TrainerSim {
             let mut params = current.params.clone();
-            let layout_id = if load_run_state {
-                load_trainer_run_state(db_conn, run_id).map_or(0, |state| {
+            let (layout_id, seed) = if load_run_state {
+                load_trainer_run_state(db_conn, run_id).map_or((0, trainer_seed(run_id)), |state| {
                     state.apply(&mut params);
-                    state.layout_id
+                    (state.layout_id, state.seed.unwrap_or_else(|| trainer_seed(run_id)))
                 })
             } else {
-                current.layout_id()
+                (current.layout_id(), current.seed())
             };
             let parents = load_trainer_genomes(db_conn, run_id, true, params.population);
             let hof = load_trainer_genomes(db_conn, run_id, false, trainer_retention);
             let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
-            TrainerSim::restore_at_layout(params, trainer_seed(run_id), generation, layout_id, parents, hof, trainer_retention)
+            TrainerSim::restore_at_layout(params, seed, generation, layout_id, parents, hof, trainer_retention)
         };
         let mut trainer = TrainerSim::new(Default::default(), trainer_seed(&trainer_run_id), trainer_retention);
         // Whether `trainer` holds the run state of `trainer_run_id` (false until the first restore loads it)
@@ -356,7 +357,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<String
                                     if fresh_params.level_auto {
                                         fresh_params.level = fresh_params.curriculum.start_level;
                                     }
-                                    trainer = TrainerSim::new(fresh_params, trainer_seed(&trainer_run_id), trainer_retention);
+                                    // A reset starts a new run: fresh seed (clock nonce), stored at once so a restart
+                                    // before the first generation end continues this run (TCK-194)
+                                    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos() as u64;
+                                    trainer = TrainerSim::new(fresh_params, run_seed(&app_config.seed, &trainer_run_id, Some(nonce)), trainer_retention);
+                                    save_trainer_run_state(&conn, &trainer_run_id, &trainer);
                                     trainer_run_state_loaded = true;
 
                                     let state = trainer_state(false, &trainer, trainer_display_count, trainer_warp_speed, trainer_is_headless, &trainer_run_id);

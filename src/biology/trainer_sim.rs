@@ -42,7 +42,7 @@ use crate::biology::creature_factory::{inherit_learned_weights, spawn_creature, 
 use crate::biology::dna::{parse_genome, CTRNNSynapse, MutationChannel, MutationTouch, OrganKind, WILDTYPE_GENOME};
 use crate::biology::scenarios::{calculate_fitness, LevelScenario, Scenario, TrainingScenarioPlugin};
 use crate::biology::trainer_engine::{breed_genome_traced, init_rust_sandbox, step_trainer_sandbox_physics, SandboxOrigin, TrainerSandbox};
-use crate::shared::rng::{derive, SimRng};
+use crate::shared::rng::{derive, seed_from_str, SimRng};
 use crate::shared::types::{AppConfig, TrainerCurriculumConfig};
 pub use crate::shared::types::{LayoutPolicy, MutationChannelMode, TrialAggregation};
 use rand::Rng;
@@ -516,6 +516,15 @@ impl GenerationStats {
     }
 }
 
+/// Seed of a UI trainer run: `seed_from_str("{config_seed}:{run_id}")`; a reset adds a nonce
+/// (`"{config_seed}:{run_id}:{nonce}"`), so it starts a new run under the same run id instead of replaying it (TCK-194).
+pub fn run_seed(config_seed: &str, run_id: &str, nonce: Option<u64>) -> u64 {
+    match nonce {
+        Some(nonce) => seed_from_str(&format!("{}:{}:{}", config_seed, run_id, nonce)),
+        None => seed_from_str(&format!("{}:{}", config_seed, run_id)),
+    }
+}
+
 /// Per-run state a restore continues with (TCK-191, table `trainer_run_state`): training mode, curriculum level and
 /// gate, the shared layout and the `mutation_ops_max` adapted by the 1/5 rule. Taken right after a generation end
 /// (`of`), i.e. the state the next generation runs with; a switch still pending at that moment is not part of it.
@@ -528,12 +537,23 @@ pub struct TrainerRunState {
     pub mutation_ops_max: u32,
     /// Population of the run (TCK-192); `None` for rows saved before it was stored (config default applies)
     pub population: Option<usize>,
+    /// Run seed (TCK-194; a reset draws a new one, `run_seed`); `None` for rows saved before it was stored (the seed
+    /// without nonce applies)
+    pub seed: Option<u64>,
 }
 
 impl TrainerRunState {
     pub fn of(sim: &TrainerSim) -> Self {
         let p = &sim.params;
-        Self { scenario: p.scenario, level: p.level, level_auto: p.level_auto, layout_id: sim.layout_id, mutation_ops_max: p.mutation_ops_max, population: Some(p.population) }
+        Self {
+            scenario: p.scenario,
+            level: p.level,
+            level_auto: p.level_auto,
+            layout_id: sim.layout_id,
+            mutation_ops_max: p.mutation_ops_max,
+            population: Some(p.population),
+            seed: Some(sim.seed),
+        }
     }
 
     /// Writes the state into `params` (the layout goes to `TrainerSim::restore_at_layout`). `mutation_ops_max` is
@@ -592,6 +612,11 @@ impl TrainerSim {
         };
         sim.breed(false);
         sim
+    }
+
+    /// Seed of the run (all RNG streams derive from it).
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// Shared layout of the current generation.
@@ -1760,11 +1785,25 @@ mod tests {
 
     #[test]
     fn test_run_state_apply_clamps_mutation_ops_and_snaps_level() {
-        let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000, population: Some(42) };
+        let state = TrainerRunState { scenario: Scenario::Exploration, level: 0.47, level_auto: false, layout_id: 9, mutation_ops_max: 10_000, population: Some(42), seed: Some(7) };
         let mut params = TrainerParams::default();
         state.apply(&mut params);
         let limit = AppConfig::global().mutation_ops_limit.max(params.mutation_ops_min.max(1));
         assert_eq!((params.scenario, params.level, params.level_auto, params.mutation_ops_max), (Scenario::Exploration, snap_level(0.47), false, limit));
         assert_eq!(params.population, 42, "the stored population is restored (TCK-192)");
+    }
+
+    /// TCK-194: without a nonce the run seed is the one used since TCK-173; a reset nonce gives a new generation 1.
+    #[test]
+    fn test_run_seed_nonce_draws_a_new_generation_one() {
+        assert_eq!(run_seed("BASE", "run", None), seed_from_str("BASE:run"));
+        let genomes = |seed: u64| TrainerSim::new(small_params(), seed, 200).sandboxes.iter().map(|sb| sb.agent.genome.clone()).collect::<Vec<_>>();
+        let replay = genomes(run_seed("BASE", "run", None));
+        assert_eq!(genomes(run_seed("BASE", "run", None)), replay, "same seed: identical run");
+        let reset_a = genomes(run_seed("BASE", "run", Some(1)));
+        let reset_b = genomes(run_seed("BASE", "run", Some(2)));
+        assert_ne!(reset_a, replay);
+        assert_ne!(reset_a, reset_b);
+        assert_eq!(TrainerRunState::of(&TrainerSim::new(small_params(), 99, 200)).seed, Some(99));
     }
 }

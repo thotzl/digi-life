@@ -194,16 +194,21 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
             layout_id TEXT NOT NULL,
             mutation_ops_max INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
-            population INTEGER
+            population INTEGER,
+            seed TEXT
         );",
         [],
     )?;
-    // Column added with TCK-192; tables created by v1.12.23 lack it (rows without it fall back to the config default)
+    // Columns added later: population with TCK-192 (missing in v1.12.23 tables; rows without it fall back to the
+    // config default), seed with TCK-194 (u64 as decimal text; rows without it keep the run seed without nonce)
     {
         let mut stmt = conn.prepare("PRAGMA table_info(trainer_run_state);")?;
         let columns: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(1))?.filter_map(|c| c.ok()).collect();
         if !columns.iter().any(|c| c == "population") {
             conn.execute("ALTER TABLE trainer_run_state ADD COLUMN population INTEGER;", [])?;
+        }
+        if !columns.iter().any(|c| c == "seed") {
+            conn.execute("ALTER TABLE trainer_run_state ADD COLUMN seed TEXT;", [])?;
         }
     }
 
@@ -310,9 +315,19 @@ pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim)
     let state = TrainerRunState::of(sim);
     let now_secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64;
     conn.execute(
-        "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at, population)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![run_id, state.scenario.mode(), state.level as f64, state.level_auto, state.layout_id.to_string(), state.mutation_ops_max as i64, now_secs, state.population.map(|n| n as i64)],
+        "INSERT OR REPLACE INTO trainer_run_state (run_id, scenario, level, level_auto, layout_id, mutation_ops_max, updated_at, population, seed)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            run_id,
+            state.scenario.mode(),
+            state.level as f64,
+            state.level_auto,
+            state.layout_id.to_string(),
+            state.mutation_ops_max as i64,
+            now_secs,
+            state.population.map(|n| n as i64),
+            state.seed.map(|s| s.to_string())
+        ],
     ).log_db_err("INSERT OR REPLACE INTO trainer_run_state");
 }
 
@@ -320,19 +335,30 @@ pub fn save_trainer_run_state(conn: &Connection, run_id: &str, sim: &TrainerSim)
 pub fn load_trainer_run_state(conn: &Connection, run_id: &str) -> Option<TrainerRunState> {
     let row = conn
         .query_row(
-            "SELECT scenario, level, level_auto, layout_id, mutation_ops_max, population FROM trainer_run_state WHERE run_id = ?1",
+            "SELECT scenario, level, level_auto, layout_id, mutation_ops_max, population, seed FROM trainer_run_state WHERE run_id = ?1",
             params![run_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?, row.get::<_, bool>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?, row.get::<_, Option<i64>>(5)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, f64>(1)?,
+                    row.get::<_, bool>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            },
         )
         .optional();
     match row {
-        Ok(Some((scenario, level, level_auto, layout_id, mutation_ops_max, population))) => Some(TrainerRunState {
+        Ok(Some((scenario, level, level_auto, layout_id, mutation_ops_max, population, seed))) => Some(TrainerRunState {
             scenario: Scenario::from_mode(&scenario),
             level: level as f32,
             level_auto,
             layout_id: layout_id.parse().unwrap_or(0),
             mutation_ops_max: mutation_ops_max.clamp(0, u32::MAX as i64) as u32,
             population: population.filter(|&n| n > 0).map(|n| n as usize),
+            seed: seed.and_then(|s| s.parse().ok()),
         }),
         Ok(None) => None,
         Err(e) => {
@@ -575,10 +601,11 @@ mod tests {
             .unwrap();
             conn.execute("INSERT INTO trainer_run_state VALUES ('run', 'curriculum', 0.3, 1, '5', 2, 0)", []).unwrap();
         }
-        // Reopening adds the column and keeps the row; the missing population falls back to the config default
+        // Reopening adds the columns and keeps the row; the missing population falls back to the config default, the
+        // missing seed (TCK-194) to the run seed without nonce
         let conn = init_db(&path).unwrap();
         let state = load_trainer_run_state(&conn, "run").unwrap();
-        assert_eq!((state.scenario, state.layout_id, state.mutation_ops_max, state.population), (Scenario::Curriculum, 5, 2, None));
+        assert_eq!((state.scenario, state.layout_id, state.mutation_ops_max, state.population, state.seed), (Scenario::Curriculum, 5, 2, None, None));
         drop(conn);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -634,6 +661,10 @@ mod tests {
         let loaded = load_trainer_run_state(&conn, "run").unwrap();
         assert_eq!(loaded, TrainerRunState::of(&sim));
         assert_eq!((loaded.scenario, loaded.level, loaded.level_auto, loaded.layout_id, loaded.mutation_ops_max), (Scenario::Curriculum, 0.4, false, u64::MAX - 1, 5));
+        // The run seed (TCK-194) survives the text column beyond i64 too
+        let reseeded = TrainerSim::restore_at_layout(sim.params.clone(), u64::MAX - 2, 2, 0, Vec::new(), Vec::new(), 10);
+        save_trainer_run_state(&conn, "run", &reseeded);
+        assert_eq!(load_trainer_run_state(&conn, "run").unwrap().seed, Some(u64::MAX - 2));
 
         // Saving again replaces the run's row; other runs stay separate
         save_trainer_run_state(&conn, "run", &trainer_with_state(7));

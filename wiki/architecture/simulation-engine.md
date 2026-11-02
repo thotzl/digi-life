@@ -33,7 +33,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, docs/revisit/02-architectur
 ## Creature spawning and RNG
 
 - All Ocean spawn sites (seed, inject, clone, reset, restock) and the trainer build agents through `CreatureFactory` (`src/biology/creature_factory.rs`: `spawn_creature`, `spawn_from_phenotype`, `start_energy`) with the same start energy, `antisense` and neuron buffers (TCK-185). Ocean mitosis children (clones and mutants) are built by `spawn_from_phenotype` too, with fresh neuron states and the parent's post-split energy (TCK-152, [[wiki/biology/metabolism-and-reproduction]]).
-- Trainer: seeded `SimRng` (`ChaCha8Rng`, `src/shared/rng.rs`), run seed `seed_from_str("{config.seed}:{run_id}")`, sandboxes stepped in parallel with `TrainerSim::step(true)`; reproducible per run ([[wiki/simulation/trainer]]).
+- Trainer: seeded `SimRng` (`ChaCha8Rng`, `src/shared/rng.rs`), run seed `run_seed(config.seed, run_id, nonce)` (a reset draws a clock nonce and stores the seed with the run state, TCK-194), sandboxes stepped in parallel with `TrainerSim::step(true)`; reproducible per run ([[wiki/simulation/trainer]]).
 - Ocean: `rand::thread_rng()` at 11 sites in `engine.rs`; Ocean runs are not reproducible (RV-T04). `config.seed` seeds the Ocean world generation and the trainer run seed (TCK-149, TCK-173).
 
 ## Hot-loop rules

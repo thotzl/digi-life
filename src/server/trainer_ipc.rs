@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_engine::TrainerTelemetrySandbox;
+use crate::biology::trainer_engine::{SandboxOrigin, TrainerSandbox, TrainerTelemetrySandbox};
 use crate::biology::trainer_sim::{GenerationStats, LevelMove, TrainerSim};
 
 /// Trainer events sent to the UI (payload of the `simulation-state` event, tag `type`).
@@ -30,7 +30,39 @@ impl TrainerUiEvent {
     }
 }
 
-/// Live frame of the displayed sandboxes (25 Hz): the first `N` of the population (TCK-192).
+/// Slot indices of the displayed sandboxes (TCK-194): a sample of `n` slots with every origin group (elite, hall of
+/// fame, random, mutant) in the share it has in the population, so the tiles look like a population of `n` (pop 100,
+/// 16 tiles: 4 / 2 / 2 / 8). Each present group gets `round(n · group / population)` slots, at least one; extra
+/// slots go to the group with the most spare slots, missing ones come off the group with the most slots (the last of
+/// equals). Takes the first slots of each group (elites: best first) and returns them in slot order. All slots when
+/// `n` covers the population.
+pub fn display_slots(origins: &[SandboxOrigin], n: usize) -> Vec<usize> {
+    let len = origins.len();
+    if n >= len {
+        return (0..len).collect();
+    }
+    let groups: Vec<Vec<usize>> = [SandboxOrigin::Elite, SandboxOrigin::Hof, SandboxOrigin::Random, SandboxOrigin::Mutant]
+        .iter()
+        .map(|origin| (0..len).filter(|&i| origins[i] == *origin).collect())
+        .collect();
+    let mut quota: Vec<usize> = groups
+        .iter()
+        .map(|g| if g.is_empty() { 0 } else { ((n * g.len()) as f32 / len as f32).round().max(1.0) as usize })
+        .collect();
+    while quota.iter().sum::<usize>() < n {
+        let g = (0..groups.len()).max_by_key(|&g| groups[g].len() - quota[g]).unwrap_or(0);
+        quota[g] += 1;
+    }
+    while quota.iter().sum::<usize>() > n {
+        let g = (0..groups.len()).max_by_key(|&g| quota[g]).unwrap_or(0);
+        quota[g] -= 1;
+    }
+    let mut slots: Vec<usize> = groups.iter().zip(&quota).flat_map(|(g, &q)| g.iter().take(q).copied()).collect();
+    slots.sort_unstable();
+    slots
+}
+
+/// Live frame of the displayed sandboxes (25 Hz): a sample of `N` covering every origin group (TCK-192, TCK-194).
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -44,13 +76,14 @@ pub struct TrainerTelemetryTick {
 }
 
 impl TrainerTelemetryTick {
-    /// Frame of the first `display_count` sandboxes (TCK-192). Within a generation the sandboxes keep their breeding
-    /// slot order (ids 1..=population: elites, hall of fame, random immigrants, mutants), so the displayed tiles show
-    /// the elites first and their ids are stable for the whole generation. The payload size depends on
+    /// Frame of `display_count` sandboxes chosen by `display_slots` (TCK-192, TCK-194). Within a generation the
+    /// sandboxes keep their breeding slot order (ids 1..=population: elites, hall of fame, random immigrants,
+    /// mutants), so the displayed ids are stable for the whole generation. The payload size depends on
     /// `display_count`, not on the population. The brain view gets activations only for a displayed sandbox.
     /// Reads the sim only: the display count never changes the simulation.
     pub fn build(trainer: &TrainerSim, display_count: usize, selected_sandbox_id: Option<u32>, is_running: bool) -> Self {
-        let displayed = &trainer.sandboxes[..display_count.min(trainer.sandboxes.len())];
+        let origins: Vec<SandboxOrigin> = trainer.sandboxes.iter().map(|sb| sb.origin_type).collect();
+        let displayed: Vec<&TrainerSandbox> = display_slots(&origins, display_count).into_iter().map(|i| &trainer.sandboxes[i]).collect();
         let scenario = trainer.params.scenario;
         let sandboxes = displayed
             .iter()
@@ -407,20 +440,61 @@ mod tests {
         assert_eq!(tick["selectedBrain"]["id"], 1);
     }
 
-    /// TCK-192: the telemetry carries the first `N` sandboxes (elites first, ids 1..=N) and the brain view only a
-    /// displayed sandbox.
+    /// TCK-192, TCK-194: the telemetry carries only the `N` sampled sandboxes (slots 3 elite | 2 hof | 2 random |
+    /// 5 mutants at pop 12, sample 1 / 1 / 1 / 2) and the brain view only a displayed sandbox.
     #[test]
     fn test_telemetry_carries_only_the_displayed_sandboxes() {
         use crate::biology::trainer_engine::SandboxOrigin;
         use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
         let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::default() }, 11, 200);
         while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
-        let tick = TrainerTelemetryTick::build(&sim, 5, Some(3), true);
-        assert_eq!(tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
-        assert_eq!(tick.sandboxes[0].origin_type, SandboxOrigin::Elite);
-        assert_eq!(tick.selected_brain.as_ref().map(|b| b.id), Some(3));
-        assert!(TrainerTelemetryTick::build(&sim, 5, Some(9), true).selected_brain.is_none(), "sandbox 9 is not displayed");
+        let tick = TrainerTelemetryTick::build(&sim, 5, Some(4), true);
+        assert_eq!(tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 4, 6, 8, 9]);
+        assert_eq!(
+            tick.sandboxes.iter().map(|s| s.origin_type).collect::<Vec<_>>(),
+            vec![SandboxOrigin::Elite, SandboxOrigin::Hof, SandboxOrigin::Random, SandboxOrigin::Mutant, SandboxOrigin::Mutant]
+        );
+        assert_eq!(tick.selected_brain.as_ref().map(|b| b.id), Some(4));
+        assert!(TrainerTelemetryTick::build(&sim, 5, Some(3), true).selected_brain.is_none(), "sandbox 3 is not displayed");
         assert_eq!(TrainerTelemetryTick::build(&sim, 100, None, true).sandboxes.len(), 12, "display count above the population");
+    }
+
+    /// TCK-194: edge cases of the display sample.
+    #[test]
+    fn test_display_slots_edge_cases() {
+        use crate::biology::trainer_engine::SandboxOrigin::{Elite, Hof, Mutant, Random};
+        // Generation 1: one group only
+        assert_eq!(display_slots(&[Random; 10], 4), vec![0, 1, 2, 3]);
+        // Sample covers the population
+        assert_eq!(display_slots(&[Elite, Hof, Mutant], 5), vec![0, 1, 2]);
+        // Fewer tiles than groups: exactly n slots, first slots first
+        let origins: Vec<_> = [Elite; 25].into_iter().chain([Hof; 15]).chain([Random; 15]).chain([Mutant; 45]).collect();
+        assert_eq!(display_slots(&origins, 2), vec![0, 25]);
+        // Every n gives exactly n distinct slots
+        for n in 1..=100 {
+            let slots = display_slots(&origins, n);
+            assert_eq!(slots.len(), n);
+            assert!(slots.windows(2).all(|w| w[0] < w[1]));
+        }
+    }
+
+    /// TCK-194: at pop 100 the 16 displayed tiles sample every origin group like the breeding shares (4 / 2 / 2 / 8),
+    /// not only the leading elite slots.
+    #[test]
+    fn test_telemetry_samples_every_origin_group() {
+        use crate::biology::dna::WILDTYPE_GENOME;
+        use crate::biology::trainer_engine::SandboxOrigin;
+        use crate::biology::trainer_sim::{GenomeRecord, TrainerParams};
+        let record = |fitness: f32| GenomeRecord { genome: WILDTYPE_GENOME.to_string(), name: "p".to_string(), fitness, generation: 1, methylations: Vec::new(), synapse_weights: Vec::new() };
+        let parents: Vec<GenomeRecord> = (0..25).map(|i| record(25.0 - i as f32)).collect();
+        let hof: Vec<GenomeRecord> = (0..15).map(|i| record(15.0 - i as f32)).collect();
+        let sim = TrainerSim::restore(TrainerParams { population: 100, ..TrainerParams::default() }, 5, 2, parents, hof, 200);
+        let tick = TrainerTelemetryTick::build(&sim, 16, None, true);
+        let count = |origin: SandboxOrigin| tick.sandboxes.iter().filter(|s| s.origin_type == origin).count();
+        assert_eq!(
+            [count(SandboxOrigin::Elite), count(SandboxOrigin::Hof), count(SandboxOrigin::Random), count(SandboxOrigin::Mutant)],
+            [4, 2, 2, 8]
+        );
     }
 
     /// TCK-192: the display count is a UI concern; building the telemetry with different counts every tick leaves
