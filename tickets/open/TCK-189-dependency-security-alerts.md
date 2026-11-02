@@ -10,6 +10,10 @@ created_at: 2026-10-26
 
 # TCK-189: Resolve Dependency Security Alerts (npm dev tooling, glib)
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R0 (parallel with TCK-197). Review 2026-11-02: removing the unused `concurrently` drops the `shell-quote` critical alert, removing `tsx` and Stryker (no config file, `test:mutation` unusable) drops the `@babel` alert; then update `vite` (^5) and `vitest`/coverage (^1.6) majors; `rusqlite` 0.29 and `rand` 0.8 checked for advisories (`cargo audit`).
+
+
 ## Description
 GitHub reports 29 open Dependabot alerts on `master` (2026-10-26: 4 critical, 9 high, 11 moderate, 5 low; `gh api repos/thotzl/digi-life/dependabot/alerts`). Almost all are in npm development tooling (`package-lock.json`); one is in the Rust lock file. The shipped app bundles none of the npm dev packages, but they run on the developer machine (`vite` dev server, `vitest`, Stryker).
 

@@ -8,6 +8,10 @@ created_at: 2026-08-31
 
 # TCK-123: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocean Seeding (Master Epic)
 
+## Re-scope (2026-11-02, epic TCK-196)
+Feature ticket after TCK-196; re-scope on `Room` / `Evaluator` (TCK-201). Curriculum core done (TCK-176), runner `--schedule` covers part of the playlists; section 3 per-scenario kinetic-waste fitness obsolete (TCK-175); `apply_champion` removed in TCK-157, champion seeding into the Ocean still open.
+
+
 > Status 2026-10-21: back to open; not started (only `standard`/`exploration` scenarios exist). The curriculum core (one difficulty knob driven by success rate) moved to TCK-176 in the training track (epic TCK-171). Re-scope this ticket after TCK-176: split into sub-tickets; Match Arena and HUD interpolation as separate tickets; check whether champion export can use `creature_catalogue` instead of a new `prepared_creatures` table.
 
 ## Description

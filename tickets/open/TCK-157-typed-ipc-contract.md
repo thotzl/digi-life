@@ -11,6 +11,16 @@ revisit: RV-A02, RV-A03, RV-F01, RV-A06
 
 # TCK-157: Typed IPC Contract and ts-rs Bindings in Frontend
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R1 (after TCK-198; parallel with TCK-159). Trainer actions/events are typed (TCK-177). Remaining scope:
+- `ClientAction = Engine(ClientReady, SetMode) | Ocean(OceanAction) | Trainer(TrainerAction)` with ts-rs; channel `Sender<ClientAction>`; `handle_client_action` deserialises once; catalogue -> Ocean sends `OceanAction::SpawnClone` typed (api.rs:329-340); unknown messages rejected with a logged error.
+- `UiEvent` enum for every event (Ocean events are `json!` at engine.rs:307-1535; `DATABASE_CHANGED`, logs).
+- Typed command results (`#[derive(Serialize, TS)]` structs instead of `serde_json::Value`, api.rs:25/62/89/116/209/215); `api.rs` split into `api/{species,catalogue,trainer}.rs` with a `collect_rows` helper (5 copied loops).
+- Remove dead commands (no caller in `frontend/`): `get_trainer_population`, `get_trainer_hof`, `save_trainer_generation` (api.rs:143, deactivates genomes, drops weights), `apply_champion` (writes the unread `progenitor_genome`).
+- Frontend `core/ipc.ts`: typed `send(ClientAction)`, `call<Command>()` with typed errors and a toast hook (replaces `safeInvoke`, which swallows errors, RV-F04), one `listen` dispatching typed events; `set_mode` as a command with a result (RV-F05); `TelemetryPayload` matches the backend.
+- Contract `wiki/contracts/ipc-message.md`, guide `add-ipc-message.md`.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-A02, RV-A03, RV-F01, RV-A06) below.
 
 ## Description

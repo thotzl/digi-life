@@ -11,6 +11,10 @@ revisit: RV-B09
 
 # TCK-147: SPAWN_FOOD Action: Implement or Remove
 
+## Re-scope (2026-11-02, epic TCK-196)
+Absorbed by TCK-202 (`SPAWN_FOOD` / `CLIENT_LOG` typed or removed; still unknown to the engine, `ocean.ts:536-541,758`). Closed together with TCK-202.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-B09) below.
 
 ## Description

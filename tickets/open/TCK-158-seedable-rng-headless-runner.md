@@ -11,6 +11,13 @@ revisit: RV-T03, RV-T04, RV-S11
 
 # TCK-158: Seedable RNG and Headless Runner
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R3 (after TCK-156). RV-S11 resolved (`cli_trainer` gone); RV-T04 resolved for the trainer, Ocean `thread_rng` (11x) is removed by TCK-156. Remaining scope:
+- Headless Ocean run in the runner (`trainer_runner ocean --seed --ticks`) on `OceanSim`.
+- Ocean reference report in CI (fixed seed and ticks: population, births/deaths, species, energy statistics), compared like the trainer reports.
+- Tests for Ocean mitosis and the warp cap (RV-T02, RV-X02) on the headless Ocean.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-T03, RV-T04, RV-S11) below.
 
 ## Description

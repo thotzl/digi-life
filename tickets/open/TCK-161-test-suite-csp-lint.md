@@ -11,6 +11,14 @@ revisit: RV-T02, RV-F02 (CSP), RV-T05
 
 # TCK-161: Behavioural Test Suite, CSP and Lint Baseline
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R4 (after TCK-160). CSP moved to TCK-197. RV-T02 partly resolved (property, config, brain-determinism tests). Scope:
+- Vitest with `happy-dom` for view mount/unmount; controllers as pure event->state functions with tests; renderer pure helpers (`columnYs`), labels, warp mapping, IPC client.
+- `cargo fmt --check`, `cargo clippy -D warnings` (baseline 69 -> 0), ESLint for `frontend/`; all in CI.
+- CI job on Windows (shipping target) next to Ubuntu; `release.yml` uses `npm ci`, release name BroodBattle.
+- Dead dev dependencies handled in TCK-189.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-T02, RV-F02 (CSP), RV-T05) below.
 
 ## Description

@@ -11,6 +11,16 @@ revisit: RV-A01, RV-A05, RV-P04
 
 # TCK-156: Engine Decomposition (OceanSim / TrainerSim)
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R3 (after TCK-200; parallel with TCK-201). Trainer slices are done (`TrainerSim`, `trainer_ipc.rs`, factory). Remaining scope, from the 2026-11-02 review:
+- `OceanSim` (IO-free, seeded `SimRng` streams, uses the shared world systems of TCK-200); `step()` returns Ocean events and species changes instead of writing SQL. Ocean behaviour changes by design through seeding and the shared system order (no Ocean reference exists yet; TCK-158 adds one).
+- `Engine` with a `Mode` trait (`OceanMode`, `TrainerMode`: `on_enter`, `on_exit`, `handle`, `step`, `emit_telemetry`), `EventSink` (`TauriSink` with buffer/coalescing, `VecSink` for tests), store ports from TCK-159; `run_loop(rx, sink, store)` testable without Tauri.
+- Remove duplication in `engine.rs`: founder spawn 6x (233-271, 514-555, 556-611, 649-688, 692-725, 1358-1416) -> `OceanSpawner::founder(Catalogue|Random|Genome)`; spores 3x + nutrient centres 2x -> `SporeField`; decomposition 2x (1013, 1231); INIT_STATE 2x (481, 773); `base_dna` literal (231); species INSERT 7x -> `SpeciesLedger` (pure cache + diff).
+- Fixes: DB init `expect` panics the engine thread silently (97) -> error event; two connections both run `init_db` (main.rs:44, engine.rs:97); Ocean and trainer share `last_emit_time` (1421, 1542); warp cap 35 as a constant, clamped value echoed to the UI (425, 795, 829, 1511); irrefutable `let TrainerEvent::GenerationCompleted` (1514); full snapshot serialised on the frame thread every 10 s (1488); SET_MODE trainer rebuilds from DB on every navigation (805); nutrient centres not persisted; `WorldSpec` (19200x10800, RV-A05) from config, sent in INIT_STATE.
+- Contracts `wiki/contracts/mode.md`, `event-sink.md`.
+- Gate: golden master and trainer references unchanged.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-A01, RV-A05) below.
 
 ## Description

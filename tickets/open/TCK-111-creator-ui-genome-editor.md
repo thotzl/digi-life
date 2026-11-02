@@ -8,6 +8,10 @@ created_at: 2026-08-21
 
 # TCK-111: UI Creator Module: DNA Sequence Editor and Phenotypic Preview
 
+## Re-scope (2026-11-02, epic TCK-196)
+Feature ticket after TCK-196. Outdated assumptions (Preact components, client-side decompiler mirror, IndexedDB) contradict the backend-as-source-of-truth rule and the SQLite catalogue. Rewrite on the `ViewModule` seam (TCK-160) and the organ/promoter registry (TCK-199) before starting.
+
+
 ## Description
 Develop the client-side DNA sequence workbench in the Preact-based frontend. This module allows users to generate, modify, and validate double-stranded genomic sequences, producing structured profiles that can be saved locally and sent to the simulation core.
 

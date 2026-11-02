@@ -11,6 +11,10 @@ revisit: RV-B08
 
 # TCK-146: Creature Lifespan Source of Truth
 
+## Re-scope (2026-11-02, epic TCK-196)
+Absorbed by TCK-202 (one lifespan source; `min(mature*mult, cap)` at engine.rs:1009, the cap never binds). Closed together with TCK-202.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-B08) below.
 
 ## Description

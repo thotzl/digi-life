@@ -11,6 +11,16 @@ revisit: RV-D02, RV-D03, RV-D04, RV-D06
 
 # TCK-159: DB Migration Versioning, Retention and Timestamps
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R1 (after TCK-198; parallel with TCK-157). Scope from the 2026-11-02 review:
+- `PRAGMA user_version` with an ordered migration list applied in one transaction; modules contribute their migrations and declare model-scoped tables (today `CREATE TABLE IF NOT EXISTS` + two hand-written column checks with inconsistent error handling, database.rs:174-179 vs 204-213).
+- Repository traits on plain DTOs (`SpeciesRepo`, `CatalogueRepo`, `TrainerRepo`, `OceanSnapshotRepo`), rusqlite and in-memory implementations; `database.rs` no longer imports `TrainerSim` (database.rs:3, 332).
+- SQL only in the repository module (today engine.rs 24 sites, api.rs 14, probes.rs 1; catalogue query duplicated at engine.rs:632/1340, api.rs:317/356).
+- Retention: runs, `species_records`, `simulation_history` (written every 10 s, never read by the app) bounded or removed; `trainer_genomes` id `run-gen-idx-secs` collides within one second (database.rs:297); snapshot restore errors logged instead of dropped (engine.rs:200-215); the `sessions` row only exists for a foreign key (engine.rs:193).
+- RV-D06 (`apply_champion`, `progenitor_genome`) closed by TCK-157.
+- Contract `wiki/contracts/persistence-repo.md`, guide `add-table.md`.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-D02, RV-D03, RV-D04, RV-D06) below.
 
 ## Description

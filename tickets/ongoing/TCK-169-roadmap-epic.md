@@ -11,12 +11,14 @@ created_at: 2026-10-21
 
 Phased plan from the review of 2026-10-19 (base commit `998244e`, v1.12.2). Each phase ends with a hard stop and explicit user approval (`GO PHASE 1`, `GO PHASE 2`). No feature ticket (TCK-111, TCK-113, TCK-118, TCK-123) starts before Phase 0 is complete. Non-goals: `wiki/decisions/adr-001-non-goals.md`.
 
-## Current state (2026-10-26)
+## Current state (2026-11-02)
 - Phase 0 implemented (TCK-134..142, TCK-162; v1.12.3–v1.12.12).
 - Open from Phase 0: TCK-164 (manual UI flow check); TCK-143 (offspring) deliberately deferred.
 - Next: user decisions on pool tickets TCK-143..161 and TCK-165..168, then `GO PHASE 1`.
 - 2026-10-21: user prioritises training. Phase 1a (training track, epic TCK-171) runs before the rest of Phase 1; see below.
 - 2026-10-26: Phase 1a done (epic TCK-171 closed, v1.12.15–v1.12.22; results and open gap in TCK-171 `## Result`). Next: plan the after-epic goal (arenas, active traits, dynamics/rooms/modes as plugins, code pass; `.agents/state/next-tasks.md`) together with the rest of Phase 1/2 — needs user decision before ticketing.
+- 2026-10-26 – 2026-11-02: wrap-up of TCK-171 (TCK-190, TCK-191, TCK-192), trainer display/reset fix (TCK-194, v1.12.26), first Windows release build of the BroodBattle alpha (TCK-195, v1.12.27).
+- 2026-11-02: user decision: the rest of Phase 1 runs as **epic TCK-196 (plugin architecture rebuild)** over the whole codebase incl. docs and agent setup; it supersedes the table below (pool tickets TCK-155..161 re-scoped as its sub-tickets or absorbed). Phase 2 features follow on its seams.
 
 ## Phase 1a — Training track (epic TCK-171)
 Training produced results only in the small chamber. Analysis points to core mechanics (heredity, speed, steering, walls) before trainer scoring. Phases (details in TCK-171): P1 config (TCK-149) → P2 sim lab (TCK-173, 172, 185, 183, 186, 188; trainer-only slice of TCK-156/TCK-158) → P3 brain v2 (TCK-179, 182, 144, 153, 184, 187) → P4 learning (TCK-152) → P5 locomotion v2 (TCK-150, 180) → P6 energy v2 (TCK-151, 178, 145) → P7 evaluation and fitness (TCK-174, 175, 154) → P8 curriculum and UI (TCK-176 — core of TCK-123 —, 177); TCK-181 conditional. These pool tickets are thereby decided (defaults recorded in each ticket). Each ticket is accepted by a before/after headless measurement. New rooms beyond small/large are decided later.
@@ -40,6 +42,8 @@ Minimal-invasive; every fix covered by a test.
 **DoD:** `cargo test` + `npm run build` green in CI; Ocean shows generation growth through real offspring; Windows release starts with DB in AppData; no DB query in the physics step.
 
 ## Phase 1 — Targeted rebuild (only what blocks Phase 2)
+
+> Superseded 2026-11-02 by epic TCK-196 (phases R0–R7); the table is kept as history.
 
 | Step | Content | Justified by | Ticket |
 | :--- | :--- | :--- | :--- |

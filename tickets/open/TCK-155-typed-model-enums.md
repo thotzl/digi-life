@@ -11,6 +11,10 @@ revisit: RV-S10
 
 # TCK-155: Typed Enums for Model Strings
 
+## Re-scope (2026-11-02, epic TCK-196)
+Absorbed by TCK-199 (typed enums for activation, symmetry, diet class, habitat). `OrganKind`, `Scenario`, `SandboxOrigin` are enums already. Closed together with TCK-199.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-S10) below.
 
 ## Description

@@ -11,6 +11,10 @@ revisit: RV-B10
 
 # TCK-148: Species Model: Distance-Based Speciation
 
+## Re-scope (2026-11-02, epic TCK-196)
+Feature ticket after TCK-196. The phantom-species bug is fixed in TCK-143/TCK-156 (`SpeciesLedger`); the species model itself (`species_id = genome`, `latin_name UNIQUE`) stays here.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-B10) below.
 
 ## Description

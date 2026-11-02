@@ -10,6 +10,10 @@ created_at: 2026-10-21
 
 # TCK-168: Relative Synapse Addressing in the Genome
 
+## Re-scope (2026-11-02, epic TCK-196)
+Feature ticket after TCK-196. Description stale: `SY` now addresses role classes modulo class size (dna.rs:1789-1795), not absolute indices.
+
+
 > Pool ticket from `ideas.md` (section II.3, epoch 17). Context: `wiki/research/porting-concepts.md`.
 
 ## Description

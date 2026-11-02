@@ -11,6 +11,10 @@ revisit: RV-B01, RV-D03
 
 # TCK-143: Ocean Offspring Integration
 
+## Re-scope (2026-11-02, epic TCK-196)
+Sub-ticket of TCK-196 phase R5 (after TCK-156; parallel with TCK-202). Review 2026-11-02: RV-B01 still valid - a mitosis child goes only to `newly_spawned_creatures` and is never simulated (engine.rs:1213); every mutant inserts a species row that the next step marks extinct (1187-1191 with 1298-1325): phantom species, extinction logs and DATABASE_CHANGED spam. Implement offspring as part of the `reproduce` system (TCK-200) and `SpeciesLedger` (TCK-156); Ocean reference (TCK-158) updated with the reason.
+
+
 > Pool ticket: requires a user decision before implementation. Findings (RV-B01, RV-D03) below.
 
 ## Description
