@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.30] - 2026-11-02
+
+Epic TCK-196, phase R1. Structure only: golden master and all trainer references unchanged.
+
+### Changed
+- `config.json` is grouped into sections (`core`, `ocean`, `trainer`, `genome`, `brain`, `metabolism`, `physics`); key names and values are unchanged. Every simulation module now receives its config explicitly instead of reading a global, and release builds ignore a `config.json` lying next to the exe (ref TCK-198).
+- Shared helpers for geometry, timestamps and JSON columns replace repeated code (ref TCK-198).
+
+### Added
+- Log file for the release app: `%APPDATA%\de.pixlich.broodbattle\logsroodbattle.log` (rotates at 1 MiB) (ref TCK-198).
+
 ## [1.12.29] - 2026-11-02
 
 Epic TCK-196, phase R0 (safety net). New golden master fingerprint (hash over model fields only); no model change, trainer reference unchanged.

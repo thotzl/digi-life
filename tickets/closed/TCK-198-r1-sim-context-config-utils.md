@@ -1,7 +1,7 @@
 ---
 id: TCK-198
 title: "R1 Explicit SimContext and Config Sections, Shared Utilities, Logging"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -37,3 +37,13 @@ Golden master and both trainer references unchanged (config values identical, on
 - `grep AppConfig::global` only in entry-point files; `parse_genome` and every system take config explicitly.
 - Contract doc `wiki/contracts/config-section.md` (how a plugin adds its section and keys) written in this ticket.
 - Release build writes a log file; UI smoke + installed check green.
+
+## Verification (2026-11-02, v1.12.30)
+- Module map: `src/shared/types.rs` removed; IPC structs in `src/shared/dto.rs`; loader, `AppConfig` (one field per section) and config tests in `src/config/mod.rs`; section structs next to their code (`OceanConfig` `src/server/ocean_config.rs`, `TrainerConfig` + fitness/curriculum/minimal-criterion/enums `src/biology/trainer_config.rs` with `RoomPair<f32>` replacing `TrainerSpawnMinDistance`, `GenomeConfig` in `dna.rs`, `BrainConfig` in `brain.rs`, `PhysicsConfig` in `physics.rs`, `MetabolismConfig` with food/bite/start-energy keys).
+- Config passed explicitly: `parse_genome(.., &BrainConfig)`, kinematics/physics `&PhysicsConfig`, factory, trainer sandbox, breeding, scenarios, `TrainerSim` (stores a clone), report/runner, Tauri commands via `State<AppConfig>`, engine thread. `AppConfig::global()` only in `src/main.rs` (Tauri setup) and `src/bin/trainer_runner.rs` (main). Working-directory override only under `cfg(debug_assertions)`.
+- `config.json` in 7 sections (`core`, `ocean`, `trainer`, `genome`, `brain`, `metabolism`, `physics`), key names unchanged: 94/94 leaf values identical. Read-site test reads key names via serde and checks token-level field accesses (limitation for generic names documented in the contract). Section structs have no value `Default` on purpose (no second value source); tests use `test_config()`.
+- Helpers: `shared/geom.rs` (`dist`, `dist_sq`, `wrap_angle`, `polar_offset`, bit-identical expressions), `shared/time.rs` (`now_secs`, `now_ms`, `now_nanos`; RV-A06 names), `shared/json_col.rs` (logged decode failures), `SpatialGrid::for_each_nearby` (no allocation, same order), Ocean ring-spawn helper. `Mulberry32` kept (routing through `SimRng` would change every world layout; note in `map_generator.rs`).
+- Logging: `log` facade + `src/logging.rs` (stderr in dev/runner; release app writes `<app_data_dir>/logs/broodbattle.log`, rotation at 1 MiB, one backup); 31 tagged prints replaced. Release exe check: log file written (config source, DB path, handshake, mode switch, unknown action warning).
+- Gate on master (`.agents/artifacts/gate.sh`): `cargo test` 188 passed, 1 ignored; golden master `0x6b78c31a4d19b0e8` unchanged; standard, curriculum and rehearsal references match; `npm test` 13 passed; build ok; doc links OK (82 files); no bindings drift. Dev and release builds without warnings.
+- UI smoke (dev) OK: Ocean, inject, trainer generation (RTT 8 ms at max warp), metrics, curriculum, room switch, pause, reset; 0 console errors. Release exe (`installed.cjs`): menu v1.12.29, Ocean, trainer to generation 3, 0 console errors. Smoke scripts now match the new log line "generation N completed".
+- Docs: `wiki/contracts/_template.md`, `wiki/guides/_template.md` (TCK-203 skeleton), `wiki/contracts/config-section.md`, `wiki/guides/add-config-key.md`; `configuration.md` rewritten to current state; invariants #4, persistence, system-overview, repository-map, testing, physics, trainer, master index, project-baseline updated.

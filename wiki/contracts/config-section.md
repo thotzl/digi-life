@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-198-r1-sim-context-config-utils.md, src/config/mod.rs, config.json]
+sources: [tickets/closed/TCK-198-r1-sim-context-config-utils.md, src/config/mod.rs, config.json]
 ---
 
 # Contract: config section

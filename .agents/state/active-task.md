@@ -12,7 +12,7 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 
 ## Progress
 - [x] R0 TCK-197 (v1.12.29), TCK-189 (v1.12.28)
-- [ ] R1 TCK-198, TCK-159, TCK-157
+- [ ] R1 TCK-198 (v1.12.30) done; TCK-159, TCK-157 next
 - [ ] R2 TCK-199
 - [ ] R3 TCK-200, TCK-156, TCK-201, TCK-158
 - [ ] R4 TCK-160, TCK-161
@@ -21,4 +21,4 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 - [ ] R7 TCK-204
 
 ## Next step
-R1: TCK-198 alone, then TCK-159 and TCK-157 in parallel worktrees. Version helper: `python .agents/artifacts/bump.py <version>`.
+R1: TCK-159 and TCK-157 in parallel worktrees (both touch api.rs/engine.rs: 159 owns SQL/repositories, 157 owns action/event types and api split; merge 159 first). Gate: `bash .agents/artifacts/gate.sh`. Version helper: `python .agents/artifacts/bump.py <version>`.
