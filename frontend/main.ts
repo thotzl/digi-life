@@ -40,13 +40,13 @@ async function bootstrap() {
 
     // Set page tab titles matching the active state
     if (activeView === "main-menu") {
-      document.title = "Pixel DNA - Laboratory Main Hub";
+      document.title = "BroodBattle";
     } else if (activeView === "ocean") {
-      document.title = "Ozean-Labor Substrate Simulation";
+      document.title = "BroodBattle – Ocean Laboratory";
     } else if (activeView === "trainer") {
-      document.title = "RL Evolutionary Training Chamber";
+      document.title = "BroodBattle – Training Room";
     } else if (activeView === "catalogue") {
-      document.title = "Persistent Cryo-Frozen Species Library";
+      document.title = "BroodBattle – Creature Catalog";
     }
   });
 

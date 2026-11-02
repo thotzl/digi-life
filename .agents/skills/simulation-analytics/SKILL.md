@@ -10,7 +10,7 @@ description: Rules and procedure for measuring, tuning and balancing the trainer
 - Target values per phase: `tickets/ongoing/TCK-171-training-track-epic.md` ("Target values")
 
 ## II. Rules
-- Measure with `trainer_runner` (`cargo run --release --bin trainer_runner -- run|probe ...`, from the repo root), never via the UI or DB queries; the runner stays in memory unless `--persist --db <path>` is given.
+- Measure with `trainer_runner` (`cargo run --release --features runner --bin trainer_runner -- run|probe ...`, from the repo root), never via the UI or DB queries; the runner stays in memory unless `--persist --db <path>` is given.
 - Fixed seeds only: before and after use the same seed set and flags (at least 5 seeds for model changes); compare reports without `perf` and `meta.version`.
 - One change at a time; time-box calibration against the TCK-171 targets.
 - Verify a config key is read in `src/` before tuning it.

@@ -1,6 +1,6 @@
 # Next tasks
 
-Last updated: 2026-10-26. Planned tasks and findings not yet ticketed; remove an entry once it is ticketed or becomes the active task.
+Last updated: 2026-11-02. Planned tasks and findings not yet ticketed; remove an entry once it is ticketed or becomes the active task.
 
 ## Planned after epic TCK-171 (user goal, 2026-10-26; planning only, no tickets yet)
 Goal: with this epic and follow-up epics, build the setup that fulfils the game-dynamics part of the whitepaper (`wiki/overview/whitepaper.md` §3–§4): players train creatures and later send them into arenas against others. The Ocean is secondary (one more training mode, e.g. reproduction dynamics).
@@ -12,6 +12,10 @@ Goal: with this epic and follow-up epics, build the setup that fulfils the game-
 - **Training escalations** (from TCK-175, not part of epic TCK-171; only if larger populations and the curriculum are not enough): novelty blend (fitness plus a novelty term on end position / visited sectors, Cuccu/Gomez 2011, or minimal-criterion novelty), multi-objective selection (eating, path and energy as separate Pareto objectives, Mouret/Doncieux), connection cost as a selection objective (Clune/Mouret/Lipson 2013). Measure on unseen layouts (`--eval-final`).
 - **Dependency security alerts:** ticketed as TCK-189.
 - Remaining gap from TCK-171 (`## Wrap-up`): targets met at the app default population 100 and at 300; at pop 16 the large room stays at 0.227. Only relevant if small populations matter (e.g. arenas with few creatures); options: the training escalations below.
+
+## Before the beta (user, 2026-11-02)
+- Identifier `de.pixlich.broodbattle` is alpha only. When the team declares the beta (others will use it), choose the final domain and switch the identifier once: dev = `<id>.dev`, one-time copy of the alpha save folder on first start (`migrate_legacy_db` pattern), beta notes ask to uninstall the alpha by hand. Details: TCK-195 section Identifier. Also a trademark search for "BroodBattle" before a public release.
+- Linux/macOS builds and code signing: TCK-195 section Later.
 
 ## Findings (not yet ticketed)
 - None open.

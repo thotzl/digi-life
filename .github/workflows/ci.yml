@@ -49,5 +49,5 @@ jobs:
       # Fixed-seed headless trainer run compared against the committed reference (TCK-186)
       - name: trainer reference run
         run: |
-          cargo run --release --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json
+          cargo run --release --features runner --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json
           node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.27] - 2026-11-02
+
+First Windows release build of the alpha under the product name **BroodBattle**. Golden master and CI reference unchanged.
+
+### Added
+- Windows installer and portable version: `npm run release:win` builds `BroodBattle_<version>_x64-setup.exe` (per-user install, no admin rights, Start-menu entry, uninstall via Windows settings) and `BroodBattle_<version>_x64-portable.zip` (exe + `LIESMICH.txt`). A newer setup replaces the installed version and keeps the save data; uninstalling keeps it too. No automatic updates (ref TCK-195).
+- The main menu shows the app version ("BROODBATTLE ALPHA · v1.12.27") (ref TCK-195).
+- Backup before a model reset: when a new model version resets the trained creatures, the old database is first copied to `pixel_life_local.db.model-v<old>.bak.db` (ref TCK-195).
+
+### Changed
+- Product name, exe, window and page titles: "BroodBattle" (was "Pixel DNA Life" / "Pixel DNA"); the rest of the renaming stays in TCK-193 (ref TCK-195, TCK-193).
+- Save data folder: `%APPDATA%\de.pixlich.broodbattle\` for the installed alpha (identifier `de.pixlich.broodbattle`, alpha only; the beta gets a final identifier and takes over the alpha saves). The dev app (`npm run tauri:dev`) uses its own folder `de.pixlich.broodbattle.dev` and the title "BroodBattle [DEV]", so dev and installed app can run at the same time without sharing data. The previous folder `com.pixeldna.life` is no longer used (ref TCK-195).
+- The headless trainer runner needs the cargo feature `runner` (`cargo run --release --features runner --bin trainer_runner -- ...`) and is no longer part of the game bundle (ref TCK-195).
+
 ## [1.12.26] - 2026-11-02
 
 Trainer post-fix of TCK-192 from a user test. Golden master and CI reference unchanged.

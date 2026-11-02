@@ -12,6 +12,11 @@ created_at: 2026-10-26
 
 Low priority, "when there is time". The project uses four name families plus technical leftovers; the app shows four different titles. Decide one name, then align every place below. The repo may be renamed but does not have to be.
 
+## Partial decision (2026-11-02, TCK-195)
+- Product name **BroodBattle** (quick web check only, no trademark search). Set in TCK-195: `productName`, `mainBinaryName` (`BroodBattle.exe`), window and page titles, main-menu heading.
+- Identifier `de.pixlich.broodbattle` (dev `de.pixlich.broodbattle.dev`) is **alpha only**: before the beta a final domain is chosen and the identifier changed once, with a one-time copy of the alpha save folder (details in TCK-195 section Identifier).
+- Still open here: crate `src-tauri`, `package.json` name, DB file name, workflows, User-Agent, test folders, default session name, docs/skills/wiki, repo.
+
 ## Current names (inventory 2026-10-26, `git grep`)
 1. **"Pixel DNA Life"** (product name, most widespread): `tauri.conf.json` (`productName` "Pixel DNA Life", window title "Pixel DNA Life - Evolution Laboratory"), `README.md`, `AGENTS.md` ("🧬 Pixel DNA Life"), `capabilities/default.json`, `gen/schemas/capabilities.json`, `.github/workflows/release.yml` (release name), `frontend/components/Icons.ts` (comment), wiki (`overview/whitepaper.md` 7×, `_master-index.md`, `architecture/system-overview.md`, `research/alife-reference-simulators.md`), `ideas.md` (4×), descriptions of all six project skills in `.agents/skills/*`.
 2. **"Pixel DNA"**: `index.html` `<title>` "Pixel DNA - Desktop Laboratory (Tauri SPA Edition)", `frontend/main.ts` `document.title` "Pixel DNA - Laboratory Main Hub", `frontend/views/MainMenu.ts` heading "Pixel DNA"; identifier `com.pixeldna.life` (`tauri.conf.json`; decides the AppData folder and thus the DB location; wiki `persistence.md`, `quality/runtime-verification.md`).

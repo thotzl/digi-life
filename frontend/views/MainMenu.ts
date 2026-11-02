@@ -166,7 +166,7 @@ export function createMainMenu(): HTMLElement {
 
   const header = HeaderBlock({
     children: [
-      Title({ children: "Pixel DNA" }),
+      Title({ children: "BroodBattle" }),
       Subtitle({ children: "Evolutionary Cybernetic Substrate" })
     ]
   });
@@ -210,9 +210,15 @@ export function createMainMenu(): HTMLElement {
     ]
   });
 
-  const footer = FooterBlock({
-    children: "TAURI DESKTOP ENGINE v2.0 // DECENTRALIZED GENETIC LABORATORY"
-  });
+  // App version from the Tauri bundle (TCK-195), so a tester sees which build runs
+  const footer = FooterBlock({ children: "BROODBATTLE ALPHA" });
+  footer.id = "app-version";
+  if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+    import("@tauri-apps/api/app")
+      .then(({ getVersion }) => getVersion())
+      .then((version) => { footer.textContent = `BROODBATTLE ALPHA · v${version}`; })
+      .catch(() => {});
+  }
 
   // Assemble Main Menu SPA View
   container.appendChild(header);

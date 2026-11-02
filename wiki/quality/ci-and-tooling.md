@@ -8,15 +8,16 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 | Command | Purpose |
 | :--- | :--- |
-| `npm run tauri:dev` | launch the desktop app (Vite dev server + Rust build) |
+| `npm run tauri:dev` | launch the dev app (Vite dev server + Rust build) with `tauri.dev.conf.json`: identifier `de.pixlich.broodbattle.dev`, title "BroodBattle [DEV]", own data folder (TCK-195) |
+| `npm run release:win` | Windows release build (TCK-195): `tauri build --bundles nsis` → `target/release/bundle/nsis/BroodBattle_<version>_x64-setup.exe`, then `scripts/package-portable.mjs` → `target/release/bundle/portable/BroodBattle_<version>_x64-portable.zip` (exe + `scripts/portable/LIESMICH.txt`) |
 | `npm run build` | `tsc` + Vite build into `dist/` |
 | `cargo test` / `npm run test:rust` / `npm run types:generate` | Rust tests, regenerates `bindings/` |
 | `cargo clippy --all-targets` | lint (baseline 69 warnings, TCK-134) |
 | `npm run test` | Vitest (`frontend/shared/genome.test.ts`, TCK-187; not part of CI) |
-| `npm run test:all` | Vitest + cargo test + `cargo check --bin trainer_runner` |
+| `npm run test:all` | Vitest + cargo test + `cargo check --features runner --bin trainer_runner` |
 | `npm run sim:balance` | headless trainer run (release): `--seed baseline --generations 20 --scenario standard --population 16 --parallel true`, report to `.agents/artifacts/runner/balance.json` |
-| `cargo run --release --bin trainer_runner -- run ...` | headless trainer run with JSON report ([[wiki/simulation/analytics-and-balancing]]) |
-| `cargo run --release --bin trainer_runner -- probe <name>\|all --seed <s>` | mechanics probes (TCK-172), JSON to `.agents/artifacts/probes/` |
+| `cargo run --release --features runner --bin trainer_runner -- run ...` | headless trainer run with JSON report ([[wiki/simulation/analytics-and-balancing]]) |
+| `cargo run --release --features runner --bin trainer_runner -- probe <name>\|all --seed <s>` | mechanics probes (TCK-172), JSON to `.agents/artifacts/probes/` |
 
 ## Dev server
 
@@ -30,6 +31,16 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 3. Microsoft Edge WebView2 (preinstalled on Windows 10/11).
 4. Node.js, then `npm ci` and `npm run tauri:dev`.
 
+## Release builds (TCK-195)
+
+- Identity in `tauri.conf.json`: `productName` / `mainBinaryName` "BroodBattle" (`BroodBattle.exe`), identifier `de.pixlich.broodbattle`. **Alpha only:** before the beta (other users) a final domain is chosen and the identifier changed once, with a one-time copy of the alpha save folder (TCK-195 section Identifier). The dev app overrides the identifier (`tauri.dev.conf.json`, `.dev` suffix), so dev and installed app never share a data folder and can run at the same time.
+- Bundle targets are a platform-neutral list (`nsis`, `deb`, `appimage`, `app`, `dmg`; Tauri builds only those of the current platform); Windows settings only under `bundle.windows` (`nsis.installMode` `currentUser`: per-user install to `%LOCALAPPDATA%\BroodBattle`, no admin, Start-menu entry, uninstall via Windows settings).
+- A newer setup replaces the installed version in place; save data in `%APPDATA%\de.pixlich.broodbattle\` is untouched by install, update and uninstall. No automatic updates. The portable ZIP uses the same save folder.
+- Unsigned: SmartScreen shows "unknown publisher" ("More info → Run anyway"). Code signing, Linux (AppImage + `.deb`) and macOS (universal `.dmg`) builds via `release.yml` are later steps (TCK-195 section Later).
+- Release builds are optimised: trainer and Ocean run much faster than in the dev app; do not compare timings across the two.
+- The headless runner is a dev tool behind the cargo feature `runner` (`[[bin]] trainer_runner`, `required-features = ["runner"]`), so `tauri build` neither builds nor bundles it; every runner call passes `--features runner`.
+- Silent install/uninstall for scripted checks: `BroodBattle_<v>_x64-setup.exe /S /D=C:\BroodBattle`, `uninstall.exe /S` (from Git Bash with `MSYS_NO_PATHCONV=1`). The uninstaller keeps `HKCU\Software\pixlich\BroodBattle` (remembered install folder).
+
 ## Linux setup and troubleshooting
 
 - Missing headers: `sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev`.
@@ -38,7 +49,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, docs/revisit/07-t
 
 ## Workflows (`.github/workflows/`)
 
-- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134), then step "trainer reference run": `cargo run --release --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json` and `node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json` (TCK-186). The comparator ignores `perf` and `meta.version`, prints the first 20 differing values and fails on any difference; an intended model change updates `tests/reference/trainer-ci.json` in the same commit.
+- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134), then step "trainer reference run": `cargo run --release --features runner --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json` and `node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json` (TCK-186). The comparator ignores `perf` and `meta.version`, prints the first 20 differing values and fails on any difference; an intended model change updates `tests/reference/trainer-ci.json` in the same commit.
 - `release.yml` — only `v*` tags and manual dispatch; matrix macOS / Windows / Ubuntu 22.04 via `tauri-action`; draft release (TCK-114, TCK-134).
 - `sync-tickets.yml` — on push to master/main: `.github/scripts/sync_github.cjs` mirrors `tickets/` to GitHub issues (`[TCK-…] title`, labels `priority:*`, `status:*`; closed folder = closed issue). Needs valid ticket frontmatter.
 - `.gitattributes` pins `bindings/**` and `gen/**` to LF so the drift check is stable on Windows.

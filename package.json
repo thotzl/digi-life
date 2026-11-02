@@ -1,18 +1,19 @@
 {
   "name": "digi-life",
   "private": true,
-  "version": "1.12.26",
+  "version": "1.12.27",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config tauri.dev.conf.json",
+    "release:win": "tauri build --bundles nsis && node scripts/package-portable.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:rust": "cargo test",
-    "sim:balance": "cargo run --release --bin trainer_runner -- run --seed baseline --generations 20 --scenario standard --population 16 --parallel true --out .agents/artifacts/runner/balance.json",
+    "sim:balance": "cargo run --release --features runner --bin trainer_runner -- run --seed baseline --generations 20 --scenario standard --population 16 --parallel true --out .agents/artifacts/runner/balance.json",
     "types:generate": "cargo test",
-    "test:all": "npm run test && npm run test:rust && cargo check --bin trainer_runner",
+    "test:all": "npm run test && npm run test:rust && cargo check --features runner --bin trainer_runner",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run"

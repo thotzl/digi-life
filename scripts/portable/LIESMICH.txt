@@ -1,0 +1,19 @@
+BroodBattle (Alpha) - portable Version fuer Windows
+====================================================
+
+Starten
+- BroodBattle.exe an einen beliebigen Ort entpacken und starten. Keine Installation noetig.
+- Benoetigt Microsoft Edge WebView2 (in Windows 10 und 11 bereits enthalten).
+
+Windows-Warnung beim ersten Start
+- Die Alpha ist nicht signiert. Windows SmartScreen zeigt "Der Computer wurde durch Windows geschuetzt".
+- "Weitere Informationen" -> "Trotzdem ausfuehren".
+
+Spielstaende
+- Liegen in %APPDATA%\de.pixlich.broodbattle\ (nicht neben der .exe).
+- Die installierte Version (Setup) und diese portable Version nutzen dieselben Spielstaende.
+- Eine neue Version ersetzt nur das Programm; die Spielstaende bleiben.
+- Bringt eine neue Version ein geaendertes Kreaturen-Modell mit, werden trainierte Kreaturen beim ersten Start
+  zurueckgesetzt. Vorher legt das Spiel eine Sicherung an: pixel_life_local.db.model-v<alt>.bak.db im selben Ordner.
+
+Hinweis: Der Ordnername gilt nur fuer die Alpha. Ab der Beta aendert er sich; die Beta uebernimmt die Spielstaende.

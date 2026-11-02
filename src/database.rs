@@ -231,6 +231,21 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Save-game backup before a model reset (TCK-195): a consistent copy of the whole DB (`VACUUM INTO`, also with WAL)
+/// at `<db>.model-v<old>.bak.db`, at most one per old version (an existing one is kept). In-memory DBs are skipped. A
+/// failed backup is logged and does not block the start.
+fn backup_before_model_reset(conn: &Connection, old_version: &str) {
+    let Some(db_path) = conn.path().filter(|p| !p.is_empty()) else { return };
+    let backup = std::path::PathBuf::from(format!("{}.model-v{}.bak.db", db_path, old_version));
+    if backup.exists() {
+        return;
+    }
+    match conn.execute("VACUUM INTO ?1", params![backup.to_string_lossy()]) {
+        Ok(_) => println!("[DB] Backup before the model reset: '{}'", backup.display()),
+        Err(e) => eprintln!("[DB] Backup before the model reset failed ({}); resetting anyway", e),
+    }
+}
+
 /// Model-version rule (TCK-183): a stored `model_version` other than `MODEL_VERSION`, or none in a database that
 /// already has model tables, drops the model tables (`init_db` recreates them empty). Stores the current version.
 fn reset_model_tables_on_version_change(conn: &Connection) -> Result<()> {
@@ -247,6 +262,9 @@ fn reset_model_tables_on_version_change(conn: &Connection) -> Result<()> {
         |row| row.get(0),
     )?;
     let reset = stored.is_some() || has_model_tables;
+    if reset {
+        backup_before_model_reset(conn, stored.as_deref().unwrap_or("none"));
+    }
     let tx = conn.unchecked_transaction()?;
     if reset {
         for table in MODEL_TABLES {
@@ -559,6 +577,35 @@ mod tests {
         assert_eq!(tables, 0);
         assert_eq!(conn.query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         assert_eq!(model_version(&conn), Some(MODEL_VERSION.to_string()));
+    }
+
+    /// TCK-195: a model-version reset first copies the whole DB to `<db>.model-v<old>.bak.db`; an existing backup of
+    /// the same old version is never overwritten; no reset, no backup.
+    #[test]
+    fn test_model_reset_backs_up_the_old_data_first() {
+        let dir = temp_dir("model-backup");
+        let path = dir.join("test.db");
+        let backup = dir.join("test.db.model-v1.bak.db");
+        fill_model_tables(&init_db(&path).unwrap());
+        drop(init_db(&path).unwrap());
+        assert!(!backup.exists(), "same version: no backup");
+
+        init_db(&path).unwrap().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+        let conn = init_db(&path).unwrap();
+        assert_eq!(row_counts(&conn), vec![0, 0, 0, 0, 0, 0, 1], "model tables reset");
+        let old = Connection::open(&backup).unwrap();
+        assert_eq!(row_counts(&old), vec![1, 1, 1, 1, 1, 1, 1], "backup holds the old data");
+        assert_eq!(model_version(&old), Some("1".to_string()));
+        drop(old);
+
+        // A second reset from the same old version keeps the first backup
+        fill_model_tables(&conn);
+        conn.execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+        drop(conn);
+        drop(init_db(&path).unwrap());
+        assert_eq!(row_counts(&Connection::open(&backup).unwrap())[6], 1);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".bak.")).count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -1,0 +1,13 @@
+{
+  "identifier": "de.pixlich.broodbattle.dev",
+  "app": {
+    "windows": [
+      {
+        "title": "BroodBattle [DEV]",
+        "width": 1280,
+        "height": 720,
+        "resizable": true
+      }
+    ]
+  }
+}

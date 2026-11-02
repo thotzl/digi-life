@@ -16,9 +16,11 @@ Rules verified against the code. Breaking one has caused real defects before.
 8. **Golden master is intentional.** Update `GOLDEN_FINGERPRINT` only for intended phenotype/brain model changes and say so in the ticket. The same holds for the trainer reference report `tests/reference/trainer-ci.json` checked in CI (TCK-186). See [[wiki/quality/testing]].
 9. **Model change bumps `MODEL_VERSION`.** A change that makes stored genomes' phenotypes or synapse weights invalid (normally one that changes the golden master) bumps `MODEL_VERSION` in `src/database.rs` in the same commit; the next start then resets the model tables instead of loading weights that no longer match (TCK-183). See [[wiki/architecture/persistence]].
 
+10. **Dev and installed app never share a data folder.** `npm run tauri:dev` merges `tauri.dev.conf.json`, whose identifier is the release identifier plus `.dev`; the data folder (DB) follows the identifier. A dev build with a new `MODEL_VERSION` would otherwise reset the save data of the installed test version, and two engines would write one DB (TCK-195). See [[wiki/quality/ci-and-tooling]].
+
 ## Key Takeaways
 
-- Rules 1–3 protect the engine/UI coupling, 4 the physics model, 5 the release build, 6–8 performance and contracts, 9 stored data across model changes.
+- Rules 1–3 protect the engine/UI coupling, 4 the physics model, 5 the release build, 6–8 performance and contracts, 9 stored data across model changes, 10 the save data of an installed test version.
 - Rules 2 and 3 are not covered by tests (RV-X02).
 
 Sources: `.agents/state/active-task.md`, `.agents/skills/server-simulation/SKILL.md`, `.agents/skills/project-baseline/SKILL.md`, `.agents/skills/testing-strategies/SKILL.md`, TCK-150, TCK-183, TCK-186.

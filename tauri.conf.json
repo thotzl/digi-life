@@ -1,7 +1,8 @@
 {
-  "productName": "Pixel DNA Life",
-  "version": "1.12.26",
-  "identifier": "com.pixeldna.life",
+  "productName": "BroodBattle",
+  "mainBinaryName": "BroodBattle",
+  "version": "1.12.27",
+  "identifier": "de.pixlich.broodbattle",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:8765/",
@@ -11,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Pixel DNA Life - Evolution Laboratory",
+        "title": "BroodBattle",
         "width": 1280,
         "height": 720,
         "resizable": true
@@ -23,7 +24,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "deb", "appimage", "app", "dmg"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -33,6 +34,11 @@
       "icons/icon.png",
       "icons/icon.ico",
       "icons/icon.icns"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

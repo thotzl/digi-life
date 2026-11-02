@@ -1,6 +1,6 @@
 [package]
 name = "src-tauri"
-version = "1.12.26"
+version = "1.12.27"
 edition = "2024"
 default-run = "src-tauri"
 
@@ -17,3 +17,12 @@ libm = "0.2"
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
+
+[features]
+# Headless trainer runner (`src/bin/trainer_runner.rs`): a dev tool, kept out of the game bundle (TCK-195)
+runner = []
+
+[[bin]]
+name = "trainer_runner"
+path = "src/bin/trainer_runner.rs"
+required-features = ["runner"]

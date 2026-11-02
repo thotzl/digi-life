@@ -11,14 +11,14 @@ Trainer measurements run headless with `trainer_runner` (TCK-173): reproducible,
 `src/bin/trainer_runner.rs` (CLI) + `src/biology/trainer_report.rs` (run and report) drive the same `TrainerSim` as the UI ([[wiki/simulation/trainer]]). Build with `--release` for measurements; run from the repo root (a `config.json` in the working directory overrides the embedded one, [[wiki/architecture/configuration]]).
 
 ```
-cargo run --release --bin trainer_runner -- run --seed <text> --generations <N> --scenario standard|exploration|curriculum --population <N>
+cargo run --release --features runner --bin trainer_runner -- run --seed <text> --generations <N> --scenario standard|exploration|curriculum --population <N>
     [--schedule <room>:<gens>,...] [--eval-final standard,exploration] [--eval-trials <N>]
     [--curriculum-upper <x>] [--curriculum-lower <x>] [--curriculum-step <x>] [--start-level <0..1>]
     [--rehearsal <share 0..1>] [--ramp-start <x>] [--layout-policy hold|rotate]
     [--trials <N>] [--aggregation mean|median] [--one-fifth true|false] [--elite-ratio <0..1>]
     [--minimal-criterion true|false] [--mutation-channels mixed|separate]
     [--multi-trial true|false] [--parallel true|false] [--persist --db <path>] [--run-id <id>] [--out <file>]
-cargo run --release --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <text>
+cargo run --release --features runner --bin trainer_runner -- probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <text>
     [--out <file; directory for all>] [--db <path>] [--hof-limit 64] [--samples <N>]
 ```
 
