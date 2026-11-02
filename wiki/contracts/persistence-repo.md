@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-159-db-migrations-retention.md, src/persistence/mod.rs, src/persistence/repos.rs, src/persistence/schema.rs]
+sources: [tickets/closed/TCK-159-db-migrations-retention.md, src/persistence/mod.rs, src/persistence/repos.rs, src/persistence/schema.rs]
 ---
 
 # Contract: persistence repository

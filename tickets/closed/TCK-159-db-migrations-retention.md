@@ -1,7 +1,7 @@
 ---
 id: TCK-159
 title: DB Migration Versioning, Retention and Timestamps
-status: open
+status: closed
 priority: pool
 decision: pending
 assigned: unassigned
@@ -35,3 +35,14 @@ Versioned migrations, retention policy, unified unix-ms timestamps.
 - **RV-D04 · P2** — timestamps: `species_records.birth_time/extinction_time` and `trainer_genomes.created_at` seconds; `simulation_state.updated_at` ms (engine) and s (`apply_champion`); `creature_catalogue.created_at`, `sessions.created_at` SQLite text. Target: Unix ms INTEGER, one helper.
 - **RV-D05 (rest) · P2** — `serde_json::from_str(...).unwrap_or_default()` for methylations/synapses silently loses learned weights on corrupt data.
 - **RV-D06 · P3** — `apply_champion` writes `progenitor_genome`, never read; `sessions` exists only for a FK (`desktop-session-001` hardcoded); `RESET_EVOLUTION` deletes all of `simulation_state` incl. `progenitor_genome`.
+
+## Verification (2026-11-02, v1.12.31)
+- Module map: `src/database.rs` removed; `src/persistence/` is the only place with SQL/`rusqlite`: `mod.rs` (paths, `Db`, `init_db`, `open_read_only`, `DbState`, generic `LogDbError`), `schema.rs` (`MIGRATIONS`, `MODEL_VERSION` 6, model reset with backup, table registry), `repos.rs` (`SpeciesRepo`, `CatalogueRepo`, `TrainerRepo`, `OceanSnapshotRepo`), `dto.rs` (plain DTOs, `RepoError`; no `biology` import), per-group `species.rs` / `catalogue.rs` / `trainer.rs` / `ocean.rs`, `memory.rs` (`MemoryDb`), `tests.rs` (migration, model reset, contract suite over both stores). `src/biology/trainer_store.rs` maps `GenomeRecord` / `TrainerRunState` onto `TrainerRepo`.
+- Removed SQL sites: engine.rs 24, api.rs 14, probes.rs 1; remaining outside `src/persistence/`: 0 (grep). Command names, signatures and payloads unchanged.
+- Migrations: `PRAGMA user_version` with ordered steps in one transaction; order reset decision -> backup -> migrations -> model-table drop -> latest `CREATE ... IF NOT EXISTS`. Migration 1 = frozen v1.12.30 baseline (former column checks, errors propagate), migration 2 drops `simulation_history` and `sessions` (no reader). Tests `test_v1_12_30_database_migrates_without_data_loss`, `test_old_model_and_schema_version_together`, `test_migrated_schema_equals_latest_tables`.
+- Retention: `species_records` keeps all alive species plus the 2000 most recently extinct (`ocean.speciesRecordRetention`, pruned on the 10 s snapshot timer); trainer runs stay user-managed (200 rows per run).
+- Bug, reproduction first: trainer genome ids `run-gen-idx-secs` collided within one second; `test_repro_trainer_genome_id_collision_within_one_second` failed on the old code with `left: 1, right: 2`; ids now end in Unix ms plus a process counter (`test_trainer_genome_ids_never_collide_within_one_second`); generation save and run delete are transactions. Snapshot restore errors are logged and the Ocean starts fresh.
+- Gate on master (`.agents/artifacts/gate.sh`): `cargo test` 197 passed, 1 ignored; golden master unchanged; standard, curriculum, rehearsal references match; `npm test` 13 passed; build ok; doc links OK (83 files); no bindings drift. Runner `run --persist --db` on a new file migrates 1 and 2; `probe heredity --db` reads read-only.
+- UI smoke (dev, real dev DB copied and restored): migrations 1 and 2 applied, 15 Ocean creatures and trainer run at generation 155 restored, generation completed, reset to 1, 0 console errors.
+- Docs: `wiki/contracts/persistence-repo.md`, `wiki/guides/add-table.md`, `wiki/architecture/persistence.md` rewritten; invariants #9, system-overview, repository-map, testing, configuration, ocean, trainer, analytics, master index; skills `server-simulation` (no SQL outside `src/persistence/`), `testing-strategies` (`MemoryDb`).
+- Left open: timestamp units (RV-D04) now set in one place by the repositories; Ocean snapshot still a JSON blob (typed DTO in TCK-156).

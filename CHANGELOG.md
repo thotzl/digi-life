@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.31] - 2026-11-02
+
+Epic TCK-196, phase R1. Structure only: golden master and all trainer references unchanged. Existing databases are migrated on first start without data loss.
+
+### Changed
+- All database access goes through one persistence module with versioned schema migrations (`PRAGMA user_version`) and repository interfaces, testable against an in-memory store (ref TCK-159).
+- The unused tables `simulation_history` and `sessions` are dropped; extinct species records are limited to the 2000 most recent (`ocean.speciesRecordRetention`) (ref TCK-159).
+
+### Fixed
+- Saving the same trainer generation twice within one second lost elites because their ids collided (ref TCK-159).
+- A damaged Ocean snapshot is now logged and the Ocean starts fresh instead of failing silently (ref TCK-159).
+
 ## [1.12.30] - 2026-11-02
 
 Epic TCK-196, phase R1. Structure only: golden master and all trainer references unchanged.

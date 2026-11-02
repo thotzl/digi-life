@@ -12,8 +12,8 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 
 ## Progress
 - [x] R0 TCK-197 (v1.12.29), TCK-189 (v1.12.28)
-- [ ] R1 TCK-198 (v1.12.30) done; TCK-159, TCK-157 next
-- [ ] R2 TCK-199
+- [ ] R1 TCK-198 (v1.12.30), TCK-159 (v1.12.31) done; TCK-157 next
+- [ ] R2 TCK-199 (branch worktree-agent-a2bf1eef558fa0d34, commit 6f30815, integrate next)
 - [ ] R3 TCK-200, TCK-156, TCK-201, TCK-158
 - [ ] R4 TCK-160, TCK-161
 - [ ] R5 TCK-202, TCK-143
@@ -22,3 +22,6 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 
 ## Next step
 R1: TCK-159 and TCK-157 in parallel worktrees (both touch api.rs/engine.rs: 159 owns SQL/repositories, 157 owns action/event types and api split; merge 159 first). Gate: `bash .agents/artifacts/gate.sh`. Version helper: `python .agents/artifacts/bump.py <version>`.
+
+## Sleep blocker
+`.agents/artifacts/keep-awake.ps1` (user request: max 4 h, stop early when done, restart if work continues). Current run started 2026-11-02 20:39, ends 00:39.
