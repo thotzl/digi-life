@@ -13,9 +13,9 @@ use crate::shared::brain::food_sense_range;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::geom;
 use crate::shared::map_generator::ProceduralObstacle;
-use crate::shared::rng::{derive, SimRng};
+use crate::shared::rng::{SimRng, derive};
 use crate::sim::systems::eat::respawn;
-use crate::sim::{step_creature, CreatureEvent, CreatureStep, TickCtx, World, WorldSettings};
+use crate::sim::{CreatureEvent, CreatureStep, TickCtx, World, WorldSettings, step_creature};
 
 use super::room::Room;
 
@@ -120,7 +120,10 @@ impl EntityTrial {
     /// Clears the record for a new trial; keeps the step buffers.
     pub fn reset(&mut self) {
         let step = std::mem::take(&mut self.step);
-        *self = Self { step, ..Self::default() };
+        *self = Self {
+            step,
+            ..Self::default()
+        };
     }
 
     /// Restarts the approach episode of the fitness shaping (trial start and after every catch).
@@ -174,7 +177,15 @@ impl Chamber {
     /// Chamber of `creatures` for `room` before its first layout (no food, tick 0).
     pub fn new(room: &dyn Room, creatures: Vec<CreatureAgent>) -> Self {
         let trials = creatures.iter().map(|_| EntityTrial::default()).collect();
-        Self { size: room.chamber_size(), creatures, trials, foods: Vec::new(), tick: 0, catches: 0, respawn_seed: 0 }
+        Self {
+            size: room.chamber_size(),
+            creatures,
+            trials,
+            foods: Vec::new(),
+            tick: 0,
+            catches: 0,
+            respawn_seed: 0,
+        }
     }
 
     /// Lays out trial 0 of a fresh chamber: the room's layout, then the respawn seed, both from `rng`.
@@ -267,7 +278,9 @@ impl Chamber {
             // Catches of this tick (the eat system already added the energy, shared food rule of the Ocean, TCK-178)
             let events = std::mem::take(&mut trial.step.events);
             for event in &events {
-                let CreatureEvent::Ate { food, is_meat, .. } = *event else { continue };
+                let CreatureEvent::Ate { food, is_meat, .. } = *event else {
+                    continue;
+                };
                 let carnivory = agent.phenotype.carnivory;
                 trial.accumulated_yield += if is_meat { carnivory } else { 1.0 - carnivory };
                 trial.consumed_count += 1;
@@ -284,7 +297,14 @@ impl Chamber {
                 // same respawn seed draw the same candidates for their k-th catch, the accepted point also depends on
                 // the creature's position (min distance), so identical positions give identical respawns (TCK-174)
                 let mut respawn_rng = derive(self.respawn_seed, &[self.catches as u64]);
-                respawn(&mut self.foods[food], &settings.respawn, (agent.px, agent.py), size, size, &mut respawn_rng);
+                respawn(
+                    &mut self.foods[food],
+                    &settings.respawn,
+                    (agent.px, agent.py),
+                    size,
+                    size,
+                    &mut respawn_rng,
+                );
                 // The shaping now rewards approach to the next food
                 trial.reset_approach();
             }
@@ -307,7 +327,14 @@ mod tests {
 
     #[test]
     fn test_entity_trial_reset_clears_the_record_and_keeps_the_buffers() {
-        let mut trial = EntityTrial { finished: true, consumed_count: 3, sight_distance: Some(2.0), approach_min_distance: 1.0, starved: true, ..EntityTrial::default() };
+        let mut trial = EntityTrial {
+            finished: true,
+            consumed_count: 3,
+            sight_distance: Some(2.0),
+            approach_min_distance: 1.0,
+            starved: true,
+            ..EntityTrial::default()
+        };
         trial.step.inputs = vec![0.5; 8];
         trial.reset();
         assert!(!trial.finished && !trial.starved && trial.consumed_count == 0);

@@ -1,7 +1,7 @@
 //! Spectral distance sense shared by eye, nose and thermal organ: a tuning curve over 5 channels, a view cone and a
 //! range; sees the plant spore `foods[0]` and the meat spore `foods[1]` by their emission spectra.
 
-use super::{Organ, SenseCtx, CHANNELS_PER_ORGANELLE, DELTA_CHANNEL, SPECTRAL_CHANNELS};
+use super::{CHANNELS_PER_ORGANELLE, DELTA_CHANNEL, Organ, SPECTRAL_CHANNELS, SenseCtx};
 use crate::shared::fmath;
 use crate::shared::geom;
 

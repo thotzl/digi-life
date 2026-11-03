@@ -131,17 +131,39 @@ mod tests {
             highest_generation: 3,
             creatures: vec![],
             new_creatures: vec![],
-            selected_brain: Some(SelectedBrain { id: 2, activations: vec![0.5] }),
+            selected_brain: Some(SelectedBrain {
+                id: 2,
+                activations: vec![0.5],
+            }),
         });
         assert_eq!(
             serde_json::to_value(&tick).unwrap(),
             json!({ "type": "TELEMETRY_TICK", "highestGeneration": 3, "creatures": [], "newCreatures": [], "selectedBrain": { "id": 2, "activations": [0.5] } })
         );
-        assert_eq!(serde_json::to_value(OceanUiEvent::SimState { running: true, speed: 35 }).unwrap(), json!({ "type": "SIM_STATE", "running": true, "speed": 35 }));
-        assert_eq!(serde_json::to_value(OceanUiEvent::FoodTick { food_pellets: vec![] }).unwrap(), json!({ "type": "FOOD_TICK", "foodPellets": [] }));
-        assert_eq!(serde_json::to_value(OceanUiEvent::EatEvent { x: 1.5, y: 2.0 }).unwrap(), json!({ "type": "EAT_EVENT", "x": 1.5, "y": 2.0 }));
         assert_eq!(
-            serde_json::to_value(OceanUiEvent::BiteEvent { attacker_id: 1, victim_id: 2, x: 0.5, y: 0.25 }).unwrap(),
+            serde_json::to_value(OceanUiEvent::SimState {
+                running: true,
+                speed: 35
+            })
+            .unwrap(),
+            json!({ "type": "SIM_STATE", "running": true, "speed": 35 })
+        );
+        assert_eq!(
+            serde_json::to_value(OceanUiEvent::FoodTick { food_pellets: vec![] }).unwrap(),
+            json!({ "type": "FOOD_TICK", "foodPellets": [] })
+        );
+        assert_eq!(
+            serde_json::to_value(OceanUiEvent::EatEvent { x: 1.5, y: 2.0 }).unwrap(),
+            json!({ "type": "EAT_EVENT", "x": 1.5, "y": 2.0 })
+        );
+        assert_eq!(
+            serde_json::to_value(OceanUiEvent::BiteEvent {
+                attacker_id: 1,
+                victim_id: 2,
+                x: 0.5,
+                y: 0.25
+            })
+            .unwrap(),
             json!({ "type": "BITE_EVENT", "attackerId": 1, "victimId": 2, "x": 0.5, "y": 0.25 })
         );
         let init = serde_json::to_value(OceanUiEvent::InitState(OceanInitState {
@@ -156,7 +178,14 @@ mod tests {
         .unwrap();
         assert_eq!(init["type"], "INIT_STATE");
         assert_eq!(init["rules"]["sporeEnergy"], 15.0);
-        for key in ["highestGeneration", "running", "seed", "world", "foodPellets", "creatures"] {
+        for key in [
+            "highestGeneration",
+            "running",
+            "seed",
+            "world",
+            "foodPellets",
+            "creatures",
+        ] {
             assert!(init.get(key).is_some(), "{}", key);
         }
     }

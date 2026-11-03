@@ -67,7 +67,11 @@ pub fn generate_random_genome<R: rand::Rng + ?Sized>(length: usize, rng: &mut R)
 /// Uppercases and pads/truncates a genome to the compiled length range [128, 512].
 pub fn normalize_genome(genome: &str) -> String {
     let current_length = genome.len().clamp(GENOME_LENGTH_MIN, GENOME_LENGTH_MAX);
-    let mut clean_genome = genome.to_ascii_uppercase().chars().take(current_length).collect::<String>();
+    let mut clean_genome = genome
+        .to_ascii_uppercase()
+        .chars()
+        .take(current_length)
+        .collect::<String>();
     while clean_genome.len() < current_length {
         clean_genome.push('A');
     }

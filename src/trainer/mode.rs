@@ -73,7 +73,13 @@ impl TrainingMode {
         if id == "curriculum" {
             return Ok(TrainingMode::Curriculum);
         }
-        registry::static_id(id).map(TrainingMode::Room).ok_or_else(|| format!("unknown room '{}' (known: {}, curriculum)", id, registry::ids().collect::<Vec<_>>().join(", ")))
+        registry::static_id(id).map(TrainingMode::Room).ok_or_else(|| {
+            format!(
+                "unknown room '{}' (known: {}, curriculum)",
+                id,
+                registry::ids().collect::<Vec<_>>().join(", ")
+            )
+        })
     }
 
     pub fn id(self) -> &'static str {
@@ -122,9 +128,16 @@ mod tests {
             assert_eq!(mode.id(), scenario.mode());
             assert_eq!(mode.scenario(), scenario);
             assert_eq!(TrainingMode::parse(scenario.mode()), Ok(mode));
-            assert_eq!(serde_json::to_string(&mode).unwrap(), serde_json::to_string(&scenario).unwrap(), "same report form");
+            assert_eq!(
+                serde_json::to_string(&mode).unwrap(),
+                serde_json::to_string(&scenario).unwrap(),
+                "same report form"
+            );
         }
         assert!(TrainingMode::parse("arena-that-does-not-exist").is_err());
-        assert_eq!(serde_json::from_str::<TrainingMode>("\"exploration\"").unwrap(), TrainingMode::Room("exploration"));
+        assert_eq!(
+            serde_json::from_str::<TrainingMode>("\"exploration\"").unwrap(),
+            TrainingMode::Room("exploration")
+        );
     }
 }

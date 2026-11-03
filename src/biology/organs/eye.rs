@@ -1,6 +1,6 @@
 //! Eye: light-sensing distance sense (affinity >= 0.80).
 
-use super::{common, spectral, OrganKind, OrganSpec};
+use super::{OrganKind, OrganSpec, common, spectral};
 
 pub const SPEC: OrganSpec = OrganSpec {
     kind: OrganKind::Eye,

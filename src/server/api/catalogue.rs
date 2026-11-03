@@ -5,7 +5,7 @@ use std::sync::mpsc::Sender;
 use tauri::State;
 use ts_rs::TS;
 
-use super::{collect_rows, notify_trainer_store_changed, send_to_engine, with_store, CommandResult};
+use super::{CommandResult, collect_rows, notify_trainer_store_changed, send_to_engine, with_store};
 use crate::biology::phenotype::parse_genome;
 use crate::config::AppConfig;
 use crate::persistence::{CatalogueEntry, CatalogueRepo, DbState, NewCatalogueEntry, TrainerGenome, TrainerRepo};
@@ -48,12 +48,18 @@ impl From<CatalogueEntry> for CatalogueCreature {
 }
 
 fn catalogue_entry(db: &DbState, command: &str, id: &str) -> CommandResult<CatalogueEntry> {
-    with_store(db, command, |store| store.catalogue_entry(id))?.ok_or_else(|| IpcError::not_found(format!("creature '{}' not found in the catalogue", id)))
+    with_store(db, command, |store| store.catalogue_entry(id))?
+        .ok_or_else(|| IpcError::not_found(format!("creature '{}' not found in the catalogue", id)))
 }
 
 #[tauri::command]
 pub fn get_catalogue_creatures(db: State<'_, DbState>) -> CommandResult<Vec<CatalogueCreature>> {
-    collect_rows(&db, "get_catalogue_creatures", |store| store.list_catalogue(), CatalogueCreature::from)
+    collect_rows(
+        &db,
+        "get_catalogue_creatures",
+        |store| store.list_catalogue(),
+        CatalogueCreature::from,
+    )
 }
 
 #[tauri::command]
@@ -70,7 +76,16 @@ pub fn save_to_catalogue(
     synapse_weights: Vec<f32>,
 ) -> CommandResult<()> {
     let carnivory = parse_genome(&genome, None, None, &config.brain).carnivory as f64;
-    let entry = NewCatalogueEntry { id, name, genome, source, fitness, carnivory, methylations, synapse_weights };
+    let entry = NewCatalogueEntry {
+        id,
+        name,
+        genome,
+        source,
+        fitness,
+        carnivory,
+        methylations,
+        synapse_weights,
+    };
     with_store(&db, "save_to_catalogue", |store| store.save_catalogue_entry(&entry))
 }
 
@@ -81,7 +96,9 @@ pub fn delete_from_catalogue(db: State<'_, DbState>, id: String) -> CommandResul
 
 #[tauri::command]
 pub fn rename_catalogue_creature(db: State<'_, DbState>, id: String, new_name: String) -> CommandResult<()> {
-    with_store(&db, "rename_catalogue_creature", |store| store.rename_catalogue_entry(&id, &new_name))
+    with_store(&db, "rename_catalogue_creature", |store| {
+        store.rename_catalogue_entry(&id, &new_name)
+    })
 }
 
 /// Releases a clone of a catalogue creature into the Ocean (a typed `SPAWN_CLONE` for the engine thread).
@@ -93,7 +110,10 @@ pub fn spawn_catalogue_creature_to_ocean(
     load_learned_synapses: bool,
 ) -> CommandResult<()> {
     let entry = catalogue_entry(&db, "spawn_catalogue_creature_to_ocean", &id)?;
-    send_to_engine(&tx, ClientAction::Ocean(OceanAction::SpawnClone(spawn_clone(entry, load_learned_synapses))))
+    send_to_engine(
+        &tx,
+        ClientAction::Ocean(OceanAction::SpawnClone(spawn_clone(entry, load_learned_synapses))),
+    )
 }
 
 fn spawn_clone(entry: CatalogueEntry, load_learned_synapses: bool) -> SpawnClone {

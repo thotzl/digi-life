@@ -14,25 +14,54 @@ fn test_progenitor_parse_genome() {
     // Core assertions
     assert!(phenotype.genome_string.starts_with(progenitor_dna));
     assert!(phenotype.spinal_harmonics.mean_radius >= 16.0 && phenotype.spinal_harmonics.mean_radius <= 28.0);
-    assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting() > 0.0);
+    assert!(
+        crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting()
+            > 0.0
+    );
     assert!(phenotype.stiffness >= 0.15 && phenotype.stiffness <= 1.0);
-    assert!(phenotype.antisense_strand.starts_with(&get_complementary_string(progenitor_dna)));
+    assert!(
+        phenotype
+            .antisense_strand
+            .starts_with(&get_complementary_string(progenitor_dna))
+    );
 
     // Brain topology assertions
     assert!(!phenotype.brain.neurons.is_empty());
     assert!(!phenotype.brain.synapses.is_empty());
-    
-    // Assert that we have inputs, outputs and hidden neurons
-    let input_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Input).count();
-    let output_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Output).count();
-    let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
 
-    assert_eq!(input_count, phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT);
+    // Assert that we have inputs, outputs and hidden neurons
+    let input_count = phenotype
+        .brain
+        .neurons
+        .iter()
+        .filter(|n| n.neuron_type == NeuronType::Input)
+        .count();
+    let output_count = phenotype
+        .brain
+        .neurons
+        .iter()
+        .filter(|n| n.neuron_type == NeuronType::Output)
+        .count();
+    let hidden_count = phenotype
+        .brain
+        .neurons
+        .iter()
+        .filter(|n| n.neuron_type == NeuronType::Hidden)
+        .count();
+
+    assert_eq!(
+        input_count,
+        phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT
+    );
     assert_eq!(output_count, OUTPUT_MOTOR_NODES_COUNT);
     assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our generic thalamus sum/diff pre-processor interneurons!
 
     // Verify that the resting metabolic cost is finite
-    assert!(crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting().is_finite());
+    assert!(
+        crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism)
+            .resting()
+            .is_finite()
+    );
     assert!(phenotype.stomach_capacity > 0.0);
 }
 
@@ -42,11 +71,16 @@ fn test_dynamic_neuro_generation() {
     // Ending with Z prevents S-A padding boundary matches, and YNB prevents N-A-A matches.
     let dna = "NEUAAESNEUBBESNEUCCESYBAAESYBBBESZ";
     let phenotype = parse_genome(dna, None, None, &crate::config::test_config().brain);
-    
-    let hidden_count = phenotype.brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Hidden).count();
+
+    let hidden_count = phenotype
+        .brain
+        .neurons
+        .iter()
+        .filter(|n| n.neuron_type == NeuronType::Hidden)
+        .count();
     // Since we have 3 NEU blocks, we should have exactly 3 hidden neurons compiled dynamically!
     assert_eq!(hidden_count, 3);
-    
+
     // Synapses should be dynamically compiled from "SY" payloads
     assert!(!phenotype.brain.synapses.is_empty());
 }
@@ -92,7 +126,11 @@ fn test_targeted_wiring_and_active_pruning() {
     let phenotype = parse_genome(dna, None, None, &crate::config::test_config().brain);
     let brain = &phenotype.brain;
     let role = |i: usize| &brain.neurons[i].role;
-    let of_role = |pred: fn(&NeuronRole) -> bool| (0..brain.neurons.len()).filter(|&i| pred(role(i))).collect::<Vec<usize>>();
+    let of_role = |pred: fn(&NeuronRole) -> bool| {
+        (0..brain.neurons.len())
+            .filter(|&i| pred(role(i)))
+            .collect::<Vec<usize>>()
+    };
     let hidden = of_role(|r| matches!(r, NeuronRole::Hidden { .. }));
     let systemic = of_role(|r| matches!(r, NeuronRole::Systemic { .. }));
     let motors = of_role(|r| matches!(r, NeuronRole::Motor { .. }));
@@ -102,14 +140,29 @@ fn test_targeted_wiring_and_active_pruning() {
 
     // Targeted wiring (TCK-182): every systemic → hidden and hidden → motor pair exactly once; anything else
     // (no hidden → hidden, no systemic → motor without an OUT gene) only through an SY gene
-    let count = |from: usize, to: usize| brain.synapses.iter().filter(|s| s.from_node == from && s.to_node == to).count();
+    let count = |from: usize, to: usize| {
+        brain
+            .synapses
+            .iter()
+            .filter(|s| s.from_node == from && s.to_node == to)
+            .count()
+    };
     for &h in &hidden {
         assert!(systemic.iter().all(|&s| count(s, h) == 1));
         assert!(motors.iter().all(|&m| count(h, m) == 1));
     }
-    let regular = |s: &CTRNNSynapse| matches!((role(s.from_node), role(s.to_node)), (NeuronRole::Systemic { .. }, NeuronRole::Hidden { .. }) | (NeuronRole::Hidden { .. }, NeuronRole::Motor { .. }));
+    let regular = |s: &CTRNNSynapse| {
+        matches!(
+            (role(s.from_node), role(s.to_node)),
+            (NeuronRole::Systemic { .. }, NeuronRole::Hidden { .. })
+                | (NeuronRole::Hidden { .. }, NeuronRole::Motor { .. })
+        )
+    };
     assert!(brain.synapses.iter().all(|s| regular(s) || is_sy(s)));
-    assert_eq!(brain.synapses.iter().filter(|s| regular(s)).count(), hidden.len() * (SYSTEMIC_BASE_INPUTS_COUNT + OUTPUT_MOTOR_NODES_COUNT));
+    assert_eq!(
+        brain.synapses.iter().filter(|s| regular(s)).count(),
+        hidden.len() * (SYSTEMIC_BASE_INPUTS_COUNT + OUTPUT_MOTOR_NODES_COUNT)
+    );
     let keys: std::collections::BTreeSet<u64> = brain.synapses.iter().map(|s| s.key).collect();
     assert_eq!(keys.len(), brain.synapses.len(), "synapse keys are unique");
 
@@ -168,7 +221,9 @@ fn test_mutation_robustness_and_deadlocks() {
 
         // A. Assert compilation robustness: must NEVER panic, crash or deadlock
         let phenotype = parse_genome(&genome, None, None, &crate::config::test_config().brain);
-        let resting_cost = crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism).resting();
+        let resting_cost =
+            crate::biology::metabolism::tick_cost(&phenotype, 0.0, 0.0, &crate::config::test_config().metabolism)
+                .resting();
         let brain = phenotype.brain;
 
         // B. Assert state boundaries are finite
@@ -182,7 +237,11 @@ fn test_mutation_robustness_and_deadlocks() {
         let mut activations = vec![0.0; brain.neurons.len()];
         let mut synapse_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
 
-        let input_count = brain.neurons.iter().filter(|n| n.neuron_type == NeuronType::Input).count();
+        let input_count = brain
+            .neurons
+            .iter()
+            .filter(|n| n.neuron_type == NeuronType::Input)
+            .count();
         let inputs = vec![0.5; input_count];
 
         for _tick in 0..10 {

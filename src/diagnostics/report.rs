@@ -10,8 +10,11 @@ use std::sync::Arc;
 use crate::config::AppConfig;
 use crate::shared::rng::seed_from_str;
 use crate::trainer::mode::TrainingMode;
-use crate::trainer::room::{registry, Room};
-use crate::trainer::sim::{snap_level, CurriculumParams, GenerationStats, LayoutPolicy, MutationChannelMode, PopulationEval, TrainerEvent, TrainerParams, TrainerSim, TrialAggregation};
+use crate::trainer::room::{Room, registry};
+use crate::trainer::sim::{
+    CurriculumParams, GenerationStats, LayoutPolicy, MutationChannelMode, PopulationEval, TrainerEvent, TrainerParams,
+    TrainerSim, TrialAggregation, snap_level,
+};
 
 /// Run settings: the trainer parameters of the run (`TrainerParams`, defaults from `TrainerParams::from_config`)
 /// plus what only a headless run has.
@@ -41,9 +44,20 @@ impl RunConfig {
     /// Run settings with the trainer defaults (`TrainerParams::from_config`) in training mode `mode`; the curriculum
     /// starts at `curriculum.start_level`.
     pub fn with_defaults(seed: &str, mode: TrainingMode, population: usize, generations: u32, app: &AppConfig) -> Self {
-        let mut params = TrainerParams { population, ..TrainerParams::from_config(app) };
+        let mut params = TrainerParams {
+            population,
+            ..TrainerParams::from_config(app)
+        };
         params.set_mode(mode);
-        Self { seed: seed.to_string(), params, generations, schedule: Vec::new(), eval_final: Vec::new(), eval_trials: None, parallel: false }
+        Self {
+            seed: seed.to_string(),
+            params,
+            generations,
+            schedule: Vec::new(),
+            eval_final: Vec::new(),
+            eval_trials: None,
+            parallel: false,
+        }
     }
 
     /// Training mode of the first generation.
@@ -53,7 +67,10 @@ impl RunConfig {
 
     /// Params the sim starts with: the first schedule span's mode, the curriculum at its start level.
     pub fn start_params(&self) -> TrainerParams {
-        let mut params = TrainerParams { level: snap_level(self.params.curriculum.start_level), ..self.params.clone() };
+        let mut params = TrainerParams {
+            level: snap_level(self.params.curriculum.start_level),
+            ..self.params.clone()
+        };
         params.set_mode(self.first_mode());
         params
     }
@@ -146,11 +163,26 @@ pub struct FinalEval {
 
 /// Runs `config.generations` generations with the app config `app` and builds the report. `on_generation` receives
 /// every completed generation (progress output, optional persistence by the caller).
-pub fn run_trainer(config: &RunConfig, app: &AppConfig, mut on_generation: impl FnMut(&TrainerEvent, &TrainerSim)) -> TrainerReport {
+pub fn run_trainer(
+    config: &RunConfig,
+    app: &AppConfig,
+    mut on_generation: impl FnMut(&TrainerEvent, &TrainerSim),
+) -> TrainerReport {
     let params = config.start_params();
     let population = params.population.max(1);
-    let meta = ReportMeta::of(config, &TrainerParams { population, ..params.clone() });
-    let mut sim = TrainerSim::new(params, seed_from_str(&config.seed), app.trainer.trainer_genome_retention_per_run, app);
+    let meta = ReportMeta::of(
+        config,
+        &TrainerParams {
+            population,
+            ..params.clone()
+        },
+    );
+    let mut sim = TrainerSim::new(
+        params,
+        seed_from_str(&config.seed),
+        app.trainer.trainer_genome_retention_per_run,
+        app,
+    );
     // No telemetry: fitness is only needed at epoch end
     sim.track_live_fitness = false;
 
@@ -190,10 +222,17 @@ pub fn run_trainer(config: &RunConfig, app: &AppConfig, mut on_generation: impl 
         .iter()
         .map(|&id| {
             let room: Arc<dyn Room> = registry::build(id, app).unwrap_or_else(|| panic!("room '{}' is registered", id));
-            FinalEval { scenario: id.to_string(), eval: sim.evaluate_population(&room, config.eval_trials, config.parallel) }
+            FinalEval {
+                scenario: id.to_string(),
+                eval: sim.evaluate_population(&room, config.eval_trials, config.parallel),
+            }
         })
         .collect();
-    let per_sandbox = if wall_seconds > 0.0 { ticks as f64 / wall_seconds } else { 0.0 };
+    let per_sandbox = if wall_seconds > 0.0 {
+        ticks as f64 / wall_seconds
+    } else {
+        0.0
+    };
 
     TrainerReport {
         meta,
@@ -214,7 +253,10 @@ mod tests {
 
     fn config(seed: &str, parallel: bool) -> RunConfig {
         {
-            let mut c = RunConfig { parallel, ..RunConfig::with_defaults(seed, TrainingMode::Room("standard"), 6, 2, crate::config::test_config()) };
+            let mut c = RunConfig {
+                parallel,
+                ..RunConfig::with_defaults(seed, TrainingMode::Room("standard"), 6, 2, crate::config::test_config())
+            };
             c.params.trials = 2;
             c
         }
@@ -230,7 +272,9 @@ mod tests {
     #[test]
     fn test_same_seed_identical_report_and_parallel_equals_sequential() {
         let mut completed = 0;
-        let a = run_trainer(&config("report-seed", false), crate::config::test_config(), |_, _| completed += 1);
+        let a = run_trainer(&config("report-seed", false), crate::config::test_config(), |_, _| {
+            completed += 1
+        });
         assert_eq!(completed, 2);
         assert_eq!(a.generations.len(), 2);
         assert_eq!(a.meta.version, env!("CARGO_PKG_VERSION"));
@@ -250,26 +294,63 @@ mod tests {
     #[test]
     fn test_schedule_switches_rooms_and_keeps_the_population() {
         let schedule = vec![
-            ScheduleSpan { scenario: TrainingMode::Room("standard"), generations: 2 },
-            ScheduleSpan { scenario: TrainingMode::Room("exploration"), generations: 1 },
-            ScheduleSpan { scenario: TrainingMode::Room("standard"), generations: 1 },
+            ScheduleSpan {
+                scenario: TrainingMode::Room("standard"),
+                generations: 2,
+            },
+            ScheduleSpan {
+                scenario: TrainingMode::Room("exploration"),
+                generations: 1,
+            },
+            ScheduleSpan {
+                scenario: TrainingMode::Room("standard"),
+                generations: 1,
+            },
         ];
         let standard = TrainingMode::Room("standard");
         let one_trial = |generations: u32| {
-            let mut c = RunConfig::with_defaults("schedule-seed", standard, 4, generations, crate::config::test_config());
+            let mut c =
+                RunConfig::with_defaults("schedule-seed", standard, 4, generations, crate::config::test_config());
             c.params.trials = 1;
             c
         };
-        let scheduled = |parallel: bool| RunConfig { schedule: schedule.clone(), eval_final: vec!["standard", "exploration"], parallel, ..one_trial(4) };
+        let scheduled = |parallel: bool| RunConfig {
+            schedule: schedule.clone(),
+            eval_final: vec!["standard", "exploration"],
+            parallel,
+            ..one_trial(4)
+        };
         let report = run_trainer(&scheduled(false), crate::config::test_config(), |_, _| {});
-        let rooms: Vec<(u32, &str, f32)> = report.generations.iter().map(|g| (g.generation, g.scenario.id(), g.level)).collect();
-        assert_eq!(rooms, vec![(1, "standard", 0.0), (2, "standard", 0.0), (3, "exploration", 1.0), (4, "standard", 0.0)]);
+        let rooms: Vec<(u32, &str, f32)> = report
+            .generations
+            .iter()
+            .map(|g| (g.generation, g.scenario.id(), g.level))
+            .collect();
+        assert_eq!(
+            rooms,
+            vec![
+                (1, "standard", 0.0),
+                (2, "standard", 0.0),
+                (3, "exploration", 1.0),
+                (4, "standard", 0.0)
+            ]
+        );
         // The first span equals a plain run of the same room
         let plain = run_trainer(&one_trial(2), crate::config::test_config(), |_, _| {});
         assert_eq!(report.generations[..2], plain.generations[..]);
         // Final evaluation per room, deterministic and parallel-safe
-        assert_eq!(report.final_eval.iter().map(|e| (e.scenario.as_str(), e.eval.level, e.eval.trials)).collect::<Vec<_>>(), vec![("standard", 0.0, 1), ("exploration", 1.0, 1)]);
-        assert_eq!(reproducible_json(&report), reproducible_json(&run_trainer(&scheduled(true), crate::config::test_config(), |_, _| {})));
+        assert_eq!(
+            report
+                .final_eval
+                .iter()
+                .map(|e| (e.scenario.as_str(), e.eval.level, e.eval.trials))
+                .collect::<Vec<_>>(),
+            vec![("standard", 0.0, 1), ("exploration", 1.0, 1)]
+        );
+        assert_eq!(
+            reproducible_json(&report),
+            reproducible_json(&run_trainer(&scheduled(true), crate::config::test_config(), |_, _| {}))
+        );
         assert_eq!(report.meta.schedule, schedule);
     }
 }

@@ -3,7 +3,7 @@
 use std::sync::mpsc::Sender;
 use tauri::State;
 
-use super::{send_to_engine, CommandResult};
+use super::{CommandResult, send_to_engine};
 use crate::server::engine::EngineInput;
 use crate::server::ipc::{ClientAction, EngineAction, IpcError, SimMode};
 
@@ -12,7 +12,9 @@ use crate::server::ipc::{ClientAction, EngineAction, IpcError, SimMode};
 #[tauri::command]
 pub fn handle_client_action(action: serde_json::Value, tx: State<'_, Sender<EngineInput>>) -> CommandResult<()> {
     let action = ClientAction::from_value(&action).and_then(|action| match action {
-        ClientAction::Engine(EngineAction::SetMode { .. }) => Err(IpcError::invalid_action("SET_MODE is sent with the set_mode command")),
+        ClientAction::Engine(EngineAction::SetMode { .. }) => {
+            Err(IpcError::invalid_action("SET_MODE is sent with the set_mode command"))
+        }
         action => Ok(action),
     });
     match action {

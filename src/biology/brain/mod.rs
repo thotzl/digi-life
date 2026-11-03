@@ -105,7 +105,10 @@ pub struct MotorOutputs {
 impl MotorOutputs {
     /// Outputs with each motor's value from `value`.
     pub fn from_fn(mut value: impl FnMut(Motor) -> f32) -> Self {
-        Self { thrust: value(Motor::Thrust), bend: value(Motor::Bend) }
+        Self {
+            thrust: value(Motor::Thrust),
+            bend: value(Motor::Bend),
+        }
     }
 
     pub fn get(&self, motor: Motor) -> f32 {
@@ -137,11 +140,26 @@ pub enum ThalamusKind {
 #[serde(tag = "role", rename_all = "lowercase")]
 #[ts(export)]
 pub enum NeuronRole {
-    Systemic { input: SystemicInput },
-    Sensor { gene: GeneRef, side: OrganSide, channel: usize, kind: OrganKind },
-    Thalamus { gene: GeneRef, channel: usize, node: ThalamusKind },
-    Hidden { gene: GeneRef },
-    Motor { motor: Motor },
+    Systemic {
+        input: SystemicInput,
+    },
+    Sensor {
+        gene: GeneRef,
+        side: OrganSide,
+        channel: usize,
+        kind: OrganKind,
+    },
+    Thalamus {
+        gene: GeneRef,
+        channel: usize,
+        node: ThalamusKind,
+    },
+    Hidden {
+        gene: GeneRef,
+    },
+    Motor {
+        motor: Motor,
+    },
 }
 
 impl NeuronRole {
@@ -156,7 +174,9 @@ impl NeuronRole {
         };
         match self {
             NeuronRole::Systemic { input } => out.extend_from_slice(&[1, *input as u8]),
-            NeuronRole::Sensor { gene: g, side, channel, .. } => {
+            NeuronRole::Sensor {
+                gene: g, side, channel, ..
+            } => {
                 out.push(2);
                 gene(g, out);
                 out.extend_from_slice(&[*side as u8, *channel as u8]);
@@ -177,7 +197,9 @@ impl NeuronRole {
     /// The gene this neuron belongs to (organ or `NEU` gene); systemic inputs and motors belong to none.
     pub fn gene(&self) -> Option<&GeneRef> {
         match self {
-            NeuronRole::Sensor { gene, .. } | NeuronRole::Thalamus { gene, .. } | NeuronRole::Hidden { gene } => Some(gene),
+            NeuronRole::Sensor { gene, .. } | NeuronRole::Thalamus { gene, .. } | NeuronRole::Hidden { gene } => {
+                Some(gene)
+            }
             NeuronRole::Systemic { .. } | NeuronRole::Motor { .. } => None,
         }
     }

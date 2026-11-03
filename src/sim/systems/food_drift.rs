@@ -1,6 +1,6 @@
 //! Food drift system: spores drift and are pushed by creatures (`shared::physics::step_food_spore_physics`).
 
-use crate::shared::physics::{step_food_spore_physics, SporePusher};
+use crate::shared::physics::{SporePusher, step_food_spore_physics};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
 use crate::sim::World;
 

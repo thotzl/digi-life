@@ -1,6 +1,6 @@
 //! Nose: chemical distance sense (affinity 0.25..=0.65).
 
-use super::{common, spectral, OrganKind, OrganSpec};
+use super::{OrganKind, OrganSpec, common, spectral};
 
 pub const SPEC: OrganSpec = OrganSpec {
     kind: OrganKind::Nose,

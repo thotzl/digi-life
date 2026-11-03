@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use crate::biology::metabolism::{bite_energy_gain, MetabolismConfig};
+use crate::biology::metabolism::{MetabolismConfig, bite_energy_gain};
 use crate::config::OceanConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::shared::geom;
@@ -22,7 +22,11 @@ pub struct BiteRule {
 
 impl BiteRule {
     pub fn from_ocean(ocean: &OceanConfig) -> Self {
-        Self { carnivory_threshold: ocean.biting_carnivory_threshold, radius_multiplier: ocean.biting_radius_multiplier, radius_offset: ocean.biting_radius_offset }
+        Self {
+            carnivory_threshold: ocean.biting_carnivory_threshold,
+            radius_multiplier: ocean.biting_radius_multiplier,
+            radius_offset: ocean.biting_radius_offset,
+        }
     }
 
     pub fn range(&self, mean_radius: f32) -> f32 {
@@ -84,28 +88,54 @@ pub fn bite<'a>(
     let gain = bite_energy_gain(attacker.phenotype.carnivory, remaining, metabolism);
     attacker.energy = (attacker.energy + gain).min(attacker.phenotype.stomach_capacity);
     attacker.has_eaten = true;
-    Some(BiteEvent { attacker: attacker.id, victim: victim.id, gain, x: victim.px, y: victim.py })
+    Some(BiteEvent {
+        attacker: attacker.id,
+        victim: victim.id,
+        gain,
+        x: victim.px,
+        y: victim.py,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+    use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
     use crate::biology::genome::WILDTYPE_GENOME;
 
     fn peer(id: u32, species: &str, px: f32) -> PeerSnapshot {
-        PeerSnapshot { id, species_id: species.to_string(), px, py: 0.0, vx: 0.0, vy: 0.0, energy: 50.0 }
+        PeerSnapshot {
+            id,
+            species_id: species.to_string(),
+            px,
+            py: 0.0,
+            vx: 0.0,
+            vy: 0.0,
+            energy: 50.0,
+        }
     }
 
     fn attacker() -> CreatureAgent {
-        spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px: 0.0, py: 0.0, heading_angle: 0.0, generation: 1, methylations: None, synapse_weights: None }, crate::config::test_config())
+        spawn_creature(
+            WILDTYPE_GENOME,
+            SpawnOptions {
+                id: 1,
+                px: 0.0,
+                py: 0.0,
+                heading_angle: 0.0,
+                generation: 1,
+                methylations: None,
+                synapse_weights: None,
+            },
+            crate::config::test_config(),
+        )
     }
 
     #[test]
     fn test_bite_target_is_nearest_eligible_victim_and_respects_cooldown() {
         let attacker = attacker();
         let peers = vec![
-            peer(1, "other", 0.0),             // the attacker itself
+            peer(1, "other", 0.0),              // the attacker itself
             peer(2, &attacker.species_id, 1.0), // same species
             peer(3, "other", 8.0),
             peer(4, "other", 5.0),
@@ -113,7 +143,10 @@ mod tests {
         ];
         let none_recent = |_: u32| false;
         assert_eq!(bite_target(&attacker, &peers, 10.0, none_recent).map(|p| p.id), Some(4));
-        assert_eq!(bite_target(&attacker, &peers, 10.0, |id| id == 4).map(|p| p.id), Some(3));
+        assert_eq!(
+            bite_target(&attacker, &peers, 10.0, |id| id == 4).map(|p| p.id),
+            Some(3)
+        );
         assert!(bite_target(&attacker, &peers, 10.0, |id| id == 4 || id == 3).is_none());
         assert!(bite_target(&attacker, &peers, 4.0, none_recent).is_none());
     }
@@ -121,7 +154,11 @@ mod tests {
     #[test]
     fn test_two_attackers_cannot_take_more_than_the_victim_had() {
         let config = crate::config::test_config();
-        let rule = BiteRule { carnivory_threshold: 0.0, radius_multiplier: 0.0, radius_offset: 10.0 };
+        let rule = BiteRule {
+            carnivory_threshold: 0.0,
+            radius_multiplier: 0.0,
+            radius_offset: 10.0,
+        };
         let mut victim = peer(9, "other", 5.0);
         victim.energy = config.metabolism.biting_energy_damage * 0.5;
         let mut damage = HashMap::new();
@@ -131,13 +168,31 @@ mod tests {
         b.phenotype.carnivory = 1.0;
         let first = bite(&mut a, [&victim], &rule, &config.metabolism, &mut damage, |_| false).expect("bites");
         let second = bite(&mut b, [&victim], &rule, &config.metabolism, &mut damage, |_| false).expect("bites");
-        assert!(first.gain <= victim.energy && second.gain == 0.0, "{:?} {:?}", first, second);
+        assert!(
+            first.gain <= victim.energy && second.gain == 0.0,
+            "{:?} {:?}",
+            first,
+            second
+        );
         assert_eq!(damage[&9], 2.0 * config.metabolism.biting_energy_damage);
         assert!(a.has_eaten);
         // Herbivores never bite
         let mut herbivore = attacker();
         herbivore.phenotype.carnivory = 0.0;
-        let rule = BiteRule { carnivory_threshold: 0.6, ..rule };
-        assert!(bite(&mut herbivore, [&victim], &rule, &config.metabolism, &mut damage, |_| false).is_none());
+        let rule = BiteRule {
+            carnivory_threshold: 0.6,
+            ..rule
+        };
+        assert!(
+            bite(
+                &mut herbivore,
+                [&victim],
+                &rule,
+                &config.metabolism,
+                &mut damage,
+                |_| false
+            )
+            .is_none()
+        );
     }
 }

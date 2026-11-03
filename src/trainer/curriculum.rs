@@ -87,7 +87,11 @@ pub fn metabolic_ramp(level: f32, ramp_start: f32) -> f32 {
 /// runs at the current level; drawn without replacement from the layout's stream `derive(seed, [LAYOUT, layout_id,
 /// REHEARSAL_PICK])`, so every sandbox and every generation on that layout has the same choice.
 pub fn rehearsal_trials(seed: u64, layout_id: u64, trials: u32, share: f32) -> Vec<u32> {
-    let count = if share > 0.0 { ((trials as f32 * share).round() as u32).min(trials.saturating_sub(1)) } else { 0 };
+    let count = if share > 0.0 {
+        ((trials as f32 * share).round() as u32).min(trials.saturating_sub(1))
+    } else {
+        0
+    };
     if count == 0 {
         return Vec::new();
     }
@@ -108,7 +112,15 @@ pub(crate) mod tests {
 
     /// Curriculum params independent of the calibrated config defaults: no rehearsal, no ramp.
     pub(crate) fn plain_curriculum() -> CurriculumParams {
-        CurriculumParams { upper: 0.6, lower: 0.3, step: 0.1, start_level: 0.0, rehearsal_share: 0.0, rehearsal_level: 0.0, metabolic_ramp_start: 1.0 }
+        CurriculumParams {
+            upper: 0.6,
+            lower: 0.3,
+            step: 0.1,
+            start_level: 0.0,
+            rehearsal_share: 0.0,
+            rehearsal_level: 0.0,
+            metabolic_ramp_start: 1.0,
+        }
     }
 
     #[test]
@@ -117,7 +129,11 @@ pub(crate) mod tests {
         assert_eq!(gate_level(0.5, 0.7, &c), (0.6, LevelMove::Up));
         assert_eq!(gate_level(0.5, 0.2, &c), (0.4, LevelMove::Down));
         assert_eq!(gate_level(0.5, 0.45, &c), (0.5, LevelMove::Hold));
-        assert_eq!(gate_level(0.5, 0.6, &c), (0.5, LevelMove::Hold), "the thresholds themselves hold");
+        assert_eq!(
+            gate_level(0.5, 0.6, &c),
+            (0.5, LevelMove::Hold),
+            "the thresholds themselves hold"
+        );
         assert_eq!(gate_level(0.5, 0.3, &c), (0.5, LevelMove::Hold));
         assert_eq!(gate_level(1.0, 0.9, &c), (1.0, LevelMove::Hold), "clamped at 1");
         assert_eq!(gate_level(0.0, 0.0, &c), (0.0, LevelMove::Hold), "clamped at 0");
@@ -138,8 +154,16 @@ pub(crate) mod tests {
     #[test]
     fn test_rehearsal_trial_selection_is_deterministic() {
         assert_eq!(rehearsal_trials(5, 0, 3, 0.0), Vec::<u32>::new());
-        assert_eq!(rehearsal_trials(5, 0, 1, 1.0), Vec::<u32>::new(), "a single trial never rehearses");
-        assert_eq!(rehearsal_trials(5, 0, 3, 1.0).len(), 2, "at least one trial stays at the level");
+        assert_eq!(
+            rehearsal_trials(5, 0, 1, 1.0),
+            Vec::<u32>::new(),
+            "a single trial never rehearses"
+        );
+        assert_eq!(
+            rehearsal_trials(5, 0, 3, 1.0).len(),
+            2,
+            "at least one trial stays at the level"
+        );
         let mut picks = std::collections::BTreeSet::new();
         for layout in 0..20 {
             let picked = rehearsal_trials(5, layout, 3, 1.0 / 3.0);

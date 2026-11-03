@@ -16,17 +16,17 @@ pub(crate) mod tests;
 use serde::{Deserialize, Serialize};
 
 pub use alphabet::{
-    char_to_value, generate_random_genome, get_bio_class, get_complementary_char, get_complementary_string, matches_degenerate, normalize_genome,
-    value_to_char, ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN,
+    ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN, char_to_value, generate_random_genome, get_bio_class,
+    get_complementary_char, get_complementary_string, matches_degenerate, normalize_genome, value_to_char,
 };
-pub use generate::{generate_structured_genome, GenomeComposition};
+pub use generate::{GenomeComposition, generate_structured_genome};
 pub use mutate::{
-    classify_mutation, mutate_genome, mutate_genome_in_channel, mutate_genome_with_kind, Mutation, MutationChannel, MutationKind, MutationOperators,
-    MutationTouch,
+    Mutation, MutationChannel, MutationKind, MutationOperators, MutationTouch, classify_mutation, mutate_genome,
+    mutate_genome_in_channel, mutate_genome_with_kind,
 };
-pub use payload::{get_payload_linear_value_offset, Payload};
-pub use promoters::{promoter_channel, GeneChannel, GeneRole, PromoterSpec, PROMOTERS, TERMINATOR};
-pub use scan::{extract_raw_gene_payloads, scan_genes, ScannedGene};
+pub use payload::{Payload, get_payload_linear_value_offset};
+pub use promoters::{GeneChannel, GeneRole, PROMOTERS, PromoterSpec, TERMINATOR, promoter_channel};
+pub use scan::{ScannedGene, extract_raw_gene_payloads, scan_genes};
 pub use table::{GeneRef, GeneSpan, GeneTable};
 
 /// Wildtype progenitor genome (trainer slot plan placeholder for random immigrants, tests).
@@ -48,7 +48,9 @@ pub struct GenomeConfig {
 /// Writes a generated data file next to the ts-rs bindings (`bindings/<name>`); called by the registry export tests.
 #[cfg(test)]
 pub(crate) fn write_binding(name: &str, content: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("bindings").join(name);
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("bindings")
+        .join(name);
     if std::fs::read_to_string(&path).ok().as_deref() != Some(content) {
         std::fs::write(&path, content).expect("write binding");
     }

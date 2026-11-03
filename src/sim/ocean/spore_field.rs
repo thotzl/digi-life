@@ -31,7 +31,11 @@ pub struct SporeField {
 
 impl Default for SporeField {
     fn default() -> Self {
-        Self { spores: Vec::new(), nutrient_centers: Vec::new(), next_id: FIRST_SPORE_ID }
+        Self {
+            spores: Vec::new(),
+            nutrient_centers: Vec::new(),
+            next_id: FIRST_SPORE_ID,
+        }
     }
 }
 
@@ -52,7 +56,15 @@ impl SporeField {
             let (x, y) = patchy_spore_position(rng, &self.nutrient_centers, width, height);
             let vx = rng.gen_range(-SPORE_DRIFT..SPORE_DRIFT);
             let vy = rng.gen_range(-SPORE_DRIFT..SPORE_DRIFT);
-            self.spores.push(FoodSpore { id: self.next_id, type_id: PLANT, x, y, amount: SPORE_AMOUNT, vx, vy });
+            self.spores.push(FoodSpore {
+                id: self.next_id,
+                type_id: PLANT,
+                x,
+                y,
+                amount: SPORE_AMOUNT,
+                vx,
+                vy,
+            });
             self.next_id += 1;
         }
     }
@@ -74,11 +86,29 @@ mod tests {
     fn test_reseed_places_spores_inside_with_fresh_ids_and_centres() {
         let mut field = SporeField::default();
         field.reseed(50, &mut seeded(1), 4000.0, 3000.0);
-        assert_eq!((field.spores.len(), field.nutrient_centers.len()), (50, NUTRIENT_CENTER_COUNT));
-        assert!(field.nutrient_centers.iter().all(|&(x, y)| (1000.0..3000.0).contains(&x) && (1000.0..2000.0).contains(&y)));
-        assert!(field.spores.iter().all(|s| s.type_id == PLANT && s.amount == SPORE_AMOUNT && (100.0..=3900.0).contains(&s.x) && (100.0..=2900.0).contains(&s.y)));
-        assert_eq!((field.spores[0].id, field.next_id), (FIRST_SPORE_ID, FIRST_SPORE_ID + 50));
+        assert_eq!(
+            (field.spores.len(), field.nutrient_centers.len()),
+            (50, NUTRIENT_CENTER_COUNT)
+        );
+        assert!(
+            field
+                .nutrient_centers
+                .iter()
+                .all(|&(x, y)| (1000.0..3000.0).contains(&x) && (1000.0..2000.0).contains(&y))
+        );
+        assert!(field.spores.iter().all(|s| s.type_id == PLANT
+            && s.amount == SPORE_AMOUNT
+            && (100.0..=3900.0).contains(&s.x)
+            && (100.0..=2900.0).contains(&s.y)));
+        assert_eq!(
+            (field.spores[0].id, field.next_id),
+            (FIRST_SPORE_ID, FIRST_SPORE_ID + 50)
+        );
         field.reseed(10, &mut seeded(2), 4000.0, 3000.0);
-        assert_eq!((field.spores.len(), field.spores[0].id), (10, FIRST_SPORE_ID + 50), "ids continue across a reseed");
+        assert_eq!(
+            (field.spores.len(), field.spores[0].id),
+            (10, FIRST_SPORE_ID + 50),
+            "ids continue across a reseed"
+        );
     }
 }

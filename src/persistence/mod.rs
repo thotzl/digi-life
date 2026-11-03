@@ -18,9 +18,9 @@ mod ocean;
 pub mod repos;
 mod schema;
 mod species;
-mod trainer;
 #[cfg(test)]
 mod tests;
+mod trainer;
 
 pub use dto::*;
 pub use memory::MemoryDb;
@@ -93,7 +93,10 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> RepoResult<Db> {
 /// the migrations once at startup for the commands' connection, TCK-156): WAL journal, 5 s busy timeout, foreign keys,
 /// no migration. Fails if the file does not exist.
 pub fn open_db<P: AsRef<Path>>(path: P) -> RepoResult<Db> {
-    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
     configure(&conn)?;
     Ok(Db { conn })
 }
@@ -116,7 +119,11 @@ pub fn open_read_only<P: AsRef<Path>>(path: P) -> RepoResult<Db> {
 /// millisecond never collide (the old `<run>-<gen>-<idx>-<secs>` ids did, TCK-159).
 pub(crate) fn unique_suffix() -> String {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    format!("{}-{}", crate::shared::time::now_ms(), COUNTER.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "{}-{}",
+        crate::shared::time::now_ms(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 /// Unreadable rows of a list query are skipped with a warning naming the table.

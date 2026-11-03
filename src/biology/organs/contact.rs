@@ -67,5 +67,9 @@ pub fn water_temperature(ctx: &SenseCtx, organ_power: f32) -> f32 {
 pub fn pain(ctx: &SenseCtx, boundary_pressure: f32) -> f32 {
     let agent = ctx.agent;
     let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();
-    if speed > 1.5 && boundary_pressure > 0.3 { (speed * 0.3).min(1.0) } else { 0.0 }
+    if speed > 1.5 && boundary_pressure > 0.3 {
+        (speed * 0.3).min(1.0)
+    } else {
+        0.0
+    }
 }

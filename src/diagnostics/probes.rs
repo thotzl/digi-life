@@ -10,33 +10,43 @@ use std::sync::Arc;
 use rayon::prelude::*;
 use serde::Serialize;
 
-use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
 use crate::biology::brain::{Motor, NeuronRole};
+use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
 use crate::biology::genome::{
-    extract_raw_gene_payloads, generate_structured_genome, mutate_genome, mutate_genome_with_kind, normalize_genome, MutationKind, WILDTYPE_GENOME,
+    MutationKind, WILDTYPE_GENOME, extract_raw_gene_payloads, generate_structured_genome, mutate_genome,
+    mutate_genome_with_kind, normalize_genome,
 };
-use crate::biology::organs::{OrganKind, OrganSide, CHANNELS_PER_ORGANELLE};
-use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
-use crate::trainer::evaluator::SoloTrials;
-use crate::trainer::mode::Scenario;
-use crate::trainer::room::{registry, Room};
-use crate::trainer::sandbox::{SandboxOrigin, TrainerSandbox};
-use crate::trainer::sim::{TrainerEvent, TrainerParams, TrainerSim, IMMOBILE_DISTANCE_PX};
-use crate::shared::brain::compute_sensory_inputs_into;
-use crate::shared::fmath;
-use crate::shared::physics::step_creature_kinematics;
-use crate::shared::rng::{derive, seed_from_str, SimRng};
-pub use crate::shared::stats::{pearson, Distribution};
+use crate::biology::organs::{CHANNELS_PER_ORGANELLE, OrganKind, OrganSide};
+use crate::biology::phenotype::{CreaturePhenotype, parse_genome};
 use crate::config::AppConfig;
+use crate::shared::brain::compute_sensory_inputs_into;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
+use crate::shared::fmath;
 use crate::shared::geom::wrap_angle;
+use crate::shared::physics::step_creature_kinematics;
+use crate::shared::rng::{SimRng, derive, seed_from_str};
+pub use crate::shared::stats::{Distribution, pearson};
 use crate::sim::systems::death::DeathPolicy;
 use crate::sim::systems::eat::{EatRadiusRule, RespawnPolicy};
 use crate::sim::systems::food_drift::FoodDriftOrder;
-use crate::sim::systems::sense::{ClockVariant, TargetSelector, ABSENT_POS};
-use crate::sim::{step_creature, CreatureStep, TickCtx, World, WorldSettings, BRAIN_ONLY_SYSTEMS};
+use crate::sim::systems::sense::{ABSENT_POS, ClockVariant, TargetSelector};
+use crate::sim::{BRAIN_ONLY_SYSTEMS, CreatureStep, TickCtx, World, WorldSettings, step_creature};
+use crate::trainer::evaluator::SoloTrials;
+use crate::trainer::mode::Scenario;
+use crate::trainer::room::{Room, registry};
+use crate::trainer::sandbox::{SandboxOrigin, TrainerSandbox};
+use crate::trainer::sim::{IMMOBILE_DISTANCE_PX, TrainerEvent, TrainerParams, TrainerSim};
 
-pub const PROBE_NAMES: &[&str] = &["heredity", "speed", "equipment", "steering", "wall", "hebbian", "topology", "metabolism"];
+pub const PROBE_NAMES: &[&str] = &[
+    "heredity",
+    "speed",
+    "equipment",
+    "steering",
+    "wall",
+    "hebbian",
+    "topology",
+    "metabolism",
+];
 
 /// Arena edge for wall-free kinematics (creature starts in the centre and never reaches a wall).
 const OPEN_ARENA: f32 = 10_000_000.0;
@@ -101,7 +111,13 @@ pub fn run_probe(name: &str, opts: &ProbeOptions) -> Result<serde_json::Value, S
         "hebbian" => serde_json::to_value(probe_hebbian(opts)),
         "topology" => serde_json::to_value(probe_topology(opts)),
         "metabolism" => serde_json::to_value(probe_metabolism(opts)),
-        other => return Err(format!("unknown probe '{}' (known: {}, all)", other, PROBE_NAMES.join(", "))),
+        other => {
+            return Err(format!(
+                "unknown probe '{}' (known: {}, all)",
+                other,
+                PROBE_NAMES.join(", ")
+            ));
+        }
     }
     .map_err(|e| e.to_string())?;
     let report = ProbeReport {
@@ -116,13 +132,20 @@ pub fn run_probe(name: &str, opts: &ProbeOptions) -> Result<serde_json::Value, S
 
 /// Best distinct trainer genomes of all runs, opened strictly read-only.
 pub fn load_hof_genomes(db_path: &str, limit: usize) -> Result<Vec<HofGenome>, String> {
-    use crate::persistence::{open_read_only, TrainerRepo};
+    use crate::persistence::{TrainerRepo, open_read_only};
     let db = open_read_only(db_path).map_err(|e| format!("cannot open DB {} read-only: {}", db_path, e))?;
-    let rows = db.ranked_trainer_genomes().map_err(|e| format!("cannot read trainer_genomes: {}", e))?;
+    let rows = db
+        .ranked_trainer_genomes()
+        .map_err(|e| format!("cannot read trainer_genomes: {}", e))?;
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
     for row in rows {
-        let record = HofGenome { genome: row.genome, fitness: row.fitness as f32, run_id: row.run_id, generation: row.generation as u32 };
+        let record = HofGenome {
+            genome: row.genome,
+            fitness: row.fitness as f32,
+            run_id: row.run_id,
+            generation: row.generation as u32,
+        };
         if !record.genome.is_empty() && seen.insert(record.genome.clone()) {
             out.push(record);
             if out.len() >= limit {
@@ -148,7 +171,9 @@ fn share_where<T>(items: &[T], pred: impl Fn(&T) -> bool) -> f32 {
 /// The same structured genomes (config `genomeComposition`, as trainer generation 1) for every probe.
 pub fn structured_genomes(seed: u64, n: usize, config: &AppConfig) -> Vec<String> {
     let composition = &config.genome.genome_composition;
-    (0..n).map(|i| generate_structured_genome(composition, &mut derive(seed, &[STREAM_STRUCTURED_GENOMES, i as u64]))).collect()
+    (0..n)
+        .map(|i| generate_structured_genome(composition, &mut derive(seed, &[STREAM_STRUCTURED_GENOMES, i as u64])))
+        .collect()
 }
 
 /// A room of the registry (the probes use `standard` and `exploration`).
@@ -157,7 +182,19 @@ fn room(scenario: Scenario, config: &AppConfig) -> Arc<dyn Room> {
 }
 
 fn agent_at(genome: &str, px: f32, py: f32, heading_angle: f32, config: &AppConfig) -> CreatureAgent {
-    spawn_creature(genome, SpawnOptions { id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None }, config)
+    spawn_creature(
+        genome,
+        SpawnOptions {
+            id: 1,
+            px,
+            py,
+            heading_angle,
+            generation: 1,
+            methylations: None,
+            synapse_weights: None,
+        },
+        config,
+    )
 }
 
 fn speed_of(agent: &CreatureAgent) -> f32 {
@@ -184,7 +221,10 @@ fn brain_world() -> WorldSettings {
 /// Whether any distance sense (`OrganKind::is_distance`: eye, nose, thermal organ) registers food in `inputs`.
 fn senses_food(phenotype: &CreaturePhenotype, inputs: &[f32]) -> bool {
     phenotype.organelles.iter().enumerate().any(|(idx, organ)| {
-        organ.kind.is_distance() && inputs[idx * CHANNELS_PER_ORGANELLE..(idx + 1) * CHANNELS_PER_ORGANELLE].iter().any(|&v| v > 0.0)
+        organ.kind.is_distance()
+            && inputs[idx * CHANNELS_PER_ORGANELLE..(idx + 1) * CHANNELS_PER_ORGANELLE]
+                .iter()
+                .any(|&v| v > 0.0)
     })
 }
 
@@ -199,8 +239,17 @@ fn limb_count(phenotype: &CreaturePhenotype) -> usize {
 
 /// Body traits compared parent vs child (all inputs of the thrust/mass/drag formula plus stomach and diet).
 pub const HEREDITY_TRAITS: &[&str] = &[
-    "pulse_speed", "stiffness", "mean_radius", "base_length", "wave_phase", "parapodia_amp", "limbs", "organs",
-    "stomach_capacity", "carnivory", "terminal_speed",
+    "pulse_speed",
+    "stiffness",
+    "mean_radius",
+    "base_length",
+    "wave_phase",
+    "parapodia_amp",
+    "limbs",
+    "organs",
+    "stomach_capacity",
+    "carnivory",
+    "terminal_speed",
 ];
 pub const HEREDITY_MUTATION_COUNTS: &[usize] = &[1, 5, 15];
 
@@ -236,7 +285,12 @@ fn heredity_profile(genome: &str, config: &AppConfig) -> HeredityProfile {
         phenotype.carnivory,
         straight_run(genome, config).terminal_speed,
     ];
-    HeredityProfile { synapses, traits, neurons: phenotype.brain.neurons.len(), organs: phenotype.organelles.len() }
+    HeredityProfile {
+        synapses,
+        traits,
+        neurons: phenotype.brain.neurons.len(),
+        organs: phenotype.organelles.len(),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -337,7 +391,13 @@ fn kind_index(kind: MutationKind) -> usize {
 }
 
 /// Applies `count` ops; returns the child, the applied op count and (mixed only) per-kind op counts.
-fn mutate_n(parent: &str, kind: HeredityKind, count: usize, rng: &mut SimRng, config: &AppConfig) -> (String, usize, OpCounts) {
+fn mutate_n(
+    parent: &str,
+    kind: HeredityKind,
+    count: usize,
+    rng: &mut SimRng,
+    config: &AppConfig,
+) -> (String, usize, OpCounts) {
     let ops_config = &config.genome.mutation_operators;
     let mut genome = parent.to_string();
     let (mut applied, mut ops) = (0, OpCounts::default());
@@ -369,7 +429,14 @@ struct ChildComparison {
     ops: OpCounts,
 }
 
-fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, applied: usize, ops: OpCounts, config: &AppConfig) -> ChildComparison {
+fn compare(
+    parent: &HeredityProfile,
+    parent_genome: &str,
+    child_genome: &str,
+    applied: usize,
+    ops: OpCounts,
+    config: &AppConfig,
+) -> ChildComparison {
     let child = heredity_profile(child_genome, config);
     let (mut exuberant, mut explicit) = (SynapseTally::default(), SynapseTally::default());
     for (key, &(pw, is_explicit)) in &parent.synapses {
@@ -386,7 +453,12 @@ fn compare(parent: &HeredityProfile, parent_genome: &str, child_genome: &str, ap
     ChildComparison {
         exuberant,
         explicit,
-        traits: parent.traits.iter().copied().zip(child.traits.iter().copied()).collect(),
+        traits: parent
+            .traits
+            .iter()
+            .copied()
+            .zip(child.traits.iter().copied())
+            .collect(),
         neuron_delta: parent.neurons.abs_diff(child.neurons),
         organ_changed: parent.organs != child.organs,
         identical: parent_genome == child_genome,
@@ -410,10 +482,19 @@ fn heredity_cell(kind: HeredityKind, mutations: usize, comparisons: Vec<ChildCom
         .iter()
         .enumerate()
         .map(|(t, name)| {
-            let rel: Vec<f32> = comparisons.iter().map(|c| c.traits[t]).filter(|(p, _)| *p != 0.0).map(|(p, c)| (c - p).abs() / p.abs()).collect();
+            let rel: Vec<f32> = comparisons
+                .iter()
+                .map(|c| c.traits[t])
+                .filter(|(p, _)| *p != 0.0)
+                .map(|(p, c)| (c - p).abs() / p.abs())
+                .collect();
             TraitChange {
                 name: name.to_string(),
-                mean_abs_rel_change: if rel.is_empty() { None } else { Some(rel.iter().sum::<f32>() / rel.len() as f32) },
+                mean_abs_rel_change: if rel.is_empty() {
+                    None
+                } else {
+                    Some(rel.iter().sum::<f32>() / rel.len() as f32)
+                },
                 share_changed: share_where(&comparisons, |c| c.traits[t].0 != c.traits[t].1),
             }
         })
@@ -446,18 +527,42 @@ struct MixTally {
 
 /// Heredity of `parents` for the given mutation kinds and counts; `children` children per parent and cell.
 #[allow(clippy::too_many_arguments)]
-fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[usize], seed: u64, group_id: u64, mix: &mut MixTally, config: &AppConfig) -> HeredityGroup {
-    let kinds: Vec<HeredityKind> =
-        MutationKind::ALL.iter().map(|&k| HeredityKind::Forced(k)).chain([HeredityKind::Mixed]).collect();
+fn heredity_group(
+    label: &str,
+    parents: &[String],
+    children: usize,
+    counts: &[usize],
+    seed: u64,
+    group_id: u64,
+    mix: &mut MixTally,
+    config: &AppConfig,
+) -> HeredityGroup {
+    let kinds: Vec<HeredityKind> = MutationKind::ALL
+        .iter()
+        .map(|&k| HeredityKind::Forced(k))
+        .chain([HeredityKind::Mixed])
+        .collect();
     let profiles: Vec<HeredityProfile> = parents.par_iter().map(|g| heredity_profile(g, config)).collect();
     let mut cells = Vec::new();
     for (kind_idx, &kind) in kinds.iter().enumerate() {
         for &count in counts {
-            let jobs: Vec<(usize, usize)> = (0..parents.len()).flat_map(|p| (0..children).map(move |c| (p, c))).collect();
+            let jobs: Vec<(usize, usize)> = (0..parents.len())
+                .flat_map(|p| (0..children).map(move |c| (p, c)))
+                .collect();
             let comparisons: Vec<ChildComparison> = jobs
                 .par_iter()
                 .map(|&(p, c)| {
-                    let mut rng = derive(seed, &[STREAM_HEREDITY, group_id, kind_idx as u64, count as u64, p as u64, c as u64]);
+                    let mut rng = derive(
+                        seed,
+                        &[
+                            STREAM_HEREDITY,
+                            group_id,
+                            kind_idx as u64,
+                            count as u64,
+                            p as u64,
+                            c as u64,
+                        ],
+                    );
                     let (child, applied, ops) = mutate_n(&parents[p], kind, count, &mut rng, config);
                     compare(&profiles[p], &parents[p], &child, applied, ops, config)
                 })
@@ -476,7 +581,12 @@ fn heredity_group(label: &str, parents: &[String], children: usize, counts: &[us
             cells.push(heredity_cell(kind, count, comparisons));
         }
     }
-    HeredityGroup { parents: label.to_string(), parent_count: parents.len(), children_per_parent_and_cell: children, cells }
+    HeredityGroup {
+        parents: label.to_string(),
+        parent_count: parents.len(),
+        children_per_parent_and_cell: children,
+        cells,
+    }
 }
 
 /// Parent-child similarity after 1/5/15 mutations per kind, for wildtype, structured and HoF parents.
@@ -490,17 +600,41 @@ fn heredity_with_counts(opts: &ProbeOptions, counts: &[usize]) -> HeredityReport
     let n = opts.samples.unwrap_or(200);
     let mut mix = MixTally::default();
     let mut groups = vec![
-        heredity_group("wildtype", &[WILDTYPE_GENOME.to_string()], 400, counts, seed, 1, &mut mix, config),
-        heredity_group(STRUCTURED, &structured_genomes(seed, n, config), 4, counts, seed, 3, &mut mix, config),
+        heredity_group(
+            "wildtype",
+            &[WILDTYPE_GENOME.to_string()],
+            400,
+            counts,
+            seed,
+            1,
+            &mut mix,
+            config,
+        ),
+        heredity_group(
+            STRUCTURED,
+            &structured_genomes(seed, n, config),
+            4,
+            counts,
+            seed,
+            3,
+            &mut mix,
+            config,
+        ),
     ];
     if !opts.hof.is_empty() {
         let hof: Vec<String> = opts.hof.iter().map(|h| h.genome.clone()).collect();
         let per_parent = (800 / hof.len()).clamp(4, 400);
-        groups.push(heredity_group("hof", &hof, per_parent, counts, seed, 2, &mut mix, config));
+        groups.push(heredity_group(
+            "hof", &hof, per_parent, counts, seed, 2, &mut mix, config,
+        ));
     }
     let shares = |ops: OpCounts| -> BTreeMap<String, f32> {
         let total: usize = ops.iter().sum();
-        MutationKind::ALL.iter().zip(ops).map(|(k, n)| (k.label().to_string(), share(n, total))).collect()
+        MutationKind::ALL
+            .iter()
+            .zip(ops)
+            .map(|(k, n)| (k.label().to_string(), share(n, total)))
+            .collect()
     };
     HeredityReport {
         traits: HEREDITY_TRAITS.iter().map(|t| t.to_string()).collect(),
@@ -631,7 +765,11 @@ fn full_turn(genome: &str, config: &AppConfig) -> (f32, f32, f32) {
     let window = (ticks - window_start) as f32;
     let omega = turned / window;
     let speed = path / window;
-    (if omega > 0.0 { speed / omega } else { f32::INFINITY }, omega.to_degrees(), speed)
+    (
+        if omega > 0.0 { speed / omega } else { f32::INFINITY },
+        omega.to_degrees(),
+        speed,
+    )
 }
 
 fn speed_set(label: &str, genomes: &[String], config: &AppConfig) -> SpeedSet {
@@ -641,24 +779,49 @@ fn speed_set(label: &str, genomes: &[String], config: &AppConfig) -> SpeedSet {
 
     // Turning per speed band (genomes between the given terminal-speed quantiles)
     let mut order: Vec<usize> = (0..genomes.len()).collect();
-    order.sort_by(|&a, &b| speeds[a].partial_cmp(&speeds[b]).unwrap_or(std::cmp::Ordering::Equal).then(a.cmp(&b)));
-    let turning = [("p05-p15 (slow)", 0.05, 0.15), ("p45-p55 (median)", 0.45, 0.55), ("p85-p95 (fast)", 0.85, 0.95)]
-        .iter()
-        .map(|&(band, lo, hi)| {
-            let n = order.len();
-            let members: Vec<usize> = order[((lo * n as f32) as usize).min(n)..((hi * n as f32).ceil() as usize).min(n)].to_vec();
-            let turns: Vec<(usize, (f32, f32, f32))> = members.par_iter().map(|&i| (i, full_turn(&genomes[i], config))).collect();
-            let finite: Vec<&(usize, (f32, f32, f32))> = turns.iter().filter(|(_, t)| t.0.is_finite()).collect();
-            TurnStats {
-                band: band.to_string(),
-                genomes: members.len(),
-                radius_px: Distribution::of(&finite.iter().map(|(_, t)| t.0).collect::<Vec<_>>()),
-                turn_rate_deg_per_tick: Distribution::of(&turns.iter().map(|(_, t)| t.1).collect::<Vec<_>>()),
-                ticks_per_90_deg: Distribution::of(&turns.iter().filter(|(_, t)| t.1 > 0.0).map(|(_, t)| 90.0 / t.1).collect::<Vec<_>>()),
-                speed_ratio_turning: Distribution::of(&turns.iter().filter(|(i, _)| speeds[*i] > 0.0).map(|(i, t)| t.2 / speeds[*i]).collect::<Vec<_>>()),
-            }
-        })
-        .collect();
+    order.sort_by(|&a, &b| {
+        speeds[a]
+            .partial_cmp(&speeds[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.cmp(&b))
+    });
+    let turning = [
+        ("p05-p15 (slow)", 0.05, 0.15),
+        ("p45-p55 (median)", 0.45, 0.55),
+        ("p85-p95 (fast)", 0.85, 0.95),
+    ]
+    .iter()
+    .map(|&(band, lo, hi)| {
+        let n = order.len();
+        let members: Vec<usize> =
+            order[((lo * n as f32) as usize).min(n)..((hi * n as f32).ceil() as usize).min(n)].to_vec();
+        let turns: Vec<(usize, (f32, f32, f32))> = members
+            .par_iter()
+            .map(|&i| (i, full_turn(&genomes[i], config)))
+            .collect();
+        let finite: Vec<&(usize, (f32, f32, f32))> = turns.iter().filter(|(_, t)| t.0.is_finite()).collect();
+        TurnStats {
+            band: band.to_string(),
+            genomes: members.len(),
+            radius_px: Distribution::of(&finite.iter().map(|(_, t)| t.0).collect::<Vec<_>>()),
+            turn_rate_deg_per_tick: Distribution::of(&turns.iter().map(|(_, t)| t.1).collect::<Vec<_>>()),
+            ticks_per_90_deg: Distribution::of(
+                &turns
+                    .iter()
+                    .filter(|(_, t)| t.1 > 0.0)
+                    .map(|(_, t)| 90.0 / t.1)
+                    .collect::<Vec<_>>(),
+            ),
+            speed_ratio_turning: Distribution::of(
+                &turns
+                    .iter()
+                    .filter(|(i, _)| speeds[*i] > 0.0)
+                    .map(|(i, t)| t.2 / speeds[*i])
+                    .collect::<Vec<_>>(),
+            ),
+        }
+    })
+    .collect();
 
     SpeedSet {
         genomes: label.to_string(),
@@ -684,9 +847,17 @@ fn speed_set(label: &str, genomes: &[String], config: &AppConfig) -> SpeedSet {
 pub fn probe_speed(opts: &ProbeOptions) -> SpeedReport {
     let seed = seed_from_str(&opts.seed);
     let config = &opts.config;
-    let mut sets = vec![speed_set(STRUCTURED, &structured_genomes(seed, opts.samples.unwrap_or(1000), config), config)];
+    let mut sets = vec![speed_set(
+        STRUCTURED,
+        &structured_genomes(seed, opts.samples.unwrap_or(1000), config),
+        config,
+    )];
     if !opts.hof.is_empty() {
-        sets.push(speed_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), config));
+        sets.push(speed_set(
+            "hof",
+            &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(),
+            config,
+        ));
     }
     SpeedReport {
         notes: vec![
@@ -756,9 +927,15 @@ pub fn probe_equipment(opts: &ProbeOptions) -> EquipmentReport {
 }
 
 fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &AppConfig) -> EquipmentSet {
-    let phenotypes: Vec<CreaturePhenotype> = genomes.par_iter().map(|g| parse_genome(g, None, None, &config.brain)).collect();
+    let phenotypes: Vec<CreaturePhenotype> = genomes
+        .par_iter()
+        .map(|g| parse_genome(g, None, None, &config.brain))
+        .collect();
     let food_organs = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| o.kind.is_distance()).count();
-    let ranges: Vec<f32> = phenotypes.iter().flat_map(|p| p.organelles.iter().filter(|o| o.kind.is_distance()).map(|o| o.range())).collect();
+    let ranges: Vec<f32> = phenotypes
+        .iter()
+        .flat_map(|p| p.organelles.iter().filter(|o| o.kind.is_distance()).map(|o| o.range()))
+        .collect();
 
     let spawn = [Scenario::Standard, Scenario::Exploration]
         .iter()
@@ -771,13 +948,35 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
                 .enumerate()
                 .map(|(i, genome)| {
                     let mut rng = derive(seed, &[STREAM_EQUIPMENT, s_idx as u64, i as u64, set_id]);
-                    let sb = TrainerSandbox::spawn(1, genome, 1, SandboxOrigin::Random, room.clone(), None, None, &mut rng, config);
+                    let sb = TrainerSandbox::spawn(
+                        1,
+                        genome,
+                        1,
+                        SandboxOrigin::Random,
+                        room.clone(),
+                        None,
+                        None,
+                        &mut rng,
+                        config,
+                    );
                     let mut scratch = Vec::new();
-                    let visible = room.world_settings(config).targets.select(sb.agent(), &sb.chamber.foods, &[], &mut scratch).to_vec();
+                    let visible = room
+                        .world_settings(config)
+                        .targets
+                        .select(sb.agent(), &sb.chamber.foods, &[], &mut scratch)
+                        .to_vec();
                     let agent = sb.agent();
-                    let in_range = agent.phenotype.organelles.iter().filter(|o| o.kind.is_distance()).any(|o| {
-                        visible.iter().take(2).any(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt() <= o.range())
-                    });
+                    let in_range = agent
+                        .phenotype
+                        .organelles
+                        .iter()
+                        .filter(|o| o.kind.is_distance())
+                        .any(|o| {
+                            visible
+                                .iter()
+                                .take(2)
+                                .any(|f| ((f.x - agent.px).powi(2) + (f.y - agent.py).powi(2)).sqrt() <= o.range())
+                        });
                     let mut inputs = Vec::new();
                     compute_sensory_inputs_into(agent, 0.5, &visible, &[], size, size, &mut inputs);
                     (in_range, senses_food(&agent.phenotype, &inputs))
@@ -797,7 +996,13 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
         p.organelles
             .windows(2)
             .filter(|w| w[0].side == OrganSide::Left)
-            .map(|w| (w[0].kind.is_distance() && w[1].kind.is_distance(), w[0].angle, w[1].angle))
+            .map(|w| {
+                (
+                    w[0].kind.is_distance() && w[1].kind.is_distance(),
+                    w[0].angle,
+                    w[1].angle,
+                )
+            })
             .collect()
     };
     let thalamus_pairs = |p: &CreaturePhenotype| pair_organs(p).len();
@@ -809,9 +1014,13 @@ fn equipment_set(label: &str, genomes: &[String], seed: u64, set_id: u64, config
         share_with_eye: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.kind == OrganKind::Eye)),
         share_with_nose: share_where(&phenotypes, |p| p.organelles.iter().any(|o| o.kind == OrganKind::Nose)),
         share_with_food_sensor: share_where(&phenotypes, |p| food_organs(p) > 0),
-        share_with_hox_gene: share_where(genomes, |g| !extract_raw_gene_payloads(&normalize_genome(g), "HOX", "EN").is_empty()),
+        share_with_hox_gene: share_where(genomes, |g| {
+            !extract_raw_gene_payloads(&normalize_genome(g), "HOX", "EN").is_empty()
+        }),
         share_with_hox_pair: share_where(&phenotypes, |p| thalamus_pairs(p) > 0),
-        share_with_food_sensing_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(distance, l, r)| distance && l == -r)),
+        share_with_food_sensing_pair: share_where(&phenotypes, |p| {
+            pair_organs(p).iter().any(|&(distance, l, r)| distance && l == -r)
+        }),
         share_with_misaligned_pair: share_where(&phenotypes, |p| pair_organs(p).iter().any(|&(_, l, r)| l != -r)),
         sensor_range_px: Distribution::of(&ranges),
         spawn,
@@ -845,12 +1054,31 @@ fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> S
     let (cx, cy) = (size / 2.0, size / 2.0);
     let mut agent = agent_at(genome, cx, cy, 0.0, config);
     let (fx, fy) = match bearing_deg {
-        Some(b) => (cx + STEERING_DISTANCE * b.to_radians().cos(), cy + STEERING_DISTANCE * b.to_radians().sin()),
+        Some(b) => (
+            cx + STEERING_DISTANCE * b.to_radians().cos(),
+            cy + STEERING_DISTANCE * b.to_radians().sin(),
+        ),
         None => (ABSENT_POS, ABSENT_POS),
     };
     let mut foods = [
-        FoodSpore { id: 1, type_id: 1, x: fx, y: fy, amount: 15.0, vx: 0.0, vy: 0.0 },
-        FoodSpore { id: 2, type_id: 2, x: fx, y: fy, amount: 15.0, vx: 0.0, vy: 0.0 },
+        FoodSpore {
+            id: 1,
+            type_id: 1,
+            x: fx,
+            y: fy,
+            amount: 15.0,
+            vx: 0.0,
+            vy: 0.0,
+        },
+        FoodSpore {
+            id: 2,
+            type_id: 2,
+            x: fx,
+            y: fy,
+            amount: 15.0,
+            vx: 0.0,
+            vy: 0.0,
+        },
     ];
     let (settings, mut step) = (brain_world(), CreatureStep::default());
     let (mut heading_change, mut turn_deg, mut distance, mut thrust_sum) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
@@ -858,7 +1086,12 @@ fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> S
     let reach_dist = agent.phenotype.spinal_harmonics.mean_radius + 10.0;
     for tick in 1..=STEERING_TICKS {
         let before = agent.heading_angle;
-        step_creature(&mut World::single(&mut agent, &mut foods, size, &settings), 0, &TickCtx::new(config, tick as u64), &mut step);
+        step_creature(
+            &mut World::single(&mut agent, &mut foods, size, &settings),
+            0,
+            &TickCtx::new(config, tick as u64),
+            &mut step,
+        );
         if tick == 1 {
             sees_food_at_start = senses_food(&agent.phenotype, &step.inputs);
         }
@@ -873,10 +1106,21 @@ fn steering_run(genome: &str, bearing_deg: Option<f32>, config: &AppConfig) -> S
             if (dx * dx + dy * dy).sqrt() <= reach_dist {
                 reached = true;
             }
-            min_abs_bearing = min_abs_bearing.min(wrap_angle(fmath::atan2(dy, dx) - agent.heading_angle).abs().to_degrees());
+            min_abs_bearing = min_abs_bearing.min(
+                wrap_angle(fmath::atan2(dy, dx) - agent.heading_angle)
+                    .abs()
+                    .to_degrees(),
+            );
         }
     }
-    SteeringRun { turn_deg, distance, sees_food_at_start, reached, min_abs_bearing_deg: min_abs_bearing, mean_thrust: thrust_sum / STEERING_TICKS as f32 }
+    SteeringRun {
+        turn_deg,
+        distance,
+        sees_food_at_start,
+        reached,
+        min_abs_bearing_deg: min_abs_bearing,
+        mean_thrust: thrust_sum / STEERING_TICKS as f32,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -915,11 +1159,22 @@ pub struct SteeringReport {
 fn steering_set(label: &str, genomes: &[String], config: &AppConfig) -> SteeringSet {
     let runs: Vec<[SteeringRun; 3]> = genomes
         .par_iter()
-        .map(|g| [steering_run(g, Some(STEERING_BEARING_DEG), config), steering_run(g, Some(-STEERING_BEARING_DEG), config), steering_run(g, None, config)])
+        .map(|g| {
+            [
+                steering_run(g, Some(STEERING_BEARING_DEG), config),
+                steering_run(g, Some(-STEERING_BEARING_DEG), config),
+                steering_run(g, None, config),
+            ]
+        })
         .collect();
     let directional: Vec<f32> = runs.iter().map(|[p, m, _]| (p.turn_deg - m.turn_deg) / 2.0).collect();
-    let toward_both = |[p, m, c]: &[SteeringRun; 3]| p.turn_deg - c.turn_deg > STEERING_RESPONSE_DEG && m.turn_deg - c.turn_deg < -STEERING_RESPONSE_DEG;
-    let seeing_movers: Vec<&[SteeringRun; 3]> = runs.iter().filter(|[p, m, c]| c.distance >= IMMOBILE_DISTANCE_PX && p.sees_food_at_start && m.sees_food_at_start).collect();
+    let toward_both = |[p, m, c]: &[SteeringRun; 3]| {
+        p.turn_deg - c.turn_deg > STEERING_RESPONSE_DEG && m.turn_deg - c.turn_deg < -STEERING_RESPONSE_DEG
+    };
+    let seeing_movers: Vec<&[SteeringRun; 3]> = runs
+        .iter()
+        .filter(|[p, m, c]| c.distance >= IMMOBILE_DISTANCE_PX && p.sees_food_at_start && m.sees_food_at_start)
+        .collect();
     let thrust: Vec<f32> = runs.iter().map(|r| r[2].mean_thrust).collect();
     SteeringSet {
         genomes: label.to_string(),
@@ -933,9 +1188,15 @@ fn steering_set(label: &str, genomes: &[String], config: &AppConfig) -> Steering
         share_directional_away: share_where(&directional, |&d| d < -STEERING_RESPONSE_DEG),
         directional_turn_deg: Distribution::of(&directional),
         share_toward_both_sides: share_where(&runs, toward_both),
-        share_toward_both_sides_of_seeing_movers: if seeing_movers.is_empty() { None } else { Some(share_where(&seeing_movers, |r| toward_both(r))) },
+        share_toward_both_sides_of_seeing_movers: if seeing_movers.is_empty() {
+            None
+        } else {
+            Some(share_where(&seeing_movers, |r| toward_both(r)))
+        },
         seeing_movers: seeing_movers.len(),
-        share_bearing_reduced_both_sides: share_where(&runs, |[p, m, _]| p.min_abs_bearing_deg < STEERING_BEARING_DEG - 10.0 && m.min_abs_bearing_deg < STEERING_BEARING_DEG - 10.0),
+        share_bearing_reduced_both_sides: share_where(&runs, |[p, m, _]| {
+            p.min_abs_bearing_deg < STEERING_BEARING_DEG - 10.0 && m.min_abs_bearing_deg < STEERING_BEARING_DEG - 10.0
+        }),
         share_reached_plus: share_where(&runs, |r| r[0].reached),
         share_reached_minus: share_where(&runs, |r| r[1].reached),
     }
@@ -946,9 +1207,17 @@ pub fn probe_steering(opts: &ProbeOptions) -> SteeringReport {
     let seed = seed_from_str(&opts.seed);
     let config = &opts.config;
     // Runs are fully determined by the genomes (fixed start, no RNG)
-    let mut sets = vec![steering_set(STRUCTURED, &structured_genomes(seed, opts.samples.unwrap_or(500), config), config)];
+    let mut sets = vec![steering_set(
+        STRUCTURED,
+        &structured_genomes(seed, opts.samples.unwrap_or(500), config),
+        config,
+    )];
     if !opts.hof.is_empty() {
-        sets.push(steering_set("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), config));
+        sets.push(steering_set(
+            "hof",
+            &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(),
+            config,
+        ));
     }
     SteeringReport {
         notes: vec![
@@ -991,10 +1260,21 @@ fn wall_run(genome: &str, angle_deg: f32, brain: bool, rng: &mut SimRng, config:
     agent.py = r + 2.0;
     agent.heading_angle = -angle_deg.to_radians();
     let (settings, mut step) = (brain_world(), CreatureStep::default());
-    let mut run = WallRun { freed_at: None, contact_ticks: 0, stalled_contact_ticks: 0, contact_speed_sum: 0.0, reached_corner: false };
+    let mut run = WallRun {
+        freed_at: None,
+        contact_ticks: 0,
+        stalled_contact_ticks: 0,
+        contact_speed_sum: 0.0,
+        reached_corner: false,
+    };
     for tick in 1..=WALL_TICKS {
         let hit_wall = if brain {
-            step_creature(&mut World::single(&mut agent, &mut foods, size, &settings), 0, &TickCtx::new(config, tick as u64), &mut step);
+            step_creature(
+                &mut World::single(&mut agent, &mut foods, size, &settings),
+                0,
+                &TickCtx::new(config, tick as u64),
+                &mut step,
+            );
             step.hit_wall
         } else {
             step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], size, size)
@@ -1050,7 +1330,15 @@ fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &
             let runs: Vec<WallRun> = genomes
                 .par_iter()
                 .enumerate()
-                .map(|(i, g)| wall_run(g, angle, brain, &mut derive(seed, &[STREAM_WALL, set_id, mode_idx as u64, a_idx as u64, i as u64]), config))
+                .map(|(i, g)| {
+                    wall_run(
+                        g,
+                        angle,
+                        brain,
+                        &mut derive(seed, &[STREAM_WALL, set_id, mode_idx as u64, a_idx as u64, i as u64]),
+                        config,
+                    )
+                })
                 .collect();
             let contact_total: u32 = runs.iter().map(|r| r.contact_ticks).sum();
             let stalled_total: u32 = runs.iter().map(|r| r.stalled_contact_ticks).sum();
@@ -1060,9 +1348,26 @@ fn wall_cells(label: &str, genomes: &[String], seed: u64, set_id: u64, config: &
                 angle_deg: angle,
                 n: runs.len(),
                 share_freed: share_where(&runs, |r| r.freed_at.is_some()),
-                ticks_to_free: Distribution::of(&runs.iter().filter_map(|r| r.freed_at).map(|t| t as f32).collect::<Vec<_>>()),
-                contact_tick_share: Distribution::of(&runs.iter().map(|r| r.contact_ticks as f32 / WALL_TICKS as f32).collect::<Vec<_>>()),
-                contact_speed: Distribution::of(&runs.iter().filter(|r| r.contact_ticks > 0).map(|r| r.contact_speed_sum / r.contact_ticks as f32).collect::<Vec<_>>()),
+                ticks_to_free: Distribution::of(
+                    &runs
+                        .iter()
+                        .filter_map(|r| r.freed_at)
+                        .map(|t| t as f32)
+                        .collect::<Vec<_>>(),
+                ),
+                contact_tick_share: Distribution::of(
+                    &runs
+                        .iter()
+                        .map(|r| r.contact_ticks as f32 / WALL_TICKS as f32)
+                        .collect::<Vec<_>>(),
+                ),
+                contact_speed: Distribution::of(
+                    &runs
+                        .iter()
+                        .filter(|r| r.contact_ticks > 0)
+                        .map(|r| r.contact_speed_sum / r.contact_ticks as f32)
+                        .collect::<Vec<_>>(),
+                ),
                 stalled_share_of_contact: share(stalled_total as usize, contact_total as usize),
                 share_reached_corner: share_where(&runs, |r| r.reached_corner),
             });
@@ -1078,7 +1383,13 @@ pub fn probe_wall(opts: &ProbeOptions) -> WallReport {
     let structured = structured_genomes(seed, opts.samples.unwrap_or(300), config);
     let mut cells = Vec::new();
     if !opts.hof.is_empty() {
-        cells.extend(wall_cells("hof", &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(), seed, 1, config));
+        cells.extend(wall_cells(
+            "hof",
+            &opts.hof.iter().map(|h| h.genome.clone()).collect::<Vec<_>>(),
+            seed,
+            1,
+            config,
+        ));
     }
     // Set id 2: the retired letter soup was set 0 (TCK-201 keeps the stream of the structured set)
     cells.extend(wall_cells(STRUCTURED, &structured, seed, 2, config));
@@ -1172,7 +1483,10 @@ fn weight_samples(agent: &CreatureAgent) -> Vec<WeightSample> {
         .iter()
         .zip(&agent.synapse_weights)
         .map(|(s, &w)| {
-            let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
+            let reflex = matches!(
+                (&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role),
+                (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. })
+            );
             (reflex, s.weight, w)
         })
         .collect()
@@ -1194,15 +1508,39 @@ fn weight_stats(samples: &[WeightSample], reflex: bool) -> WeightStats {
 
 /// Fresh sandbox of `genome` in `scenario` on trial 0 of the probe stream, and the layout of trial `t`
 /// (`derive(seed, stream ++ [t])`).
-fn probe_trials(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (TrainerSandbox, impl Fn(u32) -> SimRng) {
+fn probe_trials(
+    genome: &str,
+    scenario: Scenario,
+    config: &AppConfig,
+    seed: u64,
+    stream: &[u64],
+) -> (TrainerSandbox, impl Fn(u32) -> SimRng) {
     let stream = stream.to_vec();
-    let layout = move |trial: u32| -> SimRng { derive(seed, &stream.iter().copied().chain([trial as u64]).collect::<Vec<_>>()) };
-    let sb = TrainerSandbox::spawn(1, genome, 1, SandboxOrigin::Elite, room(scenario, config), None, None, &mut layout(0), config);
+    let layout =
+        move |trial: u32| -> SimRng { derive(seed, &stream.iter().copied().chain([trial as u64]).collect::<Vec<_>>()) };
+    let sb = TrainerSandbox::spawn(
+        1,
+        genome,
+        1,
+        SandboxOrigin::Elite,
+        room(scenario, config),
+        None,
+        None,
+        &mut layout(0),
+        config,
+    );
     (sb, layout)
 }
 
 /// Learned weights of one genome after `ticks` in `scenario` with consecutive trials (weights carried over).
-fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64], ticks: u32) -> Vec<WeightSample> {
+fn long_life_weights(
+    genome: &str,
+    scenario: Scenario,
+    config: &AppConfig,
+    seed: u64,
+    stream: &[u64],
+    ticks: u32,
+) -> Vec<WeightSample> {
     let (mut sb, layout) = probe_trials(genome, scenario, config, seed, stream);
     let trials = ticks.div_ceil(sb.room.episode_ticks());
     SoloTrials.run(&mut sb, trials, true, layout, config);
@@ -1211,7 +1549,13 @@ fn long_life_weights(genome: &str, scenario: Scenario, config: &AppConfig, seed:
 
 /// (fitness, successful trials, catches, learned weights) of one genome in one scenario, as the trainer scores it
 /// (`SoloTrials`: the room's score per trial, the mean over the trials; learned weights kept across trials).
-fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u64, stream: &[u64]) -> (f32, u32, u32, Vec<WeightSample>) {
+fn evaluate_genome(
+    genome: &str,
+    scenario: Scenario,
+    config: &AppConfig,
+    seed: u64,
+    stream: &[u64],
+) -> (f32, u32, u32, Vec<WeightSample>) {
     let (mut sb, layout) = probe_trials(genome, scenario, config, seed, stream);
     let eval = SoloTrials.run(&mut sb, HEBBIAN_TRIALS, true, layout, config);
     let fitness = eval.trial_fitness.iter().sum::<f32>() / HEBBIAN_TRIALS as f32;
@@ -1220,7 +1564,10 @@ fn evaluate_genome(genome: &str, scenario: Scenario, config: &AppConfig, seed: u
 
 /// Best distinct genomes of a short seeded trainer run (standard room, population 32, 5 generations).
 fn trained_genomes(seed: u64, count: usize, config: &AppConfig) -> Vec<String> {
-    let params = TrainerParams { population: 32, ..TrainerParams::from_config(config) };
+    let params = TrainerParams {
+        population: 32,
+        ..TrainerParams::from_config(config)
+    };
     let mut sim = TrainerSim::new(params, seed ^ STREAM_HEBBIAN, 200, config);
     sim.track_live_fitness = false;
     let mut elites = Vec::new();
@@ -1233,7 +1580,12 @@ fn trained_genomes(seed: u64, count: usize, config: &AppConfig) -> Vec<String> {
     }
     elites.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
     let mut seen = BTreeSet::new();
-    elites.into_iter().filter(|e| seen.insert(e.genome.clone())).take(count).map(|e| e.genome).collect()
+    elites
+        .into_iter()
+        .filter(|e| seen.insert(e.genome.clone()))
+        .take(count)
+        .map(|e| e.genome)
+        .collect()
 }
 
 /// Same genomes with Hebbian learning on (config default) vs off (rate 0), standard and exploration room.
@@ -1242,9 +1594,19 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
     let config = &opts.config;
     let count = opts.samples.unwrap_or(HEBBIAN_GENOMES);
     let (genomes, source) = if opts.hof.is_empty() {
-        (trained_genomes(seed, count, config), "best elites of a seeded TrainerSim run (standard, population 32, 5 generations)".to_string())
+        (
+            trained_genomes(seed, count, config),
+            "best elites of a seeded TrainerSim run (standard, population 32, 5 generations)".to_string(),
+        )
     } else {
-        (opts.hof.iter().take(count).map(|h| h.genome.clone()).collect::<Vec<_>>(), "hof (DB)".to_string())
+        (
+            opts.hof
+                .iter()
+                .take(count)
+                .map(|h| h.genome.clone())
+                .collect::<Vec<_>>(),
+            "hof (DB)".to_string(),
+        )
     };
     let on = config.clone();
     let mut off = on.clone();
@@ -1260,7 +1622,15 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
             let results: Vec<(f32, u32, u32, Vec<WeightSample>)> = genomes
                 .par_iter()
                 .enumerate()
-                .map(|(g, genome)| evaluate_genome(genome, scenario, config, seed, &[STREAM_HEBBIAN, s_idx as u64, g as u64]))
+                .map(|(g, genome)| {
+                    evaluate_genome(
+                        genome,
+                        scenario,
+                        config,
+                        seed,
+                        &[STREAM_HEBBIAN, s_idx as u64, g as u64],
+                    )
+                })
                 .collect();
             let trials = (genomes.len() as u32 * HEBBIAN_TRIALS).max(1) as f32;
             conditions.push(HebbianCondition {
@@ -1273,11 +1643,20 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
             if hebbian {
                 let samples: Vec<WeightSample> = results.iter().flat_map(|r| r.3.iter().copied()).collect();
                 let ticks = HEBBIAN_TRIALS * room(scenario, config).episode_ticks();
-                weights.push(WeightCondition { scenario, ticks, learned: weight_stats(&samples, false), reflex: weight_stats(&samples, true) });
+                weights.push(WeightCondition {
+                    scenario,
+                    ticks,
+                    learned: weight_stats(&samples, false),
+                    reflex: weight_stats(&samples, true),
+                });
             }
             per_condition.push(results);
         }
-        let deltas: Vec<f32> = per_condition[0].iter().zip(&per_condition[1]).map(|(a, b)| a.0 - b.0).collect();
+        let deltas: Vec<f32> = per_condition[0]
+            .iter()
+            .zip(&per_condition[1])
+            .map(|(a, b)| a.0 - b.0)
+            .collect();
         paired.push(HebbianPaired {
             scenario,
             share_on_better: share_where(&deltas, |&d| d > 0.0),
@@ -1289,9 +1668,23 @@ pub fn probe_hebbian(opts: &ProbeOptions) -> HebbianReport {
     let long: Vec<WeightSample> = genomes
         .par_iter()
         .enumerate()
-        .flat_map(|(g, genome)| long_life_weights(genome, Scenario::Standard, &on, seed, &[STREAM_HEBBIAN, 2, g as u64], HEBBIAN_LONG_LIFE_TICKS))
+        .flat_map(|(g, genome)| {
+            long_life_weights(
+                genome,
+                Scenario::Standard,
+                &on,
+                seed,
+                &[STREAM_HEBBIAN, 2, g as u64],
+                HEBBIAN_LONG_LIFE_TICKS,
+            )
+        })
         .collect();
-    weights.push(WeightCondition { scenario: Scenario::Standard, ticks: HEBBIAN_LONG_LIFE_TICKS, learned: weight_stats(&long, false), reflex: weight_stats(&long, true) });
+    weights.push(WeightCondition {
+        scenario: Scenario::Standard,
+        ticks: HEBBIAN_LONG_LIFE_TICKS,
+        learned: weight_stats(&long, false),
+        reflex: weight_stats(&long, true),
+    });
     HebbianReport {
         genome_source: source,
         genomes: genomes.len(),
@@ -1333,23 +1726,41 @@ pub struct TopologySet {
 pub fn probe_topology(opts: &ProbeOptions) -> TopologyReport {
     let seed = seed_from_str(&opts.seed);
     let config = &opts.config;
-    let sets = [(STRUCTURED, structured_genomes(seed, opts.samples.unwrap_or(1000), config))]
-        .iter()
-        .map(|(label, genomes)| {
-            let counts: Vec<[f32; 4]> = genomes
-                .par_iter()
-                .map(|g| {
-                    let p = parse_genome(g, None, None, &config.brain);
-                    [p.brain.synapses.len() as f32, p.brain.neurons.len() as f32, p.organelles.len() as f32, g.len() as f32]
-                })
-                .collect();
-            let column = |i: usize| Distribution::of(&counts.iter().map(|c| c[i]).collect::<Vec<_>>());
-            TopologySet { genomes: label.to_string(), n: genomes.len(), synapses: column(0), neurons: column(1), organs: column(2), genome_length: column(3) }
-        })
-        .collect();
+    let sets = [(
+        STRUCTURED,
+        structured_genomes(seed, opts.samples.unwrap_or(1000), config),
+    )]
+    .iter()
+    .map(|(label, genomes)| {
+        let counts: Vec<[f32; 4]> = genomes
+            .par_iter()
+            .map(|g| {
+                let p = parse_genome(g, None, None, &config.brain);
+                [
+                    p.brain.synapses.len() as f32,
+                    p.brain.neurons.len() as f32,
+                    p.organelles.len() as f32,
+                    g.len() as f32,
+                ]
+            })
+            .collect();
+        let column = |i: usize| Distribution::of(&counts.iter().map(|c| c[i]).collect::<Vec<_>>());
+        TopologySet {
+            genomes: label.to_string(),
+            n: genomes.len(),
+            synapses: column(0),
+            neurons: column(1),
+            organs: column(2),
+            genome_length: column(3),
+        }
+    })
+    .collect();
     let wildtype = parse_genome(WILDTYPE_GENOME, None, None, &config.brain);
     TopologyReport {
-        notes: vec!["structured = generate_structured_genome (same set as the other probes); counts from parse_genome.".to_string()],
+        notes: vec![
+            "structured = generate_structured_genome (same set as the other probes); counts from parse_genome."
+                .to_string(),
+        ],
         sets,
         wildtype_synapses: wildtype.brain.synapses.len(),
         wildtype_neurons: wildtype.brain.neurons.len(),
@@ -1389,13 +1800,24 @@ pub struct MetabolismReport {
 /// Typical brain behaviour of `genome` over one trial of `scenario` (fresh trainer sandbox, learning per `config`,
 /// no metabolic drain so the brain runs the whole trial): mean synaptic activity `Σ|w·a|` per tick and mean
 /// `|out_thrust|` per tick. The typical activity and thrust of the cost calibration (`biology::metabolism` docs).
-pub fn mean_trial_activity_and_thrust(genome: &str, scenario: Scenario, config: &AppConfig, rng: &mut SimRng) -> (f32, f32) {
+pub fn mean_trial_activity_and_thrust(
+    genome: &str,
+    scenario: Scenario,
+    config: &AppConfig,
+    rng: &mut SimRng,
+) -> (f32, f32) {
     let mut config = config.clone();
     config.metabolism.trainer_metabolic_scale = 0.0;
     let room = room(scenario, &config);
     let ticks = room.episode_ticks();
     let mut sb = TrainerSandbox::spawn(1, genome, 1, SandboxOrigin::Random, room, None, None, rng, &config);
-    let thrust_neuron = sb.agent().phenotype.brain.neurons.iter().position(|n| n.role == NeuronRole::Motor { motor: Motor::Thrust });
+    let thrust_neuron = sb
+        .agent()
+        .phenotype
+        .brain
+        .neurons
+        .iter()
+        .position(|n| n.role == NeuronRole::Motor { motor: Motor::Thrust });
     let (mut activity, mut thrust) = (0.0, 0.0);
     for _ in 0..ticks {
         sb.step(&config);
@@ -1410,37 +1832,56 @@ pub fn probe_metabolism(opts: &ProbeOptions) -> MetabolismReport {
     use crate::biology::metabolism::{body_mass, brain_neurons, organ_load, tick_cost};
     let seed = seed_from_str(&opts.seed);
     let config = &opts.config;
-    let sets = [(STRUCTURED_SET_ID, STRUCTURED, structured_genomes(seed, opts.samples.unwrap_or(1000), config))]
-        .iter()
-        .map(|(set_id, label, genomes)| {
-            let rows: Vec<[f32; 9]> = genomes
-                .par_iter()
-                .enumerate()
-                .map(|(i, g)| {
-                    let p = parse_genome(g, None, None, &config.brain);
-                    let (activity, thrust) = mean_trial_activity_and_thrust(g, Scenario::Standard, config, &mut derive(seed, &[STREAM_METABOLISM, *set_id, i as u64]));
-                    let cost = tick_cost(&p, activity, 1.0, &config.metabolism);
-                    let share = (cost.senses + cost.brain()) / cost.resting();
-                    let typical_total = tick_cost(&p, activity, thrust, &config.metabolism).total();
-                    [body_mass(&p), organ_load(&p), brain_neurons(&p) as f32, activity, cost.resting(), share, cost.movement / cost.resting(), thrust, typical_total]
-                })
-                .collect();
-            let column = |i: usize| Distribution::of(&rows.iter().map(|c| c[i]).collect::<Vec<_>>());
-            MetabolismSet {
-                genomes: label.to_string(),
-                n: genomes.len(),
-                body_mass: column(0),
-                organ_load: column(1),
-                neurons: column(2),
-                activity: column(3),
-                resting_cost: column(4),
-                brain_senses_share: column(5),
-                full_thrust_ratio: column(6),
-                thrust: column(7),
-                typical_total_cost: column(8),
-            }
-        })
-        .collect();
+    let sets = [(
+        STRUCTURED_SET_ID,
+        STRUCTURED,
+        structured_genomes(seed, opts.samples.unwrap_or(1000), config),
+    )]
+    .iter()
+    .map(|(set_id, label, genomes)| {
+        let rows: Vec<[f32; 9]> = genomes
+            .par_iter()
+            .enumerate()
+            .map(|(i, g)| {
+                let p = parse_genome(g, None, None, &config.brain);
+                let (activity, thrust) = mean_trial_activity_and_thrust(
+                    g,
+                    Scenario::Standard,
+                    config,
+                    &mut derive(seed, &[STREAM_METABOLISM, *set_id, i as u64]),
+                );
+                let cost = tick_cost(&p, activity, 1.0, &config.metabolism);
+                let share = (cost.senses + cost.brain()) / cost.resting();
+                let typical_total = tick_cost(&p, activity, thrust, &config.metabolism).total();
+                [
+                    body_mass(&p),
+                    organ_load(&p),
+                    brain_neurons(&p) as f32,
+                    activity,
+                    cost.resting(),
+                    share,
+                    cost.movement / cost.resting(),
+                    thrust,
+                    typical_total,
+                ]
+            })
+            .collect();
+        let column = |i: usize| Distribution::of(&rows.iter().map(|c| c[i]).collect::<Vec<_>>());
+        MetabolismSet {
+            genomes: label.to_string(),
+            n: genomes.len(),
+            body_mass: column(0),
+            organ_load: column(1),
+            neurons: column(2),
+            activity: column(3),
+            resting_cost: column(4),
+            brain_senses_share: column(5),
+            full_thrust_ratio: column(6),
+            thrust: column(7),
+            typical_total_cost: column(8),
+        }
+    })
+    .collect();
     MetabolismReport {
         notes: vec![
             "activity / thrust = mean Σ|w·a| / mean |out_thrust| per tick over one standard-room trial (fresh sandbox, config learning rate, no drain).".to_string(),
@@ -1455,7 +1896,13 @@ mod tests {
     use super::*;
 
     fn opts(samples: usize) -> ProbeOptions {
-        ProbeOptions { seed: "probe-test".to_string(), samples: Some(samples), hof: Vec::new(), hof_source: None, config: crate::config::test_config().clone() }
+        ProbeOptions {
+            seed: "probe-test".to_string(),
+            samples: Some(samples),
+            hof: Vec::new(),
+            hof_source: None,
+            config: crate::config::test_config().clone(),
+        }
     }
 
     #[test]
@@ -1465,9 +1912,19 @@ mod tests {
             for cell in &group.cells {
                 assert_eq!(cell.genome_identical_share, 1.0, "{} {}", group.parents, cell.kind);
                 assert_eq!(cell.exuberant.pearson, Some(1.0));
-                assert_eq!((cell.exuberant.retained_share, cell.exuberant.unchanged_share), (1.0, 1.0));
-                assert!(cell.traits.iter().all(|t| t.share_changed == 0.0 && t.mean_abs_rel_change.unwrap_or(0.0) == 0.0));
-                assert_eq!((cell.neuron_count_changed_share, cell.organ_count_changed_share), (0.0, 0.0));
+                assert_eq!(
+                    (cell.exuberant.retained_share, cell.exuberant.unchanged_share),
+                    (1.0, 1.0)
+                );
+                assert!(
+                    cell.traits
+                        .iter()
+                        .all(|t| t.share_changed == 0.0 && t.mean_abs_rel_change.unwrap_or(0.0) == 0.0)
+                );
+                assert_eq!(
+                    (cell.neuron_count_changed_share, cell.organ_count_changed_share),
+                    (0.0, 0.0)
+                );
             }
         }
     }
@@ -1477,11 +1934,36 @@ mod tests {
         let mut rng = derive(1, &[]);
         let ops = &crate::config::test_config().genome.mutation_operators;
         let len = WILDTYPE_GENOME.len();
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Point, ops, &mut rng).unwrap().len(), len);
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Creep, ops, &mut rng).unwrap().len(), len);
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Insertion, ops, &mut rng).unwrap().len(), len + 1);
-        assert_eq!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Deletion, ops, &mut rng).unwrap().len(), len - 1);
-        assert!(mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::GeneDuplication, ops, &mut rng).unwrap().len() > len);
+        assert_eq!(
+            mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Point, ops, &mut rng)
+                .unwrap()
+                .len(),
+            len
+        );
+        assert_eq!(
+            mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Creep, ops, &mut rng)
+                .unwrap()
+                .len(),
+            len
+        );
+        assert_eq!(
+            mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Insertion, ops, &mut rng)
+                .unwrap()
+                .len(),
+            len + 1
+        );
+        assert_eq!(
+            mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::Deletion, ops, &mut rng)
+                .unwrap()
+                .len(),
+            len - 1
+        );
+        assert!(
+            mutate_genome_with_kind(WILDTYPE_GENOME, MutationKind::GeneDuplication, ops, &mut rng)
+                .unwrap()
+                .len()
+                > len
+        );
         assert!(mutate_genome_with_kind(&"A".repeat(128), MutationKind::Deletion, ops, &mut rng).is_none());
         assert!(mutate_genome_with_kind(&"A".repeat(128), MutationKind::GeneDuplication, ops, &mut rng).is_none());
     }
@@ -1501,23 +1983,43 @@ mod tests {
         // Real structured brains over a standard trial (200 genomes): the documented typical activity and |thrust| still
         // hold (±15 %), and the median typical total cost (resting at the own activity + movement at the own mean
         // |thrust|) equals the pre-P6 median Ocean drain (±10 %), the absolute scale of the calibration.
-        use crate::biology::metabolism::tests::{median, PRE_P6_MEDIAN_OCEAN_DRAIN, TYPICAL_ACTIVITY, TYPICAL_THRUST};
+        use crate::biology::metabolism::tests::{PRE_P6_MEDIAN_OCEAN_DRAIN, TYPICAL_ACTIVITY, TYPICAL_THRUST, median};
         use crate::biology::metabolism::tick_cost;
         let config = crate::config::test_config();
         let composition = &config.genome.genome_composition;
         let rows: Vec<(f32, f32, f32)> = (0..200)
             .map(|i| {
-                let genome = crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
-                let (activity, thrust) = mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
-                let total = tick_cost(&parse_genome(&genome, None, None, &crate::config::test_config().brain), activity, thrust, &config.metabolism).total();
+                let genome =
+                    crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64]));
+                let (activity, thrust) =
+                    mean_trial_activity_and_thrust(&genome, Scenario::Standard, config, &mut derive(152, &[i as u64]));
+                let total = tick_cost(
+                    &parse_genome(&genome, None, None, &crate::config::test_config().brain),
+                    activity,
+                    thrust,
+                    &config.metabolism,
+                )
+                .total();
                 (activity, thrust, total)
             })
             .collect();
         let activity = median(rows.iter().map(|r| r.0).collect());
         let thrust = median(rows.iter().map(|r| r.1).collect());
         let total = median(rows.iter().map(|r| r.2).collect());
-        assert!((activity / TYPICAL_ACTIVITY - 1.0).abs() < 0.15, "median trial activity {}", activity);
-        assert!((thrust / TYPICAL_THRUST - 1.0).abs() < 0.15, "median trial |thrust| {}", thrust);
-        assert!((total / PRE_P6_MEDIAN_OCEAN_DRAIN - 1.0).abs() < 0.10, "median typical total cost {}", total);
+        assert!(
+            (activity / TYPICAL_ACTIVITY - 1.0).abs() < 0.15,
+            "median trial activity {}",
+            activity
+        );
+        assert!(
+            (thrust / TYPICAL_THRUST - 1.0).abs() < 0.15,
+            "median trial |thrust| {}",
+            thrust
+        );
+        assert!(
+            (total / PRE_P6_MEDIAN_OCEAN_DRAIN - 1.0).abs() < 0.10,
+            "median typical total cost {}",
+            total
+        );
     }
 }

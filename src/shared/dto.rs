@@ -1,11 +1,10 @@
 //! IPC data transfer structs of the simulation state (Ocean agents, food spores, telemetry); exported to `bindings/`
 //! via ts-rs.
 
-use serde::{Deserialize, Serialize};
 use crate::biology::phenotype::CreaturePhenotype;
 use crate::shared::brain::BrainRuntime;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
@@ -28,12 +27,12 @@ pub struct CreatureAgent {
     #[serde(rename = "speciesId")]
     #[ts(rename = "speciesId")]
     pub species_id: String,
-    
+
     pub px: f32,
     pub py: f32,
     pub vx: f32,
     pub vy: f32,
-    
+
     #[serde(rename = "headingAngle")]
     #[ts(rename = "headingAngle")]
     pub heading_angle: f32,
@@ -43,14 +42,14 @@ pub struct CreatureAgent {
     #[serde(rename = "omegaRot")]
     #[ts(rename = "omegaRot")]
     pub omega_rot: f32,
-    
+
     pub energy: f32,
     pub age: u32,
     pub generation: u32,
     #[serde(rename = "hasEaten")]
     #[ts(rename = "hasEaten")]
     pub has_eaten: bool,
-    
+
     pub genome: String,
     pub antisense: String,
     pub phenotype: CreaturePhenotype,

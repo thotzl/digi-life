@@ -49,7 +49,7 @@ fn test_hox_bilateral_symmetry() {
     // B. With HOX gene - Lateral Organelle (Paired/Mirrored)
     // Let's craft a genome with both HOX and EYE promoters.
     // We set index 0 of the eye payload to 'K' to yield -170.0 deg exactly.
-    let hox_paired_dna = "HOXABCDEZENEYEKAAAAAAAEN"; 
+    let hox_paired_dna = "HOXABCDEZENEYEKAAAAAAAEN";
     let pheno_paired = parse_genome(hox_paired_dna, None, None, &crate::config::test_config().brain);
     // It should contain exactly 2 organelles due to bilateral symmetry (Left + Right mirror)
     assert_eq!(pheno_paired.organelles.len(), 2);
@@ -59,7 +59,7 @@ fn test_hox_bilateral_symmetry() {
     // C. With HOX gene - Midline Coalescence (Unpaired/Snapped)
     // Let's craft a genome with both HOX and EYE promoters.
     // We place 'X' at index 16 of the eye payload to yield 6.8 deg, snapping to 0.0 deg.
-    let hox_midline_dna = "HOXABCDEZENEYEAAAAAAAAAAAAAAAAXAEN"; 
+    let hox_midline_dna = "HOXABCDEZENEYEAAAAAAAAAAAAAAAAXAEN";
     let pheno_midline = parse_genome(hox_midline_dna, None, None, &crate::config::test_config().brain);
     // Coalescence/Fusion check: It must snap to exactly 0.0 degrees (straight ahead) and NOT duplicate!
     assert_eq!(pheno_midline.organelles.len(), 1);
@@ -86,7 +86,10 @@ pub(crate) fn golden_genomes() -> Vec<String> {
         state ^= state << 17;
         state
     };
-    let motifs = ["EYE", "NOS", "TAC", "LUM", "HOX", "NEU", "SY", "OUT", "EN", "SP", "COL", "STF", "PUL", "SIZ", "WAV", "STM", "TEM", "REP", "EVO", "CAR"];
+    let motifs = [
+        "EYE", "NOS", "TAC", "LUM", "HOX", "NEU", "SY", "OUT", "EN", "SP", "COL", "STF", "PUL", "SIZ", "WAV", "STM",
+        "TEM", "REP", "EVO", "CAR",
+    ];
     (0..300)
         .map(|_| {
             let len = 128 + (next() % 300) as usize;
@@ -157,7 +160,16 @@ fn brain_by_key(p: &CreaturePhenotype) -> std::collections::BTreeMap<u64, Edge> 
         .brain
         .synapses
         .iter()
-        .map(|s| (s.key, Edge { weight: s.weight, owner: p.genes[s.owner].clone(), endpoints: [gene_of(s.from_node), gene_of(s.to_node)] }))
+        .map(|s| {
+            (
+                s.key,
+                Edge {
+                    weight: s.weight,
+                    owner: p.genes[s.owner].clone(),
+                    endpoints: [gene_of(s.from_node), gene_of(s.to_node)],
+                },
+            )
+        })
         .collect();
     assert_eq!(map.len(), p.brain.synapses.len(), "synapse keys are unique");
     map
@@ -183,7 +195,12 @@ fn test_parse_genome_never_panics_on_random_ascii() {
         let genome: String = (0..len).map(|_| rng.gen_range(0u8..128) as char).collect();
         let p = parse_genome(&genome, None, None, &crate::config::test_config().brain);
         let n = p.brain.neurons.len();
-        assert!(p.brain.synapses.iter().all(|s| s.from_node < n && s.to_node < n && s.owner < p.genes.len() && s.weight.is_finite()));
+        assert!(
+            p.brain
+                .synapses
+                .iter()
+                .all(|s| s.from_node < n && s.to_node < n && s.owner < p.genes.len() && s.weight.is_finite())
+        );
     }
 }
 
@@ -195,7 +212,12 @@ fn test_point_mutation_outside_genes_changes_no_weight_or_trait() {
         let parent = parse_genome(&parent_genome, None, None, &crate::config::test_config().brain);
         let covered = |i: usize| parent.genes.iter().any(|s| (s.start..s.end).contains(&i));
         for pos in (0..parent_genome.len()).filter(|&i| !covered(i)).step_by(2) {
-            let child = parse_genome(&point_mutant(&parent_genome, pos, 11), None, None, &crate::config::test_config().brain);
+            let child = parse_genome(
+                &point_mutant(&parent_genome, pos, 11),
+                None,
+                None,
+                &crate::config::test_config().brain,
+            );
             if child.genes != parent.genes {
                 continue; // the mutation created or re-terminated a gene
             }
@@ -217,7 +239,12 @@ fn test_point_mutation_inside_a_gene_changes_only_that_gene() {
         let parent_brain = brain_by_key(&parent);
         for span in &parent.genes {
             for pos in (span.start + span.gene.promoter.len()..span.end).step_by(3) {
-                let child = parse_genome(&point_mutant(&parent_genome, pos, 5), None, None, &crate::config::test_config().brain);
+                let child = parse_genome(
+                    &point_mutant(&parent_genome, pos, 5),
+                    None,
+                    None,
+                    &crate::config::test_config().brain,
+                );
                 if child.genes != parent.genes {
                     continue; // the mutation broke the terminator or created a gene
                 }
@@ -233,20 +260,46 @@ fn test_point_mutation_inside_a_gene_changes_only_that_gene() {
                 // Exception: SY-owned synapses (SY addresses modulo the class size, TCK-168).
                 let child_brain = brain_by_key(&child);
                 let attributable = |e: Option<&Edge>| {
-                    e.is_some_and(|e| hit.iter().any(|(g, r)| e.owner == parent.genes[*g] || e.endpoints.contains(&Some(r.clone()))) || e.owner.gene.promoter == "SY")
+                    e.is_some_and(|e| {
+                        hit.iter()
+                            .any(|(g, r)| e.owner == parent.genes[*g] || e.endpoints.contains(&Some(r.clone())))
+                            || e.owner.gene.promoter == "SY"
+                    })
                 };
                 for key in parent_brain.keys().chain(child_brain.keys()) {
                     let (p, c) = (parent_brain.get(key), child_brain.get(key));
-                    assert!(p == c || attributable(p) || attributable(c), "genes {:?} pos {} changed synapse {:?} -> {:?}", hit, pos, p, c);
+                    assert!(
+                        p == c || attributable(p) || attributable(c),
+                        "genes {:?} pos {} changed synapse {:?} -> {:?}",
+                        hit,
+                        pos,
+                        p,
+                        c
+                    );
                 }
 
                 // Neurons of other genes keep their parameters (motors belong to the first OUT gene)
-                let expressed = |promoter: &str| hit.iter().any(|(g, _)| parent.genes.iter().position(|s| s.gene.promoter == promoter) == Some(*g));
+                let expressed = |promoter: &str| {
+                    hit.iter()
+                        .any(|(g, _)| parent.genes.iter().position(|s| s.gene.promoter == promoter) == Some(*g))
+                };
                 for n in &parent.brain.neurons {
-                    let own = n.role.gene().is_some_and(|r| is_hit(r)) || (expressed(promoters::motif_of(GeneRole::BrainBase)) && matches!(n.role, NeuronRole::Motor { .. }));
+                    let own = n.role.gene().is_some_and(|r| is_hit(r))
+                        || (expressed(promoters::motif_of(GeneRole::BrainBase))
+                            && matches!(n.role, NeuronRole::Motor { .. }));
                     if !own {
-                        let m = child.brain.neurons.iter().find(|m| m.role == n.role).expect("neuron of another gene kept");
-                        assert_eq!((m.tau, m.bias, &m.activation_type), (n.tau, n.bias, &n.activation_type), "{:?}", n.role);
+                        let m = child
+                            .brain
+                            .neurons
+                            .iter()
+                            .find(|m| m.role == n.role)
+                            .expect("neuron of another gene kept");
+                        assert_eq!(
+                            (m.tau, m.bias, &m.activation_type),
+                            (n.tau, n.bias, &n.activation_type),
+                            "{:?}",
+                            n.role
+                        );
                     }
                 }
 
@@ -256,7 +309,13 @@ fn test_point_mutation_inside_a_gene_changes_only_that_gene() {
                         assert_eq!(pv, cv, "genes {:?} changed a {} trait", hit, promoter);
                     }
                 }
-                let others = |p: &CreaturePhenotype| p.organelles.iter().filter(|o| !hit.iter().any(|(g, _)| parent.genes[*g].start == o.gene_start_index)).cloned().collect::<Vec<_>>();
+                let others = |p: &CreaturePhenotype| {
+                    p.organelles
+                        .iter()
+                        .filter(|o| !hit.iter().any(|(g, _)| parent.genes[*g].start == o.gene_start_index))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                };
                 assert_eq!(others(&child), others(&parent));
             }
         }
@@ -267,7 +326,12 @@ fn test_point_mutation_inside_a_gene_changes_only_that_gene() {
 #[test]
 fn test_adding_an_organ_gene_keeps_unrelated_synapses() {
     // Payloads without vowels and Delta letters, so they contain no promoter or terminator (eye, nose, tactile, eye)
-    let organ_genes = ["EYEBTKLMRVXZGHJWFPYBTKLEN", "NOSBKLMRVXZGHJWFPYBTKLMEN", "TACBBTKLMRVXZGHJWFPYBTKEN", "LUMZXTKLMRVBGHJWFPYBTKLEN"];
+    let organ_genes = [
+        "EYEBTKLMRVXZGHJWFPYBTKLEN",
+        "NOSBKLMRVXZGHJWFPYBTKLMEN",
+        "TACBBTKLMRVXZGHJWFPYBTKEN",
+        "LUMZXTKLMRVBGHJWFPYBTKLEN",
+    ];
     let mut tested = 0;
     for g in golden_genomes() {
         // A trailing Z spacer (no motif) in the parent: its unterminated genes end there, not in the new gene
@@ -278,23 +342,47 @@ fn test_adding_an_organ_gene_keeps_unrelated_synapses() {
             if parent_genome.len() + organ.len() > 512 {
                 continue;
             }
-            let child = parse_genome(&format!("{}{}", parent_genome, organ), None, None, &crate::config::test_config().brain);
+            let child = parse_genome(
+                &format!("{}{}", parent_genome, organ),
+                None,
+                None,
+                &crate::config::test_config().brain,
+            );
             // Appended as the last gene of its type: all parent genes unchanged, exactly one new gene
             if child.genes.len() != parent.genes.len() + 1 || !parent.genes.iter().all(|s| child.genes.contains(s)) {
                 continue;
             }
             tested += 1;
-            let occurrence = parent.genes.iter().filter(|s| s.gene.promoter == organ[..3] && s.gene.spelling == organ[..3]).count();
-            let new_gene = GeneRef { promoter: organ[..3].to_string(), spelling: organ[..3].to_string(), occurrence };
+            let occurrence = parent
+                .genes
+                .iter()
+                .filter(|s| s.gene.promoter == organ[..3] && s.gene.spelling == organ[..3])
+                .count();
+            let new_gene = GeneRef {
+                promoter: organ[..3].to_string(),
+                spelling: organ[..3].to_string(),
+                occurrence,
+            };
             let child_brain = brain_by_key(&child);
             for (key, p) in &parent_brain {
                 match child_brain.get(key) {
-                    Some(c) => assert!(p == c || p.owner.gene.promoter == "SY" || c.owner.gene.promoter == "SY", "{:?} -> {:?}", p, c),
+                    Some(c) => assert!(
+                        p == c || p.owner.gene.promoter == "SY" || c.owner.gene.promoter == "SY",
+                        "{:?} -> {:?}",
+                        p,
+                        c
+                    ),
                     None => assert_eq!(p.owner.gene.promoter, "SY", "parent synapse lost: {:?}", p),
                 }
             }
             for (key, c) in &child_brain {
-                assert!(parent_brain.contains_key(key) || c.endpoints.contains(&Some(new_gene.clone())) || c.owner.gene.promoter == "SY", "{:?}", c);
+                assert!(
+                    parent_brain.contains_key(key)
+                        || c.endpoints.contains(&Some(new_gene.clone()))
+                        || c.owner.gene.promoter == "SY",
+                    "{:?}",
+                    c
+                );
             }
         }
     }
@@ -307,20 +395,47 @@ fn test_gene_duplication_and_deletion_keep_unrelated_synapses() {
     // every parent synapse (the original keeps its identity, the copy is a new gene). Exceptions: SY-owned synapses
     // (SY addresses modulo the class size, TCK-168) and HOX (pairs or unpairs every organ).
     let mut tested = [0; 2];
-    for (k, kind) in [MutationKind::GeneDuplication, MutationKind::GeneDeletion].into_iter().enumerate() {
+    for (k, kind) in [MutationKind::GeneDuplication, MutationKind::GeneDeletion]
+        .into_iter()
+        .enumerate()
+    {
         for seed in 0..300 {
             let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
-            let Some((child_genome, start)) = apply_mutation(&genome, kind, ops(), None, &mut crate::shared::rng::seeded(seed + 7_000)) else { continue };
+            let Some((child_genome, start)) = apply_mutation(
+                &genome,
+                kind,
+                ops(),
+                None,
+                &mut crate::shared::rng::seeded(seed + 7_000),
+            ) else {
+                continue;
+            };
             let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
-            let g = parent.genes.iter().position(|s| s.start == start).expect("mutated gene");
+            let g = parent
+                .genes
+                .iter()
+                .position(|s| s.start == start)
+                .expect("mutated gene");
             if parent.genes[g].gene.promoter == "HOX" {
                 continue;
             }
             tested[k] += 1;
             let r = gene_ref(&parent, g);
-            let new_genes: Vec<GeneRef> = child.genes.iter().map(|s| s.gene.clone()).filter(|c| !parent.genes.iter().any(|p| &p.gene == c)).collect();
-            assert_eq!(new_genes.len(), k ^ 1, "{:?} on {:?} gave new genes {:?}", kind, r, new_genes);
+            let new_genes: Vec<GeneRef> = child
+                .genes
+                .iter()
+                .map(|s| s.gene.clone())
+                .filter(|c| !parent.genes.iter().any(|p| &p.gene == c))
+                .collect();
+            assert_eq!(
+                new_genes.len(),
+                k ^ 1,
+                "{:?} on {:?} gave new genes {:?}",
+                kind,
+                r,
+                new_genes
+            );
             let (parent_brain, child_brain) = (brain_by_key(&parent), brain_by_key(&child));
             let is_sy = |e: &Edge| e.owner.gene.promoter == "SY";
             for (key, p) in parent_brain.iter().filter(|(_, e)| !is_sy(e)) {
@@ -329,13 +444,28 @@ fn test_gene_duplication_and_deletion_keep_unrelated_synapses() {
                     continue;
                 }
                 match child_brain.get(key) {
-                    Some(c) => assert!(c.weight == p.weight || is_sy(c), "{:?} on {:?} changed {:?} -> {:?}", kind, r, p, c),
+                    Some(c) => assert!(
+                        c.weight == p.weight || is_sy(c),
+                        "{:?} on {:?} changed {:?} -> {:?}",
+                        kind,
+                        r,
+                        p,
+                        c
+                    ),
                     None => panic!("{:?} on {:?} lost {:?}", kind, r, p),
                 }
             }
             for (key, c) in &child_brain {
-                let touches_new = new_genes.iter().any(|n| c.endpoints.contains(&Some(n.clone())) || &c.owner.gene == n);
-                assert!(parent_brain.contains_key(key) || touches_new || is_sy(c), "{:?} on {:?} added {:?}", kind, r, c);
+                let touches_new = new_genes
+                    .iter()
+                    .any(|n| c.endpoints.contains(&Some(n.clone())) || &c.owner.gene == n);
+                assert!(
+                    parent_brain.contains_key(key) || touches_new || is_sy(c),
+                    "{:?} on {:?} added {:?}",
+                    kind,
+                    r,
+                    c
+                );
             }
         }
     }
@@ -357,21 +487,40 @@ fn measure_gene_operator_key_shift() {
         let mut same_spelling = 0;
         for seed in 0..1000 {
             let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
-            let Some((child_genome, start)) = apply_mutation(&genome, kind, ops(), None, &mut crate::shared::rng::seeded(seed + 1_000_000)) else { continue };
+            let Some((child_genome, start)) = apply_mutation(
+                &genome,
+                kind,
+                ops(),
+                None,
+                &mut crate::shared::rng::seeded(seed + 1_000_000),
+            ) else {
+                continue;
+            };
             let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
             let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
-            let g = parent.genes.iter().position(|s| s.start == start).expect("mutated gene");
+            let g = parent
+                .genes
+                .iter()
+                .position(|s| s.start == start)
+                .expect("mutated gene");
             if parent.genes[g].gene.promoter == "HOX" {
                 hox += 1; // HOX pairs or unpairs every organ: touches all organ synapses
                 continue;
             }
             let r = gene_ref(&parent, g);
-            let shifting = parent.genes[g + 1..].iter().any(|s| s.gene.promoter == parent.genes[g].gene.promoter);
-            same_spelling += parent.genes[g + 1..].iter().any(|s| s.gene.promoter == r.promoter && s.gene.spelling == r.spelling) as usize;
+            let shifting = parent.genes[g + 1..]
+                .iter()
+                .any(|s| s.gene.promoter == parent.genes[g].gene.promoter);
+            same_spelling += parent.genes[g + 1..]
+                .iter()
+                .any(|s| s.gene.promoter == r.promoter && s.gene.spelling == r.spelling)
+                as usize;
             let (parent_brain, child_brain) = (brain_by_key(&parent), brain_by_key(&child));
             let t = &mut tally[shifting as usize];
             t.0 += 1;
-            for (key, p) in parent_brain.iter().filter(|(_, e)| e.owner.gene.promoter != "SY" && e.owner != parent.genes[g] && !e.endpoints.contains(&Some(r.clone()))) {
+            for (key, p) in parent_brain.iter().filter(|(_, e)| {
+                e.owner.gene.promoter != "SY" && e.owner != parent.genes[g] && !e.endpoints.contains(&Some(r.clone()))
+            }) {
                 let c = child_brain.get(key);
                 if c.is_some_and(|c| c.owner.gene.promoter == "SY") {
                     continue; // an SY gene re-addressed by the changed class sizes (TCK-168)
@@ -396,7 +545,10 @@ fn measure_gene_operator_key_shift() {
                 crate::shared::stats::pearson(&t.4).unwrap_or(f32::NAN)
             );
         }
-        println!("{:?} HOX cases (excluded): {}; cases with a later gene of the same spelling: {}", kind, hox, same_spelling);
+        println!(
+            "{:?} HOX cases (excluded): {}; cases with a later gene of the same spelling: {}",
+            kind, hox, same_spelling
+        );
     }
 }
 
@@ -423,7 +575,14 @@ fn model_fields(p: &CreaturePhenotype, out: &mut Vec<u8>) {
     len(p.organelles.len(), out);
     for o in &p.organelles {
         out.extend_from_slice(&[o.kind as u8, o.side as u8]);
-        for v in [o.spectral_affinity, o.bandwidth, o.expression_style, o.scale, o.spinal_pos, o.angle] {
+        for v in [
+            o.spectral_affinity,
+            o.bandwidth,
+            o.expression_style,
+            o.scale,
+            o.spinal_pos,
+            o.angle,
+        ] {
             f(v, out);
         }
     }
@@ -448,7 +607,10 @@ fn model_fields(p: &CreaturePhenotype, out: &mut Vec<u8>) {
 fn test_parse_genome_golden_master() {
     let mut combined = Vec::new();
     for g in golden_genomes() {
-        model_fields(&parse_genome(&g, None, None, &crate::config::test_config().brain), &mut combined);
+        model_fields(
+            &parse_genome(&g, None, None, &crate::config::test_config().brain),
+            &mut combined,
+        );
     }
     let fingerprint = fnv1a(&combined);
     println!("GOLDEN_FINGERPRINT={:#018x}", fingerprint);
@@ -468,7 +630,12 @@ fn test_latin_name_is_deterministic() {
     for g in golden_genomes() {
         let first = parse_genome(&g, None, None, &crate::config::test_config().brain).latin_name;
         for _ in 0..4 {
-            assert_eq!(parse_genome(&g, None, None, &crate::config::test_config().brain).latin_name, first, "genome {}", g);
+            assert_eq!(
+                parse_genome(&g, None, None, &crate::config::test_config().brain).latin_name,
+                first,
+                "genome {}",
+                g
+            );
         }
     }
 }

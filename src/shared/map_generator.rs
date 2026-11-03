@@ -160,14 +160,7 @@ impl Mulberry32 {
 // --------------------------------------------------------------------------
 // Toroidal Fractal Noise
 // --------------------------------------------------------------------------
-pub fn sample_toroidal_noise(
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
-    seed: &str,
-    octave_offset: &str,
-) -> f32 {
+pub fn sample_toroidal_noise(x: f32, y: f32, width: f32, height: f32, seed: &str, octave_offset: &str) -> f32 {
     let mut rand = Mulberry32::new(&format!("{}{}", seed, octave_offset));
 
     let mut val = 0.0f32;

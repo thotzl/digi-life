@@ -8,7 +8,7 @@
 //! - **Model version** = `meta.model_version` vs `MODEL_VERSION`: rows of model-scoped tables were made by an older
 //!   genome/brain model and are dropped (no migration), after a backup copy of the file.
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 
 use super::{catalogue, ocean, species, trainer};
 
@@ -46,7 +46,13 @@ pub(super) const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
         name: "baseline: tables of v1.12.30 incl. the columns added before versioning",
-        steps: &[meta_v1, ocean::v1_baseline, species::v1_baseline, trainer::v1_baseline, catalogue::v1_baseline],
+        steps: &[
+            meta_v1,
+            ocean::v1_baseline,
+            species::v1_baseline,
+            trainer::v1_baseline,
+            catalogue::v1_baseline,
+        ],
     },
     Migration {
         version: 2,
@@ -63,7 +69,11 @@ const META: &[TableDef] = &[TableDef {
 
 /// The latest table definitions of every module.
 pub(super) fn tables() -> impl Iterator<Item = &'static TableDef> {
-    META.iter().chain(species::TABLES).chain(catalogue::TABLES).chain(trainer::TABLES).chain(ocean::TABLES)
+    META.iter()
+        .chain(species::TABLES)
+        .chain(catalogue::TABLES)
+        .chain(trainer::TABLES)
+        .chain(ocean::TABLES)
 }
 
 pub(super) fn model_tables() -> Vec<&'static str> {
@@ -75,7 +85,10 @@ pub(super) fn latest_version() -> u32 {
 }
 
 fn meta_v1(conn: &Connection) -> Result<()> {
-    conn.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);", [])?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+        [],
+    )?;
     Ok(())
 }
 
@@ -96,7 +109,11 @@ pub(super) fn migrate(conn: &Connection) -> Result<()> {
     let current: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     let latest = latest_version();
     if current > latest {
-        log::warn!("database schema version {} is newer than this build ({}); no migration", current, latest);
+        log::warn!(
+            "database schema version {} is newer than this build ({}); no migration",
+            current,
+            latest
+        );
         return Ok(());
     }
     if current == latest {
@@ -125,7 +142,11 @@ fn ensure_tables(conn: &Connection) -> Result<()> {
 }
 
 fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
-    conn.query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)", params![name], |r| r.get(0))
+    conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+        params![name],
+        |r| r.get(0),
+    )
 }
 
 /// Model-version rule (TCK-183), decided before any migration: a stored `model_version` other than `MODEL_VERSION`,
@@ -133,7 +154,10 @@ fn table_exists(conn: &Connection, name: &str) -> Result<bool> {
 /// (`"none"` if missing) when a reset is due.
 fn model_reset_needed(conn: &Connection) -> Result<Option<String>> {
     let stored: Option<String> = if table_exists(conn, "meta")? {
-        conn.query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |row| row.get(0)).optional()?
+        conn.query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |row| {
+            row.get(0)
+        })
+        .optional()?
     } else {
         None
     };
@@ -155,7 +179,10 @@ fn store_model_version(conn: &Connection, reset_from: Option<&str>) -> Result<()
             tx.execute(&format!("DROP TABLE IF EXISTS {}", table), [])?;
         }
     }
-    tx.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('model_version', ?1)", params![MODEL_VERSION.to_string()])?;
+    tx.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('model_version', ?1)",
+        params![MODEL_VERSION.to_string()],
+    )?;
     tx.commit()?;
     if let Some(old) = reset_from {
         log::info!("model version {} -> {}: model tables reset", old, MODEL_VERSION);
@@ -168,7 +195,9 @@ fn store_model_version(conn: &Connection, reset_from: Option<&str>) -> Result<()
 /// migrations, so it is the file as the old build left it. In-memory DBs are skipped. A failed backup is logged and
 /// does not block the start.
 fn backup_before_model_reset(conn: &Connection, old_version: &str) {
-    let Some(db_path) = conn.path().filter(|p| !p.is_empty()) else { return };
+    let Some(db_path) = conn.path().filter(|p| !p.is_empty()) else {
+        return;
+    };
     let backup = std::path::PathBuf::from(format!("{}.model-v{}.bak.db", db_path, old_version));
     if backup.exists() {
         return;

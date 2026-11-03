@@ -1,12 +1,12 @@
 //! `simulation_state` (Ocean snapshot): tables, migration steps and the SQLite `OceanSnapshotRepo`. Also owns the
 //! history of the removed `sessions` / `simulation_history` tables (migrations 1 and 2).
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 
+use super::Db;
 use super::dto::*;
 use super::repos::OceanSnapshotRepo;
 use super::schema::TableDef;
-use super::Db;
 use crate::shared::time;
 
 pub(super) const TABLES: &[TableDef] = &[TableDef {
@@ -43,7 +43,10 @@ pub(super) fn v1_baseline(conn: &Connection) -> Result<()> {
         );",
         [],
     )?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_history_session ON simulation_history(session_id);", [])?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_history_session ON simulation_history(session_id);",
+        [],
+    )?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS simulation_state (
             key TEXT PRIMARY KEY,
@@ -73,7 +76,14 @@ impl OceanSnapshotRepo for Db {
     }
 
     fn ocean_snapshot(&self) -> RepoResult<Option<String>> {
-        Ok(self.conn().query_row("SELECT state_json FROM simulation_state WHERE key = 'current_state'", [], |row| row.get(0)).optional()?)
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT state_json FROM simulation_state WHERE key = 'current_state'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     fn clear_ocean_state(&self) -> RepoResult<()> {

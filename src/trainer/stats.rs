@@ -106,8 +106,14 @@ impl MutationChannelStats {
     pub fn compute(mutants: &[(MutationTouch, bool, bool)]) -> Self {
         let of = |channel: MutationChannel| {
             let members: Vec<_> = mutants.iter().filter(|m| m.0.channel() == channel).collect();
-            let share = |f: fn(&(MutationTouch, bool, bool)) -> bool| (!members.is_empty()).then(|| members.iter().filter(|m| f(m)).count() as f32 / members.len() as f32);
-            ChannelStats { mutants: members.len() as u32, beat_parent_share: share(|m| m.1), elite_share: share(|m| m.2) }
+            let share = |f: fn(&(MutationTouch, bool, bool)) -> bool| {
+                (!members.is_empty()).then(|| members.iter().filter(|m| f(m)).count() as f32 / members.len() as f32)
+            };
+            ChannelStats {
+                mutants: members.len() as u32,
+                beat_parent_share: share(|m| m.1),
+                elite_share: share(|m| m.2),
+            }
         };
         Self {
             body: of(MutationChannel::Body),
@@ -121,11 +127,17 @@ impl MutationChannelStats {
 
 impl GenerationStats {
     /// Trial and population figures; the breeding, layout and curriculum fields are filled in by the trainer.
-    pub fn compute(generation: u32, trials: &[TrialRecord], sandboxes: &[TrainerSandbox], scenario: TrainingMode) -> Self {
+    pub fn compute(
+        generation: u32,
+        trials: &[TrialRecord],
+        sandboxes: &[TrainerSandbox],
+        scenario: TrainingMode,
+    ) -> Self {
         let trial_count = trials.len().max(1) as f32;
         let success_of = |rehearsal: bool| {
             let selected: Vec<&TrialRecord> = trials.iter().filter(|t| t.rehearsal == rehearsal).collect();
-            (!selected.is_empty()).then(|| selected.iter().filter(|t| t.finish_tick.is_some()).count() as f32 / selected.len() as f32)
+            (!selected.is_empty())
+                .then(|| selected.iter().filter(|t| t.finish_tick.is_some()).count() as f32 / selected.len() as f32)
         };
         let (level_success, rehearsal_success) = (success_of(false), success_of(true));
         let rehearsal_trials = trials.iter().filter(|t| t.rehearsal).count() as u32 / (sandboxes.len().max(1) as u32);
@@ -134,13 +146,17 @@ impl GenerationStats {
         let (mean_catch, median_catch) = if catch_ticks.is_empty() {
             (None, None)
         } else {
-            (Some(catch_ticks.iter().sum::<f32>() / catch_ticks.len() as f32), Some(quantile(&catch_ticks, 0.5)))
+            (
+                Some(catch_ticks.iter().sum::<f32>() / catch_ticks.len() as f32),
+                Some(quantile(&catch_ticks, 0.5)),
+            )
         };
 
         let mut fitness: Vec<f32> = sandboxes.iter().map(|s| s.current_fitness).collect();
         sort_ascending(&mut fitness);
         let n = fitness.len().max(1) as f32;
-        let quantiles = [0.1, 0.25, 0.5, 0.75, 0.9].map(|q| if fitness.is_empty() { 0.0 } else { quantile(&fitness, q) });
+        let quantiles =
+            [0.1, 0.25, 0.5, 0.75, 0.9].map(|q| if fitness.is_empty() { 0.0 } else { quantile(&fitness, q) });
 
         Self {
             generation,
@@ -152,13 +168,27 @@ impl GenerationStats {
             mean_fitness: fitness.iter().sum::<f32>() / n,
             fitness_quantiles: quantiles,
             mean_genome_length: sandboxes.iter().map(|s| s.agent().genome.len() as f32).sum::<f32>() / n,
-            immobile_share: trials.iter().filter(|t| t.distance_traveled < IMMOBILE_DISTANCE_PX).count() as f32 / trial_count,
+            immobile_share: trials
+                .iter()
+                .filter(|t| t.distance_traveled < IMMOBILE_DISTANCE_PX)
+                .count() as f32
+                / trial_count,
             mean_end_energy: trials.iter().map(|t| t.end_energy).sum::<f32>() / trial_count,
             starved_share: trials.iter().filter(|t| t.starved).count() as f32 / trial_count,
-            mean_organ_count: sandboxes.iter().map(|s| s.agent().phenotype.organelles.len() as f32).sum::<f32>() / n,
+            mean_organ_count: sandboxes
+                .iter()
+                .map(|s| s.agent().phenotype.organelles.len() as f32)
+                .sum::<f32>()
+                / n,
             food_organ_share: sandboxes
                 .iter()
-                .filter(|s| s.agent().phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)))
+                .filter(|s| {
+                    s.agent()
+                        .phenotype
+                        .organelles
+                        .iter()
+                        .any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose))
+                })
                 .count() as f32
                 / n,
             layout_id: 0,

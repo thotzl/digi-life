@@ -122,7 +122,14 @@ impl Breeder {
     pub fn new(parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
         sort_desc_by_fitness(&mut hof);
         hof.truncate(hof_retention);
-        Self { parent_last_mutation: vec![None; parents.len()], parents, hof, hof_retention, slot_parents: Vec::new(), slot_lineage: Vec::new() }
+        Self {
+            parent_last_mutation: vec![None; parents.len()],
+            parents,
+            hof,
+            hof_retention,
+            slot_parents: Vec::new(),
+            slot_lineage: Vec::new(),
+        }
     }
 
     pub fn parents(&self) -> &[GenomeRecord] {
@@ -167,7 +174,11 @@ impl Breeder {
                     (WILDTYPE_GENOME, SandboxOrigin::Random, None)
                 } else {
                     let source_idx = (idx - elites - hof_count - inflow_count) % self.parents.len();
-                    (&self.parents[source_idx].genome, SandboxOrigin::Mutant, Some(source_idx))
+                    (
+                        &self.parents[source_idx].genome,
+                        SandboxOrigin::Mutant,
+                        Some(source_idx),
+                    )
                 }
             })
             .collect()
@@ -177,7 +188,16 @@ impl Breeder {
     /// `derive(seed, [generation, BREED, slot])` and starts on the shared layout of trial 0 (`streams::layout`), so
     /// `parallel` (rayon) never changes the result.
     #[allow(clippy::too_many_arguments)]
-    pub fn breed(&mut self, p: &TrainerParams, seed: u64, generation: u32, layout_id: u64, room: &Arc<dyn Room>, config: &AppConfig, parallel: bool) -> Vec<TrainerSandbox> {
+    pub fn breed(
+        &mut self,
+        p: &TrainerParams,
+        seed: u64,
+        generation: u32,
+        layout_id: u64,
+        room: &Arc<dyn Room>,
+        config: &AppConfig,
+        parallel: bool,
+    ) -> Vec<TrainerSandbox> {
         let plan = self.plan(p);
         let generation = generation as u64;
         let (parents, lamarckian) = (&self.parents, p.lamarckian);
@@ -186,13 +206,31 @@ impl Breeder {
         let brain_config = &config.brain;
         let lamarck_chance = config.genome.lamarckian_assimilation_chance;
         // Lamarckian sources: each parent's synapses (keys and genome weights) for matching by key
-        let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian { parents.iter().map(|r| parse_genome(&r.genome, None, None, brain_config).brain.synapses).collect() } else { Vec::new() };
+        let parent_synapses: Vec<Vec<CTRNNSynapse>> = if lamarckian {
+            parents
+                .iter()
+                .map(|r| parse_genome(&r.genome, None, None, brain_config).brain.synapses)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let build_slot = |(idx, &(source, origin, parent_idx)): (usize, &SlotPlan<'_>)| {
             let mut breed_rng = derive(seed, &[generation, streams::BREED, idx as u64]);
-            let (genome, own) = breed_genome_traced(source, origin, ops_min, ops_max, minimal_criterion, channel_mode, &mut breed_rng, config);
+            let (genome, own) = breed_genome_traced(
+                source,
+                origin,
+                ops_min,
+                ops_max,
+                minimal_criterion,
+                channel_mode,
+                &mut breed_rng,
+                config,
+            );
             let last = match own {
                 Some(touch) => Some(touch.channel()),
-                None if origin == SandboxOrigin::Elite => parent_idx.and_then(|i| parent_last_mutation.get(i).copied().flatten()),
+                None if origin == SandboxOrigin::Elite => {
+                    parent_idx.and_then(|i| parent_last_mutation.get(i).copied().flatten())
+                }
                 None => None,
             };
             let lineage = SlotLineage { origin, own, last };
@@ -201,14 +239,32 @@ impl Breeder {
             // in this sandbox's (possibly mutated) genome, with probability `lamarckianAssimilationChance`, its learned
             // weight offset (TCK-152; drawn from the slot's breed stream)
             let inherited = if lamarckian { parent_idx } else { None };
-            let methylations = inherited.map(|i| &parents[i].methylations[..]).filter(|m| !m.is_empty());
+            let methylations = inherited
+                .map(|i| &parents[i].methylations[..])
+                .filter(|m| !m.is_empty());
             let synapse_weights = inherited.filter(|&i| !parents[i].synapse_weights.is_empty()).map(|i| {
                 let child = parse_genome(&genome, None, None, brain_config).brain.synapses;
-                inherit_learned_weights(&parent_synapses[i], &parents[i].synapse_weights, &child, lamarck_chance, &mut breed_rng)
+                inherit_learned_weights(
+                    &parent_synapses[i],
+                    &parents[i].synapse_weights,
+                    &child,
+                    lamarck_chance,
+                    &mut breed_rng,
+                )
             });
 
             // Shared layout of trial 0: heading, food and respawn seed identical for every slot
-            let sandbox = TrainerSandbox::spawn((idx + 1) as u32, &genome, generation as u32, origin, room.clone(), methylations, synapse_weights, &mut streams::layout(seed, layout_id, 0), config);
+            let sandbox = TrainerSandbox::spawn(
+                (idx + 1) as u32,
+                &genome,
+                generation as u32,
+                origin,
+                room.clone(),
+                methylations,
+                synapse_weights,
+                &mut streams::layout(seed, layout_id, 0),
+                config,
+            );
             (sandbox, lineage)
         };
         let (sandboxes, lineage): (Vec<TrainerSandbox>, Vec<SlotLineage>) = if parallel {
@@ -232,20 +288,44 @@ impl Breeder {
                 .unwrap_or(self.parents[p].fitness)
         };
         slots()
-            .map(|(sb, parent)| if sb.origin_type == SandboxOrigin::Mutant { parent.map(|p| sb.current_fitness > parent_fitness(p)) } else { None })
+            .map(|(sb, parent)| {
+                if sb.origin_type == SandboxOrigin::Mutant {
+                    parent.map(|p| sb.current_fitness > parent_fitness(p))
+                } else {
+                    None
+                }
+            })
             .collect()
     }
 
     /// Generation end: ranks `sandboxes` by their final fitness (stable, descending; `solved` per slot follows), takes
     /// the first `elite_count` as the new parents and adds them to the hall of fame. Returns the elites and the
     /// breeding statistics (child success, mutation channels, elite lineage).
-    pub fn select(&mut self, sandboxes: &mut Vec<TrainerSandbox>, solved: Vec<bool>, elite_ratio: f32, generation: u32) -> Selection {
+    pub fn select(
+        &mut self,
+        sandboxes: &mut Vec<TrainerSandbox>,
+        solved: Vec<bool>,
+        elite_ratio: f32,
+        generation: u32,
+    ) -> Selection {
         let n = sandboxes.len();
         let successes = self.child_successes(sandboxes);
-        let (better, total) = successes.iter().flatten().fold((0, 0), |(better, total), &b| (better + b as usize, total + 1));
+        let (better, total) = successes
+            .iter()
+            .flatten()
+            .fold((0, 0), |(better, total), &b| (better + b as usize, total + 1));
 
-        let mut ranked: Vec<(TrainerSandbox, bool, usize)> = std::mem::take(sandboxes).into_iter().zip(solved).enumerate().map(|(slot, (sb, solved))| (sb, solved, slot)).collect();
-        ranked.sort_by(|a, b| b.0.current_fitness.partial_cmp(&a.0.current_fitness).unwrap_or(std::cmp::Ordering::Equal));
+        let mut ranked: Vec<(TrainerSandbox, bool, usize)> = std::mem::take(sandboxes)
+            .into_iter()
+            .zip(solved)
+            .enumerate()
+            .map(|(slot, (sb, solved))| (sb, solved, slot))
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.0.current_fitness
+                .partial_cmp(&a.0.current_fitness)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         let mut ranked_solved = Vec::with_capacity(n);
         let mut ranked_slots = Vec::with_capacity(n);
         for (sb, solved, slot) in ranked {
@@ -259,14 +339,29 @@ impl Breeder {
         // Mutation channels (TCK-181): mutant slots by channel, and the lineage channel of every elite
         let lineage = std::mem::take(&mut self.slot_lineage);
         let mut is_elite = vec![false; n];
-        ranked_slots.iter().take(elite_count).for_each(|&slot| is_elite[slot] = true);
+        ranked_slots
+            .iter()
+            .take(elite_count)
+            .for_each(|&slot| is_elite[slot] = true);
         let mutants: Vec<(MutationTouch, bool, bool)> = lineage
             .iter()
             .enumerate()
             .filter(|(_, l)| l.origin == SandboxOrigin::Mutant)
-            .filter_map(|(slot, l)| l.own.map(|touch| (touch, successes.get(slot).copied().flatten().unwrap_or(false), is_elite[slot])))
+            .filter_map(|(slot, l)| {
+                l.own.map(|touch| {
+                    (
+                        touch,
+                        successes.get(slot).copied().flatten().unwrap_or(false),
+                        is_elite[slot],
+                    )
+                })
+            })
             .collect();
-        let elite_last_mutation: Vec<Option<MutationChannel>> = ranked_slots.iter().take(elite_count).map(|&slot| lineage.get(slot).and_then(|l| l.last)).collect();
+        let elite_last_mutation: Vec<Option<MutationChannel>> = ranked_slots
+            .iter()
+            .take(elite_count)
+            .map(|&slot| lineage.get(slot).and_then(|l| l.last))
+            .collect();
         let elites: Vec<GenomeRecord> = sandboxes
             .iter()
             .take(elite_count)

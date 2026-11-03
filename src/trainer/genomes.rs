@@ -3,12 +3,15 @@
 
 use rand::Rng;
 
-use crate::biology::genome::{classify_mutation, generate_structured_genome, mutate_genome, mutate_genome_in_channel, GeneChannel, GenomeComposition, MutationTouch};
+use crate::biology::genome::{
+    GeneChannel, GenomeComposition, MutationTouch, classify_mutation, generate_structured_genome, mutate_genome,
+    mutate_genome_in_channel,
+};
 use crate::biology::organs::OrganKind;
 use crate::biology::phenotype::parse_genome;
 use crate::biology::trainer_config::MutationChannelMode;
 use crate::config::AppConfig;
-use crate::shared::rng::{seeded, SimRng};
+use crate::shared::rng::{SimRng, seeded};
 
 use super::room::registry;
 use super::sandbox::{SandboxOrigin, TrainerSandbox};
@@ -23,8 +26,26 @@ pub fn draw_mutation_ops(ops_min: u32, ops_max: u32, rng: &mut SimRng) -> u32 {
 /// `mutate_genome` (operator mix `mutationOperators`), random immigrants a fresh structured genome (config
 /// `genomeComposition`; `random_genome` with the minimal criterion), elites an unmodified copy. Hof entries are mutated
 /// since TCK-174 (before: unmodified copies).
-pub fn breed_genome(parent_genome: &str, origin: SandboxOrigin, ops_min: u32, ops_max: u32, minimal_criterion: bool, rng: &mut SimRng, config: &AppConfig) -> String {
-    breed_genome_traced(parent_genome, origin, ops_min, ops_max, minimal_criterion, MutationChannelMode::Mixed, rng, config).0
+pub fn breed_genome(
+    parent_genome: &str,
+    origin: SandboxOrigin,
+    ops_min: u32,
+    ops_max: u32,
+    minimal_criterion: bool,
+    rng: &mut SimRng,
+    config: &AppConfig,
+) -> String {
+    breed_genome_traced(
+        parent_genome,
+        origin,
+        ops_min,
+        ops_max,
+        minimal_criterion,
+        MutationChannelMode::Mixed,
+        rng,
+        config,
+    )
+    .0
 }
 
 /// Probability that a child in mutation channel mode "separate" mutates its body genes (otherwise its brain genes).
@@ -50,7 +71,11 @@ pub fn breed_genome_traced(
         SandboxOrigin::Mutant | SandboxOrigin::Hof => {
             let channel = match mode {
                 MutationChannelMode::Mixed => None,
-                MutationChannelMode::Separate => Some(if rng.gen_bool(SEPARATE_BODY_SHARE) { GeneChannel::Body } else { GeneChannel::Brain }),
+                MutationChannelMode::Separate => Some(if rng.gen_bool(SEPARATE_BODY_SHARE) {
+                    GeneChannel::Body
+                } else {
+                    GeneChannel::Brain
+                }),
             };
             let mut touch = MutationTouch::default();
             for _ in 0..draw_mutation_ops(ops_min, ops_max, rng) {
@@ -81,7 +106,10 @@ pub fn random_genome(minimal_criterion: bool, rng: &mut SimRng, config: &AppConf
         return generate_structured_genome(&config.genome.genome_composition, rng);
     }
     let criterion = &config.trainer.trainer_minimal_criterion;
-    let composition = GenomeComposition { p_food_organ: 1.0, ..config.genome.genome_composition.clone() };
+    let composition = GenomeComposition {
+        p_food_organ: 1.0,
+        ..config.genome.genome_composition.clone()
+    };
     let mut genome = generate_structured_genome(&composition, rng);
     for _ in 0..criterion.max_redraws {
         if meets_minimal_criterion(&genome, config) {
@@ -103,11 +131,25 @@ const MOBILITY_CHECK_ROOM: &str = "standard";
 pub fn meets_minimal_criterion(genome: &str, config: &AppConfig) -> bool {
     let criterion = &config.trainer.trainer_minimal_criterion;
     let phenotype = parse_genome(genome, None, None, &config.brain);
-    if !phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)) {
+    if !phenotype
+        .organelles
+        .iter()
+        .any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose))
+    {
         return false;
     }
     let room = registry::build(MOBILITY_CHECK_ROOM, config).expect("mobility check room is registered");
-    let mut sb = TrainerSandbox::spawn(1, genome, 1, SandboxOrigin::Random, room, None, None, &mut seeded(MOBILITY_CHECK_SEED), config);
+    let mut sb = TrainerSandbox::spawn(
+        1,
+        genome,
+        1,
+        SandboxOrigin::Random,
+        room,
+        None,
+        None,
+        &mut seeded(MOBILITY_CHECK_SEED),
+        config,
+    );
     for _ in 0..criterion.mobility_ticks {
         sb.step(config);
         if sb.trial().distance_traveled >= criterion.mobility_min_distance {
@@ -120,7 +162,7 @@ pub fn meets_minimal_criterion(genome: &str, config: &AppConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::genome::{generate_random_genome, WILDTYPE_GENOME};
+    use crate::biology::genome::{WILDTYPE_GENOME, generate_random_genome};
     use crate::shared::rng::derive;
 
     #[test]
@@ -141,14 +183,44 @@ mod tests {
     fn test_breed_genome_mutates_hof_and_mutants_but_not_elites() {
         let mut changed = [0; 3];
         for seed in 0..20 {
-            for (i, origin) in [SandboxOrigin::Hof, SandboxOrigin::Mutant, SandboxOrigin::Elite].into_iter().enumerate() {
-                changed[i] += (breed_genome(WILDTYPE_GENOME, origin, 1, 3, false, &mut seeded(seed), crate::config::test_config()) != WILDTYPE_GENOME) as usize;
+            for (i, origin) in [SandboxOrigin::Hof, SandboxOrigin::Mutant, SandboxOrigin::Elite]
+                .into_iter()
+                .enumerate()
+            {
+                changed[i] += (breed_genome(
+                    WILDTYPE_GENOME,
+                    origin,
+                    1,
+                    3,
+                    false,
+                    &mut seeded(seed),
+                    crate::config::test_config(),
+                ) != WILDTYPE_GENOME) as usize;
             }
         }
         assert!(changed[0] >= 15 && changed[1] >= 15, "{:?}", changed);
         assert_eq!(changed[2], 0);
         // Hof and mutant follow the same rule: same stream, same child
-        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Hof, 1, 3, false, &mut seeded(3), crate::config::test_config()), breed_genome(WILDTYPE_GENOME, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(3), crate::config::test_config()));
+        assert_eq!(
+            breed_genome(
+                WILDTYPE_GENOME,
+                SandboxOrigin::Hof,
+                1,
+                3,
+                false,
+                &mut seeded(3),
+                crate::config::test_config()
+            ),
+            breed_genome(
+                WILDTYPE_GENOME,
+                SandboxOrigin::Mutant,
+                1,
+                3,
+                false,
+                &mut seeded(3),
+                crate::config::test_config()
+            )
+        );
     }
 
     #[test]
@@ -160,13 +232,34 @@ mod tests {
             // Deterministic: same stream, same genome
             assert_eq!(genome, random_genome(true, &mut seeded(seed), config));
             let phenotype = parse_genome(&genome, None, None, &config.brain);
-            assert!(phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)), "seed {} without food organ", seed);
+            assert!(
+                phenotype
+                    .organelles
+                    .iter()
+                    .any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)),
+                "seed {} without food organ",
+                seed
+            );
             passed += meets_minimal_criterion(&genome, config) as usize;
         }
         assert_eq!(passed, 40, "every minimal-criterion genome moves");
         // Off: the plain structured generator (same stream as before TCK-175)
-        assert_eq!(random_genome(false, &mut seeded(3), config), generate_structured_genome(&config.genome.genome_composition, &mut seeded(3)));
-        assert_eq!(breed_genome(WILDTYPE_GENOME, SandboxOrigin::Random, 1, 3, true, &mut seeded(5), config), random_genome(true, &mut seeded(5), config));
+        assert_eq!(
+            random_genome(false, &mut seeded(3), config),
+            generate_structured_genome(&config.genome.genome_composition, &mut seeded(3))
+        );
+        assert_eq!(
+            breed_genome(
+                WILDTYPE_GENOME,
+                SandboxOrigin::Random,
+                1,
+                3,
+                true,
+                &mut seeded(5),
+                config
+            ),
+            random_genome(true, &mut seeded(5), config)
+        );
     }
 
     #[test]
@@ -174,7 +267,11 @@ mod tests {
         // A genome without organs fails the criterion (random letters rarely form an organ gene)
         let organless = (0..400)
             .map(|i| generate_random_genome(256, &mut derive(20, &[i])))
-            .find(|g| parse_genome(g, None, None, &crate::config::test_config().brain).organelles.is_empty())
+            .find(|g| {
+                parse_genome(g, None, None, &crate::config::test_config().brain)
+                    .organelles
+                    .is_empty()
+            })
             .expect("random letters contain organless genomes");
         assert!(!meets_minimal_criterion(&organless, crate::config::test_config()));
     }
@@ -185,16 +282,63 @@ mod tests {
         let mut channels = std::collections::BTreeMap::new();
         for seed in 0..80 {
             let parent = random_genome(false, &mut seeded(900 + seed), crate::config::test_config());
-            let (mixed, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Mixed, &mut seeded(seed), crate::config::test_config());
-            assert_eq!(mixed, breed_genome(&parent, SandboxOrigin::Mutant, 1, 3, false, &mut seeded(seed), crate::config::test_config()), "mixed draws exactly like breed_genome");
+            let (mixed, touch) = breed_genome_traced(
+                &parent,
+                SandboxOrigin::Mutant,
+                1,
+                3,
+                false,
+                MutationChannelMode::Mixed,
+                &mut seeded(seed),
+                crate::config::test_config(),
+            );
+            assert_eq!(
+                mixed,
+                breed_genome(
+                    &parent,
+                    SandboxOrigin::Mutant,
+                    1,
+                    3,
+                    false,
+                    &mut seeded(seed),
+                    crate::config::test_config()
+                ),
+                "mixed draws exactly like breed_genome"
+            );
             assert!(touch.is_some());
-            let (_, touch) = breed_genome_traced(&parent, SandboxOrigin::Mutant, 1, 3, false, MutationChannelMode::Separate, &mut seeded(seed), crate::config::test_config());
+            let (_, touch) = breed_genome_traced(
+                &parent,
+                SandboxOrigin::Mutant,
+                1,
+                3,
+                false,
+                MutationChannelMode::Separate,
+                &mut seeded(seed),
+                crate::config::test_config(),
+            );
             let channel = touch.expect("mutated origin").channel();
             assert_ne!(channel, MutationChannel::Both, "separate child touched both channels");
             *channels.entry(format!("{:?}", channel)).or_insert(0) += 1;
         }
-        assert!(channels.get("Body").copied().unwrap_or(0) > 20 && channels.get("Brain").copied().unwrap_or(0) > 20, "{:?}", channels);
+        assert!(
+            channels.get("Body").copied().unwrap_or(0) > 20 && channels.get("Brain").copied().unwrap_or(0) > 20,
+            "{:?}",
+            channels
+        );
         // Unmutated origins carry no channel
-        assert_eq!(breed_genome_traced(WILDTYPE_GENOME, SandboxOrigin::Elite, 1, 3, false, MutationChannelMode::Separate, &mut seeded(1), crate::config::test_config()).1, None);
+        assert_eq!(
+            breed_genome_traced(
+                WILDTYPE_GENOME,
+                SandboxOrigin::Elite,
+                1,
+                3,
+                false,
+                MutationChannelMode::Separate,
+                &mut seeded(1),
+                crate::config::test_config()
+            )
+            .1,
+            None
+        );
     }
 }

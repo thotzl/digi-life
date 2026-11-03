@@ -1,7 +1,7 @@
 //! Lateral line: water flow along the organ's axis (rheotaxis, turn damping) and local pain
 //! (affinity < 0.25, style 0.35..0.70).
 
-use super::{common, contact, Organ, OrganKind, OrganSpec, SenseCtx, CHANNELS_PER_ORGANELLE};
+use super::{CHANNELS_PER_ORGANELLE, Organ, OrganKind, OrganSpec, SenseCtx, common, contact};
 use crate::shared::fmath;
 
 /// Channel 1 flow, channel 4 pain.

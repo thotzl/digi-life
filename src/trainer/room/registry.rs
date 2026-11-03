@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::config::AppConfig;
 
-use super::level;
 use super::Room;
+use super::level;
 
 /// One registered room: its id and its constructor (rooms read their parameters from the config).
 pub struct RoomEntry {
@@ -18,8 +18,16 @@ pub struct RoomEntry {
 
 /// All rooms, in the order the runner lists them.
 pub const ROOMS: &[RoomEntry] = &[
-    RoomEntry { id: "standard", build: level::standard, summary: "small room: level 0 of the level room (1 plant + 1 meat)" },
-    RoomEntry { id: "exploration", build: level::exploration, summary: "large room: level 1 of the level room (3 plants + 3 meat)" },
+    RoomEntry {
+        id: "standard",
+        build: level::standard,
+        summary: "small room: level 0 of the level room (1 plant + 1 meat)",
+    },
+    RoomEntry {
+        id: "exploration",
+        build: level::exploration,
+        summary: "large room: level 1 of the level room (3 plants + 3 meat)",
+    },
 ];
 
 pub fn entry(id: &str) -> Option<&'static RoomEntry> {
@@ -52,7 +60,11 @@ mod tests {
             assert!(seen.insert(e.id), "duplicate room id {}", e.id);
             let room = (e.build)(config);
             assert_eq!(room.id(), e.id);
-            assert!(room.chamber_size() > 0.0 && room.episode_ticks() > 0 && room.entities() >= 1, "{}", e.id);
+            assert!(
+                room.chamber_size() > 0.0 && room.episode_ticks() > 0 && room.entities() >= 1,
+                "{}",
+                e.id
+            );
         }
         assert!(build("no-such-room", config).is_none());
     }

@@ -1,14 +1,14 @@
 // Prevents additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::Manager;
-use std::sync::mpsc::{channel, Sender, Receiver};
 use std::sync::Mutex;
+use std::sync::mpsc::{Receiver, Sender, channel};
+use tauri::Manager;
 
 use src_tauri::config::AppConfig;
 use src_tauri::persistence;
 use src_tauri::server::api;
-use src_tauri::server::engine::{spawn_simulation_thread, EngineInput};
+use src_tauri::server::engine::{EngineInput, spawn_simulation_thread};
 
 fn main() {
     // Typed client actions and store notifications from the commands to the engine thread (TCK-157, TCK-156)
@@ -42,7 +42,11 @@ fn main() {
             // Persist the database in the per-user app data dir instead of the working directory
             let db_path = data_dir.join(persistence::DB_FILE_NAME);
             match persistence::migrate_legacy_db(std::path::Path::new(persistence::LEGACY_DB_PATH), &db_path) {
-                Ok(true) => log::info!("copied legacy database '{}' to '{}'", persistence::LEGACY_DB_PATH, db_path.display()),
+                Ok(true) => log::info!(
+                    "copied legacy database '{}' to '{}'",
+                    persistence::LEGACY_DB_PATH,
+                    db_path.display()
+                ),
                 Ok(false) => {}
                 Err(e) => log::error!("legacy database migration failed: {}", e),
             }

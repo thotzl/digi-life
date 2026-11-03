@@ -10,7 +10,15 @@ fn config() -> &'static AppConfig {
 
 fn founder(sim: &mut OceanSim, x: f32, y: f32) -> usize {
     let mut out = OceanStep::default();
-    sim.add_founder(Founder::Genome { genome: WILDTYPE_GENOME, methylations: None, synapse_weights: None }, &mut derive(1, &[]), &mut out);
+    sim.add_founder(
+        Founder::Genome {
+            genome: WILDTYPE_GENOME,
+            methylations: None,
+            synapse_weights: None,
+        },
+        &mut derive(1, &[]),
+        &mut out,
+    );
     let agent = sim.creatures.last_mut().unwrap();
     agent.px = x;
     agent.py = y;
@@ -20,7 +28,15 @@ fn founder(sim: &mut OceanSim, x: f32, y: f32) -> usize {
 }
 
 fn spore(id: u32, type_id: u32, x: f32, y: f32) -> FoodSpore {
-    FoodSpore { id, type_id, x, y, amount: 15.0, vx: 0.0, vy: 0.0 }
+    FoodSpore {
+        id,
+        type_id,
+        x,
+        y,
+        amount: 15.0,
+        vx: 0.0,
+        vy: 0.0,
+    }
 }
 
 fn snapshot_json(sim: &OceanSim) -> String {
@@ -33,10 +49,18 @@ fn test_creature_eats_a_spore_in_reach_and_the_spore_respawns() {
     let idx = founder(&mut sim, 5000.0, 6000.0);
     sim.spores.spores = vec![spore(1, 1, 5000.0, 6000.0), spore(2, 1, 9000.0, 9000.0)];
     let step = sim.step();
-    assert_eq!(step.events.first(), Some(&OceanEvent::Ate { x: 5000.0, y: 6000.0 }), "{:?}", step.events);
+    assert_eq!(
+        step.events.first(),
+        Some(&OceanEvent::Ate { x: 5000.0, y: 6000.0 }),
+        "{:?}",
+        step.events
+    );
     assert!(sim.creatures[idx].has_eaten, "eating counts for mitosis");
     let eaten = &sim.spores.spores[0];
-    assert!((eaten.x, eaten.y) != (5000.0, 6000.0), "the eaten spore respawned elsewhere");
+    assert!(
+        (eaten.x, eaten.y) != (5000.0, 6000.0),
+        "the eaten spore respawned elsewhere"
+    );
     assert_eq!(sim.creatures[idx].age, 1);
 }
 
@@ -48,10 +72,21 @@ fn test_starved_creature_dies_and_decomposes_into_meat_near_its_corpse() {
     sim.spores.spores = (0..20).map(|i| spore(i, 1, 15000.0, 1000.0 + i as f32)).collect();
     let id = sim.creatures[idx].id;
     let step = sim.step();
-    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id: dead, cause: DeathCause::Starved, .. } if *dead == id)), "{:?}", step.events);
+    assert!(
+        step.events
+            .iter()
+            .any(|e| matches!(e, OceanEvent::Died { id: dead, cause: DeathCause::Starved, .. } if *dead == id)),
+        "{:?}",
+        step.events
+    );
     assert!(sim.creatures.is_empty());
     let meat: Vec<&FoodSpore> = sim.spores.spores.iter().filter(|s| s.type_id == 2).collect();
-    assert!(!meat.is_empty() && meat.iter().all(|s| (s.x - 3000.0).abs() <= 16.0 && (s.y - 9000.0).abs() <= 16.0));
+    assert!(
+        !meat.is_empty()
+            && meat
+                .iter()
+                .all(|s| (s.x - 3000.0).abs() <= 16.0 && (s.y - 9000.0).abs() <= 16.0)
+    );
     // The species census reports the extinction of the only species
     assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Extinct { .. })));
     assert!(step.species.iter().any(|c| matches!(c, SpeciesChange::Extinct { .. })));
@@ -69,8 +104,18 @@ fn test_bite_damage_kills_a_weak_victim_as_hunted() {
     sim.creatures[victim].energy = 1.0;
     let victim_id = sim.creatures[victim].id;
     let step = sim.step();
-    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Bite { victim, .. } if *victim == victim_id)), "{:?}", step.events);
-    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id, cause: DeathCause::Hunted, .. } if *id == victim_id)));
+    assert!(
+        step.events
+            .iter()
+            .any(|e| matches!(e, OceanEvent::Bite { victim, .. } if *victim == victim_id)),
+        "{:?}",
+        step.events
+    );
+    assert!(
+        step.events
+            .iter()
+            .any(|e| matches!(e, OceanEvent::Died { id, cause: DeathCause::Hunted, .. } if *id == victim_id))
+    );
     assert_eq!(sim.creatures.len(), 1);
     assert!(sim.creatures[0].has_eaten, "a bite counts as eating");
 }
@@ -78,16 +123,38 @@ fn test_bite_damage_kills_a_weak_victim_as_hunted() {
 #[test]
 fn test_restock_refills_from_the_catalogue_and_records_species() {
     let mut sim = OceanSim::empty(config(), 4);
-    let catalogue = vec![CatalogueFounder { name: "Saved".into(), genome: WILDTYPE_GENOME.into(), methylations: vec![], synapse_weights: vec![] }];
+    let catalogue = vec![CatalogueFounder {
+        name: "Saved".into(),
+        genome: WILDTYPE_GENOME.into(),
+        methylations: vec![],
+        synapse_weights: vec![],
+    }];
     let step = sim.tick(|| catalogue.clone());
     let target = config().ocean.target_population;
     assert_eq!((sim.creatures.len(), step.born.len()), (target, target));
-    assert!(step.events.iter().all(|e| matches!(e, OceanEvent::Restocked { catalogue_name: Some(n), .. } if n == "Saved")));
-    assert_eq!(step.species.iter().filter(|c| matches!(c, SpeciesChange::Discovered { .. })).count(), 1, "one genome, one species");
+    assert!(
+        step.events
+            .iter()
+            .all(|e| matches!(e, OceanEvent::Restocked { catalogue_name: Some(n), .. } if n == "Saved"))
+    );
+    assert_eq!(
+        step.species
+            .iter()
+            .filter(|c| matches!(c, SpeciesChange::Discovered { .. }))
+            .count(),
+        1,
+        "one genome, one species"
+    );
     // Empty catalogue: structured random founders, each a new species
     let mut sim = OceanSim::empty(config(), 4);
     let step = sim.tick(Vec::new);
-    assert!(step.events.iter().all(|e| matches!(e, OceanEvent::Restocked { catalogue_name: None, .. })));
+    assert!(step.events.iter().all(|e| matches!(
+        e,
+        OceanEvent::Restocked {
+            catalogue_name: None,
+            ..
+        }
+    )));
     assert!(step.species.len() > 1);
     // At the target population the catalogue is not read
     sim.tick(|| panic!("catalogue read without a missing creature"));
@@ -120,12 +187,18 @@ fn test_fresh_reset_and_release_rules() {
     assert_eq!(sim.creatures.len(), FRESH_FOUNDERS);
     assert_eq!(sim.spores.spores.len(), config().ocean.food_spore_count);
     assert_eq!(sim.spores.nutrient_centers.len(), spore_field::NUTRIENT_CENTER_COUNT);
-    assert!(out.born.is_empty(), "founders of a fresh Ocean reach the UI with INIT_STATE");
+    assert!(
+        out.born.is_empty(),
+        "founders of a fresh Ocean reach the UI with INIT_STATE"
+    );
     assert!(!out.species.is_empty());
 
     let next_spore = sim.spores.next_id;
     let out = sim.reset(99, &[]);
-    assert_eq!((sim.creatures.len(), sim.seed(), sim.tick_count()), (RESET_FOUNDERS, 99, 0));
+    assert_eq!(
+        (sim.creatures.len(), sim.seed(), sim.tick_count()),
+        (RESET_FOUNDERS, 99, 0)
+    );
     assert_eq!(sim.creatures[0].id, 1, "creature ids restart");
     assert_eq!(sim.spores.spores[0].id, next_spore, "spore ids continue");
     assert_eq!(out.species.len(), sim.ledger.entries().len());
@@ -135,7 +208,10 @@ fn test_fresh_reset_and_release_rules() {
     while sim.creatures.len() < config().ocean.max_creatures {
         sim.release(Founder::Random).unwrap();
     }
-    assert_eq!(sim.release(Founder::Random).unwrap_err(), SpawnRejected::PopulationCap(config().ocean.max_creatures));
+    assert_eq!(
+        sim.release(Founder::Random).unwrap_err(),
+        SpawnRejected::PopulationCap(config().ocean.max_creatures)
+    );
 }
 
 #[test]
@@ -143,11 +219,26 @@ fn test_snapshot_of_an_earlier_version_restores_with_new_centres() {
     let agent = OceanSim::fresh(config(), 6).0.creatures[0].clone();
     let old = serde_json::json!({ "creatures": [agent], "foodPellets": [], "highestGeneration": 3, "nextCreatureId": 9, "nextSporeId": 1300 });
     let snapshot: OceanSnapshot = serde_json::from_value(old).unwrap();
-    assert_eq!((snapshot.seed, snapshot.tick, snapshot.nutrient_centers.len()), (None, 0, 0));
+    assert_eq!(
+        (snapshot.seed, snapshot.tick, snapshot.nutrient_centers.len()),
+        (None, 0, 0)
+    );
     let sim = OceanSim::restore(config(), snapshot, 42);
-    assert_eq!((sim.seed(), sim.highest_generation(), sim.next_creature_id, sim.spores.next_id), (42, 3, 9, 1300));
+    assert_eq!(
+        (
+            sim.seed(),
+            sim.highest_generation(),
+            sim.next_creature_id,
+            sim.spores.next_id
+        ),
+        (42, 3, 9, 1300)
+    );
     assert_eq!(sim.spores.nutrient_centers.len(), spore_field::NUTRIENT_CENTER_COUNT);
-    assert_eq!(sim.snapshot().nutrient_centers, sim.spores.nutrient_centers, "centres are persisted now");
+    assert_eq!(
+        sim.snapshot().nutrient_centers,
+        sim.spores.nutrient_centers,
+        "centres are persisted now"
+    );
 }
 
 /// Makes creature `idx` ready to split this tick: mature (after the step's age + 1), fed and with a full stomach.
@@ -166,30 +257,54 @@ fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_i
     let idx = founder(&mut sim, 7000.0, 5000.0);
     ready_to_split(&mut sim, idx);
     let parent = sim.creatures[idx].clone();
-    assert!(parent.phenotype.repro_threshold.max(rule.stomach_threshold_floor) < 0.99, "the step's drain must not drop it below the threshold");
+    assert!(
+        parent.phenotype.repro_threshold.max(rule.stomach_threshold_floor) < 0.99,
+        "the step's drain must not drop it below the threshold"
+    );
     let next_id = sim.next_creature_id;
 
     let step = sim.step();
     let after = &sim.creatures[idx];
     let mitosis = step.events.iter().find_map(|e| match e {
-        OceanEvent::Mitosis { parent: p, child_name, generation, mutated } => Some((*p, child_name.clone(), *generation, *mutated)),
+        OceanEvent::Mitosis {
+            parent: p,
+            child_name,
+            generation,
+            mutated,
+        } => Some((*p, child_name.clone(), *generation, *mutated)),
         _ => None,
     });
-    let (parent_id, child_name, generation, mutated) = mitosis.unwrap_or_else(|| panic!("no mitosis: {:?}", step.events));
+    let (parent_id, child_name, generation, mutated) =
+        mitosis.unwrap_or_else(|| panic!("no mitosis: {:?}", step.events));
     assert_eq!((parent_id, generation), (parent.id, parent.generation + 1));
     assert!(!after.has_eaten, "the split resets the fed flag");
-    assert!(after.energy < parent.energy * rule.split_loss_ratio + 1e-3, "the split costs energy");
+    assert!(
+        after.energy < parent.energy * rule.split_loss_ratio + 1e-3,
+        "the split costs energy"
+    );
 
     // The child is reported for the UI with the next id at the parent's place, but not simulated (RV-B01)
-    let [child] = &step.born[..] else { panic!("one child: {:?}", step.born) };
-    assert_eq!((child.id, child.generation, &child.phenotype.latin_name), (next_id, generation, &child_name));
+    let [child] = &step.born[..] else {
+        panic!("one child: {:?}", step.born)
+    };
+    assert_eq!(
+        (child.id, child.generation, &child.phenotype.latin_name),
+        (next_id, generation, &child_name)
+    );
     assert_eq!((child.px, child.py, child.energy), (after.px, after.py, after.energy));
     assert_eq!(sim.creatures.len(), 1, "children are not simulated");
-    assert_eq!((sim.next_creature_id, sim.highest_generation()), (next_id + 1, generation));
+    assert_eq!(
+        (sim.next_creature_id, sim.highest_generation()),
+        (next_id + 1, generation)
+    );
     // A new species is recorded only for a mutated child, under the parent's name
     for change in &step.species {
         if let SpeciesChange::Discovered { parent_name, .. } = change {
-            assert!(mutated && parent_name.as_deref() == Some(parent.phenotype.latin_name.as_str()), "{:?}", change);
+            assert!(
+                mutated && parent_name.as_deref() == Some(parent.phenotype.latin_name.as_str()),
+                "{:?}",
+                change
+            );
         }
     }
 
@@ -200,6 +315,9 @@ fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_i
     }
     ready_to_split(&mut sim, 0);
     let step = sim.step();
-    assert!(!step.events.iter().any(|e| matches!(e, OceanEvent::Mitosis { .. })) && step.born.is_empty(), "population cap");
+    assert!(
+        !step.events.iter().any(|e| matches!(e, OceanEvent::Mitosis { .. })) && step.born.is_empty(),
+        "population cap"
+    );
     assert!(sim.creatures[0].has_eaten, "no split happened");
 }

@@ -22,19 +22,27 @@ fn with_store<T>(db: &DbState, command: &str, query: impl FnOnce(&Db) -> RepoRes
 }
 
 /// The rows of a repository list query, each mapped to its command DTO.
-fn collect_rows<R, T>(db: &DbState, command: &str, query: impl FnOnce(&Db) -> RepoResult<Vec<R>>, map: impl FnMut(R) -> T) -> CommandResult<Vec<T>> {
+fn collect_rows<R, T>(
+    db: &DbState,
+    command: &str,
+    query: impl FnOnce(&Db) -> RepoResult<Vec<R>>,
+    map: impl FnMut(R) -> T,
+) -> CommandResult<Vec<T>> {
     with_store(db, command, query).map(|rows| rows.into_iter().map(map).collect())
 }
 
 /// Queues `action` for the engine thread (processed in order at the start of its next frame).
 fn send_to_engine(tx: &Sender<EngineInput>, action: ClientAction) -> CommandResult<()> {
-    tx.send(EngineInput::Action(action)).map_err(IpcError::engine_unavailable)
+    tx.send(EngineInput::Action(action))
+        .map_err(IpcError::engine_unavailable)
 }
 
 /// Tells the engine that a command changed the stored trainer genomes of `run_id` (TCK-156: the engine rebuilds the
 /// trainer from the store only then). The store write already succeeded, so a stopped engine is only logged.
 fn notify_trainer_store_changed(tx: &Sender<EngineInput>, run_id: &str) {
-    if let Err(e) = tx.send(EngineInput::TrainerStoreChanged { run_id: run_id.to_string() }) {
+    if let Err(e) = tx.send(EngineInput::TrainerStoreChanged {
+        run_id: run_id.to_string(),
+    }) {
         log::error!("notifying the engine thread of a trainer store change failed: {}", e);
     }
 }

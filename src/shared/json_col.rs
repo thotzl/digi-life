@@ -1,8 +1,8 @@
 //! JSON text columns (methylations, synapse weights) of the SQLite tables: encode and decode with a logged failure
 //! instead of a silent default.
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 /// JSON text of `value`; `"[]"` (empty vector column) if it cannot be serialized, with an error log naming `column`.
 pub fn encode<T: Serialize + ?Sized>(value: &T, column: &str) -> String {
@@ -38,7 +38,10 @@ mod tests {
     fn test_f32_values_keep_the_column_spelling() {
         let stored = "[0.5,0.0,0.9,-2.0]";
         let values: Vec<f32> = decode(stored, "w").unwrap();
-        assert_eq!(f32_values(&values), serde_json::from_str::<serde_json::Value>(stored).unwrap());
+        assert_eq!(
+            f32_values(&values),
+            serde_json::from_str::<serde_json::Value>(stored).unwrap()
+        );
         assert_eq!(f32_values(&values).to_string(), "[0.5,0.0,0.9,-2.0]");
     }
 
@@ -47,6 +50,9 @@ mod tests {
         let weights = vec![0.25f32, -1.5];
         assert_eq!(decode::<Vec<f32>>(&encode(&weights, "w"), "w"), Some(weights));
         assert_eq!(decode::<Vec<f32>>("not json", "w"), None);
-        assert_eq!(decode::<Vec<f32>>("not json", "w").unwrap_or_default(), Vec::<f32>::new());
+        assert_eq!(
+            decode::<Vec<f32>>("not json", "w").unwrap_or_default(),
+            Vec::<f32>::new()
+        );
     }
 }

@@ -5,7 +5,7 @@ use ts_rs::TS;
 
 use super::payload::Payload;
 use super::promoters::{PROMOTERS, TERMINATOR};
-use super::scan::{scan_genes, ScannedGene};
+use super::scan::{ScannedGene, scan_genes};
 
 /// Stable gene identity (TCK-179): promoter type, the promoter's exact spelling in the genome (a degenerate variant
 /// such as `EWA` for `EYE`) and the occurrence among the genes with that spelling, counted in genome order.
@@ -33,7 +33,12 @@ pub struct GeneSpan {
 
 /// Payload of the first gene of `promoter` without building the whole table; empty when the gene is missing.
 pub fn first_payload<'a>(genome: &'a str, promoter: &str) -> Payload<'a> {
-    Payload(scan_genes(genome, promoter, TERMINATOR).first().map(|g| g.payload).unwrap_or(""))
+    Payload(
+        scan_genes(genome, promoter, TERMINATOR)
+            .first()
+            .map(|g| g.payload)
+            .unwrap_or(""),
+    )
 }
 
 /// Expressed genes of a genome: per promoter in genome order, plus all spans sorted by position (owner ids).
@@ -44,27 +49,43 @@ pub struct GeneTable<'a> {
 
 impl<'a> GeneTable<'a> {
     pub fn scan(genome: &'a str) -> Self {
-        let by_promoter: Vec<(&'static str, Vec<ScannedGene<'a>>)> = PROMOTERS.iter().map(|p| (p.motif, scan_genes(genome, p.motif, TERMINATOR))).collect();
+        let by_promoter: Vec<(&'static str, Vec<ScannedGene<'a>>)> = PROMOTERS
+            .iter()
+            .map(|p| (p.motif, scan_genes(genome, p.motif, TERMINATOR)))
+            .collect();
         let mut spans: Vec<GeneSpan> = by_promoter
             .iter()
             .flat_map(|(p, genes)| {
                 genes.iter().map(move |g| GeneSpan {
-                    gene: GeneRef { promoter: p.to_string(), spelling: genome[g.start..g.start + p.len()].to_string(), occurrence: 0 },
+                    gene: GeneRef {
+                        promoter: p.to_string(),
+                        spelling: genome[g.start..g.start + p.len()].to_string(),
+                        occurrence: 0,
+                    },
                     start: g.start,
                     end: g.end,
                 })
             })
             .collect();
-        spans.sort_by(|a, b| a.start.cmp(&b.start).then_with(|| a.gene.promoter.cmp(&b.gene.promoter)));
+        spans.sort_by(|a, b| {
+            a.start
+                .cmp(&b.start)
+                .then_with(|| a.gene.promoter.cmp(&b.gene.promoter))
+        });
         for i in 0..spans.len() {
-            let same = |s: &GeneSpan| s.gene.promoter == spans[i].gene.promoter && s.gene.spelling == spans[i].gene.spelling;
+            let same =
+                |s: &GeneSpan| s.gene.promoter == spans[i].gene.promoter && s.gene.spelling == spans[i].gene.spelling;
             spans[i].gene.occurrence = spans[..i].iter().filter(|s| same(s)).count();
         }
         Self { by_promoter, spans }
     }
 
     pub fn genes(&self, promoter: &str) -> &[ScannedGene<'a>] {
-        self.by_promoter.iter().find(|(p, _)| *p == promoter).map(|(_, g)| &g[..]).unwrap_or(&[])
+        self.by_promoter
+            .iter()
+            .find(|(p, _)| *p == promoter)
+            .map(|(_, g)| &g[..])
+            .unwrap_or(&[])
     }
 
     /// Payload of the first gene of `promoter`; empty (h = 0.5 everywhere) when the gene is missing.
@@ -74,7 +95,10 @@ impl<'a> GeneTable<'a> {
 
     /// Owner id (index into `spans`) of the gene of `promoter` that starts at `start`.
     pub fn owner(&self, promoter: &str, start: usize) -> usize {
-        self.spans.iter().position(|s| s.start == start && s.gene.promoter == promoter).expect("scanned gene is in the gene table")
+        self.spans
+            .iter()
+            .position(|s| s.start == start && s.gene.promoter == promoter)
+            .expect("scanned gene is in the gene table")
     }
 
     /// Stable identity of the gene with owner id `owner`.

@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::shared::dto::{CreatureAgent, FoodSpore};
-use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::fmath;
 use crate::shared::geom;
+use crate::shared::map_generator::ProceduralObstacle;
 
 /// Config section `physics`: locomotion speed band, turning, drag and wall contact (TCK-150, TCK-180).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -83,26 +83,36 @@ pub fn step_food_spore_physics(
     pellet.vx *= 0.92;
     pellet.vy *= 0.92;
 
-    if pellet.x < 8.0 { pellet.x = 8.0; pellet.vx = pellet.vx.abs(); }
-    else if pellet.x > world_width - 8.0 { pellet.x = world_width - 8.0; pellet.vx = -pellet.vx.abs(); }
+    if pellet.x < 8.0 {
+        pellet.x = 8.0;
+        pellet.vx = pellet.vx.abs();
+    } else if pellet.x > world_width - 8.0 {
+        pellet.x = world_width - 8.0;
+        pellet.vx = -pellet.vx.abs();
+    }
 
-    if pellet.y < 8.0 { pellet.y = 8.0; pellet.vy = pellet.vy.abs(); }
-    else if pellet.y > world_height - 8.0 { pellet.y = world_height - 8.0; pellet.vy = -pellet.vy.abs(); }
+    if pellet.y < 8.0 {
+        pellet.y = 8.0;
+        pellet.vy = pellet.vy.abs();
+    } else if pellet.y > world_height - 8.0 {
+        pellet.y = world_height - 8.0;
+        pellet.vy = -pellet.vy.abs();
+    }
 
     // 3. Collision with circular obstacles (reefs)
     for obs in obstacles {
         let dx = pellet.x - obs.x;
         let dy = pellet.y - obs.y;
-        let dist = (dx*dx + dy*dy).sqrt();
+        let dist = (dx * dx + dy * dy).sqrt();
         let min_dist = spore_radius + obs.radius;
         if dist < min_dist {
             let overlap = min_dist - dist;
             let push_x = if dist > 0.1 { (dx / dist) * overlap } else { overlap };
             let push_y = if dist > 0.1 { (dy / dist) * overlap } else { 0.0 };
-            
+
             pellet.x = (pellet.x + push_x).clamp(8.0, world_width - 8.0);
             pellet.y = (pellet.y + push_y).clamp(8.0, world_height - 8.0);
-            
+
             // Simple velocity reversal deflection
             let norm_x = if dist > 0.1 { dx / dist } else { 1.0 };
             let norm_y = if dist > 0.1 { dy / dist } else { 0.0 };
@@ -133,7 +143,12 @@ const VELOCITY_DAMPING: f32 = 0.94;
 pub fn locomotion_drive(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f32 {
     let pulse = ((phenotype.pulse_speed - PULSE_MIN) / PULSE_SPAN).clamp(0.0, 1.0);
     let stiffness = ((phenotype.stiffness - STIFFNESS_MIN) / STIFFNESS_SPAN).clamp(0.0, 1.0);
-    let limbs = phenotype.organelles.iter().filter(|o| (o.kind.spec().limb)(o)).count().min(2) as f32;
+    let limbs = phenotype
+        .organelles
+        .iter()
+        .filter(|o| (o.kind.spec().limb)(o))
+        .count()
+        .min(2) as f32;
     let appendages = (0.5 * phenotype.spinal_harmonics.parapodia_amp / PARAPODIA_MAX + 0.25 * limbs).clamp(0.0, 1.0);
     (0.4 * pulse + 0.4 * stiffness + 0.2 * appendages).clamp(0.0, 1.0)
 }
@@ -153,7 +168,10 @@ pub fn body_mass(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f3
 fn mass_and_drag(phenotype: &crate::biology::phenotype::CreaturePhenotype, physics: &PhysicsConfig) -> (f32, f32) {
     let mean_radius = phenotype.spinal_harmonics.mean_radius;
     let mass = body_mass(phenotype);
-    let ballast_units = phenotype.organelles.iter().fold(0.0f32, |sum, o| sum + o.kind.spec().ballast);
+    let ballast_units = phenotype
+        .organelles
+        .iter()
+        .fold(0.0f32, |sum, o| sum + o.kind.spec().ballast);
     let receptor_ballast = ballast_units * physics.receptor_ballast_scale;
     let drag_forward = (mean_radius * physics.drag_forward_coefficient + receptor_ballast)
         * (1.0 - phenotype.stiffness * physics.drag_forward_stiffness_decay);
@@ -228,7 +246,8 @@ pub fn apply_creature_physics(
 
     // Smooth muscle stiffness body bending interpolation
     let muscle_interpolation_rate = 0.20;
-    agent.bend_angle = agent.bend_angle * (1.0 - muscle_interpolation_rate) + target_bending * muscle_interpolation_rate;
+    agent.bend_angle =
+        agent.bend_angle * (1.0 - muscle_interpolation_rate) + target_bending * muscle_interpolation_rate;
     agent.bend_angle = agent.bend_angle.clamp(-max_flexion, max_flexion);
 
     // 2. Fluid drag & thrust forces
@@ -271,12 +290,16 @@ pub fn apply_creature_physics(
     agent.px += agent.vx;
     if agent.px < mean_radius {
         agent.px = mean_radius;
-        if agent.vx < 0.0 { reflect_heading(agent, 1.0, 0.0); }
+        if agent.vx < 0.0 {
+            reflect_heading(agent, 1.0, 0.0);
+        }
         agent.vx = agent.vx.abs() * restitution;
         hit_wall = true;
     } else if agent.px > world_width - mean_radius {
         agent.px = world_width - mean_radius;
-        if agent.vx > 0.0 { reflect_heading(agent, -1.0, 0.0); }
+        if agent.vx > 0.0 {
+            reflect_heading(agent, -1.0, 0.0);
+        }
         agent.vx = -agent.vx.abs() * restitution;
         hit_wall = true;
     }
@@ -284,12 +307,16 @@ pub fn apply_creature_physics(
     agent.py += agent.vy;
     if agent.py < mean_radius {
         agent.py = mean_radius;
-        if agent.vy < 0.0 { reflect_heading(agent, 0.0, 1.0); }
+        if agent.vy < 0.0 {
+            reflect_heading(agent, 0.0, 1.0);
+        }
         agent.vy = agent.vy.abs() * restitution;
         hit_wall = true;
     } else if agent.py > world_height - mean_radius {
         agent.py = world_height - mean_radius;
-        if agent.vy > 0.0 { reflect_heading(agent, 0.0, -1.0); }
+        if agent.vy > 0.0 {
+            reflect_heading(agent, 0.0, -1.0);
+        }
         agent.vy = -agent.vy.abs() * restitution;
         hit_wall = true;
     }
@@ -298,16 +325,16 @@ pub fn apply_creature_physics(
     for obs in obstacles {
         let dx = agent.px - obs.x;
         let dy = agent.py - obs.y;
-        let dist = (dx*dx + dy*dy).sqrt();
+        let dist = (dx * dx + dy * dy).sqrt();
         let min_dist = mean_radius + obs.radius;
         if dist < min_dist {
             let overlap = min_dist - dist;
             let push_x = if dist > 0.1 { (dx / dist) * overlap } else { overlap };
             let push_y = if dist > 0.1 { (dy / dist) * overlap } else { 0.0 };
-            
+
             agent.px = (agent.px + push_x).clamp(mean_radius, world_width - mean_radius);
             agent.py = (agent.py + push_y).clamp(mean_radius, world_height - mean_radius);
-            
+
             // Deflect/bounce velocity with restitution
             let norm_x = if dist > 0.1 { dx / dist } else { 1.0 };
             let norm_y = if dist > 0.1 { dy / dist } else { 0.0 };
@@ -328,26 +355,47 @@ pub fn apply_creature_physics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+    use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
 
     fn agent_moving(px: f32, py: f32, heading_angle: f32, speed: f32) -> CreatureAgent {
-        let mut agent = spawn_creature("EYEABCDEFEN", SpawnOptions {
-            id: 1, px, py, heading_angle, generation: 1, methylations: None, synapse_weights: None,
-        }, crate::config::test_config());
+        let mut agent = spawn_creature(
+            "EYEABCDEFEN",
+            SpawnOptions {
+                id: 1,
+                px,
+                py,
+                heading_angle,
+                generation: 1,
+                methylations: None,
+                synapse_weights: None,
+            },
+            crate::config::test_config(),
+        );
         agent.vx = speed * heading_angle.cos();
         agent.vy = speed * heading_angle.sin();
         agent
     }
 
     fn step_without_forces(agent: &mut CreatureAgent, size: f32) -> bool {
-        let physics = PhysicsConfig { turn_rate_at_rest: 0.0, ..crate::config::test_config().physics.clone() };
+        let physics = PhysicsConfig {
+            turn_rate_at_rest: 0.0,
+            ..crate::config::test_config().physics.clone()
+        };
         apply_creature_physics(agent, 0.0, 0.0, 1.0, 0.0, &physics, 0.0, 0.0, &[], size, size)
     }
 
     #[test]
     fn test_spore_push_from_snapshot_matches_full_agent() {
         let agent = agent_moving(500.0, 500.0, 0.3, 2.0);
-        let start = FoodSpore { id: 1, type_id: 1, x: 505.0, y: 503.0, amount: 15.0, vx: 0.0, vy: 0.0 };
+        let start = FoodSpore {
+            id: 1,
+            type_id: 1,
+            x: 505.0,
+            y: 503.0,
+            amount: 15.0,
+            vx: 0.0,
+            vy: 0.0,
+        };
 
         let mut expected = start.clone();
         // Reference values computed with the pre-snapshot implementation (agent at (500,500), v=(2cos0.3, 2sin0.3))
@@ -398,7 +446,11 @@ mod tests {
         // Bottom wall: moving towards +y
         let mut bottom = agent_moving(size / 2.0, size - r - 1.0, pi / 2.0, 5.0);
         assert!(step_without_forces(&mut bottom, size));
-        assert!(bottom.vy < 0.0, "bottom wall must reflect to -y, got vy = {}", bottom.vy);
+        assert!(
+            bottom.vy < 0.0,
+            "bottom wall must reflect to -y, got vy = {}",
+            bottom.vy
+        );
         assert!(bottom.py <= size - r);
     }
 
@@ -407,7 +459,15 @@ mod tests {
     }
 
     /// Body with the given locomotion traits (limb flag sets every organ to limb or non-limb expression).
-    fn body(pulse: f32, stiffness: f32, parapodia: f32, limbs: bool, radius: f32, length: f32, organs: usize) -> CreatureAgent {
+    fn body(
+        pulse: f32,
+        stiffness: f32,
+        parapodia: f32,
+        limbs: bool,
+        radius: f32,
+        length: f32,
+        organs: usize,
+    ) -> CreatureAgent {
         let mut agent = agent_moving(500.0, 500.0, 0.0, 0.0);
         let p = &mut agent.phenotype;
         p.pulse_speed = pulse;
@@ -428,16 +488,26 @@ mod tests {
         let config = crate::config::test_config();
         let (min, max) = (config.physics.locomotion_speed_min, config.physics.locomotion_speed_max);
         // Slowest and fastest locomotion traits, each on light/heavy and few/many-organ bodies
-        for &(pulse, stiffness, parapodia, limbs, expected) in &[(0.0015, 0.15, 0.0, false, min), (0.009, 1.0, 0.45, true, max), (0.005, 0.6, 0.2, false, f32::NAN)] {
+        for &(pulse, stiffness, parapodia, limbs, expected) in &[
+            (0.0015, 0.15, 0.0, false, min),
+            (0.009, 1.0, 0.45, true, max),
+            (0.005, 0.6, 0.2, false, f32::NAN),
+        ] {
             for &(radius, length, organs) in &[(16.0, 90.0, 2), (28.0, 200.0, 2), (16.0, 200.0, 12), (28.0, 90.0, 12)] {
                 let mut agent = body(pulse, stiffness, parapodia, limbs, radius, length, organs);
                 for _ in 0..1800 {
                     step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], 1.0e7, 1.0e7);
                 }
                 let v = speed_of(&agent);
-                assert!(v >= min * 0.98 && v <= max * 1.02, "terminal speed {v} outside [{min}, {max}] (pulse {pulse}, r {radius}, L {length}, organs {organs})");
+                assert!(
+                    v >= min * 0.98 && v <= max * 1.02,
+                    "terminal speed {v} outside [{min}, {max}] (pulse {pulse}, r {radius}, L {length}, organs {organs})"
+                );
                 if expected.is_finite() {
-                    assert!((v - expected).abs() <= 0.02 * expected, "extreme genome reaches {v}, expected {expected}");
+                    assert!(
+                        (v - expected).abs() <= 0.02 * expected,
+                        "extreme genome reaches {v}, expected {expected}"
+                    );
                 }
             }
         }
@@ -459,12 +529,19 @@ mod tests {
             step_creature_kinematics(&mut agent, 0.0, 1.0, &config.physics, &[], 1000.0, 1000.0);
         }
         assert_eq!(speed_of(&agent), 0.0, "bending alone must not move the body");
-        assert!(agent.heading_angle > 0.1, "full bend at rest must turn the heading, got {}", agent.heading_angle);
+        assert!(
+            agent.heading_angle > 0.1,
+            "full bend at rest must turn the heading, got {}",
+            agent.heading_angle
+        );
         let mut mirrored = agent_moving(500.0, 500.0, 0.0, 0.0);
         for _ in 0..30 {
             step_creature_kinematics(&mut mirrored, 0.0, -1.0, &config.physics, &[], 1000.0, 1000.0);
         }
-        assert!((mirrored.heading_angle + agent.heading_angle).abs() < 1e-5, "turning at rest must be symmetric");
+        assert!(
+            (mirrored.heading_angle + agent.heading_angle).abs() < 1e-5,
+            "turning at rest must be symmetric"
+        );
     }
 
     #[test]
@@ -474,7 +551,12 @@ mod tests {
         let r = agent_moving(0.0, 0.0, 0.0, 0.0).phenotype.spinal_harmonics.mean_radius;
         let pi = std::f32::consts::PI;
         // (start x, start y, outward normal of the wall)
-        let walls = [(r + 2.0, size / 2.0, (1.0, 0.0)), (size - r - 2.0, size / 2.0, (-1.0, 0.0)), (size / 2.0, r + 2.0, (0.0, 1.0)), (size / 2.0, size - r - 2.0, (0.0, -1.0))];
+        let walls = [
+            (r + 2.0, size / 2.0, (1.0, 0.0)),
+            (size - r - 2.0, size / 2.0, (-1.0, 0.0)),
+            (size / 2.0, r + 2.0, (0.0, 1.0)),
+            (size / 2.0, size - r - 2.0, (0.0, -1.0)),
+        ];
         for &(x, y, (nx, ny)) in &walls {
             for &angle_deg in &[30.0f32, 60.0, 90.0] {
                 // Heading into the wall at `angle_deg` to its surface
@@ -487,7 +569,10 @@ mod tests {
                     if step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, &[], size, size) && !contact {
                         contact = true;
                         let (hx, hy) = (agent.heading_angle.cos(), agent.heading_angle.sin());
-                        assert!(hx * nx + hy * ny > 0.0, "heading must point away from the wall after contact (normal {nx},{ny}, angle {angle_deg})");
+                        assert!(
+                            hx * nx + hy * ny > 0.0,
+                            "heading must point away from the wall after contact (normal {nx},{ny}, angle {angle_deg})"
+                        );
                     }
                     let distance_from_wall = (agent.px - x) * nx + (agent.py - y) * ny;
                     if distance_from_wall > 50.0 {
@@ -495,7 +580,10 @@ mod tests {
                         break;
                     }
                 }
-                assert!(contact && freed, "forced thrust must leave the wall (normal {nx},{ny}, angle {angle_deg}, pi {pi})");
+                assert!(
+                    contact && freed,
+                    "forced thrust must leave the wall (normal {nx},{ny}, angle {angle_deg}, pi {pi})"
+                );
             }
         }
     }
@@ -503,7 +591,15 @@ mod tests {
     #[test]
     fn test_reef_contact_reflects_heading_like_a_wall() {
         let config = crate::config::test_config();
-        let reef = ProceduralObstacle { id: 1, x: 600.0, y: 500.0, radius: 60.0, obstacle_type: "rock".to_string(), color: String::new(), vertices: Vec::new() };
+        let reef = ProceduralObstacle {
+            id: 1,
+            x: 600.0,
+            y: 500.0,
+            radius: 60.0,
+            obstacle_type: "rock".to_string(),
+            color: String::new(),
+            vertices: Vec::new(),
+        };
         let r = agent_moving(0.0, 0.0, 0.0, 0.0).phenotype.spinal_harmonics.mean_radius;
         // Head-on and oblique approach towards the reef centre
         for &offset_y in &[0.0f32, 25.0] {
@@ -511,15 +607,30 @@ mod tests {
             let mut agent = agent_moving(start_x, reef.y + offset_y, 0.0, 0.0);
             let mut contact = false;
             for _ in 0..300 {
-                if step_creature_kinematics(&mut agent, 1.0, 0.0, &config.physics, std::slice::from_ref(&reef), 1.0e4, 1.0e4) && !contact {
+                if step_creature_kinematics(
+                    &mut agent,
+                    1.0,
+                    0.0,
+                    &config.physics,
+                    std::slice::from_ref(&reef),
+                    1.0e4,
+                    1.0e4,
+                ) && !contact
+                {
                     contact = true;
                     let (nx, ny) = ((agent.px - reef.x), (agent.py - reef.y));
                     let (hx, hy) = (agent.heading_angle.cos(), agent.heading_angle.sin());
-                    assert!(hx * nx + hy * ny > 0.0, "heading must point away from the reef after contact (offset {offset_y})");
+                    assert!(
+                        hx * nx + hy * ny > 0.0,
+                        "heading must point away from the reef after contact (offset {offset_y})"
+                    );
                 }
             }
             let gap = ((agent.px - reef.x).powi(2) + (agent.py - reef.y).powi(2)).sqrt() - reef.radius - r;
-            assert!(contact && gap > 50.0, "forced thrust must leave the reef (offset {offset_y}, gap {gap})");
+            assert!(
+                contact && gap > 50.0,
+                "forced thrust must leave the reef (offset {offset_y}, gap {gap})"
+            );
         }
     }
 }

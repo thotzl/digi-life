@@ -7,15 +7,17 @@
 use std::collections::HashMap;
 use std::process::ExitCode;
 
-use src_tauri::diagnostics::ocean_report::{run_ocean, OceanRunConfig, DEFAULT_SAMPLE_EVERY};
-use src_tauri::diagnostics::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
-use src_tauri::diagnostics::report::{run_trainer, RunConfig, ScheduleSpan};
+use src_tauri::biology::trainer_store;
+use src_tauri::config::AppConfig;
+use src_tauri::diagnostics::ocean_report::{DEFAULT_SAMPLE_EVERY, OceanRunConfig, run_ocean};
+use src_tauri::diagnostics::probes::{PROBE_NAMES, ProbeOptions, load_hof_genomes, run_probe};
+use src_tauri::diagnostics::report::{RunConfig, ScheduleSpan, run_trainer};
+use src_tauri::persistence::init_db;
 use src_tauri::trainer::mode::TrainingMode;
 use src_tauri::trainer::room::registry;
-use src_tauri::trainer::sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrainerParams, TrialAggregation};
-use src_tauri::biology::trainer_store;
-use src_tauri::persistence::init_db;
-use src_tauri::config::AppConfig;
+use src_tauri::trainer::sim::{
+    CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrainerParams, TrialAggregation,
+};
 
 const USAGE: &str = "Usage:
   trainer_runner run --seed <str> --generations <N> --scenario <room id>|curriculum
@@ -74,7 +76,9 @@ fn parse_flags(args: &[String]) -> Result<HashMap<String, String>, String> {
     let mut flags = HashMap::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
-        let key = arg.strip_prefix("--").ok_or_else(|| format!("unexpected argument '{}'", arg))?;
+        let key = arg
+            .strip_prefix("--")
+            .ok_or_else(|| format!("unexpected argument '{}'", arg))?;
         let value = if SWITCHES.contains(&key) {
             "true".to_string()
         } else {
@@ -86,7 +90,10 @@ fn parse_flags(args: &[String]) -> Result<HashMap<String, String>, String> {
 }
 
 fn required<'a>(flags: &'a HashMap<String, String>, key: &str) -> Result<&'a str, String> {
-    flags.get(key).map(String::as_str).ok_or_else(|| format!("--{} is required", key))
+    flags
+        .get(key)
+        .map(String::as_str)
+        .ok_or_else(|| format!("--{} is required", key))
 }
 
 fn parse<T: std::str::FromStr>(flags: &HashMap<String, String>, key: &str, default: Option<T>) -> Result<T, String> {
@@ -98,8 +105,32 @@ fn parse<T: std::str::FromStr>(flags: &HashMap<String, String>, key: &str, defau
 
 fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     const KNOWN: &[&str] = &[
-        "seed", "generations", "scenario", "population", "trials", "aggregation", "one-fifth", "elite-ratio", "minimal-criterion", "mutation-channels", "layout-policy", "multi-trial", "parallel", "persist", "db",
-        "run-id", "out", "schedule", "eval-final", "curriculum-upper", "curriculum-lower", "curriculum-step", "start-level", "rehearsal", "ramp-start", "eval-trials",
+        "seed",
+        "generations",
+        "scenario",
+        "population",
+        "trials",
+        "aggregation",
+        "one-fifth",
+        "elite-ratio",
+        "minimal-criterion",
+        "mutation-channels",
+        "layout-policy",
+        "multi-trial",
+        "parallel",
+        "persist",
+        "db",
+        "run-id",
+        "out",
+        "schedule",
+        "eval-final",
+        "curriculum-upper",
+        "curriculum-lower",
+        "curriculum-step",
+        "start-level",
+        "rehearsal",
+        "ramp-start",
+        "eval-trials",
     ];
     if let Some(unknown) = flags.keys().find(|k| !KNOWN.contains(&k.as_str())) {
         return Err(format!("unknown flag --{}", unknown));
@@ -123,20 +154,35 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     let scheduled: Option<u32> = (!schedule.is_empty()).then(|| schedule.iter().map(|span| span.generations).sum());
     let generations: u32 = parse(flags, "generations", scheduled)?;
     if let Some(total) = scheduled.filter(|&total| total != generations) {
-        return Err(format!("--generations {} differs from the --schedule total {}", generations, total));
+        return Err(format!(
+            "--generations {} differs from the --schedule total {}",
+            generations, total
+        ));
     }
     let eval_final = match flags.get("eval-final") {
-        Some(list) => list.split(',').map(|name| parse_room(name.trim())).collect::<Result<Vec<_>, _>>()?,
+        Some(list) => list
+            .split(',')
+            .map(|name| parse_room(name.trim()))
+            .collect::<Result<Vec<_>, _>>()?,
         None => Vec::new(),
     };
     let eval_final = eval_final
         .into_iter()
         .map(|mode| match mode {
             TrainingMode::Room(id) => Ok(id),
-            TrainingMode::Curriculum => Err(format!("--eval-final takes registry rooms ({})", registry::ids().collect::<Vec<_>>().join(", "))),
+            TrainingMode::Curriculum => Err(format!(
+                "--eval-final takes registry rooms ({})",
+                registry::ids().collect::<Vec<_>>().join(", ")
+            )),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", Some(app.trainer.trainer_population))?, generations, app);
+    let defaults = RunConfig::with_defaults(
+        required(flags, "seed")?,
+        scenario,
+        parse(flags, "population", Some(app.trainer.trainer_population))?,
+        generations,
+        app,
+    );
     let d = &defaults.params;
     let c = d.curriculum;
     let curriculum = CurriculumParams {
@@ -192,12 +238,19 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         params,
         schedule,
         eval_final,
-        eval_trials: if flags.contains_key("eval-trials") { Some(parse(flags, "eval-trials", None)?) } else { None },
+        eval_trials: if flags.contains_key("eval-trials") {
+            Some(parse(flags, "eval-trials", None)?)
+        } else {
+            None
+        },
         parallel: parse(flags, "parallel", Some(false))?,
         ..defaults
     };
     let persist = flags.contains_key("persist");
-    let run_id = flags.get("run-id").cloned().unwrap_or_else(|| format!("headless-{}", config.seed));
+    let run_id = flags
+        .get("run-id")
+        .cloned()
+        .unwrap_or_else(|| format!("headless-{}", config.seed));
 
     // The DB is opened only with --persist, and only at an explicit path (never the app DB by default)
     let conn = match (persist, flags.get("db")) {
@@ -227,14 +280,24 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         p.mutation_channels,
         config.parallel
     );
-    if p.mode() == TrainingMode::Curriculum || config.schedule.iter().any(|span| span.scenario == TrainingMode::Curriculum) {
+    if p.mode() == TrainingMode::Curriculum
+        || config
+            .schedule
+            .iter()
+            .any(|span| span.scenario == TrainingMode::Curriculum)
+    {
         log::info!("curriculum {:?}", p.curriculum);
     }
     if !config.schedule.is_empty() {
         log::info!("schedule {:?}", config.schedule);
     }
     let report = run_trainer(&config, app, |event, sim| {
-        let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
+        let TrainerEvent::GenerationCompleted {
+            generation,
+            elites,
+            stats,
+            ..
+        } = event;
         log::info!(
             "generation {}/{}: {} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
             generation,
@@ -252,11 +315,19 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         }
     });
     for eval in &report.final_eval {
-        log::info!("final eval {}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
+        log::info!(
+            "final eval {}: success {:.3}, mean fitness {:.3}",
+            eval.scenario,
+            eval.eval.success_rate,
+            eval.eval.mean_fitness
+        );
     }
     log::info!(
         "done in {:.2} s ({:.0} ticks/s total, {:.0} per sandbox; generation ends {:.2} s)",
-        report.perf.wall_seconds, report.perf.ticks_per_second_total, report.perf.ticks_per_second_per_sandbox, report.perf.generation_end_seconds
+        report.perf.wall_seconds,
+        report.perf.ticks_per_second_total,
+        report.perf.ticks_per_second_per_sandbox,
+        report.perf.generation_end_seconds
     );
 
     let json = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
@@ -278,18 +349,29 @@ fn parse_room(name: &str) -> Result<TrainingMode, String> {
 fn parse_schedule(spec: &str) -> Result<Vec<ScheduleSpan>, String> {
     spec.split(',')
         .map(|part| {
-            let (room, gens) = part.trim().split_once(':').ok_or_else(|| format!("schedule span '{}' is not room:generations", part))?;
-            let generations: u32 = gens.parse().map_err(|_| format!("invalid generation count in schedule span '{}'", part))?;
+            let (room, gens) = part
+                .trim()
+                .split_once(':')
+                .ok_or_else(|| format!("schedule span '{}' is not room:generations", part))?;
+            let generations: u32 = gens
+                .parse()
+                .map_err(|_| format!("invalid generation count in schedule span '{}'", part))?;
             if generations == 0 {
                 return Err(format!("schedule span '{}' has no generations", part));
             }
-            Ok(ScheduleSpan { scenario: parse_room(room)?, generations })
+            Ok(ScheduleSpan {
+                scenario: parse_room(room)?,
+                generations,
+            })
         })
         .collect()
 }
 
 fn write_file(path: &str, json: String) -> Result<(), String> {
-    if let Some(dir) = std::path::Path::new(path).parent().filter(|d| !d.as_os_str().is_empty()) {
+    if let Some(dir) = std::path::Path::new(path)
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
     }
     std::fs::write(path, json + "\n").map_err(|e| format!("cannot write {}: {}", path, e))
@@ -308,7 +390,12 @@ fn ocean(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String>
     if config.sample_every == 0 {
         return Err("--sample-every must be at least 1".to_string());
     }
-    log::info!("ocean seed '{}', {} ticks, sample every {}", config.seed, config.ticks, config.sample_every);
+    log::info!(
+        "ocean seed '{}', {} ticks, sample every {}",
+        config.seed,
+        config.ticks,
+        config.sample_every
+    );
     let report = run_ocean(&config, app, |sample| {
         log::info!(
             "tick {}: population {}, births {}, deaths {}, species alive {}, mean energy {}",
@@ -317,14 +404,28 @@ fn ocean(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String>
             sample.counts.births,
             sample.counts.deaths.total(),
             sample.state.species_alive,
-            sample.state.mean_energy.map_or("-".to_string(), |e| format!("{:.2}", e))
+            sample
+                .state
+                .mean_energy
+                .map_or("-".to_string(), |e| format!("{:.2}", e))
         );
     });
     let s = &report.summary;
     log::info!(
         "done in {:.2} s ({:.0} ticks/s): population {} (min {}, max {}), births {}, deaths {} (starved {}, aged {}, hunted {}), restocked {}, species {} alive / {} extinct",
-        report.perf.wall_seconds, report.perf.ticks_per_second, s.state.population, s.min_population, s.max_population, s.counts.births, s.deaths_total,
-        s.counts.deaths.starved, s.counts.deaths.aged, s.counts.deaths.hunted, s.counts.restocked, s.state.species_alive, s.state.species_extinct
+        report.perf.wall_seconds,
+        report.perf.ticks_per_second,
+        s.state.population,
+        s.min_population,
+        s.max_population,
+        s.counts.births,
+        s.deaths_total,
+        s.counts.deaths.starved,
+        s.counts.deaths.aged,
+        s.counts.deaths.hunted,
+        s.counts.restocked,
+        s.state.species_alive,
+        s.state.species_extinct
     );
     let json = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
     match flags.get("out") {
@@ -357,7 +458,11 @@ fn probe(name: &str, flags: &HashMap<String, String>, app: &AppConfig) -> Result
     };
     let opts = ProbeOptions {
         seed: required(flags, "seed")?.to_string(),
-        samples: if flags.contains_key("samples") { Some(parse(flags, "samples", None)?) } else { None },
+        samples: if flags.contains_key("samples") {
+            Some(parse(flags, "samples", None)?)
+        } else {
+            None
+        },
         hof_source: flags.get("db").cloned(),
         hof,
         config: app.clone(),

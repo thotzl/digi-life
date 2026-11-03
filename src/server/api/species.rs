@@ -4,8 +4,8 @@ use serde::Serialize;
 use tauri::State;
 use ts_rs::TS;
 
-use super::{collect_rows, CommandResult};
-use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
+use super::{CommandResult, collect_rows};
+use crate::biology::phenotype::{CreaturePhenotype, parse_genome};
 use crate::config::AppConfig;
 use crate::persistence::{DbState, SpeciesRecord, SpeciesRepo, SpeciesStatus};
 
@@ -71,7 +71,12 @@ impl From<SpeciesRecord> for SpeciesEntry {
 
 #[tauri::command]
 pub fn get_registered_species(db: State<'_, DbState>) -> CommandResult<Vec<SpeciesEntry>> {
-    collect_rows(&db, "get_registered_species", |store| store.list_species(), SpeciesEntry::from)
+    collect_rows(
+        &db,
+        "get_registered_species",
+        |store| store.list_species(),
+        SpeciesEntry::from,
+    )
 }
 
 /// Phenotype of any genome (runs `parse_genome`).

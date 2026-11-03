@@ -16,9 +16,9 @@ pub mod mode;
 pub mod ocean_mode;
 pub mod sink;
 pub mod store;
-pub mod trainer_mode;
 #[cfg(test)]
 mod tests;
+pub mod trainer_mode;
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::thread;
@@ -27,10 +27,10 @@ use std::time::{Duration, Instant};
 use crate::config::AppConfig;
 use crate::server::ipc::{ClientAction, EngineAction, LogKind, SimMode, UiEvent};
 
-pub use mode::{clamp_warp, Mode, ModeCtx, MAX_STEPS_PER_FRAME};
+pub use mode::{MAX_STEPS_PER_FRAME, Mode, ModeCtx, clamp_warp};
 pub use ocean_mode::OceanMode;
 pub use sink::{EventSink, TauriSink, VecSink};
-pub use store::{open_store, EngineStore, SnapshotWriter};
+pub use store::{EngineStore, SnapshotWriter, open_store};
 pub use trainer_mode::TrainerMode;
 
 /// Frame budget of the engine thread (~60 Hz).
@@ -43,7 +43,9 @@ pub enum EngineInput {
     Action(ClientAction),
     /// A command changed the stored trainer genomes of `run_id` (`add_catalogue_creature_to_training`,
     /// `clear_trainer_history`)
-    TrainerStoreChanged { run_id: String },
+    TrainerStoreChanged {
+        run_id: String,
+    },
 }
 
 impl From<ClientAction> for EngineInput {
@@ -65,14 +67,33 @@ pub struct Engine {
 impl Engine {
     /// Loads the Ocean (snapshot or fresh) and a fresh trainer; starts in Ocean mode. Emits `DATABASE_CHANGED` so a
     /// listening UI fetches the seeded species roster.
-    pub fn new(config: AppConfig, store: Box<dyn EngineStore>, snapshots: SnapshotWriter, store_error: Option<String>, sink: &mut dyn EventSink, now: Instant) -> Self {
+    pub fn new(
+        config: AppConfig,
+        store: Box<dyn EngineStore>,
+        snapshots: SnapshotWriter,
+        store_error: Option<String>,
+        sink: &mut dyn EventSink,
+        now: Instant,
+    ) -> Self {
         let (ocean, trainer) = {
-            let mut ctx = ModeCtx { sink, store: &*store, config: &config, now };
+            let mut ctx = ModeCtx {
+                sink,
+                store: &*store,
+                config: &config,
+                now,
+            };
             let ocean = OceanMode::load(&mut ctx, snapshots);
             ctx.emit(UiEvent::database_changed());
             (ocean, TrainerMode::new(&config, now))
         };
-        Self { config, store, mode: SimMode::Ocean, ocean, trainer, store_error }
+        Self {
+            config,
+            store,
+            mode: SimMode::Ocean,
+            ocean,
+            trainer,
+            store_error,
+        }
     }
 
     pub fn mode(&self) -> SimMode {
@@ -95,14 +116,22 @@ impl Engine {
     /// active mode on a real switch and always enters the requested one; `CLIENT_READY` answers with the Ocean state
     /// and never changes the mode.
     pub fn handle(&mut self, input: EngineInput, sink: &mut dyn EventSink, now: Instant) {
-        let mut ctx = ModeCtx { sink, store: &*self.store, config: &self.config, now };
+        let mut ctx = ModeCtx {
+            sink,
+            store: &*self.store,
+            config: &self.config,
+            now,
+        };
         match input {
             EngineInput::Action(ClientAction::Ocean(action)) => self.ocean.handle(action, &mut ctx),
             EngineInput::Action(ClientAction::Trainer(action)) => self.trainer.handle(action, &mut ctx),
             EngineInput::Action(ClientAction::Engine(EngineAction::ClientReady)) => {
                 self.ocean.on_client_ready(&mut ctx);
                 if let Some(error) = &self.store_error {
-                    ctx.emit(UiEvent::log(format!("Database unavailable ({}): running without persistence.", error), LogKind::System));
+                    ctx.emit(UiEvent::log(
+                        format!("Database unavailable ({}): running without persistence.", error),
+                        LogKind::System,
+                    ));
                 }
             }
             EngineInput::Action(ClientAction::Engine(EngineAction::SetMode { mode })) => {
@@ -124,7 +153,12 @@ impl Engine {
 
     /// One frame of the active mode: steps, then its streams.
     pub fn frame(&mut self, sink: &mut dyn EventSink, now: Instant) {
-        let mut ctx = ModeCtx { sink, store: &*self.store, config: &self.config, now };
+        let mut ctx = ModeCtx {
+            sink,
+            store: &*self.store,
+            config: &self.config,
+            now,
+        };
         match self.mode {
             SimMode::Ocean => {
                 self.ocean.step(&mut ctx);
@@ -170,7 +204,11 @@ pub fn spawn_simulation_thread(window: tauri::WebviewWindow, rx: Receiver<Engine
         let mut sink = TauriSink::new(window);
         let db_path = crate::persistence::db_path();
         let (store, store_error) = open_store(&db_path);
-        let snapshots = if store_error.is_none() { SnapshotWriter::background(db_path) } else { SnapshotWriter::Inline };
+        let snapshots = if store_error.is_none() {
+            SnapshotWriter::background(db_path)
+        } else {
+            SnapshotWriter::Inline
+        };
         let mut engine = Engine::new(config, store, snapshots, store_error, &mut sink, Instant::now());
         run_loop(&mut engine, &rx, &mut sink);
         log::info!("engine thread stopped: all action senders dropped");

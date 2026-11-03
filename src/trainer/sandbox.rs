@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
 use crate::config::AppConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::shared::rng::SimRng;
@@ -54,10 +54,28 @@ impl TrainerSandbox {
         rng: &mut SimRng,
         config: &AppConfig,
     ) -> Self {
-        let agent = spawn_creature(genome, SpawnOptions { id, px: 0.0, py: 0.0, heading_angle: 0.0, generation, methylations, synapse_weights }, config);
+        let agent = spawn_creature(
+            genome,
+            SpawnOptions {
+                id,
+                px: 0.0,
+                py: 0.0,
+                heading_angle: 0.0,
+                generation,
+                methylations,
+                synapse_weights,
+            },
+            config,
+        );
         let mut chamber = Chamber::new(room.as_ref(), vec![agent]);
         chamber.first_layout(room.as_ref(), rng);
-        Self { id, origin_type, current_fitness: 0.0, room, chamber }
+        Self {
+            id,
+            origin_type,
+            current_fitness: 0.0,
+            room,
+            chamber,
+        }
     }
 
     /// The slot's creature (entity 0).
@@ -115,14 +133,24 @@ mod tests {
     use crate::shared::brain::food_sense_range;
     use crate::shared::dto::FoodSpore;
     use crate::shared::rng::seeded;
-    use crate::trainer::room::{registry, LevelRoom};
+    use crate::trainer::room::{LevelRoom, registry};
 
     fn room(id: &str) -> Arc<dyn Room> {
         registry::build(id, crate::config::test_config()).unwrap()
     }
 
     fn spawn_in(id: &str, origin: SandboxOrigin, rng: &mut SimRng) -> TrainerSandbox {
-        TrainerSandbox::spawn(1, WILDTYPE_GENOME, 1, origin, room(id), None, None, rng, crate::config::test_config())
+        TrainerSandbox::spawn(
+            1,
+            WILDTYPE_GENOME,
+            1,
+            origin,
+            room(id),
+            None,
+            None,
+            rng,
+            crate::config::test_config(),
+        )
     }
 
     fn park_food(sb: &mut TrainerSandbox) {
@@ -185,7 +213,13 @@ mod tests {
             );
             let drain = crate::biology::metabolism::drain_energy(&mut ocean, out.thrust, &config.metabolism, 1.0);
             assert!(drain > 0.0);
-            assert_eq!(sb.agent().energy.to_bits(), ocean.energy.to_bits(), "trainer drain {} vs ocean drain {}", start - sb.agent().energy, drain);
+            assert_eq!(
+                sb.agent().energy.to_bits(),
+                ocean.energy.to_bits(),
+                "trainer drain {} vs ocean drain {}",
+                start - sb.agent().energy,
+                drain
+            );
         }
     }
 
@@ -196,7 +230,17 @@ mod tests {
         config.metabolism.trainer_metabolic_scale = 1.0;
         let drain = |factor: f32| {
             let room = LevelRoom::at(0.0, crate::config::test_config()).with_metabolic_scale(factor);
-            let mut sb = TrainerSandbox::spawn(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Arc::new(room), None, None, &mut seeded(13), crate::config::test_config());
+            let mut sb = TrainerSandbox::spawn(
+                1,
+                WILDTYPE_GENOME,
+                1,
+                SandboxOrigin::Elite,
+                Arc::new(room),
+                None,
+                None,
+                &mut seeded(13),
+                crate::config::test_config(),
+            );
             let start = sb.agent().energy;
             sb.step(&config);
             start - sb.agent().energy
@@ -204,8 +248,16 @@ mod tests {
         let (full, half, none) = (drain(1.0), drain(0.5), drain(0.0));
         assert!(full > 0.0);
         assert_eq!(none, 0.0);
-        assert!((half - 0.5 * full).abs() <= 1e-5 * full.max(1.0), "half {} vs full {}", half, full);
-        assert_eq!(room("standard").world_settings(&config).metabolic_scale, config.metabolism.trainer_metabolic_scale);
+        assert!(
+            (half - 0.5 * full).abs() <= 1e-5 * full.max(1.0),
+            "half {} vs full {}",
+            half,
+            full
+        );
+        assert_eq!(
+            room("standard").world_settings(&config).metabolic_scale,
+            config.metabolism.trainer_metabolic_scale
+        );
     }
 
     #[test]
@@ -230,7 +282,13 @@ mod tests {
 
         sb.reset_trial(&mut rng, crate::config::test_config());
         assert!(!sb.trial().starved);
-        assert_eq!(sb.agent().energy, crate::biology::creature_factory::start_energy(&sb.agent().phenotype, &crate::config::test_config().metabolism));
+        assert_eq!(
+            sb.agent().energy,
+            crate::biology::creature_factory::start_energy(
+                &sb.agent().phenotype,
+                &crate::config::test_config().metabolism
+            )
+        );
     }
 
     #[test]
@@ -239,14 +297,30 @@ mod tests {
         park_food(&mut sb);
         sb.step(crate::config::test_config());
         let before = sb.agent().energy;
-        assert!(before < crate::biology::creature_factory::start_energy(&sb.agent().phenotype, &crate::config::test_config().metabolism), "energy drains every tick");
+        assert!(
+            before
+                < crate::biology::creature_factory::start_energy(
+                    &sb.agent().phenotype,
+                    &crate::config::test_config().metabolism
+                ),
+            "energy drains every tick"
+        );
 
         sb.agent_mut().energy = 10.0;
         drop_food_on_creature(&mut sb, 0);
         sb.step(crate::config::test_config());
         assert_eq!(sb.trial().consumed_count, 1);
-        let gain = crate::biology::metabolism::food_energy(sb.agent().phenotype.carnivory, false, &crate::config::test_config().metabolism);
-        assert!(sb.agent().energy > 10.0 + gain - 1.0 && sb.agent().energy < 10.0 + gain, "energy {} after eating (gain {})", sb.agent().energy, gain);
+        let gain = crate::biology::metabolism::food_energy(
+            sb.agent().phenotype.carnivory,
+            false,
+            &crate::config::test_config().metabolism,
+        );
+        assert!(
+            sb.agent().energy > 10.0 + gain - 1.0 && sb.agent().energy < 10.0 + gain,
+            "energy {} after eating (gain {})",
+            sb.agent().energy,
+            gain
+        );
     }
 
     #[test]
@@ -262,14 +336,20 @@ mod tests {
 
         let size = room("exploration").chamber_size();
         assert_eq!((sb.agent().px, sb.agent().py), (size / 2.0, size / 2.0));
-        assert_eq!((sb.chamber.tick, sb.trial().distance_traveled, sb.trial().finished), (0, 0.0, false));
+        assert_eq!(
+            (sb.chamber.tick, sb.trial().distance_traveled, sb.trial().finished),
+            (0, 0.0, false)
+        );
         assert!(sb.agent().neuron_states.is_empty());
         assert_eq!(sb.agent().synapse_weights, learned);
         let min_dist = LevelRoom::at(1.0, crate::config::test_config()).spawn_min_distance();
         for f in &sb.chamber.foods {
             assert!(food_distance(&sb, f) >= min_dist);
         }
-        assert_eq!((sb.trial().sight_distance, sb.trial().approach_min_distance), (None, f32::MAX));
+        assert_eq!(
+            (sb.trial().sight_distance, sb.trial().approach_min_distance),
+            (None, f32::MAX)
+        );
     }
 
     #[test]
@@ -288,7 +368,17 @@ mod tests {
     #[test]
     fn test_respawn_depends_only_on_respawn_seed_catch_index_and_position() {
         let mut a = spawn_in("standard", SandboxOrigin::Elite, &mut seeded(9));
-        let mut b = TrainerSandbox::spawn(2, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room("standard"), None, None, &mut seeded(9), crate::config::test_config());
+        let mut b = TrainerSandbox::spawn(
+            2,
+            WILDTYPE_GENOME,
+            1,
+            SandboxOrigin::Elite,
+            room("standard"),
+            None,
+            None,
+            &mut seeded(9),
+            crate::config::test_config(),
+        );
         assert_eq!(a.chamber.respawn_seed, b.chamber.respawn_seed);
         let eat_plant = |sb: &mut TrainerSandbox| {
             drop_food_on_creature(sb, 0);
@@ -314,15 +404,26 @@ mod tests {
     fn test_spawn_distance_identical_for_first_trial_later_trials_and_respawns() {
         // RV-S08: one room distance for trial 0, re-trials and respawns after eating
         let spawn = &crate::config::test_config().trainer.trainer_spawn_min_distance;
-        for (id, level, expected) in [("standard", 0.0, spawn.standard), ("exploration", 1.0, spawn.exploration)] {
+        for (id, level, expected) in [
+            ("standard", 0.0, spawn.standard),
+            ("exploration", 1.0, spawn.exploration),
+        ] {
             let min_dist = LevelRoom::at(level, crate::config::test_config()).spawn_min_distance();
             assert_eq!(min_dist, expected);
             for seed in 0..20 {
                 let mut rng = seeded(100 + seed);
                 let mut sb = spawn_in(id, SandboxOrigin::Elite, &mut rng);
-                assert!(sb.chamber.foods.iter().all(|f| food_distance(&sb, f) >= min_dist), "{} trial 0", id);
+                assert!(
+                    sb.chamber.foods.iter().all(|f| food_distance(&sb, f) >= min_dist),
+                    "{} trial 0",
+                    id
+                );
                 sb.reset_trial(&mut rng, crate::config::test_config());
-                assert!(sb.chamber.foods.iter().all(|f| food_distance(&sb, f) >= min_dist), "{} trial 1", id);
+                assert!(
+                    sb.chamber.foods.iter().all(|f| food_distance(&sb, f) >= min_dist),
+                    "{} trial 1",
+                    id
+                );
                 // Respawn after a catch at the creature's position
                 drop_food_on_creature(&mut sb, 0);
                 sb.step(crate::config::test_config());
@@ -354,12 +455,20 @@ mod tests {
             f.x = cx + 0.8 * range;
         }
         track(&mut sb);
-        assert!((sb.trial().sight_distance.unwrap() - 0.8 * range).abs() < 1e-3, "{:?}", sb.trial().sight_distance);
+        assert!(
+            (sb.trial().sight_distance.unwrap() - 0.8 * range).abs() < 1e-3,
+            "{:?}",
+            sb.trial().sight_distance
+        );
         for f in &mut sb.chamber.foods {
             f.x = cx + 0.4 * range;
         }
         track(&mut sb);
-        assert!((sb.trial().approach_fraction() - 0.5).abs() < 1e-5, "{}", sb.trial().approach_fraction());
+        assert!(
+            (sb.trial().approach_fraction() - 0.5).abs() < 1e-5,
+            "{}",
+            sb.trial().approach_fraction()
+        );
         // Moving away keeps the best approach
         for f in &mut sb.chamber.foods {
             f.x = cx + 0.7 * range;

@@ -4,17 +4,19 @@
 
 use std::time::{Duration, Instant};
 
-use crate::trainer::mode::Scenario;
-use crate::trainer::breeder::GenomeRecord;
-use crate::trainer::sim::{run_seed, TrainerEvent, TrainerParams, TrainerSim};
 use crate::biology::trainer_store;
 use crate::config::AppConfig;
 use crate::persistence::LogDbError;
 use crate::server::ipc::UiEvent;
-use crate::server::trainer_ipc::{TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent};
+use crate::server::trainer_ipc::{
+    TrainerAction, TrainerGenerationCompleted, TrainerState, TrainerTelemetryTick, TrainerUiEvent,
+};
 use crate::shared::time;
+use crate::trainer::breeder::GenomeRecord;
+use crate::trainer::mode::Scenario;
+use crate::trainer::sim::{TrainerEvent, TrainerParams, TrainerSim, run_seed};
 
-use super::mode::{clamp_warp, Interval, Mode, ModeCtx};
+use super::mode::{Interval, Mode, ModeCtx, clamp_warp};
 use super::store::EngineStore;
 
 /// Trainer telemetry rate (25 Hz).
@@ -48,7 +50,12 @@ impl TrainerMode {
     pub fn new(config: &AppConfig, now: Instant) -> Self {
         let retention = config.trainer.trainer_genome_retention_per_run;
         Self {
-            sim: TrainerSim::new(TrainerParams::from_config(config), run_seed(&config.core.seed, DEFAULT_RUN_ID, None), retention, config),
+            sim: TrainerSim::new(
+                TrainerParams::from_config(config),
+                run_seed(&config.core.seed, DEFAULT_RUN_ID, None),
+                retention,
+                config,
+            ),
             running: false,
             warp: 1,
             headless: false,
@@ -129,7 +136,16 @@ impl TrainerMode {
         let parents = trainer_store::load_genomes(store, &self.run_id, true, params.population);
         let hof = trainer_store::load_genomes(store, &self.run_id, false, self.retention);
         let generation = parents.iter().map(|p| p.generation).fold(generation, u32::max);
-        self.sim = TrainerSim::restore_at_layout(params, seed, generation, layout_id, parents, hof, self.retention, config);
+        self.sim = TrainerSim::restore_at_layout(
+            params,
+            seed,
+            generation,
+            layout_id,
+            parents,
+            hof,
+            self.retention,
+            config,
+        );
         self.run_state_loaded = true;
         self.store_changed = false;
     }
@@ -137,7 +153,9 @@ impl TrainerMode {
     fn reset(&mut self, ctx: &mut ModeCtx) {
         self.running = false;
         // Delete the saved genomes and run state of the current run (hard reset)
-        ctx.store.delete_trainer_run(&self.run_id).log_db_err("deleting the trainer run");
+        ctx.store
+            .delete_trainer_run(&self.run_id)
+            .log_db_err("deleting the trainer run");
         // A fresh run restarts the automatic curriculum at its start level (a manual level is kept)
         let mut params = self.sim.params.clone();
         if params.level_auto {
@@ -150,14 +168,29 @@ impl TrainerMode {
         trainer_store::save_run_state(ctx.store, &self.run_id, &self.sim);
         self.run_state_loaded = true;
         self.store_changed = false;
-        ctx.emit(TrainerUiEvent::TrainerResetCompleted(TrainerState { generation: 1, ..self.state() }));
+        ctx.emit(TrainerUiEvent::TrainerResetCompleted(TrainerState {
+            generation: 1,
+            ..self.state()
+        }));
     }
 
     /// Generation end: UI events, elites and run state to the store.
     fn on_event(&mut self, event: TrainerEvent, ctx: &mut ModeCtx) {
         match event {
-            TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites, stats } => {
-                log::info!("generation {} completed, best fitness {:.2}, mean {:.2}", generation, best_fitness, avg_fitness);
+            TrainerEvent::GenerationCompleted {
+                generation,
+                best_fitness,
+                avg_fitness,
+                best_genome,
+                elites,
+                stats,
+            } => {
+                log::info!(
+                    "generation {} completed, best fitness {:.2}, mean {:.2}",
+                    generation,
+                    best_fitness,
+                    avg_fitness
+                );
                 let params = &self.sim.params;
                 ctx.emit(TrainerUiEvent::TrainerGenerationCompleted(TrainerGenerationCompleted {
                     generation,
@@ -188,7 +221,12 @@ impl Mode for TrainerMode {
     fn on_enter(&mut self, ctx: &mut ModeCtx) {
         if !self.run_state_loaded || self.store_changed {
             self.restore(self.sim.generation, ctx.store, ctx.config);
-            log::info!("rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}", self.sim.params.population, self.run_id, self.sim.generation);
+            log::info!(
+                "rebuilt sandbox grid with {} chambers for run '{}', restored Gen {}",
+                self.sim.params.population,
+                self.run_id,
+                self.sim.generation
+            );
         }
         self.emit_state(ctx);
     }
@@ -202,16 +240,29 @@ impl Mode for TrainerMode {
             // Room switches take effect at the next generation (at once at a generation start; TCK-176)
             TrainerAction::SetTrainerMode { mode: scenario } => {
                 let sim = &mut self.sim;
-                if scenario != sim.params.scenario || sim.pending_scenario().is_some() || (scenario == Scenario::Curriculum && !sim.params.level_auto) {
+                if scenario != sim.params.scenario
+                    || sim.pending_scenario().is_some()
+                    || (scenario == Scenario::Curriculum && !sim.params.level_auto)
+                {
                     sim.set_scenario(scenario);
                     let size = sim.room().chamber_size();
-                    log::info!("training mode {:?} requested (pending: {:?}, current chamber {}x{})", scenario, sim.pending_scenario(), size, size);
+                    log::info!(
+                        "training mode {:?} requested (pending: {:?}, current chamber {}x{})",
+                        scenario,
+                        sim.pending_scenario(),
+                        size,
+                        size
+                    );
                 }
                 self.emit_state(ctx);
             }
             TrainerAction::SetTrainerLevel { level } => {
                 self.sim.set_level(level);
-                log::info!("manual level {:.2} requested (pending: {:?})", level, self.sim.pending_scenario());
+                log::info!(
+                    "manual level {:.2} requested (pending: {:?})",
+                    level,
+                    self.sim.pending_scenario()
+                );
                 self.emit_state(ctx);
             }
             TrainerAction::StartTraining => {
@@ -226,11 +277,22 @@ impl Mode for TrainerMode {
             TrainerAction::SelectTrainerSandbox { id } => self.selected_sandbox = id,
             TrainerAction::AssignSandboxCreature(assign) => {
                 let methylations = assign.methylations.unwrap_or_default();
-                let methylations = if methylations.is_empty() { None } else { Some(&methylations[..]) };
+                let methylations = if methylations.is_empty() {
+                    None
+                } else {
+                    Some(&methylations[..])
+                };
                 // Learned weights only on request; the factory falls back to the genome weights on a length mismatch
-                let synapses = if assign.load_learned_synapses.unwrap_or(false) { Some(assign.synapse_weights.unwrap_or_default()) } else { None };
+                let synapses = if assign.load_learned_synapses.unwrap_or(false) {
+                    Some(assign.synapse_weights.unwrap_or_default())
+                } else {
+                    None
+                };
                 let generation = self.sim.generation;
-                if let Some(sb) = self.sim.assign_creature(assign.sandbox_id, &assign.genome, methylations, synapses) {
+                if let Some(sb) = self
+                    .sim
+                    .assign_creature(assign.sandbox_id, &assign.genome, methylations, synapses)
+                {
                     // Also save this assigned creature as an active parent of this run
                     let record = GenomeRecord {
                         genome: sb.agent.genome.clone(),
@@ -268,7 +330,8 @@ impl Mode for TrainerMode {
                 // `mutationRate` = max mutation ops per child (TCK-174; field name kept)
                 if let Some(ops) = update.mutation_rate {
                     let lo = p.mutation_ops_min.max(1);
-                    p.mutation_ops_max = (ops.round().max(0.0) as u32).clamp(lo, ctx.config.trainer.mutation_ops_limit.max(lo));
+                    p.mutation_ops_max =
+                        (ops.round().max(0.0) as u32).clamp(lo, ctx.config.trainer.mutation_ops_limit.max(lo));
                 }
                 if let Some(i_r) = update.inflow_rate {
                     p.inflow_rate = i_r;

@@ -83,7 +83,12 @@ pub fn organ_load(phenotype: &CreaturePhenotype) -> f32 {
 /// Neurons that integrate (thalamus, hidden, motors). Sensor and systemic slots are inputs written by the
 /// sensing code, not neurons; their cost is part of the organ term.
 pub fn brain_neurons(phenotype: &CreaturePhenotype) -> usize {
-    phenotype.brain.neurons.iter().filter(|n| !matches!(n.role, NeuronRole::Sensor { .. } | NeuronRole::Systemic { .. })).count()
+    phenotype
+        .brain
+        .neurons
+        .iter()
+        .filter(|n| !matches!(n.role, NeuronRole::Sensor { .. } | NeuronRole::Systemic { .. }))
+        .count()
 }
 
 /// Energy cost of one tick, per term.
@@ -166,13 +171,24 @@ pub(crate) mod tests {
     pub(crate) fn median(mut v: Vec<f32>) -> f32 {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let n = v.len();
-        if n % 2 == 1 { v[n / 2] } else { 0.5 * (v[n / 2 - 1] + v[n / 2]) }
+        if n % 2 == 1 {
+            v[n / 2]
+        } else {
+            0.5 * (v[n / 2 - 1] + v[n / 2])
+        }
     }
 
     fn structured_phenotypes(n: usize) -> Vec<CreaturePhenotype> {
         let composition = &crate::config::test_config().genome.genome_composition;
         (0..n)
-            .map(|i| parse_genome(&crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64])), None, None, &crate::config::test_config().brain))
+            .map(|i| {
+                parse_genome(
+                    &crate::biology::genome::generate_structured_genome(composition, &mut derive(151, &[i as u64])),
+                    None,
+                    None,
+                    &crate::config::test_config().brain,
+                )
+            })
             .collect()
     }
 
@@ -180,17 +196,28 @@ pub(crate) mod tests {
     fn test_brain_and_senses_share_of_resting_cost_is_in_band() {
         let m = &crate::config::test_config().metabolism;
         let phenotypes = structured_phenotypes(1000);
-        let costs: Vec<EnergyCost> = phenotypes.iter().map(|p| tick_cost(p, TYPICAL_ACTIVITY, 0.0, m)).collect();
+        let costs: Vec<EnergyCost> = phenotypes
+            .iter()
+            .map(|p| tick_cost(p, TYPICAL_ACTIVITY, 0.0, m))
+            .collect();
 
         // Median phenotype (median of every term): the derivation target 15 %
         let term = |f: fn(&EnergyCost) -> f32| median(costs.iter().map(f).collect());
         let (body, senses, brain) = (term(|c| c.body), term(|c| c.senses), term(|c| c.brain()));
         let share = (senses + brain) / (body + senses + brain);
-        assert!((0.10..=0.20).contains(&share), "median-phenotype brain + senses share {}", share);
+        assert!(
+            (0.10..=0.20).contains(&share),
+            "median-phenotype brain + senses share {}",
+            share
+        );
 
         // Per-genome shares: the median creature also lies in the band
         let per_genome = median(costs.iter().map(|c| (c.senses + c.brain()) / c.resting()).collect());
-        assert!((0.10..=0.20).contains(&per_genome), "median per-genome brain + senses share {}", per_genome);
+        assert!(
+            (0.10..=0.20).contains(&per_genome),
+            "median per-genome brain + senses share {}",
+            per_genome
+        );
     }
 
     #[test]
@@ -206,7 +233,11 @@ pub(crate) mod tests {
                 })
                 .collect(),
         );
-        assert!((0.8..=1.25).contains(&ratio), "full-thrust movement / resting cost {}", ratio);
+        assert!(
+            (0.8..=1.25).contains(&ratio),
+            "full-thrust movement / resting cost {}",
+            ratio
+        );
         // Backward thrust costs the same, no thrust nothing
         let p = &phenotypes[0];
         assert_eq!(tick_cost(p, 1.0, -0.5, m).movement, tick_cost(p, 1.0, 0.5, m).movement);
@@ -228,10 +259,17 @@ pub(crate) mod tests {
     #[test]
     fn test_food_and_bite_energy() {
         let rules = &crate::config::test_config().metabolism;
-        assert_eq!(food_energy(0.0, false, rules), rules.food_spore_energy * rules.grazing_efficiency_herbivore_scale);
-        assert_eq!(food_energy(1.0, true, rules), rules.food_spore_energy * rules.biting_efficiency_carnivore_scale);
+        assert_eq!(
+            food_energy(0.0, false, rules),
+            rules.food_spore_energy * rules.grazing_efficiency_herbivore_scale
+        );
+        assert_eq!(
+            food_energy(1.0, true, rules),
+            rules.food_spore_energy * rules.biting_efficiency_carnivore_scale
+        );
         assert_eq!(food_energy(0.0, true, rules), 0.0);
-        let full = (rules.biting_base_energy_gain * 0.8 * rules.biting_efficiency_carnivore_scale).min(rules.biting_energy_damage);
+        let full = (rules.biting_base_energy_gain * 0.8 * rules.biting_efficiency_carnivore_scale)
+            .min(rules.biting_energy_damage);
         assert_eq!(bite_energy_gain(0.8, 1000.0, rules), full);
         // Never more than the damage dealt
         assert!(bite_energy_gain(1.0, 1000.0, rules) <= rules.biting_energy_damage);

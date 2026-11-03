@@ -17,7 +17,13 @@ pub enum DeathPolicy {
     Freeze,
     /// At 0 energy or at the lifespan `min(mature_age · lifespan_multiplier, max_age_ticks)` the creature dies and
     /// decomposes into `floor(length · radius / size_ratio)` meat spores clamped to `[spore_min, spore_max]` (Ocean).
-    Decompose { lifespan_multiplier: u32, max_age_ticks: u32, size_ratio: f32, spore_min: i32, spore_max: i32 },
+    Decompose {
+        lifespan_multiplier: u32,
+        max_age_ticks: u32,
+        size_ratio: f32,
+        spore_min: i32,
+        spore_max: i32,
+    },
 }
 
 impl DeathPolicy {
@@ -36,7 +42,12 @@ impl DeathPolicy {
     pub fn spores(&self, agent: &CreatureAgent) -> i32 {
         match *self {
             DeathPolicy::Freeze => 0,
-            DeathPolicy::Decompose { size_ratio, spore_min, spore_max, .. } => {
+            DeathPolicy::Decompose {
+                size_ratio,
+                spore_min,
+                spore_max,
+                ..
+            } => {
                 let body = &agent.phenotype.spinal_harmonics;
                 (((body.base_length * body.mean_radius) / size_ratio).floor() as i32).clamp(spore_min, spore_max)
             }
@@ -57,11 +68,19 @@ pub fn death(world: &mut World, idx: usize, step: &mut CreatureStep) {
                 step.died = true;
             }
         }
-        DeathPolicy::Decompose { lifespan_multiplier, max_age_ticks, .. } => {
+        DeathPolicy::Decompose {
+            lifespan_multiplier,
+            max_age_ticks,
+            ..
+        } => {
             let lifespan = (agent.phenotype.mature_age * lifespan_multiplier).min(max_age_ticks);
             if agent.energy <= 0.0 || agent.age >= lifespan {
                 step.died = true;
-                step.events.push(CreatureEvent::Decomposed { x: agent.px, y: agent.py, spores: policy.spores(agent) });
+                step.events.push(CreatureEvent::Decomposed {
+                    x: agent.px,
+                    y: agent.py,
+                    spores: policy.spores(agent),
+                });
             }
         }
     }
@@ -90,11 +109,24 @@ mod tests {
 
     #[test]
     fn test_decompose_turns_spores_into_meat_near_the_corpse() {
-        let mut foods: Vec<FoodSpore> = (0..10).map(|id| FoodSpore { id, type_id: 1, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 }).collect();
+        let mut foods: Vec<FoodSpore> = (0..10)
+            .map(|id| FoodSpore {
+                id,
+                type_id: 1,
+                x: 0.0,
+                y: 0.0,
+                amount: 15.0,
+                vx: 0.0,
+                vy: 0.0,
+            })
+            .collect();
         decompose(&mut foods, 500.0, 400.0, 3, &mut seeded(1));
         let meat: Vec<&FoodSpore> = foods.iter().filter(|f| f.type_id == 2).collect();
         assert!(!meat.is_empty() && meat.len() <= 3);
-        assert!(meat.iter().all(|f| (f.x - 500.0).abs() <= 16.0 && (f.y - 400.0).abs() <= 16.0));
+        assert!(
+            meat.iter()
+                .all(|f| (f.x - 500.0).abs() <= 16.0 && (f.y - 400.0).abs() <= 16.0)
+        );
         decompose(&mut [], 0.0, 0.0, 5, &mut seeded(1));
     }
 }

@@ -4,7 +4,7 @@
 use super::{HSLColor, SpinalHarmonics, Symmetry};
 use crate::biology::genome::alphabet::normalize_genome;
 use crate::biology::genome::payload::Payload;
-use crate::biology::genome::table::{first_payload, GeneTable};
+use crate::biology::genome::table::{GeneTable, first_payload};
 
 /// Insertion/deletion rate at EVO h = 1 (rates are h * MAX_INDEL_RATE).
 pub const MAX_INDEL_RATE: f32 = 0.12;
@@ -60,7 +60,11 @@ pub const BODY_GENES: &[(&str, Decoder)] = &[
 /// Symmetry, hue, saturation of the primary and lightness of the secondary colour.
 fn decode_col(p: Payload, t: &mut BodyTraits) {
     let (h_sym, h_color1, h_color2) = (p.h(11), p.h(0), p.h(5));
-    t.symmetry = if h_sym >= 0.5 { Symmetry::Quad } else { Symmetry::Vertical };
+    t.symmetry = if h_sym >= 0.5 {
+        Symmetry::Quad
+    } else {
+        Symmetry::Vertical
+    };
     t.primary_color.h = (h_color1 * 360.0).round();
     t.primary_color.s = (55.0 + h_color2 * 45.0).round();
     t.secondary_color.h = (((h_color1 * 360.0) + 180.0) % 360.0).round(); // complementary secondary color

@@ -1,6 +1,6 @@
 //! Bristle: surface hardness and local pain (affinity < 0.25, style < 0.35).
 
-use super::{common, contact, Organ, OrganKind, OrganSpec, SenseCtx, CHANNELS_PER_ORGANELLE};
+use super::{CHANNELS_PER_ORGANELLE, Organ, OrganKind, OrganSpec, SenseCtx, common, contact};
 
 /// Channel 0 hardness, channel 4 pain.
 fn live_channels(_: &Organ) -> [bool; CHANNELS_PER_ORGANELLE] {

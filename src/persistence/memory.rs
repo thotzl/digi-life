@@ -56,7 +56,15 @@ fn sqlite_timestamp(secs: i64) -> String {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", year, month, day, rem / 3600, rem % 3600 / 60, rem % 60)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+        year,
+        month,
+        day,
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 
 /// Rows of `rows` best first by fitness (stable: insertion order on ties).
@@ -67,13 +75,20 @@ fn best_first<'a>(rows: impl Iterator<Item = &'a GenomeRow>) -> Vec<&'a GenomeRo
 }
 
 fn limited<T>(items: Vec<T>, limit: i64) -> Vec<T> {
-    if limit < 0 { items } else { items.into_iter().take(limit as usize).collect() }
+    if limit < 0 {
+        items
+    } else {
+        items.into_iter().take(limit as usize).collect()
+    }
 }
 
 impl SpeciesRepo for MemoryDb {
     fn insert_species(&self, s: &NewSpecies) -> RepoResult<()> {
         let mut t = self.tables.borrow_mut();
-        if t.species.iter().any(|r| r.id == s.genome || r.latin_name == s.latin_name) {
+        if t.species
+            .iter()
+            .any(|r| r.id == s.genome || r.latin_name == s.latin_name)
+        {
             return Ok(());
         }
         t.species.push(SpeciesRecord {
@@ -96,11 +111,27 @@ impl SpeciesRepo for MemoryDb {
     }
 
     fn species_states(&self) -> RepoResult<Vec<SpeciesState>> {
-        Ok(self.tables.borrow().species.iter().map(|r| SpeciesState { id: r.id.clone(), status: r.status, peak_population: r.peak_population }).collect())
+        Ok(self
+            .tables
+            .borrow()
+            .species
+            .iter()
+            .map(|r| SpeciesState {
+                id: r.id.clone(),
+                status: r.status,
+                peak_population: r.peak_population,
+            })
+            .collect())
     }
 
     fn species_name(&self, id: &str) -> RepoResult<Option<String>> {
-        Ok(self.tables.borrow().species.iter().find(|r| r.id == id).map(|r| r.latin_name.clone()))
+        Ok(self
+            .tables
+            .borrow()
+            .species
+            .iter()
+            .find(|r| r.id == id)
+            .map(|r| r.latin_name.clone()))
     }
 
     fn mark_species_alive(&self, id: &str) -> RepoResult<()> {
@@ -134,8 +165,13 @@ impl SpeciesRepo for MemoryDb {
     fn prune_extinct_species(&self, keep: usize) -> RepoResult<usize> {
         let mut t = self.tables.borrow_mut();
         // Newest extinction first, later insertion first on ties (SQLite: extinction_time DESC, rowid DESC)
-        let mut extinct: Vec<(usize, i64)> =
-            t.species.iter().enumerate().filter(|(_, r)| r.status == SpeciesStatus::Extinct).map(|(i, r)| (i, r.extinction_time.unwrap_or(i64::MIN))).collect();
+        let mut extinct: Vec<(usize, i64)> = t
+            .species
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.status == SpeciesStatus::Extinct)
+            .map(|(i, r)| (i, r.extinction_time.unwrap_or(i64::MIN)))
+            .collect();
         extinct.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.cmp(&a.0)));
         let drop: Vec<usize> = extinct.iter().skip(keep).map(|(i, _)| *i).collect();
         let before = t.species.len();
@@ -158,7 +194,13 @@ impl CatalogueRepo for MemoryDb {
     }
 
     fn catalogue_entry(&self, id: &str) -> RepoResult<Option<CatalogueEntry>> {
-        Ok(self.tables.borrow().catalogue.iter().find(|r| r.entry.id == id).map(|r| r.entry.clone()))
+        Ok(self
+            .tables
+            .borrow()
+            .catalogue
+            .iter()
+            .find(|r| r.entry.id == id)
+            .map(|r| r.entry.clone()))
     }
 
     fn save_catalogue_entry(&self, e: &NewCatalogueEntry) -> RepoResult<()> {
@@ -184,7 +226,13 @@ impl CatalogueRepo for MemoryDb {
     }
 
     fn rename_catalogue_entry(&self, id: &str, name: &str) -> RepoResult<()> {
-        for r in self.tables.borrow_mut().catalogue.iter_mut().filter(|r| r.entry.id == id) {
+        for r in self
+            .tables
+            .borrow_mut()
+            .catalogue
+            .iter_mut()
+            .filter(|r| r.entry.id == id)
+        {
             r.entry.name = name.to_string();
         }
         Ok(())
@@ -199,7 +247,12 @@ impl CatalogueRepo for MemoryDb {
 impl MemoryDb {
     fn put_genome(&self, id: String, run_id: &str, genome: &TrainerGenome) {
         let mut t = self.tables.borrow_mut();
-        let row = GenomeRow { id, run_id: run_id.to_string(), active: true, genome: genome.clone() };
+        let row = GenomeRow {
+            id,
+            run_id: run_id.to_string(),
+            active: true,
+            genome: genome.clone(),
+        };
         match t.genomes.iter_mut().find(|r| r.id == row.id) {
             Some(existing) => *existing = row,
             None => t.genomes.push(row),
@@ -208,12 +261,27 @@ impl MemoryDb {
 }
 
 impl TrainerRepo for MemoryDb {
-    fn save_trainer_generation(&self, run_id: &str, genomes: &[TrainerGenome], retention: Option<usize>) -> RepoResult<()> {
-        for r in self.tables.borrow_mut().genomes.iter_mut().filter(|r| r.run_id == run_id) {
+    fn save_trainer_generation(
+        &self,
+        run_id: &str,
+        genomes: &[TrainerGenome],
+        retention: Option<usize>,
+    ) -> RepoResult<()> {
+        for r in self
+            .tables
+            .borrow_mut()
+            .genomes
+            .iter_mut()
+            .filter(|r| r.run_id == run_id)
+        {
             r.active = false;
         }
         for (idx, g) in genomes.iter().enumerate() {
-            self.put_genome(format!("{}-{}-{}-{}", run_id, g.generation, idx, unique_suffix()), run_id, g);
+            self.put_genome(
+                format!("{}-{}-{}-{}", run_id, g.generation, idx, unique_suffix()),
+                run_id,
+                g,
+            );
         }
         if let Some(retention) = retention {
             self.prune_trainer_genomes(run_id, retention)?;
@@ -227,20 +295,33 @@ impl TrainerRepo for MemoryDb {
     }
 
     fn add_trainer_genome(&self, run_id: &str, g: &TrainerGenome) -> RepoResult<()> {
-        self.put_genome(format!("{}-{}-added-{}", run_id, g.generation, unique_suffix()), run_id, g);
+        self.put_genome(
+            format!("{}-{}-added-{}", run_id, g.generation, unique_suffix()),
+            run_id,
+            g,
+        );
         Ok(())
     }
 
     fn prune_trainer_genomes(&self, run_id: &str, retention: usize) -> RepoResult<()> {
         let mut t = self.tables.borrow_mut();
-        let kept: Vec<String> = best_first(t.genomes.iter().filter(|r| r.run_id == run_id)).into_iter().take(retention).map(|r| r.id.clone()).collect();
-        t.genomes.retain(|r| r.run_id != run_id || r.active || kept.contains(&r.id));
+        let kept: Vec<String> = best_first(t.genomes.iter().filter(|r| r.run_id == run_id))
+            .into_iter()
+            .take(retention)
+            .map(|r| r.id.clone())
+            .collect();
+        t.genomes
+            .retain(|r| r.run_id != run_id || r.active || kept.contains(&r.id));
         Ok(())
     }
 
     fn trainer_genomes(&self, run_id: &str, active_only: bool, limit: i64) -> RepoResult<Vec<TrainerGenome>> {
         let t = self.tables.borrow();
-        let rows = best_first(t.genomes.iter().filter(|r| r.run_id == run_id && (r.active || !active_only)));
+        let rows = best_first(
+            t.genomes
+                .iter()
+                .filter(|r| r.run_id == run_id && (r.active || !active_only)),
+        );
         Ok(limited(rows.into_iter().map(|r| r.genome.clone()).collect(), limit))
     }
 
@@ -250,7 +331,12 @@ impl TrainerRepo for MemoryDb {
         rows.sort_by(|a, b| b.genome.fitness.total_cmp(&a.genome.fitness).then(a.id.cmp(&b.id)));
         Ok(rows
             .into_iter()
-            .map(|r| RankedGenome { genome: r.genome.genome.clone(), fitness: r.genome.fitness, run_id: r.run_id.clone(), generation: r.genome.generation })
+            .map(|r| RankedGenome {
+                genome: r.genome.genome.clone(),
+                fitness: r.genome.fitness,
+                run_id: r.run_id.clone(),
+                generation: r.genome.generation,
+            })
             .collect())
     }
 
@@ -263,7 +349,11 @@ impl TrainerRepo for MemoryDb {
                     s.max_generation = s.max_generation.max(r.genome.generation);
                     s.max_fitness = s.max_fitness.max(r.genome.fitness);
                 }
-                None => runs.push(TrainerRunSummary { run_id: r.run_id.clone(), max_generation: r.genome.generation, max_fitness: r.genome.fitness }),
+                None => runs.push(TrainerRunSummary {
+                    run_id: r.run_id.clone(),
+                    max_generation: r.genome.generation,
+                    max_fitness: r.genome.fitness,
+                }),
             }
         }
         runs.sort_by(|a, b| a.run_id.cmp(&b.run_id));
@@ -271,7 +361,10 @@ impl TrainerRepo for MemoryDb {
     }
 
     fn save_trainer_run_state(&self, run_id: &str, state: &TrainerRunStateRow) -> RepoResult<()> {
-        self.tables.borrow_mut().run_states.insert(run_id.to_string(), state.clone());
+        self.tables
+            .borrow_mut()
+            .run_states
+            .insert(run_id.to_string(), state.clone());
         Ok(())
     }
 

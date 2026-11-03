@@ -72,7 +72,10 @@ impl AppConfig {
                     log::info!("loaded override from working directory config.json");
                     return parsed;
                 }
-                Err(e) => log::error!("working directory config.json is invalid ({}); using the embedded config", e),
+                Err(e) => log::error!(
+                    "working directory config.json is invalid ({}); using the embedded config",
+                    e
+                ),
             }
         }
         log::info!("using the embedded config.json");
@@ -105,7 +108,11 @@ mod tests {
         match value.as_object() {
             Some(object) => {
                 for (key, child) in object {
-                    let path = if prefix.is_empty() { key.clone() } else { format!("{}.{}", prefix, key) };
+                    let path = if prefix.is_empty() {
+                        key.clone()
+                    } else {
+                        format!("{}.{}", prefix, key)
+                    };
                     leaf_paths(child, &path, out);
                 }
             }
@@ -119,9 +126,16 @@ mod tests {
     fn test_embedded_config_matches_config_json() {
         let embedded = AppConfig::embedded();
         let disk = on_disk();
-        assert_eq!(embedded.ocean.food_spore_count as u64, disk["ocean"]["foodSporeCount"].as_u64().unwrap());
+        assert_eq!(
+            embedded.ocean.food_spore_count as u64,
+            disk["ocean"]["foodSporeCount"].as_u64().unwrap()
+        );
         assert_eq!(embedded.core.seed, disk["core"]["seed"].as_str().unwrap());
-        assert!((embedded.physics.locomotion_speed_max as f64 - disk["physics"]["locomotionSpeedMax"].as_f64().unwrap()).abs() < 1e-6);
+        assert!(
+            (embedded.physics.locomotion_speed_max as f64 - disk["physics"]["locomotionSpeedMax"].as_f64().unwrap())
+                .abs()
+                < 1e-6
+        );
     }
 
     /// Every key of `config.json` maps onto a struct field and every field is in `config.json`: deserialize →
@@ -231,12 +245,18 @@ mod tests {
         let mut code = String::new();
         collect_production_code(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut code);
         let unread: Vec<&String> = fields.iter().filter(|field| !reads_field(&code, field)).collect();
-        assert!(unread.is_empty(), "config keys without a read site in production code: {:?}", unread);
+        assert!(
+            unread.is_empty(),
+            "config keys without a read site in production code: {:?}",
+            unread
+        );
     }
 
     #[test]
     fn test_read_site_scan_ignores_comments_strings_and_tests() {
-        let code = production_code("let a = c.used;\n// c.in_comment\nlet s = \".in_string\";\nfn f() { x.call(); }\n#[cfg(test)]\nmod tests { fn t() { c.in_test; } }");
+        let code = production_code(
+            "let a = c.used;\n// c.in_comment\nlet s = \".in_string\";\nfn f() { x.call(); }\n#[cfg(test)]\nmod tests { fn t() { c.in_test; } }",
+        );
         assert!(reads_field(&code, "used"));
         assert!(!reads_field(&code, "in_comment"));
         assert!(!reads_field(&code, "in_string"));
@@ -250,10 +270,17 @@ mod tests {
         for section in ["core", "ocean", "trainer", "genome", "brain", "metabolism", "physics"] {
             let mut disk = on_disk();
             disk[section]["ventsBaseCount"] = serde_json::json!(6);
-            assert!(serde_json::from_value::<AppConfig>(disk).is_err(), "unknown key accepted in section {}", section);
+            assert!(
+                serde_json::from_value::<AppConfig>(disk).is_err(),
+                "unknown key accepted in section {}",
+                section
+            );
         }
         let mut disk = on_disk();
         disk["rules"] = serde_json::json!({});
-        assert!(serde_json::from_value::<AppConfig>(disk).is_err(), "unknown section accepted");
+        assert!(
+            serde_json::from_value::<AppConfig>(disk).is_err(),
+            "unknown section accepted"
+        );
     }
 }

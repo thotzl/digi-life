@@ -14,7 +14,9 @@ pub mod world;
 use crate::biology::brain::MotorOutputs;
 use crate::shared::dto::FoodSpore;
 
-pub use world::{PeerSnapshot, TemperatureField, TickCtx, World, WorldSettings, BRAIN_ONLY_SYSTEMS, OCEAN_SYSTEMS, TRAINER_SYSTEMS};
+pub use world::{
+    BRAIN_ONLY_SYSTEMS, OCEAN_SYSTEMS, PeerSnapshot, TRAINER_SYSTEMS, TemperatureField, TickCtx, World, WorldSettings,
+};
 
 /// One step of the per-creature tick. A world lists the systems it runs, in order (`WorldSettings::systems`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,30 +99,58 @@ pub fn step_creature(world: &mut World, idx: usize, ctx: &TickCtx, step: &mut Cr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+    use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
     use crate::biology::genome::WILDTYPE_GENOME;
-    use crate::trainer::room::registry;
     use crate::shared::dto::CreatureAgent;
     use crate::sim::systems::death::DeathPolicy;
     use crate::sim::systems::sense::{ClockVariant, TargetSelector};
+    use crate::trainer::room::registry;
 
     fn agent(px: f32, py: f32) -> CreatureAgent {
-        spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px, py, heading_angle: 0.0, generation: 1, methylations: None, synapse_weights: None }, crate::config::test_config())
+        spawn_creature(
+            WILDTYPE_GENOME,
+            SpawnOptions {
+                id: 1,
+                px,
+                py,
+                heading_angle: 0.0,
+                generation: 1,
+                methylations: None,
+                synapse_weights: None,
+            },
+            crate::config::test_config(),
+        )
     }
 
     fn food(x: f32, y: f32) -> FoodSpore {
-        FoodSpore { id: 1, type_id: 1, x, y, amount: 15.0, vx: 0.0, vy: 0.0 }
+        FoodSpore {
+            id: 1,
+            type_id: 1,
+            x,
+            y,
+            amount: 15.0,
+            vx: 0.0,
+            vy: 0.0,
+        }
     }
 
     #[test]
     fn test_brain_only_world_moves_without_drain_or_food_interaction() {
         let config = crate::config::test_config();
-        let settings = WorldSettings { systems: BRAIN_ONLY_SYSTEMS, ..registry::build("standard", config).unwrap().world_settings(config) };
+        let settings = WorldSettings {
+            systems: BRAIN_ONLY_SYSTEMS,
+            ..registry::build("standard", config).unwrap().world_settings(config)
+        };
         let mut a = agent(500.0, 500.0);
         let mut foods = vec![food(500.0, 500.0)];
         let (energy, mut step) = (a.energy, CreatureStep::default());
         for tick in 0..20 {
-            step_creature(&mut World::single(&mut a, &mut foods, 1000.0, &settings), 0, &TickCtx::new(config, tick), &mut step);
+            step_creature(
+                &mut World::single(&mut a, &mut foods, 1000.0, &settings),
+                0,
+                &TickCtx::new(config, tick),
+                &mut step,
+            );
             assert!(step.events.is_empty() && !step.died);
         }
         assert_eq!(a.energy, energy);
@@ -134,25 +164,58 @@ mod tests {
         // thermal stress after the drain, food eaten with the config radius, decomposition at the lifespan
         let config = crate::config::test_config();
         let settings = WorldSettings::ocean(&config.ocean, vec![(1000.0, 800.0)]);
-        assert_eq!((settings.clock, settings.targets), (ClockVariant::Std, TargetSelector::NearestPerTypeWithPrey));
+        assert_eq!(
+            (settings.clock, settings.targets),
+            (ClockVariant::Std, TargetSelector::NearestPerTypeWithPrey)
+        );
         let mut a = agent(1000.0, 800.0);
         a.energy = 50.0;
         let mut foods = vec![food(1000.0, 800.0)];
         let peers = [PeerSnapshot::from(&a)];
         let mut step = CreatureStep::default();
         {
-            let mut world = World { temperature: Some(TemperatureField::OCEAN), peers: &peers, height: 1600.0, ..World::single(&mut a, &mut foods, 2000.0, &settings) };
+            let mut world = World {
+                temperature: Some(TemperatureField::OCEAN),
+                peers: &peers,
+                height: 1600.0,
+                ..World::single(&mut a, &mut foods, 2000.0, &settings)
+            };
             step_creature(&mut world, 0, &TickCtx::new(config, 1), &mut step);
         }
         assert!(step.drain > 0.0 && !step.died);
-        assert!(matches!(step.events[..], [CreatureEvent::Ate { food: 0, is_meat: false, .. }]), "{:?}", step.events);
+        assert!(
+            matches!(
+                step.events[..],
+                [CreatureEvent::Ate {
+                    food: 0,
+                    is_meat: false,
+                    ..
+                }]
+            ),
+            "{:?}",
+            step.events
+        );
 
-        let DeathPolicy::Decompose { lifespan_multiplier, max_age_ticks, .. } = settings.death else { panic!("the Ocean decomposes") };
+        let DeathPolicy::Decompose {
+            lifespan_multiplier,
+            max_age_ticks,
+            ..
+        } = settings.death
+        else {
+            panic!("the Ocean decomposes")
+        };
         a.age = (a.phenotype.mature_age * lifespan_multiplier).min(max_age_ticks);
         let (px, py) = (a.px, a.py);
-        step_creature(&mut World::single(&mut a, &mut foods, 2000.0, &settings), 0, &TickCtx::new(config, 2), &mut step);
+        step_creature(
+            &mut World::single(&mut a, &mut foods, 2000.0, &settings),
+            0,
+            &TickCtx::new(config, 2),
+            &mut step,
+        );
         assert!(step.died);
         assert_eq!((a.px, a.py), (px, py), "a dead creature does not move");
-        assert!(matches!(step.events[..], [CreatureEvent::Decomposed { spores, .. }] if spores >= config.ocean.decomposition_spore_min));
+        assert!(
+            matches!(step.events[..], [CreatureEvent::Decomposed { spores, .. }] if spores >= config.ocean.decomposition_spore_min)
+        );
     }
 }

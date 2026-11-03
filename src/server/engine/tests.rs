@@ -9,7 +9,7 @@ use crate::persistence::{MemoryDb, NewCatalogueEntry, OceanSnapshotRepo, Trainer
 use crate::server::ipc::EngineEvent;
 use crate::server::ocean_ipc::{OceanAction, OceanUiEvent};
 use crate::server::trainer_ipc::{TrainerAction, TrainerHyperparamsUpdate, TrainerUiEvent};
-use crate::sim::ocean::{OceanSnapshot, FRESH_FOUNDERS, RESET_FOUNDERS};
+use crate::sim::ocean::{FRESH_FOUNDERS, OceanSnapshot, RESET_FOUNDERS};
 
 fn config() -> AppConfig {
     crate::config::test_config().clone()
@@ -60,7 +60,11 @@ fn test_fresh_engine_seeds_the_ocean_and_its_species() {
     let mut sink = VecSink::new();
     let engine = engine_on(MemoryDb::new(), &mut sink, Instant::now());
     let events = sink.take();
-    assert!(matches!(events[..], [UiEvent::Engine(EngineEvent::DatabaseChanged)]), "{:?}", events);
+    assert!(
+        matches!(events[..], [UiEvent::Engine(EngineEvent::DatabaseChanged)]),
+        "{:?}",
+        events
+    );
     assert_eq!(engine.ocean().sim().creatures().len(), FRESH_FOUNDERS);
     let species = engine.store().list_species().unwrap();
     assert!(!species.is_empty() && species.len() <= FRESH_FOUNDERS);
@@ -76,10 +80,19 @@ fn test_client_ready_sends_the_world_size_from_config_and_keeps_the_mode() {
     sink.take();
     engine.handle(client_ready(), &mut sink, now);
     let events = sink.take();
-    let Some(UiEvent::Ocean(OceanUiEvent::InitState(init))) = events.first() else { panic!("{:?}", events) };
-    assert_eq!((init.world.width, init.world.height), (config().ocean.world_width, config().ocean.world_height));
+    let Some(UiEvent::Ocean(OceanUiEvent::InitState(init))) = events.first() else {
+        panic!("{:?}", events)
+    };
+    assert_eq!(
+        (init.world.width, init.world.height),
+        (config().ocean.world_width, config().ocean.world_height)
+    );
     assert_eq!(init.creatures.len(), FRESH_FOUNDERS);
-    assert_eq!(engine.mode(), SimMode::Trainer, "invariant 1: CLIENT_READY never changes the mode");
+    assert_eq!(
+        engine.mode(),
+        SimMode::Trainer,
+        "invariant 1: CLIENT_READY never changes the mode"
+    );
 }
 
 #[test]
@@ -99,10 +112,22 @@ fn test_mode_switch_steps_only_the_active_mode_and_keeps_the_trainer_on_reentry(
         engine.frame(&mut sink, later);
     }
     let events = sink.take();
-    assert_eq!(engine.ocean().sim().tick_count(), 1, "the Ocean is frozen in trainer mode");
+    assert_eq!(
+        engine.ocean().sim().tick_count(),
+        1,
+        "the Ocean is frozen in trainer mode"
+    );
     assert_eq!(engine.trainer().sim().epoch_ticks, 3);
-    assert!(events.iter().any(|e| matches!(e, UiEvent::Trainer(TrainerUiEvent::TrainerTelemetryTick(_)))));
-    assert!(!events.iter().any(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::TelemetryTick(_)))));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, UiEvent::Trainer(TrainerUiEvent::TrainerTelemetryTick(_))))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::TelemetryTick(_))))
+    );
 
     // Back to the Ocean and into the trainer again: no rebuild from the store, the generation continues
     engine.handle(set_mode(SimMode::Ocean), &mut sink, later);
@@ -110,11 +135,34 @@ fn test_mode_switch_steps_only_the_active_mode_and_keeps_the_trainer_on_reentry(
     assert_eq!(engine.ocean().sim().tick_count(), 2);
     engine.handle(set_mode(SimMode::Trainer), &mut sink, later);
     assert_eq!(engine.trainer().sim().epoch_ticks, 3);
-    assert_eq!(trainer_states(&sink.take()).len(), 1, "every entry answers with the trainer state");
+    assert_eq!(
+        trainer_states(&sink.take()).len(),
+        1,
+        "every entry answers with the trainer state"
+    );
 
     // A command changed the run's stored genomes: the next entry rebuilds
-    engine.store().add_trainer_genome(trainer_mode::DEFAULT_RUN_ID, &TrainerGenome { name: "X".into(), genome: crate::biology::genome::WILDTYPE_GENOME.into(), fitness: 1.0, generation: 1, methylations: vec![], synapse_weights: vec![] }).unwrap();
-    engine.handle(EngineInput::TrainerStoreChanged { run_id: trainer_mode::DEFAULT_RUN_ID.into() }, &mut sink, later);
+    engine
+        .store()
+        .add_trainer_genome(
+            trainer_mode::DEFAULT_RUN_ID,
+            &TrainerGenome {
+                name: "X".into(),
+                genome: crate::biology::genome::WILDTYPE_GENOME.into(),
+                fitness: 1.0,
+                generation: 1,
+                methylations: vec![],
+                synapse_weights: vec![],
+            },
+        )
+        .unwrap();
+    engine.handle(
+        EngineInput::TrainerStoreChanged {
+            run_id: trainer_mode::DEFAULT_RUN_ID.into(),
+        },
+        &mut sink,
+        later,
+    );
     engine.handle(set_mode(SimMode::Trainer), &mut sink, later);
     assert_eq!(engine.trainer().sim().epoch_ticks, 0, "rebuilt from the store");
 }
@@ -126,9 +174,26 @@ fn test_warp_is_clamped_and_echoed_for_ocean_and_trainer() {
     let mut engine = engine_on(MemoryDb::new(), &mut sink, now);
     sink.take();
     engine.handle(ocean(OceanAction::SetSimulationSpeed { speed: 9999 }), &mut sink, now);
-    engine.handle(trainer(TrainerAction::UpdateTrainerHyperparams(TrainerHyperparamsUpdate { warp_speed: Some(9999), ..Default::default() })), &mut sink, now);
+    engine.handle(
+        trainer(TrainerAction::UpdateTrainerHyperparams(TrainerHyperparamsUpdate {
+            warp_speed: Some(9999),
+            ..Default::default()
+        })),
+        &mut sink,
+        now,
+    );
     let events = sink.take();
-    assert!(matches!(events[0], UiEvent::Ocean(OceanUiEvent::SimState { running: false, speed: 35 })), "{:?}", events[0]);
+    assert!(
+        matches!(
+            events[0],
+            UiEvent::Ocean(OceanUiEvent::SimState {
+                running: false,
+                speed: 35
+            })
+        ),
+        "{:?}",
+        events[0]
+    );
     assert_eq!(trainer_states(&events)[0].warp_speed, MAX_STEPS_PER_FRAME);
     assert_eq!(engine.ocean().warp(), MAX_STEPS_PER_FRAME);
     engine.handle(ocean(OceanAction::ToggleSimulation { running: true }), &mut sink, now);
@@ -159,11 +224,20 @@ fn test_reset_repopulates_from_the_catalogue_and_clears_newborns_and_snapshot() 
 
     engine.handle(ocean(OceanAction::ResetEvolution), &mut sink, now);
     let events = sink.take();
-    let Some(UiEvent::Ocean(OceanUiEvent::InitState(init))) = events.iter().find(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::InitState(_)))) else { panic!() };
+    let Some(UiEvent::Ocean(OceanUiEvent::InitState(init))) = events
+        .iter()
+        .find(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::InitState(_))))
+    else {
+        panic!()
+    };
     assert_eq!(init.creatures.len(), RESET_FOUNDERS);
     assert!(logs(&events).iter().any(|l| l.contains("clones from Catalogue")));
     assert_eq!(engine.store().ocean_snapshot().unwrap(), None);
-    assert_eq!(engine.store().list_species().unwrap().len(), 1, "25 clones of one catalogue genome");
+    assert_eq!(
+        engine.store().list_species().unwrap().len(),
+        1,
+        "25 clones of one catalogue genome"
+    );
 
     // Invariant 3: the injected founder from before the reset is not re-sent
     engine.frame(&mut sink, now + Duration::from_millis(50));
@@ -189,7 +263,12 @@ fn test_running_ocean_writes_species_changes_and_snapshot_restores_the_same_ocea
     let stored = engine.store().list_species().unwrap();
     // Stored by genome, or ignored because its latin name is already stored (the store's unique name, as before)
     let creatures = engine.ocean().sim().creatures();
-    assert!(creatures.iter().all(|c| stored.iter().any(|s| s.id == c.species_id || s.latin_name == c.phenotype.latin_name)), "every living species is stored");
+    assert!(
+        creatures.iter().all(|c| stored
+            .iter()
+            .any(|s| s.id == c.species_id || s.latin_name == c.phenotype.latin_name)),
+        "every living species is stored"
+    );
     assert!(creatures.iter().any(|c| stored.iter().any(|s| s.id == c.species_id)));
 
     assert_eq!(engine.store().ocean_snapshot().unwrap(), None);
@@ -202,8 +281,15 @@ fn test_running_ocean_writes_species_changes_and_snapshot_restores_the_same_ocea
     restored_store.save_ocean_snapshot(&json).unwrap();
     let restored = engine_on(restored_store, &mut sink, start);
     let (a, b) = (engine.ocean().sim(), restored.ocean().sim());
-    assert_eq!((a.creatures().len(), a.seed(), a.tick_count()), (b.creatures().len(), b.seed(), b.tick_count()));
-    assert_eq!(a.spores().nutrient_centers, b.spores().nutrient_centers, "nutrient centres survive a restart");
+    assert_eq!(
+        (a.creatures().len(), a.seed(), a.tick_count()),
+        (b.creatures().len(), b.seed(), b.tick_count())
+    );
+    assert_eq!(
+        a.spores().nutrient_centers,
+        b.spores().nutrient_centers,
+        "nutrient centres survive a restart"
+    );
 }
 
 #[test]
@@ -254,8 +340,14 @@ fn test_run_loop_processes_inputs_in_order_and_stops_without_senders() {
     drop(tx);
     run_loop(&mut engine, &rx, &mut sink);
     let events = sink.take();
-    let init = events.iter().position(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::InitState(_)))).expect("INIT_STATE");
-    let state = events.iter().position(|e| matches!(e, UiEvent::Trainer(TrainerUiEvent::TrainerStateChanged(_)))).expect("trainer state");
+    let init = events
+        .iter()
+        .position(|e| matches!(e, UiEvent::Ocean(OceanUiEvent::InitState(_))))
+        .expect("INIT_STATE");
+    let state = events
+        .iter()
+        .position(|e| matches!(e, UiEvent::Trainer(TrainerUiEvent::TrainerStateChanged(_))))
+        .expect("trainer state");
     assert!(init < state);
     assert_eq!(engine.mode(), SimMode::Trainer);
 }

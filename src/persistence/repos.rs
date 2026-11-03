@@ -38,7 +38,12 @@ pub trait CatalogueRepo {
 pub trait TrainerRepo {
     /// One generation in one transaction: the run's rows become inactive, `genomes` are inserted as active parents
     /// (each under a fresh unique id), then the run is pruned to `retention` (if given).
-    fn save_trainer_generation(&self, run_id: &str, genomes: &[TrainerGenome], retention: Option<usize>) -> RepoResult<()>;
+    fn save_trainer_generation(
+        &self,
+        run_id: &str,
+        genomes: &[TrainerGenome],
+        retention: Option<usize>,
+    ) -> RepoResult<()>;
     /// A creature placed into a sandbox by the UI: active row `<run>-<gen>-assigned-<slot>`, replacing the
     /// previous assignment of that slot in that generation.
     fn assign_trainer_genome(&self, run_id: &str, slot: u32, genome: &TrainerGenome) -> RepoResult<()>;

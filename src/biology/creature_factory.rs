@@ -1,10 +1,10 @@
 use rand::Rng;
 
 use crate::biology::brain::CTRNNSynapse;
-use crate::biology::phenotype::{parse_genome, CreaturePhenotype};
-use crate::shared::brain::{BrainRuntime, WEIGHT_CLAMP};
 use crate::biology::metabolism::MetabolismConfig;
+use crate::biology::phenotype::{CreaturePhenotype, parse_genome};
 use crate::config::AppConfig;
+use crate::shared::brain::{BrainRuntime, WEIGHT_CLAMP};
 use crate::shared::dto::CreatureAgent;
 
 /// What differs between spawn sites (Ocean seed/inject/clone/reset/restock, trainer sandbox).
@@ -35,7 +35,12 @@ pub fn inherit_learned_weights<R: Rng + ?Sized>(
     rng: &mut R,
 ) -> Vec<f32> {
     let learned: std::collections::HashMap<u64, (f32, f32)> = if parent_weights.len() == parent_synapses.len() {
-        parent_synapses.iter().zip(parent_weights).filter(|(s, _)| s.plastic).map(|(s, &w)| (s.key, (s.weight, w))).collect()
+        parent_synapses
+            .iter()
+            .zip(parent_weights)
+            .filter(|(s, _)| s.plastic)
+            .map(|(s, &w)| (s.key, (s.weight, w)))
+            .collect()
     } else {
         Default::default()
     };
@@ -62,7 +67,12 @@ pub fn spawn_creature(genome: &str, opts: SpawnOptions, config: &AppConfig) -> C
 }
 
 /// Spawns a fresh agent from an already parsed phenotype (`opts.methylations` is not re-applied).
-pub fn spawn_from_phenotype(genome: &str, phenotype: CreaturePhenotype, opts: SpawnOptions, metabolism: &MetabolismConfig) -> CreatureAgent {
+pub fn spawn_from_phenotype(
+    genome: &str,
+    phenotype: CreaturePhenotype,
+    opts: SpawnOptions,
+    metabolism: &MetabolismConfig,
+) -> CreatureAgent {
     let num_neurons = phenotype.brain.neurons.len();
     let synapse_weights = match opts.synapse_weights {
         Some(learned) if learned.len() == phenotype.brain.synapses.len() => learned,
@@ -100,7 +110,15 @@ mod tests {
     const BASE_DNA: &str = "COLOOOENSTFZENPULKKKENSIZMLENWAVABCDEFGHENSYMAENSTMHLENEYEABCDEFGENNOSHIJKLMNENNEUABCDEFENSYNABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHEN";
 
     fn opts(id: u32, px: f32, py: f32, heading_angle: f32, generation: u32) -> SpawnOptions<'static> {
-        SpawnOptions { id, px, py, heading_angle, generation, methylations: None, synapse_weights: None }
+        SpawnOptions {
+            id,
+            px,
+            py,
+            heading_angle,
+            generation,
+            methylations: None,
+            synapse_weights: None,
+        }
     }
 
     #[test]
@@ -119,7 +137,10 @@ mod tests {
         assert_eq!(normalize(&trainer), normalize(&ocean));
 
         let num_neurons = trainer.phenotype.brain.neurons.len();
-        assert_eq!(trainer.energy, trainer.phenotype.stomach_capacity * crate::config::test_config().metabolism.creature_start_stomach_ratio);
+        assert_eq!(
+            trainer.energy,
+            trainer.phenotype.stomach_capacity * crate::config::test_config().metabolism.creature_start_stomach_ratio
+        );
         assert_eq!(trainer.antisense, trainer.phenotype.antisense_strand);
         assert_eq!(trainer.neuron_states, vec![0.0; num_neurons]);
         assert_eq!(trainer.neuron_activations, vec![0.0; num_neurons]);
@@ -127,24 +148,44 @@ mod tests {
 
     #[test]
     fn test_mismatching_synapse_weights_fall_back_to_genome() {
-        let genome_weights: Vec<f32> = parse_genome(BASE_DNA, None, None, &crate::config::test_config().brain).brain.synapses.iter().map(|s| s.weight).collect();
+        let genome_weights: Vec<f32> = parse_genome(BASE_DNA, None, None, &crate::config::test_config().brain)
+            .brain
+            .synapses
+            .iter()
+            .map(|s| s.weight)
+            .collect();
         assert!(!genome_weights.is_empty());
 
         let mut wrong_len = opts(1, 0.0, 0.0, 0.0, 1);
         wrong_len.synapse_weights = Some(vec![0.5; genome_weights.len() + 1]);
-        assert_eq!(spawn_creature(BASE_DNA, wrong_len, crate::config::test_config()).synapse_weights, genome_weights);
+        assert_eq!(
+            spawn_creature(BASE_DNA, wrong_len, crate::config::test_config()).synapse_weights,
+            genome_weights
+        );
 
         let learned = vec![0.25; genome_weights.len()];
         let mut matching = opts(1, 0.0, 0.0, 0.0, 1);
         matching.synapse_weights = Some(learned.clone());
-        assert_eq!(spawn_creature(BASE_DNA, matching, crate::config::test_config()).synapse_weights, learned);
+        assert_eq!(
+            spawn_creature(BASE_DNA, matching, crate::config::test_config()).synapse_weights,
+            learned
+        );
     }
 
     /// Structured genome, its synapses and learned weights = genome weight + a distinct non-zero offset per synapse.
     fn learned_parent(seed: u64) -> (Vec<CTRNNSynapse>, Vec<f32>) {
-        let genome = crate::biology::genome::generate_structured_genome(&crate::config::test_config().genome.genome_composition, &mut crate::shared::rng::seeded(seed));
-        let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain.synapses;
-        let learned = synapses.iter().enumerate().map(|(i, s)| s.weight + 0.01 * (i + 1) as f32).collect();
+        let genome = crate::biology::genome::generate_structured_genome(
+            &crate::config::test_config().genome.genome_composition,
+            &mut crate::shared::rng::seeded(seed),
+        );
+        let synapses = parse_genome(&genome, None, None, &crate::config::test_config().brain)
+            .brain
+            .synapses;
+        let learned = synapses
+            .iter()
+            .enumerate()
+            .map(|(i, s)| s.weight + 0.01 * (i + 1) as f32)
+            .collect();
         (synapses, learned)
     }
 
@@ -163,7 +204,10 @@ mod tests {
                 assert_eq!(w, if s.plastic { l } else { g }, "{:?}", s);
             }
             // Chance 0: the genome weights
-            assert_eq!(inherit_learned_weights(&synapses, &learned, &synapses, 0.0, &mut rng), genome);
+            assert_eq!(
+                inherit_learned_weights(&synapses, &learned, &synapses, 0.0, &mut rng),
+                genome
+            );
 
             // Chance 0.25: each plastic synapse takes the full learned weight or its genome weight
             let some = inherit_learned_weights(&synapses, &learned, &synapses, 0.25, &mut rng);
@@ -182,7 +226,15 @@ mod tests {
     #[test]
     fn test_lamarck_draws_are_seeded() {
         let (synapses, learned) = learned_parent(7);
-        let draw = |seed| inherit_learned_weights(&synapses, &learned, &synapses, 0.5, &mut crate::shared::rng::seeded(seed));
+        let draw = |seed| {
+            inherit_learned_weights(
+                &synapses,
+                &learned,
+                &synapses,
+                0.5,
+                &mut crate::shared::rng::seeded(seed),
+            )
+        };
         assert_eq!(draw(1), draw(1));
         assert_ne!(draw(1), draw(2));
     }

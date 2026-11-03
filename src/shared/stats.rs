@@ -57,7 +57,9 @@ pub fn pearson(pairs: &[(f32, f32)]) -> Option<f32> {
         return None;
     }
     let n = pairs.len() as f64;
-    let (mx, my) = pairs.iter().fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x as f64, sy + y as f64));
+    let (mx, my) = pairs
+        .iter()
+        .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x as f64, sy + y as f64));
     let (mx, my) = (mx / n, my / n);
     let (mut sxy, mut sxx, mut syy) = (0.0, 0.0, 0.0);
     for &(x, y) in pairs {
@@ -66,7 +68,11 @@ pub fn pearson(pairs: &[(f32, f32)]) -> Option<f32> {
         sxx += dx * dx;
         syy += dy * dy;
     }
-    if sxx <= 0.0 || syy <= 0.0 { None } else { Some((sxy / (sxx * syy).sqrt()) as f32) }
+    if sxx <= 0.0 || syy <= 0.0 {
+        None
+    } else {
+        Some((sxy / (sxx * syy).sqrt()) as f32)
+    }
 }
 
 #[cfg(test)]

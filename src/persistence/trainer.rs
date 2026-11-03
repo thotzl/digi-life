@@ -1,11 +1,11 @@
 //! `trainer_genomes` and `trainer_run_state`: tables, migration steps and the SQLite `TrainerRepo`.
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 
 use super::dto::*;
 use super::repos::TrainerRepo;
 use super::schema::TableDef;
-use super::{collect_rows, unique_suffix, Db};
+use super::{Db, collect_rows, unique_suffix};
 use crate::shared::{json_col, time};
 
 pub(super) const TABLES: &[TableDef] = &[
@@ -48,13 +48,18 @@ pub(super) const TABLES: &[TableDef] = &[
 
 fn columns(conn: &Connection, table: &str) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({});", table))?;
-    let names = stmt.query_map([], |row| row.get::<_, String>(1))?.collect::<Result<Vec<_>>>()?;
+    let names = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>>>()?;
     Ok(names)
 }
 
 fn add_column_if_missing(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
     if !columns(conn, table)?.iter().any(|c| c == column) {
-        conn.execute(&format!("ALTER TABLE {} ADD COLUMN {} {};", table, column, definition), [])?;
+        conn.execute(
+            &format!("ALTER TABLE {} ADD COLUMN {} {};", table, column, definition),
+            [],
+        )?;
     }
     Ok(())
 }
@@ -80,7 +85,10 @@ pub(super) fn v1_baseline(conn: &Connection) -> Result<()> {
     )?;
     add_column_if_missing(conn, "trainer_genomes", "methylations", "TEXT NOT NULL DEFAULT '[]'")?;
     add_column_if_missing(conn, "trainer_genomes", "synapse_weights", "TEXT NOT NULL DEFAULT '[]'")?;
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_trainer_run ON trainer_genomes(run_id);", [])?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trainer_run ON trainer_genomes(run_id);",
+        [],
+    )?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS trainer_run_state (
             run_id TEXT PRIMARY KEY,
@@ -106,7 +114,11 @@ const INSERT_GENOME: &str = "INTO trainer_genomes (id, run_id, generation, name,
 /// `INSERT` (or `INSERT OR REPLACE` with `replace`) of one active genome row.
 fn insert_genome(conn: &Connection, replace: bool, id: &str, run_id: &str, g: &TrainerGenome) -> Result<()> {
     conn.execute(
-        &format!("{} {}", if replace { "INSERT OR REPLACE" } else { "INSERT" }, INSERT_GENOME),
+        &format!(
+            "{} {}",
+            if replace { "INSERT OR REPLACE" } else { "INSERT" },
+            INSERT_GENOME
+        ),
         params![
             id,
             run_id,
@@ -132,9 +144,17 @@ fn prune(conn: &Connection, run_id: &str, retention: usize) -> Result<()> {
 }
 
 impl TrainerRepo for Db {
-    fn save_trainer_generation(&self, run_id: &str, genomes: &[TrainerGenome], retention: Option<usize>) -> RepoResult<()> {
+    fn save_trainer_generation(
+        &self,
+        run_id: &str,
+        genomes: &[TrainerGenome],
+        retention: Option<usize>,
+    ) -> RepoResult<()> {
         let tx = self.conn().unchecked_transaction()?;
-        tx.execute("UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1", params![run_id])?;
+        tx.execute(
+            "UPDATE trainer_genomes SET active = 0 WHERE run_id = ?1",
+            params![run_id],
+        )?;
         for (idx, g) in genomes.iter().enumerate() {
             let id = format!("{}-{}-{}-{}", run_id, g.generation, idx, unique_suffix());
             insert_genome(&tx, false, &id, run_id, g)?;
@@ -172,22 +192,41 @@ impl TrainerRepo for Db {
                 name: row.get(1)?,
                 fitness: row.get(2)?,
                 generation: row.get(3)?,
-                methylations: json_col::decode(&row.get::<_, String>(4)?, "trainer_genomes.methylations").unwrap_or_default(),
-                synapse_weights: json_col::decode(&row.get::<_, String>(5)?, "trainer_genomes.synapse_weights").unwrap_or_default(),
+                methylations: json_col::decode(&row.get::<_, String>(4)?, "trainer_genomes.methylations")
+                    .unwrap_or_default(),
+                synapse_weights: json_col::decode(&row.get::<_, String>(5)?, "trainer_genomes.synapse_weights")
+                    .unwrap_or_default(),
             })
         })?;
         Ok(collect_rows(rows, "trainer_genomes"))
     }
 
     fn ranked_trainer_genomes(&self) -> RepoResult<Vec<RankedGenome>> {
-        let mut stmt = self.conn().prepare("SELECT genome, fitness, run_id, generation FROM trainer_genomes ORDER BY fitness DESC, id ASC")?;
-        let rows = stmt.query_map([], |row| Ok(RankedGenome { genome: row.get(0)?, fitness: row.get(1)?, run_id: row.get(2)?, generation: row.get(3)? }))?;
+        let mut stmt = self
+            .conn()
+            .prepare("SELECT genome, fitness, run_id, generation FROM trainer_genomes ORDER BY fitness DESC, id ASC")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(RankedGenome {
+                genome: row.get(0)?,
+                fitness: row.get(1)?,
+                run_id: row.get(2)?,
+                generation: row.get(3)?,
+            })
+        })?;
         Ok(rows.collect::<Result<Vec<_>>>()?)
     }
 
     fn trainer_runs(&self) -> RepoResult<Vec<TrainerRunSummary>> {
-        let mut stmt = self.conn().prepare("SELECT run_id, MAX(generation), MAX(fitness) FROM trainer_genomes GROUP BY run_id ORDER BY run_id")?;
-        let rows = stmt.query_map([], |row| Ok(TrainerRunSummary { run_id: row.get(0)?, max_generation: row.get(1)?, max_fitness: row.get(2)? }))?;
+        let mut stmt = self.conn().prepare(
+            "SELECT run_id, MAX(generation), MAX(fitness) FROM trainer_genomes GROUP BY run_id ORDER BY run_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TrainerRunSummary {
+                run_id: row.get(0)?,
+                max_generation: row.get(1)?,
+                max_fitness: row.get(2)?,
+            })
+        })?;
         Ok(collect_rows(rows, "trainer_genomes"))
     }
 

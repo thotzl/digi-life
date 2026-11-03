@@ -47,7 +47,10 @@ pub enum ClientAction {
 
 /// Outcome of parsing one action group: `None` if `action_type` is not one of the group's tags (serde's unknown
 /// variant error for the tag itself; an unknown value of a nested enum field is a malformed action of this group).
-fn parse_group<T: DeserializeOwned>(value: &serde_json::Value, action_type: &str) -> Option<Result<T, serde_json::Error>> {
+fn parse_group<T: DeserializeOwned>(
+    value: &serde_json::Value,
+    action_type: &str,
+) -> Option<Result<T, serde_json::Error>> {
     match T::deserialize(value) {
         Ok(action) => Some(Ok(action)),
         Err(e) if e.to_string().starts_with(&format!("unknown variant `{}`", action_type)) => None,
@@ -62,7 +65,9 @@ impl ClientAction {
         let Some(action_type) = value.get("type").and_then(|t| t.as_str()) else {
             return Err(IpcError::invalid_action("client action without a string 'type' field"));
         };
-        let malformed = |e: serde_json::Error| IpcError::invalid_action(format!("malformed client action '{}': {}", action_type, e));
+        let malformed = |e: serde_json::Error| {
+            IpcError::invalid_action(format!("malformed client action '{}': {}", action_type, e))
+        };
         if let Some(parsed) = parse_group::<EngineAction>(value, action_type) {
             return parsed.map(ClientAction::Engine).map_err(malformed);
         }
@@ -72,7 +77,10 @@ impl ClientAction {
         if let Some(parsed) = parse_group::<TrainerAction>(value, action_type) {
             return parsed.map(ClientAction::Trainer).map_err(malformed);
         }
-        Err(IpcError::invalid_action(format!("unknown client action type '{}'", action_type)))
+        Err(IpcError::invalid_action(format!(
+            "unknown client action type '{}'",
+            action_type
+        )))
     }
 }
 
@@ -117,7 +125,10 @@ impl UiEvent {
     }
 
     pub fn log(message: impl Into<String>, log_type: LogKind) -> Self {
-        UiEvent::Engine(EngineEvent::LogEvent { message: message.into(), log_type })
+        UiEvent::Engine(EngineEvent::LogEvent {
+            message: message.into(),
+            log_type,
+        })
     }
 
     pub fn is_database_changed(&self) -> bool {
@@ -168,7 +179,10 @@ pub struct IpcError {
 
 impl IpcError {
     pub fn new(kind: IpcErrorKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into() }
+        Self {
+            kind,
+            message: message.into(),
+        }
     }
 
     pub fn invalid_action(message: impl Into<String>) -> Self {
@@ -187,7 +201,10 @@ impl IpcError {
 
     pub fn engine_unavailable(error: impl Display) -> Self {
         log::error!("sending an action to the engine thread failed: {}", error);
-        Self::new(IpcErrorKind::EngineUnavailable, format!("simulation thread unavailable: {}", error))
+        Self::new(
+            IpcErrorKind::EngineUnavailable,
+            format!("simulation thread unavailable: {}", error),
+        )
     }
 }
 
@@ -209,16 +226,42 @@ mod tests {
 
     #[test]
     fn test_client_actions_parse_into_their_group() {
-        assert_eq!(parse(json!({ "type": "CLIENT_READY" })), Ok(ClientAction::Engine(EngineAction::ClientReady)));
-        assert_eq!(parse(json!({ "type": "SET_MODE", "mode": "trainer" })), Ok(ClientAction::Engine(EngineAction::SetMode { mode: SimMode::Trainer })));
-        assert_eq!(parse(json!({ "type": "TOGGLE_SIMULATION", "running": false })), Ok(ClientAction::Ocean(OceanAction::ToggleSimulation { running: false })));
-        assert_eq!(parse(json!({ "type": "INJECT_URZELLE" })), Ok(ClientAction::Ocean(OceanAction::InjectUrzelle)));
-        assert_eq!(parse(json!({ "type": "RESET_EVOLUTION" })), Ok(ClientAction::Ocean(OceanAction::ResetEvolution)));
-        assert_eq!(parse(json!({ "type": "SELECT_AGENT", "id": 7 })), Ok(ClientAction::Ocean(OceanAction::SelectAgent { id: Some(7) })));
-        assert_eq!(parse(json!({ "type": "SELECT_AGENT" })), Ok(ClientAction::Ocean(OceanAction::SelectAgent { id: None })));
-        assert_eq!(parse(json!({ "type": "SET_SIMULATION_SPEED", "speed": 9999 })), Ok(ClientAction::Ocean(OceanAction::SetSimulationSpeed { speed: 9999 })));
         assert_eq!(
-            parse(json!({ "type": "SPAWN_CLONE", "genome": "AB", "methylations": [0.5], "synapse_weights": null, "load_learned_synapses": true })),
+            parse(json!({ "type": "CLIENT_READY" })),
+            Ok(ClientAction::Engine(EngineAction::ClientReady))
+        );
+        assert_eq!(
+            parse(json!({ "type": "SET_MODE", "mode": "trainer" })),
+            Ok(ClientAction::Engine(EngineAction::SetMode { mode: SimMode::Trainer }))
+        );
+        assert_eq!(
+            parse(json!({ "type": "TOGGLE_SIMULATION", "running": false })),
+            Ok(ClientAction::Ocean(OceanAction::ToggleSimulation { running: false }))
+        );
+        assert_eq!(
+            parse(json!({ "type": "INJECT_URZELLE" })),
+            Ok(ClientAction::Ocean(OceanAction::InjectUrzelle))
+        );
+        assert_eq!(
+            parse(json!({ "type": "RESET_EVOLUTION" })),
+            Ok(ClientAction::Ocean(OceanAction::ResetEvolution))
+        );
+        assert_eq!(
+            parse(json!({ "type": "SELECT_AGENT", "id": 7 })),
+            Ok(ClientAction::Ocean(OceanAction::SelectAgent { id: Some(7) }))
+        );
+        assert_eq!(
+            parse(json!({ "type": "SELECT_AGENT" })),
+            Ok(ClientAction::Ocean(OceanAction::SelectAgent { id: None }))
+        );
+        assert_eq!(
+            parse(json!({ "type": "SET_SIMULATION_SPEED", "speed": 9999 })),
+            Ok(ClientAction::Ocean(OceanAction::SetSimulationSpeed { speed: 9999 }))
+        );
+        assert_eq!(
+            parse(
+                json!({ "type": "SPAWN_CLONE", "genome": "AB", "methylations": [0.5], "synapse_weights": null, "load_learned_synapses": true })
+            ),
             Ok(ClientAction::Ocean(OceanAction::SpawnClone(SpawnClone {
                 genome: "AB".to_string(),
                 methylations: Some(vec![0.5]),
@@ -226,8 +269,14 @@ mod tests {
                 load_learned_synapses: Some(true),
             })))
         );
-        assert_eq!(parse(json!({ "type": "START_TRAINING" })), Ok(ClientAction::Trainer(TrainerAction::StartTraining)));
-        assert!(matches!(parse(json!({ "type": "ASSIGN_SANDBOX_CREATURE", "sandbox_id": 2, "genome": "AB" })), Ok(ClientAction::Trainer(TrainerAction::AssignSandboxCreature(_)))));
+        assert_eq!(
+            parse(json!({ "type": "START_TRAINING" })),
+            Ok(ClientAction::Trainer(TrainerAction::StartTraining))
+        );
+        assert!(matches!(
+            parse(json!({ "type": "ASSIGN_SANDBOX_CREATURE", "sandbox_id": 2, "genome": "AB" })),
+            Ok(ClientAction::Trainer(TrainerAction::AssignSandboxCreature(_)))
+        ));
     }
 
     #[test]
@@ -237,18 +286,44 @@ mod tests {
         assert_eq!(unknown.message, "unknown client action type 'SPAWN_FOOD'");
         // Known type, missing field: the group's error, not "unknown"
         let missing = parse(json!({ "type": "TOGGLE_SIMULATION" })).unwrap_err();
-        assert!(missing.message.starts_with("malformed client action 'TOGGLE_SIMULATION'") && missing.message.contains("running"), "{}", missing.message);
+        assert!(
+            missing
+                .message
+                .starts_with("malformed client action 'TOGGLE_SIMULATION'")
+                && missing.message.contains("running"),
+            "{}",
+            missing.message
+        );
         let mistyped = parse(json!({ "type": "SET_TRAINER_LEVEL", "level": "high" })).unwrap_err();
-        assert!(mistyped.message.starts_with("malformed client action 'SET_TRAINER_LEVEL'"), "{}", mistyped.message);
+        assert!(
+            mistyped
+                .message
+                .starts_with("malformed client action 'SET_TRAINER_LEVEL'"),
+            "{}",
+            mistyped.message
+        );
         let bad_mode = parse(json!({ "type": "SET_MODE", "mode": "arena" })).unwrap_err();
-        assert!(bad_mode.message.starts_with("malformed client action 'SET_MODE'"), "{}", bad_mode.message);
-        assert_eq!(parse(json!({ "running": true })).unwrap_err().kind, IpcErrorKind::InvalidAction);
-        assert_eq!(parse(json!("CLIENT_READY")).unwrap_err().kind, IpcErrorKind::InvalidAction);
+        assert!(
+            bad_mode.message.starts_with("malformed client action 'SET_MODE'"),
+            "{}",
+            bad_mode.message
+        );
+        assert_eq!(
+            parse(json!({ "running": true })).unwrap_err().kind,
+            IpcErrorKind::InvalidAction
+        );
+        assert_eq!(
+            parse(json!("CLIENT_READY")).unwrap_err().kind,
+            IpcErrorKind::InvalidAction
+        );
     }
 
     #[test]
     fn test_engine_events_and_errors_keep_their_wire_names() {
-        assert_eq!(serde_json::to_value(UiEvent::database_changed()).unwrap(), json!({ "type": "DATABASE_CHANGED" }));
+        assert_eq!(
+            serde_json::to_value(UiEvent::database_changed()).unwrap(),
+            json!({ "type": "DATABASE_CHANGED" })
+        );
         assert_eq!(
             serde_json::to_value(UiEvent::log("hello", LogKind::Repair)).unwrap(),
             json!({ "type": "LOG_EVENT", "message": "hello", "logType": "repair" })

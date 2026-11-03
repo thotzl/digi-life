@@ -11,10 +11,10 @@ use crate::shared::dto::FoodSpore;
 use crate::shared::fmath;
 use crate::shared::rng::SimRng;
 use crate::sim::systems::death::DeathPolicy;
-use crate::sim::systems::eat::{spawn_at_min_distance, EatRadiusRule, RespawnPolicy, SPAWN_MAX_TRIES};
+use crate::sim::systems::eat::{EatRadiusRule, RespawnPolicy, SPAWN_MAX_TRIES, spawn_at_min_distance};
 use crate::sim::systems::food_drift::FoodDriftOrder;
 use crate::sim::systems::sense::{ClockVariant, TargetSelector};
-use crate::sim::{WorldSettings, TRAINER_SYSTEMS};
+use crate::sim::{TRAINER_SYSTEMS, WorldSettings};
 
 use super::{EntityId, Room};
 use crate::trainer::chamber::{Chamber, EntityTrial};
@@ -58,12 +58,18 @@ pub struct LevelRoom {
 
 /// Registry constructor of `standard` (level 0).
 pub fn standard(config: &AppConfig) -> Arc<dyn Room> {
-    Arc::new(LevelRoom { id: "standard", ..LevelRoom::at(0.0, config) })
+    Arc::new(LevelRoom {
+        id: "standard",
+        ..LevelRoom::at(0.0, config)
+    })
 }
 
 /// Registry constructor of `exploration` (level 1).
 pub fn exploration(config: &AppConfig) -> Arc<dyn Room> {
-    Arc::new(LevelRoom { id: "exploration", ..LevelRoom::at(1.0, config) })
+    Arc::new(LevelRoom {
+        id: "exploration",
+        ..LevelRoom::at(1.0, config)
+    })
 }
 
 impl LevelRoom {
@@ -77,7 +83,8 @@ impl LevelRoom {
             id: LEVEL_ROOM_ID,
             level: d,
             chamber_size: geometric(c.chamber_size.standard, c.chamber_size.exploration, d),
-            epoch_ticks: (geometric(c.epoch_ticks.standard as f32, c.epoch_ticks.exploration as f32, d).round() as u32).max(1),
+            epoch_ticks: (geometric(c.epoch_ticks.standard as f32, c.epoch_ticks.exploration as f32, d).round() as u32)
+                .max(1),
             spawn_min_distance: geometric(spawn.standard, spawn.exploration, d),
             food_per_type: ((food_lo + (food_hi - food_lo) * d).round() as u32).max(1),
             metabolic_scale: 1.0,
@@ -87,7 +94,10 @@ impl LevelRoom {
 
     /// Same room with the metabolic factor `scale` (curriculum pressure ramp).
     pub fn with_metabolic_scale(self, scale: f32) -> Self {
-        Self { metabolic_scale: scale, ..self }
+        Self {
+            metabolic_scale: scale,
+            ..self
+        }
     }
 
     /// Plants and meatballs per trial (each)
@@ -131,8 +141,19 @@ impl Room for LevelRoom {
             agent.heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
         }
         let n = self.food_per_type;
-        let food = |id: u32, type_id: u32| FoodSpore { id, type_id, x: 0.0, y: 0.0, amount: 15.0, vx: 0.0, vy: 0.0 };
-        chamber.foods = (1..=n).map(|id| food(id, 1)).chain((n + 1..=2 * n).map(|id| food(id, 2))).collect();
+        let food = |id: u32, type_id: u32| FoodSpore {
+            id,
+            type_id,
+            x: 0.0,
+            y: 0.0,
+            amount: 15.0,
+            vx: 0.0,
+            vy: 0.0,
+        };
+        chamber.foods = (1..=n)
+            .map(|id| food(id, 1))
+            .chain((n + 1..=2 * n).map(|id| food(id, 2)))
+            .collect();
         let from = (chamber.creatures[0].px, chamber.creatures[0].py);
         for f in &mut chamber.foods {
             let (x, y) = spawn_at_min_distance(rng, self.chamber_size, from, self.spawn_min_distance, SPAWN_MAX_TRIES);
@@ -149,13 +170,19 @@ impl Room for LevelRoom {
         WorldSettings {
             systems: TRAINER_SYSTEMS,
             clock: ClockVariant::Fmath,
-            targets: if self.food_per_type <= 1 { TargetSelector::All } else { TargetSelector::NearestPerType },
+            targets: if self.food_per_type <= 1 {
+                TargetSelector::All
+            } else {
+                TargetSelector::NearestPerType
+            },
             metabolic_scale: config.metabolism.trainer_metabolic_scale * self.metabolic_scale,
             energy_modifiers: Vec::new(),
             death: DeathPolicy::Freeze,
             food_drift: FoodDriftOrder::AfterEachCreature,
             eat_radius: EatRadiusRule::TrainerDiet,
-            respawn: RespawnPolicy::MinDistance { min_distance: self.spawn_min_distance },
+            respawn: RespawnPolicy::MinDistance {
+                min_distance: self.spawn_min_distance,
+            },
         }
     }
 
@@ -187,7 +214,9 @@ impl Room for LevelRoom {
 /// (TCK-178) and is no separate term. Non-finite results count as 0.
 pub fn calculate_fitness(trial: &EntityTrial, epoch_ticks: u32, weights: &TrainerFitnessConfig) -> f32 {
     let time_bonus = match trial.finish_tick {
-        Some(tick) if epoch_ticks > 0 => weights.first_catch_bonus * (1.0 - (tick.min(epoch_ticks) as f32 / epoch_ticks as f32)),
+        Some(tick) if epoch_ticks > 0 => {
+            weights.first_catch_bonus * (1.0 - (tick.min(epoch_ticks) as f32 / epoch_ticks as f32))
+        }
         _ => 0.0,
     };
     let fit = trial.accumulated_yield + time_bonus + weights.approach_bonus * trial.approach_fraction();
@@ -207,11 +236,24 @@ mod tests {
     }
 
     fn sandbox(id: &str) -> TrainerSandbox {
-        TrainerSandbox::spawn(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, room(id), None, None, &mut seeded(3), crate::config::test_config())
+        TrainerSandbox::spawn(
+            1,
+            WILDTYPE_GENOME,
+            1,
+            SandboxOrigin::Elite,
+            room(id),
+            None,
+            None,
+            &mut seeded(3),
+            crate::config::test_config(),
+        )
     }
 
     fn weights() -> TrainerFitnessConfig {
-        TrainerFitnessConfig { first_catch_bonus: 0.5, approach_bonus: 0.3 }
+        TrainerFitnessConfig {
+            first_catch_bonus: 0.5,
+            approach_bonus: 0.3,
+        }
     }
 
     fn fitness(sb: &TrainerSandbox, epoch: u32) -> f32 {
@@ -221,7 +263,11 @@ mod tests {
     #[test]
     fn test_configured_bonuses_stay_below_one_catch() {
         let w = &crate::config::test_config().trainer.trainer_fitness;
-        assert!((0.0..1.0).contains(&w.first_catch_bonus) && (0.0..1.0).contains(&w.approach_bonus), "{:?}", w);
+        assert!(
+            (0.0..1.0).contains(&w.first_catch_bonus) && (0.0..1.0).contains(&w.approach_bonus),
+            "{:?}",
+            w
+        );
     }
 
     #[test]
@@ -292,7 +338,11 @@ mod tests {
         sb.trial_mut().accumulated_yield = 1.0;
         sb.trial_mut().finish_tick = Some(30);
         let r = room("standard");
-        let expected = calculate_fitness(sb.trial(), r.episode_ticks(), &crate::config::test_config().trainer.trainer_fitness);
+        let expected = calculate_fitness(
+            sb.trial(),
+            r.episode_ticks(),
+            &crate::config::test_config().trainer.trainer_fitness,
+        );
         assert_eq!(r.score(&sb.chamber, 0), expected);
         assert!(expected > 1.0);
     }
@@ -302,37 +352,81 @@ mod tests {
         let config = crate::config::test_config();
         let spawn = &config.trainer.trainer_spawn_min_distance;
         let small = LevelRoom::at(0.0, config);
-        assert_eq!((small.level(), small.chamber_size(), small.episode_ticks(), small.food_per_type()), (0.0, 1000.0, 300, 1));
-        assert_eq!((small.spawn_min_distance(), small.metabolic_scale()), (spawn.standard, 1.0));
+        assert_eq!(
+            (
+                small.level(),
+                small.chamber_size(),
+                small.episode_ticks(),
+                small.food_per_type()
+            ),
+            (0.0, 1000.0, 300, 1)
+        );
+        assert_eq!(
+            (small.spawn_min_distance(), small.metabolic_scale()),
+            (spawn.standard, 1.0)
+        );
         let large = LevelRoom::at(1.0, config);
-        assert_eq!((large.level(), large.chamber_size(), large.episode_ticks(), large.food_per_type()), (1.0, 3500.0, 1800, 3));
-        assert_eq!((large.spawn_min_distance(), large.metabolic_scale()), (spawn.exploration, 1.0));
+        assert_eq!(
+            (
+                large.level(),
+                large.chamber_size(),
+                large.episode_ticks(),
+                large.food_per_type()
+            ),
+            (1.0, 3500.0, 1800, 3)
+        );
+        assert_eq!(
+            (large.spawn_min_distance(), large.metabolic_scale()),
+            (spawn.exploration, 1.0)
+        );
         assert_eq!(LevelRoom::at(-0.5, config), small);
         assert_eq!(LevelRoom::at(7.0, config), large);
         assert_eq!(LevelRoom::at(f32::NAN, config), small);
         // The registry rooms are the level ends (only the id differs)
         for (id, level) in [("standard", &small), ("exploration", &large)] {
             let r = room(id);
-            assert_eq!((r.id(), r.chamber_size(), r.episode_ticks()), (id, level.chamber_size(), level.episode_ticks()));
+            assert_eq!(
+                (r.id(), r.chamber_size(), r.episode_ticks()),
+                (id, level.chamber_size(), level.episode_ticks())
+            );
             assert_eq!(r.world_settings(config), level.world_settings(config));
         }
         // Food layout of the fixed rooms: plants first, ids in order
         let types = |sb: &TrainerSandbox| sb.chamber.foods.iter().map(|f| (f.id, f.type_id)).collect::<Vec<_>>();
         assert_eq!(types(&sandbox("standard")), vec![(1, 1), (2, 2)]);
-        assert_eq!(types(&sandbox("exploration")), vec![(1, 1), (2, 1), (3, 1), (4, 2), (5, 2), (6, 2)]);
+        assert_eq!(
+            types(&sandbox("exploration")),
+            vec![(1, 1), (2, 1), (3, 1), (4, 2), (5, 2), (6, 2)]
+        );
     }
 
     #[test]
     fn test_level_rooms_interpolate_monotonically() {
-        let rooms: Vec<LevelRoom> = (0..=10).map(|i| LevelRoom::at(i as f32 / 10.0, crate::config::test_config())).collect();
+        let rooms: Vec<LevelRoom> = (0..=10)
+            .map(|i| LevelRoom::at(i as f32 / 10.0, crate::config::test_config()))
+            .collect();
         for pair in rooms.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
-            assert!(b.chamber_size() > a.chamber_size() && b.episode_ticks() > a.episode_ticks() && b.spawn_min_distance() > a.spawn_min_distance(), "{:?} -> {:?}", a, b);
+            assert!(
+                b.chamber_size() > a.chamber_size()
+                    && b.episode_ticks() > a.episode_ticks()
+                    && b.spawn_min_distance() > a.spawn_min_distance(),
+                "{:?} -> {:?}",
+                a,
+                b
+            );
             assert!(b.food_per_type() >= a.food_per_type());
         }
         // Geometric: the middle is the geometric mean of the ends
-        assert!((rooms[5].chamber_size() - (1000.0f32 * 3500.0).sqrt()).abs() < 0.1, "{}", rooms[5].chamber_size());
-        assert_eq!(rooms.iter().map(|r| r.food_per_type()).collect::<Vec<_>>(), vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3]);
+        assert!(
+            (rooms[5].chamber_size() - (1000.0f32 * 3500.0).sqrt()).abs() < 0.1,
+            "{}",
+            rooms[5].chamber_size()
+        );
+        assert_eq!(
+            rooms.iter().map(|r| r.food_per_type()).collect::<Vec<_>>(),
+            vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
     }
 
     #[test]
@@ -342,10 +436,30 @@ mod tests {
         let small = sandbox("standard");
         let targets = room("standard").world_settings(config).targets;
         assert_eq!(targets, TargetSelector::All);
-        let visible = targets.select(small.agent(), &small.chamber.foods, &[], &mut scratch).to_vec();
-        assert_eq!(visible.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>(), small.chamber.foods.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>());
+        let visible = targets
+            .select(small.agent(), &small.chamber.foods, &[], &mut scratch)
+            .to_vec();
+        assert_eq!(
+            visible.iter().map(|f| (f.id, f.x.to_bits())).collect::<Vec<_>>(),
+            small
+                .chamber
+                .foods
+                .iter()
+                .map(|f| (f.id, f.x.to_bits()))
+                .collect::<Vec<_>>()
+        );
         let mid = LevelRoom::at(0.5, config);
-        let mut sb = TrainerSandbox::spawn(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, Arc::new(mid.clone()), None, None, &mut seeded(4), config);
+        let mut sb = TrainerSandbox::spawn(
+            1,
+            WILDTYPE_GENOME,
+            1,
+            SandboxOrigin::Elite,
+            Arc::new(mid.clone()),
+            None,
+            None,
+            &mut seeded(4),
+            config,
+        );
         assert_eq!(sb.chamber.foods.len(), 4);
         // Move the second plant and the first meat next to the creature: those are seen
         let (px, py) = (sb.agent().px, sb.agent().py);
@@ -353,7 +467,10 @@ mod tests {
         sb.chamber.foods[1].y = py;
         sb.chamber.foods[2].x = px;
         sb.chamber.foods[2].y = py + 1.0;
-        let visible = mid.world_settings(config).targets.select(sb.agent(), &sb.chamber.foods, &[], &mut scratch);
+        let visible = mid
+            .world_settings(config)
+            .targets
+            .select(sb.agent(), &sb.chamber.foods, &[], &mut scratch);
         assert_eq!(visible.iter().map(|f| f.id).collect::<Vec<_>>(), vec![2, 3]);
     }
 

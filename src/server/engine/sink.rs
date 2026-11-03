@@ -5,7 +5,7 @@
 
 use tauri::Emitter;
 
-use crate::server::ipc::{UiEvent, UI_EVENT_NAME};
+use crate::server::ipc::{UI_EVENT_NAME, UiEvent};
 
 pub trait EventSink {
     /// Buffers one event (never sends from inside a simulation step).
@@ -36,7 +36,10 @@ pub struct TauriSink {
 
 impl TauriSink {
     pub fn new(window: tauri::WebviewWindow) -> Self {
-        Self { window, pending: Vec::new() }
+        Self {
+            window,
+            pending: Vec::new(),
+        }
     }
 }
 

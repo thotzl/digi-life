@@ -2,10 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::alphabet::{matches_degenerate, ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN};
+use super::alphabet::{ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN, matches_degenerate};
 use super::payload::get_payload_linear_value_offset;
-use super::promoters::{self, GeneRole, GENE_MOTIFS, TERMINATOR};
-use crate::biology::organs::{OrganKind, AFFINITY_LOCUS};
+use super::promoters::{self, GENE_MOTIFS, GeneRole, TERMINATOR};
+use crate::biology::organs::{AFFINITY_LOCUS, OrganKind};
 
 /// Composition of `generate_structured_genome` (config `genomeComposition`, TCK-184).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,7 +32,9 @@ pub struct GenomeComposition {
 /// Whether the last base of `dna` completes a motif match other than `own` (start, motif).
 fn stray_motif_at_end(dna: &str, own: Option<(usize, &str)>) -> bool {
     let end = dna.len();
-    GENE_MOTIFS.iter().any(|&m| end >= m.len() && matches_degenerate(&dna[end - m.len()..], m) && own != Some((end - m.len(), m)))
+    GENE_MOTIFS
+        .iter()
+        .any(|&m| end >= m.len() && matches_degenerate(&dna[end - m.len()..], m) && own != Some((end - m.len(), m)))
 }
 
 /// Appends one random letter from `allowed` that completes no motif match (any clean letter if none of `allowed` is).
@@ -45,7 +47,10 @@ fn push_clean_base<R: rand::Rng + ?Sized>(dna: &mut String, allowed: &[u8], rng:
         dna.pop();
     }
     let start = rng.gen_range(0..ALPHABET.len());
-    for c in allowed.iter().chain(ALPHABET.iter().cycle().skip(start).take(ALPHABET.len())) {
+    for c in allowed
+        .iter()
+        .chain(ALPHABET.iter().cycle().skip(start).take(ALPHABET.len()))
+    {
         dna.push(*c as char);
         if !stray_motif_at_end(dna, None) {
             return;
@@ -123,13 +128,21 @@ fn affinity_letters(kind: OrganKind) -> Vec<u8> {
     ALPHABET
         .iter()
         .copied()
-        .filter(|&c| OrganKind::classify(get_payload_linear_value_offset(&(c as char).to_string(), AFFINITY_LOCUS), 0.5) == kind)
+        .filter(|&c| {
+            OrganKind::classify(
+                get_payload_linear_value_offset(&(c as char).to_string(), AFFINITY_LOCUS),
+                0.5,
+            ) == kind
+        })
         .collect()
 }
 
 /// Genes of a structured genome in genome order: promoter and, for a food organ, the OrganKind its payload must give.
 /// All body genes and one `OUT` gene, plus organs, `HOX`, `NEU` and `SY` genes as `composition` draws them.
-pub(crate) fn structured_gene_plan<R: rand::Rng + ?Sized>(c: &GenomeComposition, rng: &mut R) -> Vec<(&'static str, Option<OrganKind>)> {
+pub(crate) fn structured_gene_plan<R: rand::Rng + ?Sized>(
+    c: &GenomeComposition,
+    rng: &mut R,
+) -> Vec<(&'static str, Option<OrganKind>)> {
     use rand::seq::SliceRandom;
     let count = |rng: &mut R, min: usize, max: usize| rng.gen_range(min..=max.max(min));
     let organ_promoters: Vec<&'static str> = promoters::with_role(GeneRole::Organ).collect();
@@ -138,7 +151,11 @@ pub(crate) fn structured_gene_plan<R: rand::Rng + ?Sized>(c: &GenomeComposition,
     for organ in 0..count(rng, c.organ_count_min, c.organ_count_max) {
         if organ == 0 && rng.gen_bool(c.p_food_organ.clamp(0.0, 1.0) as f64) {
             let eye = rng.gen_bool(c.food_organ_eye_share.clamp(0.0, 1.0) as f64);
-            genes.push(if eye { ("EYE", Some(OrganKind::Eye)) } else { ("NOS", Some(OrganKind::Nose)) });
+            genes.push(if eye {
+                ("EYE", Some(OrganKind::Eye))
+            } else {
+                ("NOS", Some(OrganKind::Nose))
+            });
         } else {
             genes.push((organ_promoters[rng.gen_range(0..organ_promoters.len())], None));
         }
@@ -146,8 +163,20 @@ pub(crate) fn structured_gene_plan<R: rand::Rng + ?Sized>(c: &GenomeComposition,
     if rng.gen_bool(c.p_hox.clamp(0.0, 1.0) as f64) {
         genes.push((promoters::motif_of(GeneRole::Hox), None));
     }
-    genes.extend(std::iter::repeat((promoters::motif_of(GeneRole::Hidden), None)).take(count(rng, c.neu_count_min, c.neu_count_max)));
-    genes.extend(std::iter::repeat((promoters::motif_of(GeneRole::Synapse), None)).take(count(rng, c.sy_count_min, c.sy_count_max)));
+    genes.extend(
+        std::iter::repeat((promoters::motif_of(GeneRole::Hidden), None)).take(count(
+            rng,
+            c.neu_count_min,
+            c.neu_count_max,
+        )),
+    );
+    genes.extend(
+        std::iter::repeat((promoters::motif_of(GeneRole::Synapse), None)).take(count(
+            rng,
+            c.sy_count_min,
+            c.sy_count_max,
+        )),
+    );
     genes.shuffle(rng);
     genes
 }
@@ -162,9 +191,19 @@ pub fn generate_structured_genome<R: rand::Rng + ?Sized>(composition: &GenomeCom
     let count = |rng: &mut R, min: usize, max: usize| rng.gen_range(min..=max.max(min));
 
     // scan_genes looks for the terminator within 40 letters; spacers may lengthen a payload by a few letters
-    let payload_lengths: Vec<usize> = genes.iter().map(|_| count(rng, c.payload_length_min.clamp(1, 32), c.payload_length_max.min(32))).collect();
-    let gene_bases: usize = genes.iter().zip(&payload_lengths).map(|((p, _), len)| p.len() + len + TERMINATOR.len()).sum();
-    let filler = c.target_length.clamp(GENOME_LENGTH_MIN, GENOME_LENGTH_MAX).saturating_sub(gene_bases);
+    let payload_lengths: Vec<usize> = genes
+        .iter()
+        .map(|_| count(rng, c.payload_length_min.clamp(1, 32), c.payload_length_max.min(32)))
+        .collect();
+    let gene_bases: usize = genes
+        .iter()
+        .zip(&payload_lengths)
+        .map(|((p, _), len)| p.len() + len + TERMINATOR.len())
+        .sum();
+    let filler = c
+        .target_length
+        .clamp(GENOME_LENGTH_MIN, GENOME_LENGTH_MAX)
+        .saturating_sub(gene_bases);
     let mut gaps = vec![0usize; genes.len() + 1];
     for _ in 0..filler {
         let gap = rng.gen_range(0..gaps.len());

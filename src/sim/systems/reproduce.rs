@@ -3,8 +3,8 @@
 
 use rand::Rng;
 
-use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_phenotype, SpawnOptions};
-use crate::biology::genome::{mutate_genome, GenomeConfig};
+use crate::biology::creature_factory::{SpawnOptions, inherit_learned_weights, spawn_from_phenotype};
+use crate::biology::genome::{GenomeConfig, mutate_genome};
 use crate::biology::metabolism::MetabolismConfig;
 use crate::biology::phenotype::parse_genome;
 use crate::config::OceanConfig;
@@ -43,7 +43,8 @@ impl MitosisRule {
 /// `max_creatures` and energy at least `stomach_capacity · max(repro_threshold, floor)`.
 pub fn ready(agent: &CreatureAgent, rule: &MitosisRule, population: usize) -> bool {
     let mature_age = agent.phenotype.mature_age.max(rule.mature_age_floor);
-    let threshold = agent.phenotype.stomach_capacity * agent.phenotype.repro_threshold.max(rule.stomach_threshold_floor);
+    let threshold =
+        agent.phenotype.stomach_capacity * agent.phenotype.repro_threshold.max(rule.stomach_threshold_floor);
     agent.age >= mature_age && agent.has_eaten && population < rule.max_creatures && agent.energy >= threshold
 }
 
@@ -59,27 +60,51 @@ pub fn split(agent: &mut CreatureAgent, rule: &MitosisRule) {
 /// The child of a split parent (call after `split`): with `MITOSIS_MUTATION_CHANCE` a mutated genome, Lamarckian
 /// learned weights from parents at least `lamarckian_age_floor` old, the parent's post-split energy. Returns the child
 /// and whether its genome mutated. Draws the mutation roll, the mutation and the inheritance from `rng` in this order.
-pub fn child<R: Rng + ?Sized>(parent: &CreatureAgent, id: u32, rule: &MitosisRule, genome: &GenomeConfig, brain: &BrainConfig, metabolism: &MetabolismConfig, rng: &mut R) -> (CreatureAgent, bool) {
+pub fn child<R: Rng + ?Sized>(
+    parent: &CreatureAgent,
+    id: u32,
+    rule: &MitosisRule,
+    genome: &GenomeConfig,
+    brain: &BrainConfig,
+    metabolism: &MetabolismConfig,
+    rng: &mut R,
+) -> (CreatureAgent, bool) {
     let is_mutation = rng.gen_range(0.0..1.0) < MITOSIS_MUTATION_CHANCE;
     let (child_genome, child_phenotype) = if is_mutation {
-        let g = mutate_genome(&parent.genome, &genome.mutation_operators, rng).map_or_else(|| parent.genome.clone(), |m| m.genome);
+        let g = mutate_genome(&parent.genome, &genome.mutation_operators, rng)
+            .map_or_else(|| parent.genome.clone(), |m| m.genome);
         let p = parse_genome(&g, None, None, brain);
         (g, p)
     } else {
         (parent.genome.clone(), parent.phenotype.clone())
     };
     let assimilate = parent.age >= rule.lamarckian_age_floor;
-    let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate { (&parent.phenotype.brain.synapses, &parent.synapse_weights) } else { (&[], &[]) };
-    let weights = inherit_learned_weights(parent_synapses, parent_weights, &child_phenotype.brain.synapses, genome.lamarckian_assimilation_chance, rng);
-    let mut child = spawn_from_phenotype(&child_genome, child_phenotype, SpawnOptions {
-        id,
-        px: parent.px,
-        py: parent.py,
-        heading_angle: parent.heading_angle,
-        generation: parent.generation + 1,
-        methylations: None,
-        synapse_weights: Some(weights),
-    }, metabolism);
+    let (parent_synapses, parent_weights): (&[_], &[_]) = if assimilate {
+        (&parent.phenotype.brain.synapses, &parent.synapse_weights)
+    } else {
+        (&[], &[])
+    };
+    let weights = inherit_learned_weights(
+        parent_synapses,
+        parent_weights,
+        &child_phenotype.brain.synapses,
+        genome.lamarckian_assimilation_chance,
+        rng,
+    );
+    let mut child = spawn_from_phenotype(
+        &child_genome,
+        child_phenotype,
+        SpawnOptions {
+            id,
+            px: parent.px,
+            py: parent.py,
+            heading_angle: parent.heading_angle,
+            generation: parent.generation + 1,
+            methylations: None,
+            synapse_weights: Some(weights),
+        },
+        metabolism,
+    );
     child.energy = parent.energy;
     (child, is_mutation)
 }
@@ -87,7 +112,7 @@ pub fn child<R: Rng + ?Sized>(parent: &CreatureAgent, id: u32, rule: &MitosisRul
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+    use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
     use crate::biology::genome::WILDTYPE_GENOME;
     use crate::shared::rng::seeded;
 
@@ -95,7 +120,19 @@ mod tests {
     fn test_split_parent_and_child_share_the_post_split_energy() {
         let config = crate::config::test_config();
         let rule = MitosisRule::from_ocean(&config.ocean);
-        let mut parent = spawn_creature(WILDTYPE_GENOME, SpawnOptions { id: 1, px: 10.0, py: 20.0, heading_angle: 0.0, generation: 3, methylations: None, synapse_weights: None }, config);
+        let mut parent = spawn_creature(
+            WILDTYPE_GENOME,
+            SpawnOptions {
+                id: 1,
+                px: 10.0,
+                py: 20.0,
+                heading_angle: 0.0,
+                generation: 3,
+                methylations: None,
+                synapse_weights: None,
+            },
+            config,
+        );
         assert!(!ready(&parent, &rule, 1), "newborn is not mature and not fed");
         parent.age = parent.phenotype.mature_age.max(rule.mature_age_floor);
         parent.has_eaten = true;
@@ -106,7 +143,18 @@ mod tests {
         split(&mut parent, &rule);
         assert_eq!(parent.energy, before * rule.split_loss_ratio);
         assert!(!parent.has_eaten);
-        let (child, _) = child(&parent, 2, &rule, &config.genome, &config.brain, &config.metabolism, &mut seeded(4));
-        assert_eq!((child.id, child.generation, child.energy, child.px, child.py), (2, 4, parent.energy, 10.0, 20.0));
+        let (child, _) = child(
+            &parent,
+            2,
+            &rule,
+            &config.genome,
+            &config.brain,
+            &config.metabolism,
+            &mut seeded(4),
+        );
+        assert_eq!(
+            (child.id, child.generation, child.energy, child.px, child.py),
+            (2, 4, parent.energy, 10.0, 20.0)
+        );
     }
 }

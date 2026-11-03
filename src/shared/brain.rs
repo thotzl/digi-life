@@ -1,10 +1,13 @@
-use crate::biology::brain::{BrainTopology, Motor, MotorOutputs, NeuronRole, SystemicInput, OUTPUT_MOTOR_NODES_COUNT, SYSTEMIC_BASE_INPUTS_COUNT, TAU_MAX, TAU_MIN};
-use crate::biology::organs::{SenseCtx, CHANNELS_PER_ORGANELLE, DELTA_CHANNEL, SPECTRAL_CHANNELS};
+use crate::biology::brain::{
+    BrainTopology, Motor, MotorOutputs, NeuronRole, OUTPUT_MOTOR_NODES_COUNT, SYSTEMIC_BASE_INPUTS_COUNT,
+    SystemicInput, TAU_MAX, TAU_MIN,
+};
+use crate::biology::organs::{CHANNELS_PER_ORGANELLE, DELTA_CHANNEL, SPECTRAL_CHANNELS, SenseCtx};
 use serde::{Deserialize, Serialize};
 
 use crate::shared::dto::{CreatureAgent, FoodSpore};
-use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::fmath;
+use crate::shared::map_generator::ProceduralObstacle;
 
 pub use crate::biology::brain::Activation;
 pub use crate::biology::organs::SENSOR_RANGE_PER_SCALE;
@@ -97,9 +100,17 @@ struct ActiveSynapse {
 impl BrainRuntime {
     fn build(&mut self, brain: &BrainTopology, synapse_weights: &[f32]) {
         // A neuron without an activation (inputs, motors) integrates with tanh
-        self.activations = brain.neurons.iter().map(|n| n.activation_type.unwrap_or(Activation::Tanh)).collect();
+        self.activations = brain
+            .neurons
+            .iter()
+            .map(|n| n.activation_type.unwrap_or(Activation::Tanh))
+            .collect();
         self.alpha = brain.neurons.iter().map(|n| integration_alpha(n.tau)).collect();
-        self.input_count = brain.neurons.iter().take_while(|n| matches!(n.role, NeuronRole::Sensor { .. } | NeuronRole::Systemic { .. })).count();
+        self.input_count = brain
+            .neurons
+            .iter()
+            .take_while(|n| matches!(n.role, NeuronRole::Sensor { .. } | NeuronRole::Systemic { .. }))
+            .count();
         self.delta_organs = brain
             .neurons
             .iter()
@@ -107,14 +118,22 @@ impl BrainRuntime {
             .map(|n| n.id - DELTA_CHANNEL)
             .collect();
         for (slot, motor) in Motor::ALL.into_iter().enumerate() {
-            self.motors[slot] = brain.neurons.iter().position(|n| n.role == NeuronRole::Motor { motor }).unwrap_or(0);
+            self.motors[slot] = brain
+                .neurons
+                .iter()
+                .position(|n| n.role == NeuronRole::Motor { motor })
+                .unwrap_or(0);
         }
         self.active_synapses = brain
             .synapses
             .iter()
             .enumerate()
             .filter(|(idx, _)| synapse_weights[*idx] != 0.0)
-            .map(|(idx, s)| ActiveSynapse { idx, from: s.from_node, to: s.to_node })
+            .map(|(idx, s)| ActiveSynapse {
+                idx,
+                from: s.from_node,
+                to: s.to_node,
+            })
             .collect();
         self.index_plastic(brain);
         self.built = true;
@@ -127,7 +146,13 @@ impl BrainRuntime {
     }
 
     fn index_plastic(&mut self, brain: &BrainTopology) {
-        self.plastic_synapses = self.active_synapses.iter().enumerate().filter(|(_, s)| brain.synapses[s.idx].plastic).map(|(i, _)| i).collect();
+        self.plastic_synapses = self
+            .active_synapses
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| brain.synapses[s.idx].plastic)
+            .map(|(i, _)| i)
+            .collect();
     }
 }
 
@@ -255,7 +280,15 @@ pub fn compute_sensory_inputs(
     canvas_height: f32,
 ) -> Vec<f32> {
     let mut inputs = Vec::new();
-    compute_sensory_inputs_into(agent, clock_val, foods, obstacles, canvas_width, canvas_height, &mut inputs);
+    compute_sensory_inputs_into(
+        agent,
+        clock_val,
+        foods,
+        obstacles,
+        canvas_width,
+        canvas_height,
+        &mut inputs,
+    );
     inputs
 }
 
@@ -273,7 +306,13 @@ pub fn compute_sensory_inputs_into(
     inputs.clear();
     inputs.resize(k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT, 0.0);
 
-    let ctx = SenseCtx { agent, foods, obstacles, width: canvas_width, height: canvas_height };
+    let ctx = SenseCtx {
+        agent,
+        foods,
+        obstacles,
+        width: canvas_width,
+        height: canvas_height,
+    };
     for (idx, organ) in agent.phenotype.organelles.iter().enumerate() {
         // Stimuli per input slot; the ΔI slot stays 0 here (computed in the brain step from consecutive ticks)
         let mut channel_stimuli = [0.0f32; CHANNELS_PER_ORGANELLE];
@@ -323,14 +362,22 @@ pub fn execute_brain(
     neuron_activations: &mut Vec<f32>,
 ) -> MotorOutputs {
     let mut temp_weights = brain.synapses.iter().map(|s| s.weight).collect::<Vec<f32>>();
-    execute_brain_with_learning(brain, inputs, neuron_states, neuron_activations, &mut temp_weights, &mut BrainRuntime::default(), 0.0)
+    execute_brain_with_learning(
+        brain,
+        inputs,
+        neuron_states,
+        neuron_activations,
+        &mut temp_weights,
+        &mut BrainRuntime::default(),
+        0.0,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::phenotype::parse_genome;
     use crate::biology::organs::OrganKind;
+    use crate::biology::phenotype::parse_genome;
 
     #[test]
     fn test_execute_brain_determinism() {
@@ -386,12 +433,28 @@ mod tests {
         };
 
         let foods = vec![
-            FoodSpore { id: 1000, type_id: 1, x: 550.0, y: 500.0, amount: 15.0, vx: 0.0, vy: 0.0 }, // near plant Spore
-            FoodSpore { id: 9999, type_id: 2, x: -99999.0, y: -99999.0, amount: 0.0, vx: 0.0, vy: 0.0 }, // far meat Spore
+            FoodSpore {
+                id: 1000,
+                type_id: 1,
+                x: 550.0,
+                y: 500.0,
+                amount: 15.0,
+                vx: 0.0,
+                vy: 0.0,
+            }, // near plant Spore
+            FoodSpore {
+                id: 9999,
+                type_id: 2,
+                x: -99999.0,
+                y: -99999.0,
+                amount: 0.0,
+                vx: 0.0,
+                vy: 0.0,
+            }, // far meat Spore
         ];
 
         let inputs = compute_sensory_inputs(&agent, 0.5, &foods, &[], 1000.0, 1000.0);
-        
+
         // Input size: CHANNELS_PER_ORGANELLE slots per organ + systemic inputs (clock first)
         let k = phenotype.organelles.len();
         assert_eq!(inputs.len(), k * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT);
@@ -419,14 +482,25 @@ mod tests {
         let mut outputs = MotorOutputs::default();
         for &v in ir {
             inputs[4] = v;
-            outputs = execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, 0.0);
+            outputs = execute_brain_with_learning(
+                &phenotype.brain,
+                &inputs,
+                &mut states,
+                &mut activations,
+                &mut weights,
+                &mut runtime,
+                0.0,
+            );
         }
         (activations, outputs)
     }
 
     #[test]
     fn test_delta_channel_and_one_tick_latency() {
-        assert_eq!(parse_genome(EYE_DNA, None, None, &crate::config::test_config().brain).organelles[0].kind, OrganKind::Eye);
+        assert_eq!(
+            parse_genome(EYE_DNA, None, None, &crate::config::test_config().brain).organelles[0].kind,
+            OrganKind::Eye
+        );
 
         // ΔI has its own slot (signed); the IR channel keeps its value (TCK-144)
         let (rising, out_stimulus) = run_ir(&[0.0, 0.2]);
@@ -442,7 +516,11 @@ mod tests {
 
     /// Runs `ticks` brain steps with Oja learning (η from config) on irregular inputs in [0, 1] (sensor slots per
     /// organ + systemic inputs, the ΔI slots are filled by the brain); returns the learned weights.
-    fn learn_with_noise(genome: &str, ticks: u32, seed: u64) -> (crate::biology::phenotype::CreaturePhenotype, Vec<f32>) {
+    fn learn_with_noise(
+        genome: &str,
+        ticks: u32,
+        seed: u64,
+    ) -> (crate::biology::phenotype::CreaturePhenotype, Vec<f32>) {
         use rand::Rng;
         let phenotype = parse_genome(genome, None, None, &crate::config::test_config().brain);
         let input_count = phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
@@ -457,7 +535,15 @@ mod tests {
             if tick % 20 == 0 {
                 inputs.iter_mut().for_each(|v| *v = rng.gen_range(0.0..1.0));
             }
-            execute_brain_with_learning(&phenotype.brain, &inputs, &mut states, &mut activations, &mut weights, &mut runtime, rate);
+            execute_brain_with_learning(
+                &phenotype.brain,
+                &inputs,
+                &mut states,
+                &mut activations,
+                &mut weights,
+                &mut runtime,
+                rate,
+            );
         }
         (phenotype, weights)
     }
@@ -467,7 +553,8 @@ mod tests {
         let composition = &crate::config::test_config().genome.genome_composition;
         let (mut plastic, mut at_clamp, mut changed, mut abs_sum) = (0usize, 0usize, 0usize, 0.0f32);
         for seed in 0..24 {
-            let genome = crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            let genome =
+                crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
             // A long Ocean life (36,000 ticks)
             let (phenotype, weights) = learn_with_noise(&genome, 36_000, seed);
             for (s, &w) in phenotype.brain.synapses.iter().zip(&weights) {
@@ -484,9 +571,17 @@ mod tests {
             }
         }
         assert!(plastic > 500, "{} plastic synapses", plastic);
-        assert!(changed * 2 > plastic, "learning active: {} of {} plastic weights changed", changed, plastic);
+        assert!(
+            changed * 2 > plastic,
+            "learning active: {} of {} plastic weights changed",
+            changed,
+            plastic
+        );
         let (clamp_share, mean_abs) = (at_clamp as f32 / plastic as f32, abs_sum / plastic as f32);
-        println!("plastic {} mean |w| {:.3} share at clamp {:.4}", plastic, mean_abs, clamp_share);
+        println!(
+            "plastic {} mean |w| {:.3} share at clamp {:.4}",
+            plastic, mean_abs, clamp_share
+        );
         assert!(clamp_share < 0.05, "{:.3} of plastic weights at the clamp", clamp_share);
         assert!(mean_abs < 2.0, "mean |w| {}", mean_abs);
     }
@@ -495,10 +590,14 @@ mod tests {
     fn test_reflexes_are_fixed_and_the_rest_plastic() {
         let composition = &crate::config::test_config().genome.genome_composition;
         for seed in 0..20 {
-            let genome = crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
+            let genome =
+                crate::biology::genome::generate_structured_genome(composition, &mut crate::shared::rng::seeded(seed));
             let brain = parse_genome(&genome, None, None, &crate::config::test_config().brain).brain;
             for s in &brain.synapses {
-                let reflex = matches!((&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
+                let reflex = matches!(
+                    (&brain.neurons[s.from_node].role, &brain.neurons[s.to_node].role),
+                    (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. })
+                );
                 assert_eq!(s.plastic, !reflex, "{:?}", s);
                 if reflex {
                     assert_eq!(s.weight.abs(), 1.0);
@@ -518,7 +617,11 @@ mod tests {
                 let target = if (tick / 7) % 2 == 0 { 4.0 } else { -4.0 };
                 let next = y + alpha * (target - y);
                 // Moves towards the target without overshooting it, so no tick-to-tick oscillation for any tau
-                assert!((next - y) * (target - y) >= 0.0 && (next - target).abs() <= (y - target).abs(), "tau {}", tau);
+                assert!(
+                    (next - y) * (target - y) >= 0.0 && (next - target).abs() <= (y - target).abs(),
+                    "tau {}",
+                    tau
+                );
                 y = next;
                 assert!(y.abs() <= 4.0);
             }

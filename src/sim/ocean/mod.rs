@@ -18,16 +18,18 @@ use rand::Rng;
 
 use crate::config::AppConfig;
 use crate::shared::dto::CreatureAgent;
-use crate::shared::map_generator::{generate_world, ProceduralWorld};
+use crate::shared::map_generator::{ProceduralWorld, generate_world};
 use crate::shared::physics::SporePusher;
-use crate::shared::rng::{derive, seed_from_str, SimRng};
+use crate::shared::rng::{SimRng, derive, seed_from_str};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
-use crate::sim::systems::bite::{bite, BiteRule};
-use crate::sim::systems::death::{decompose, POST_DAMAGE_MIN_ENERGY};
+use crate::sim::systems::bite::{BiteRule, bite};
+use crate::sim::systems::death::{POST_DAMAGE_MIN_ENERGY, decompose};
 use crate::sim::systems::eat::respawn;
 use crate::sim::systems::food_drift::drift_before_creatures;
 use crate::sim::systems::reproduce::{self, MitosisRule};
-use crate::sim::{step_creature, CreatureEvent, CreatureStep, PeerSnapshot, TemperatureField, TickCtx, World, WorldSettings};
+use crate::sim::{
+    CreatureEvent, CreatureStep, PeerSnapshot, TemperatureField, TickCtx, World, WorldSettings, step_creature,
+};
 
 pub use snapshot::OceanSnapshot;
 pub use spawner::{CatalogueFounder, Founder, OceanSpawner};
@@ -66,11 +68,28 @@ pub enum OceanEvent {
     /// A spore was eaten at (x, y) (its position before the respawn)
     Ate { x: f32, y: f32 },
     /// `attacker` bit `victim` at the victim's position
-    Bite { attacker: u32, attacker_name: String, victim: u32, damage: f32, gain: f32, x: f32, y: f32 },
+    Bite {
+        attacker: u32,
+        attacker_name: String,
+        victim: u32,
+        damage: f32,
+        gain: f32,
+        x: f32,
+        y: f32,
+    },
     /// A creature died and decomposed
-    Died { id: u32, latin_name: String, cause: DeathCause },
+    Died {
+        id: u32,
+        latin_name: String,
+        cause: DeathCause,
+    },
     /// `parent` split; the child's species is new when `mutated`
-    Mitosis { parent: u32, child_name: String, generation: u32, mutated: bool },
+    Mitosis {
+        parent: u32,
+        child_name: String,
+        generation: u32,
+        mutated: bool,
+    },
     /// The last member of a species died
     Extinct { latin_name: String },
     /// A founder refilled the population (`catalogue_name`: catalogue clone, else structured random)
@@ -175,10 +194,15 @@ impl OceanSim {
     pub fn restore(config: &AppConfig, snapshot: OceanSnapshot, fallback_seed: u64) -> Self {
         let mut sim = Self::empty(config, snapshot.seed.unwrap_or(fallback_seed));
         sim.creatures = snapshot.creatures;
-        sim.spores = SporeField { spores: snapshot.food_pellets, nutrient_centers: snapshot.nutrient_centers, next_id: snapshot.next_spore_id };
+        sim.spores = SporeField {
+            spores: snapshot.food_pellets,
+            nutrient_centers: snapshot.nutrient_centers,
+            next_id: snapshot.next_spore_id,
+        };
         if sim.spores.nutrient_centers.is_empty() {
             let (width, height) = sim.size();
-            sim.spores.regenerate_centers(&mut derive(sim.seed, &[STREAM_POPULATE]), width, height);
+            sim.spores
+                .regenerate_centers(&mut derive(sim.seed, &[STREAM_POPULATE]), width, height);
         }
         sim.sync_settings();
         sim.highest_generation = snapshot.highest_generation;
@@ -280,7 +304,13 @@ impl OceanSim {
         let bite_rule = BiteRule::from_ocean(&config.ocean);
         let mitosis_rule = MitosisRule::from_ocean(&config.ocean);
         let ctx = TickCtx::new(config, tick);
-        let (grid, peers, nearby, bite_ticks, damage) = (&self.grid, &self.peers, &mut self.nearby, &mut self.bite_ticks, &mut self.damage);
+        let (grid, peers, nearby, bite_ticks, damage) = (
+            &self.grid,
+            &self.peers,
+            &mut self.nearby,
+            &mut self.bite_ticks,
+            &mut self.damage,
+        );
 
         let mut world = World {
             creatures: &mut self.creatures,
@@ -304,7 +334,14 @@ impl OceanSim {
                         let agent = &mut world.creatures[idx];
                         agent.has_eaten = true;
                         let from = (agent.px, agent.py);
-                        respawn(&mut world.foods[food], &world.settings.respawn, from, width, height, &mut food_rng);
+                        respawn(
+                            &mut world.foods[food],
+                            &world.settings.respawn,
+                            from,
+                            width,
+                            height,
+                            &mut food_rng,
+                        );
                         out.events.push(OceanEvent::Ate { x, y });
                     }
                     CreatureEvent::Decomposed { x, y, spores } => decompose(world.foods, x, y, spores, &mut food_rng),
@@ -313,8 +350,16 @@ impl OceanSim {
             let agent = &mut world.creatures[idx];
             if step.died {
                 self.alive[idx] = false;
-                let cause = if agent.energy <= 0.0 { DeathCause::Starved } else { DeathCause::Aged };
-                out.events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), cause });
+                let cause = if agent.energy <= 0.0 {
+                    DeathCause::Starved
+                } else {
+                    DeathCause::Aged
+                };
+                out.events.push(OceanEvent::Died {
+                    id: agent.id,
+                    latin_name: agent.phenotype.latin_name.clone(),
+                    cause,
+                });
                 continue;
             }
             agent.age += 1;
@@ -326,21 +371,45 @@ impl OceanSim {
                 grid.for_each_nearby(GridLayer::Creatures, agent.px, agent.py, range, |i| nearby.push(i));
                 let candidates = nearby.iter().filter_map(|&i| peers.get(i as usize));
                 let attacker = agent.id;
-                if let Some(b) = bite(agent, candidates, &bite_rule, &config.metabolism, damage, |victim| bite_ticks.contains_key(&(attacker, victim))) {
+                if let Some(b) = bite(agent, candidates, &bite_rule, &config.metabolism, damage, |victim| {
+                    bite_ticks.contains_key(&(attacker, victim))
+                }) {
                     bite_ticks.insert((b.attacker, b.victim), tick);
                     let attacker_name = agent.phenotype.latin_name.chars().take(BITE_NAME_CHARS).collect();
-                    out.events.push(OceanEvent::Bite { attacker, attacker_name, victim: b.victim, damage: config.metabolism.biting_energy_damage, gain: b.gain, x: b.x, y: b.y });
+                    out.events.push(OceanEvent::Bite {
+                        attacker,
+                        attacker_name,
+                        victim: b.victim,
+                        damage: config.metabolism.biting_energy_damage,
+                        gain: b.gain,
+                        x: b.x,
+                        y: b.y,
+                    });
                 }
             }
 
             // Mitosis (TCK-152): the child is reported, not simulated (RV-B01)
             if reproduce::ready(agent, &mitosis_rule, population) {
                 reproduce::split(agent, &mitosis_rule);
-                let (child, mutated) = reproduce::child(agent, self.next_creature_id, &mitosis_rule, &config.genome, &config.brain, &config.metabolism, &mut mitosis_rng);
+                let (child, mutated) = reproduce::child(
+                    agent,
+                    self.next_creature_id,
+                    &mitosis_rule,
+                    &config.genome,
+                    &config.brain,
+                    &config.metabolism,
+                    &mut mitosis_rng,
+                );
                 if mutated {
-                    self.ledger.discover(&child, Some(&agent.phenotype.latin_name), &mut out.species);
+                    self.ledger
+                        .discover(&child, Some(&agent.phenotype.latin_name), &mut out.species);
                 }
-                out.events.push(OceanEvent::Mitosis { parent: agent.id, child_name: child.phenotype.latin_name.clone(), generation: child.generation, mutated });
+                out.events.push(OceanEvent::Mitosis {
+                    parent: agent.id,
+                    child_name: child.phenotype.latin_name.clone(),
+                    generation: child.generation,
+                    mutated,
+                });
                 self.highest_generation = self.highest_generation.max(child.generation);
                 self.next_creature_id += 1;
                 out.born.push(child);
@@ -365,8 +434,16 @@ impl OceanSim {
             }
             let spore_count = self.settings.death.spores(agent);
             decompose(spores, agent.px, agent.py, spore_count, &mut food_rng);
-            let cause = if bite_damage.is_some_and(|d| d > 0.0) { DeathCause::Hunted } else { DeathCause::Starved };
-            events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), cause });
+            let cause = if bite_damage.is_some_and(|d| d > 0.0) {
+                DeathCause::Hunted
+            } else {
+                DeathCause::Starved
+            };
+            events.push(OceanEvent::Died {
+                id: agent.id,
+                latin_name: agent.phenotype.latin_name.clone(),
+                cause,
+            });
             false
         });
 
@@ -374,7 +451,9 @@ impl OceanSim {
         self.ledger.census(&self.creatures, &mut out.species);
         for change in &out.species[extinct_from..] {
             if let SpeciesChange::Extinct { latin_name, .. } = change {
-                out.events.push(OceanEvent::Extinct { latin_name: latin_name.clone() });
+                out.events.push(OceanEvent::Extinct {
+                    latin_name: latin_name.clone(),
+                });
             }
         }
         out
@@ -396,7 +475,12 @@ impl OceanSim {
     /// Spawns a founder with the next id, records its species and adds it to the population.
     fn add_founder(&mut self, founder: Founder, rng: &mut SimRng, out: &mut OceanStep) {
         let (width, height) = self.size();
-        let agent = OceanSpawner { config: &self.config, width, height }.founder(founder, self.next_creature_id, rng);
+        let agent = OceanSpawner {
+            config: &self.config,
+            width,
+            height,
+        }
+        .founder(founder, self.next_creature_id, rng);
         self.next_creature_id += 1;
         self.ledger.discover(&agent, None, &mut out.species);
         self.creatures.push(agent);
@@ -404,7 +488,8 @@ impl OceanSim {
 
     fn reseed_spores(&mut self, rng: &mut SimRng) {
         let (width, height) = self.size();
-        self.spores.reseed(self.config.ocean.food_spore_count, rng, width, height);
+        self.spores
+            .reseed(self.config.ocean.food_spore_count, rng, width, height);
         self.sync_settings();
     }
 

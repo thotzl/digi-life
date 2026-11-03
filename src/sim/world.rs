@@ -14,12 +14,12 @@ use crate::shared::map_generator::ProceduralObstacle;
 use crate::shared::physics::PhysicsConfig;
 use crate::shared::spatial_grid::SpatialGrid;
 
+use super::System;
 use super::systems::death::DeathPolicy;
 use super::systems::eat::{EatRadiusRule, RespawnPolicy};
 use super::systems::food_drift::FoodDriftOrder;
 use super::systems::metabolize::EnergyModifier;
 use super::systems::sense::{ClockVariant, TargetSelector};
-use super::System;
 
 /// Per-tick snapshot of the fields other creatures read (prey targets of the sensing, bite targets).
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +35,15 @@ pub struct PeerSnapshot {
 
 impl From<&CreatureAgent> for PeerSnapshot {
     fn from(c: &CreatureAgent) -> Self {
-        Self { id: c.id, species_id: c.species_id.clone(), px: c.px, py: c.py, vx: c.vx, vy: c.vy, energy: c.energy }
+        Self {
+            id: c.id,
+            species_id: c.species_id.clone(),
+            px: c.px,
+            py: c.py,
+            vx: c.vx,
+            vy: c.vy,
+            energy: c.energy,
+        }
     }
 }
 
@@ -49,7 +57,10 @@ pub struct TemperatureField {
 
 impl TemperatureField {
     /// The Ocean's stratification (38 °C surface, 26 °C span).
-    pub const OCEAN: TemperatureField = TemperatureField { surface: 38.0, span: 26.0 };
+    pub const OCEAN: TemperatureField = TemperatureField {
+        surface: 38.0,
+        span: 26.0,
+    };
 
     pub fn at(&self, y: f32, height: f32) -> f32 {
         self.surface - (y / height) * self.span
@@ -88,20 +99,44 @@ impl WorldSettings {
             clock: ClockVariant::Std,
             targets: TargetSelector::NearestPerTypeWithPrey,
             metabolic_scale: 1.0,
-            energy_modifiers: vec![EnergyModifier::photosynthesis(ocean), EnergyModifier::thermal_stress(ocean)],
+            energy_modifiers: vec![
+                EnergyModifier::photosynthesis(ocean),
+                EnergyModifier::thermal_stress(ocean),
+            ],
             death: DeathPolicy::decompose(ocean),
             food_drift: FoodDriftOrder::BeforeAllCreatures,
-            eat_radius: EatRadiusRule::Linear { multiplier: ocean.grazing_radius_multiplier, offset: ocean.grazing_radius_offset },
-            respawn: RespawnPolicy::Patchy { nutrient_centers, recycle_meat: true },
+            eat_radius: EatRadiusRule::Linear {
+                multiplier: ocean.grazing_radius_multiplier,
+                offset: ocean.grazing_radius_offset,
+            },
+            respawn: RespawnPolicy::Patchy {
+                nutrient_centers,
+                recycle_meat: true,
+            },
         }
     }
 }
 
 /// Systems of a trainer room: sensing, brain, drain, starvation, movement, food drift, eating.
-pub const TRAINER_SYSTEMS: &[System] = &[System::Sense, System::Think, System::Metabolize, System::Death, System::Move, System::FoodDrift, System::Eat];
+pub const TRAINER_SYSTEMS: &[System] = &[
+    System::Sense,
+    System::Think,
+    System::Metabolize,
+    System::Death,
+    System::Move,
+    System::FoodDrift,
+    System::Eat,
+];
 /// Systems of the Ocean creature loop (food drift runs once before all creatures, `food_drift::drift_before_creatures`).
 /// Bite and mitosis run after these with Ocean state (`systems::bite`, `systems::reproduce`).
-pub const OCEAN_SYSTEMS: &[System] = &[System::Sense, System::Think, System::Metabolize, System::Death, System::Move, System::Eat];
+pub const OCEAN_SYSTEMS: &[System] = &[
+    System::Sense,
+    System::Think,
+    System::Metabolize,
+    System::Death,
+    System::Move,
+    System::Eat,
+];
 /// Sensing, brain and movement only: no drain, no death, no food interaction (diagnosis probes).
 pub const BRAIN_ONLY_SYSTEMS: &[System] = &[System::Sense, System::Think, System::Move];
 
@@ -123,7 +158,12 @@ pub struct World<'a> {
 
 impl<'a> World<'a> {
     /// World of one creature and its food in a square obstacle-free chamber of edge `size` (trainer room, probes).
-    pub fn single(agent: &'a mut CreatureAgent, foods: &'a mut [FoodSpore], size: f32, settings: &'a WorldSettings) -> Self {
+    pub fn single(
+        agent: &'a mut CreatureAgent,
+        foods: &'a mut [FoodSpore],
+        size: f32,
+        settings: &'a WorldSettings,
+    ) -> Self {
         Self {
             creatures: std::slice::from_mut(agent),
             foods,
@@ -150,6 +190,11 @@ pub struct TickCtx<'a> {
 
 impl<'a> TickCtx<'a> {
     pub fn new(config: &'a AppConfig, tick: u64) -> Self {
-        Self { brain: &config.brain, metabolism: &config.metabolism, physics: &config.physics, tick }
+        Self {
+            brain: &config.brain,
+            metabolism: &config.metabolism,
+            physics: &config.physics,
+            tick,
+        }
     }
 }

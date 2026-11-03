@@ -21,7 +21,7 @@ use crate::biology::genome::table::{GeneRef, GeneTable};
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
 
-pub use spectral::{channel_sensitivity, CHANNEL_FREQUENCIES, MEAT_EMISSION, MIN_CHANNEL_MATCH, PLANT_EMISSION};
+pub use spectral::{CHANNEL_FREQUENCIES, MEAT_EMISSION, MIN_CHANNEL_MATCH, PLANT_EMISSION, channel_sensitivity};
 
 /// Spectral receptive-field channels per organ (UV/pressure .. IR/pheromone).
 pub const SPECTRAL_CHANNELS: usize = 5;
@@ -57,7 +57,14 @@ pub enum OrganKind {
 }
 
 impl OrganKind {
-    pub const ALL: [OrganKind; 6] = [OrganKind::Eye, OrganKind::Nose, OrganKind::Thermal, OrganKind::Bristle, OrganKind::LateralLine, OrganKind::Proprioceptor];
+    pub const ALL: [OrganKind; 6] = [
+        OrganKind::Eye,
+        OrganKind::Nose,
+        OrganKind::Thermal,
+        OrganKind::Bristle,
+        OrganKind::LateralLine,
+        OrganKind::Proprioceptor,
+    ];
 
     /// Everything the simulation knows about this kind.
     pub fn spec(self) -> &'static OrganSpec {
@@ -190,7 +197,7 @@ pub fn live_channels(organ: &Organ) -> [bool; CHANNELS_PER_ORGANELLE] {
 
 /// Shared rules the kinds point to.
 pub mod common {
-    use super::{Organ, LIMB_STYLE};
+    use super::{LIMB_STYLE, Organ};
 
     /// `scale² · (1.1 − bandwidth)` (shape of the former vestigial organ tax, TCK-151).
     pub fn cost_load(o: &Organ) -> f32 {
@@ -257,7 +264,12 @@ pub(crate) fn decode_organs<'a>(genes: &GeneTable<'a>) -> (Vec<Organ>, Vec<Organ
                 organelles.push(organ(base_angle.abs(), OrganSide::Right));
             }
             let owner = genes.owner(promoter, gene.start);
-            organ_genes.push(OrganGene { gene: genes.gene_ref(owner), owner, payload: gene.payload, organs: first..organelles.len() });
+            organ_genes.push(OrganGene {
+                gene: genes.gene_ref(owner),
+                owner,
+                payload: gene.payload,
+                organs: first..organelles.len(),
+            });
         }
     }
     (organelles, organ_genes)
@@ -279,7 +291,9 @@ mod tests {
 
     fn organ_of(kind: OrganKind, rng: &mut crate::shared::rng::SimRng) -> Organ {
         loop {
-            let payload: String = (0..24).map(|_| crate::biology::genome::ALPHABET[rng.gen_range(0..26)] as char).collect();
+            let payload: String = (0..24)
+                .map(|_| crate::biology::genome::ALPHABET[rng.gen_range(0..26)] as char)
+                .collect();
             let p = Payload(&payload);
             let (affinity, style) = (p.h(AFFINITY_LOCUS), p.h(7));
             if OrganKind::classify(affinity, style) == kind {
@@ -301,7 +315,8 @@ mod tests {
     }
 
     fn agent(rng: &mut crate::shared::rng::SimRng) -> CreatureAgent {
-        let phenotype = crate::biology::phenotype::parse_genome("EYEABCDEFEN", None, None, &crate::config::test_config().brain);
+        let phenotype =
+            crate::biology::phenotype::parse_genome("EYEABCDEFEN", None, None, &crate::config::test_config().brain);
         CreatureAgent {
             id: 1,
             species_id: "t".into(),
@@ -331,7 +346,15 @@ mod tests {
     #[test]
     fn test_live_channels_match_sense() {
         let mut rng = crate::shared::rng::seeded(199);
-        let obstacles = [ProceduralObstacle { id: 1, x: 500.0, y: 500.0, radius: 40.0, obstacle_type: "rock".into(), color: String::new(), vertices: Vec::new() }];
+        let obstacles = [ProceduralObstacle {
+            id: 1,
+            x: 500.0,
+            y: 500.0,
+            radius: 40.0,
+            obstacle_type: "rock".into(),
+            color: String::new(),
+            vertices: Vec::new(),
+        }];
         for kind in OrganKind::ALL {
             for _ in 0..40 {
                 let organ = organ_of(kind, &mut rng);
@@ -342,9 +365,23 @@ mod tests {
                     // Foods straight along the organ's axis, inside its range (the spectral senses' best case)
                     let dir = a.heading_angle + organ.angle.to_radians();
                     let d = organ.range() * rng.gen_range(0.05..0.9);
-                    let food = |type_id: u32| FoodSpore { id: type_id, type_id, x: a.px + d * dir.cos(), y: a.py + d * dir.sin(), amount: 1.0, vx: 0.0, vy: 0.0 };
+                    let food = |type_id: u32| FoodSpore {
+                        id: type_id,
+                        type_id,
+                        x: a.px + d * dir.cos(),
+                        y: a.py + d * dir.sin(),
+                        amount: 1.0,
+                        vx: 0.0,
+                        vy: 0.0,
+                    };
                     let foods = [food(1), food(2)];
-                    let ctx = SenseCtx { agent: &a, foods: &foods, obstacles: &obstacles, width: 1000.0, height: 1000.0 };
+                    let ctx = SenseCtx {
+                        agent: &a,
+                        foods: &foods,
+                        obstacles: &obstacles,
+                        width: 1000.0,
+                        height: 1000.0,
+                    };
                     let mut out = [0.0; CHANNELS_PER_ORGANELLE];
                     (kind.spec().sense)(&ctx, &organ, &mut out);
                     for c in 0..CHANNELS_PER_ORGANELLE {
@@ -355,9 +392,20 @@ mod tests {
                     }
                 }
                 for c in (0..CHANNELS_PER_ORGANELLE).filter(|&c| c != DELTA_CHANNEL) {
-                    assert!(!live[c] || fired[c], "{:?} live channel {} never fired: {:?}", kind, c, organ);
+                    assert!(
+                        !live[c] || fired[c],
+                        "{:?} live channel {} never fired: {:?}",
+                        kind,
+                        c,
+                        organ
+                    );
                 }
-                assert_eq!(live[DELTA_CHANNEL], kind.is_distance() && live[..SPECTRAL_CHANNELS].iter().any(|&l| l), "{:?}", kind);
+                assert_eq!(
+                    live[DELTA_CHANNEL],
+                    kind.is_distance() && live[..SPECTRAL_CHANNELS].iter().any(|&l| l),
+                    "{:?}",
+                    kind
+                );
             }
         }
     }
@@ -374,7 +422,15 @@ mod tests {
     fn export_organ_registry() {
         let map: std::collections::BTreeMap<String, OrganKindInfo> = OrganKind::ALL
             .iter()
-            .map(|k| (serde_json::to_value(k).unwrap().as_str().unwrap().to_string(), OrganKindInfo { name: k.spec().name, channels: k.spec().channel_names }))
+            .map(|k| {
+                (
+                    serde_json::to_value(k).unwrap().as_str().unwrap().to_string(),
+                    OrganKindInfo {
+                        name: k.spec().name,
+                        channels: k.spec().channel_names,
+                    },
+                )
+            })
             .collect();
         let ts = format!(
             "// Generated by `cargo test` from src/biology/organs (OrganSpec per kind). Do not edit this file manually.\nimport type {{ OrganKind }} from \"./OrganKind\";\n\nexport const ORGAN_KINDS: Record<OrganKind, {{ name: string; channels: string[] }}> = {};\n",

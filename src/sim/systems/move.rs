@@ -8,5 +8,13 @@ use crate::sim::{CreatureStep, TickCtx, World};
 pub fn move_creature(world: &mut World, idx: usize, ctx: &TickCtx, step: &mut CreatureStep) {
     let agent = &mut world.creatures[idx];
     step.old_heading = agent.heading_angle;
-    step.hit_wall = step_creature_kinematics(agent, step.motors.thrust, step.motors.bend, ctx.physics, world.obstacles, world.width, world.height);
+    step.hit_wall = step_creature_kinematics(
+        agent,
+        step.motors.thrust,
+        step.motors.bend,
+        ctx.physics,
+        world.obstacles,
+        world.width,
+        world.height,
+    );
 }

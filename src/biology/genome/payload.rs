@@ -73,7 +73,10 @@ mod tests {
         let p = Payload("QWERTYUIOPASDFG");
         for locus in 0..40 {
             assert_eq!(p.h(locus), get_payload_linear_value_offset(p.0, locus));
-            assert_eq!(p.range(locus, 0.05, 0.85).to_bits(), (0.05 + get_payload_linear_value_offset(p.0, locus) * 0.85).to_bits());
+            assert_eq!(
+                p.range(locus, 0.05, 0.85).to_bits(),
+                (0.05 + get_payload_linear_value_offset(p.0, locus) * 0.85).to_bits()
+            );
         }
     }
 }

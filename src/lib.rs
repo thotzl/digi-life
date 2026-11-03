@@ -1,6 +1,6 @@
 pub mod config;
-pub mod persistence;
 pub mod logging;
+pub mod persistence;
 pub mod server;
 pub mod sim;
 pub mod trainer;
@@ -14,24 +14,24 @@ pub mod diagnostics {
 }
 pub mod biology {
     pub mod brain;
+    pub mod creature_factory;
     pub mod genome;
+    pub mod metabolism;
     pub mod organs;
     pub mod phenotype;
     pub mod trainer_config;
     pub mod trainer_store;
-    pub mod creature_factory;
-    pub mod metabolism;
 }
 pub mod shared {
+    pub mod brain;
     pub mod dto;
+    pub mod fmath;
     pub mod geom;
     pub mod json_col;
-    pub mod time;
-    pub mod spatial_grid;
-    pub mod physics;
-    pub mod brain;
     pub mod map_generator;
+    pub mod physics;
     pub mod rng;
-    pub mod fmath;
+    pub mod spatial_grid;
     pub mod stats;
+    pub mod time;
 }

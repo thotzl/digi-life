@@ -2,11 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::alphabet::{char_to_value, matches_degenerate, ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN};
-use super::promoters::{self, promoter_channel, GeneChannel, GENE_MOTIFS, PROMOTERS, TERMINATOR};
+use super::alphabet::{ALPHABET, GENOME_LENGTH_MAX, GENOME_LENGTH_MIN, char_to_value, matches_degenerate};
+use super::promoters::{self, GENE_MOTIFS, GeneChannel, PROMOTERS, TERMINATOR, promoter_channel};
 use super::scan::scan_genes;
 use super::table::GeneTable;
-use crate::biology::phenotype::body::{read_evolution_rates, MAX_INDEL_RATE};
+use crate::biology::phenotype::body::{MAX_INDEL_RATE, read_evolution_rates};
 
 /// Operator weights of `mutate_genome` (config `mutationOperators`, TCK-184). One call applies one operator,
 /// drawn with these relative weights; the `EVO` gene scales the insertion/deletion weights by 2h (h = 0.5: as configured).
@@ -108,7 +108,10 @@ pub struct Mutation {
 
 /// Genes per expressed promoter (`parse_genome`'s gene table counts).
 fn gene_counts(genome: &str) -> Vec<usize> {
-    PROMOTERS.iter().map(|p| scan_genes(genome, p.motif, TERMINATOR).len()).collect()
+    PROMOTERS
+        .iter()
+        .map(|p| scan_genes(genome, p.motif, TERMINATOR).len())
+        .collect()
 }
 
 /// Terminated genes that overlap no other gene: (promoter index into `PROMOTERS`, start, end).
@@ -116,7 +119,11 @@ fn whole_genes(genome: &str) -> Vec<(usize, usize, usize)> {
     let all: Vec<(usize, usize, usize)> = PROMOTERS
         .iter()
         .enumerate()
-        .flat_map(|(p, promoter)| scan_genes(genome, promoter.motif, TERMINATOR).into_iter().map(move |g| (p, g.start, g.end)))
+        .flat_map(|(p, promoter)| {
+            scan_genes(genome, promoter.motif, TERMINATOR)
+                .into_iter()
+                .map(move |g| (p, g.start, g.end))
+        })
         .collect();
     let mut genes: Vec<(usize, usize, usize)> = all
         .iter()
@@ -130,7 +137,14 @@ fn whole_genes(genome: &str) -> Vec<(usize, usize, usize)> {
 
 /// `genome` with `range` replaced by `insert`, such that only promoter `p` changes its gene count, by `delta`.
 /// Joins that would form a stray gene get one spacer letter; `None` if no tried spacer gives a clean result.
-fn splice_gene<R: rand::Rng + ?Sized>(genome: &str, range: std::ops::Range<usize>, insert: &str, p: usize, delta: isize, rng: &mut R) -> Option<String> {
+fn splice_gene<R: rand::Rng + ?Sized>(
+    genome: &str,
+    range: std::ops::Range<usize>,
+    insert: &str,
+    p: usize,
+    delta: isize,
+    rng: &mut R,
+) -> Option<String> {
     let mut expected = gene_counts(genome);
     expected[p] = expected[p].checked_add_signed(delta)?;
     let mut spacer = String::new();
@@ -151,7 +165,13 @@ fn splice_gene<R: rand::Rng + ?Sized>(genome: &str, range: std::ops::Range<usize
 /// With `scope` (TCK-181) only loci of that channel are candidates: gene operators pick among the channel's genes,
 /// letter operators among unprotected positions inside a gene of the channel and of no other channel (`None` if there
 /// is none). Without `scope` the candidates and RNG draws are unchanged.
-pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(genome: &str, kind: MutationKind, ops: &MutationOperators, scope: Option<GeneChannel>, rng: &mut R) -> Option<(String, usize)> {
+pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(
+    genome: &str,
+    kind: MutationKind,
+    ops: &MutationOperators,
+    scope: Option<GeneChannel>,
+    rng: &mut R,
+) -> Option<(String, usize)> {
     let current_length = genome.len();
     if current_length == 0 {
         return None;
@@ -160,7 +180,10 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(genome: &str, kind: Mutation
     let in_scope = |p: usize| scope.map_or(true, |c| PROMOTERS[p].channel == c);
     match kind {
         MutationKind::GeneDuplication => {
-            let genes: Vec<_> = whole_genes(genome).into_iter().filter(|&(p, _, _)| in_scope(p)).collect();
+            let genes: Vec<_> = whole_genes(genome)
+                .into_iter()
+                .filter(|&(p, _, _)| in_scope(p))
+                .collect();
             if genes.is_empty() {
                 return None;
             }
@@ -170,7 +193,10 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(genome: &str, kind: Mutation
         MutationKind::GeneDeletion => {
             let counts = gene_counts(genome);
             let essential = |p: usize| PROMOTERS[p].essential;
-            let genes: Vec<_> = whole_genes(genome).into_iter().filter(|&(p, _, _)| (!essential(p) || counts[p] > 1) && in_scope(p)).collect();
+            let genes: Vec<_> = whole_genes(genome)
+                .into_iter()
+                .filter(|&(p, _, _)| (!essential(p) || counts[p] > 1) && in_scope(p))
+                .collect();
             if genes.is_empty() {
                 return None;
             }
@@ -189,7 +215,11 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(genome: &str, kind: Mutation
                     return None;
                 }
             }
-            let index = if unprotected.is_empty() { rng.gen_range(0..current_length) } else { unprotected[rng.gen_range(0..unprotected.len())] };
+            let index = if unprotected.is_empty() {
+                rng.gen_range(0..current_length)
+            } else {
+                unprotected[rng.gen_range(0..unprotected.len())]
+            };
             let mut new_genome = String::from(genome);
             match kind {
                 MutationKind::Deletion => {
@@ -231,7 +261,12 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(genome: &str, kind: Mutation
 
 /// One mutation of a fixed kind at a random locus (diagnostic probes, TCK-172/184): the operators of
 /// `mutate_genome` without the kind roll and without the creep fallback. `None` if the kind is not applicable.
-pub fn mutate_genome_with_kind<R: rand::Rng + ?Sized>(genome: &str, kind: MutationKind, ops: &MutationOperators, rng: &mut R) -> Option<String> {
+pub fn mutate_genome_with_kind<R: rand::Rng + ?Sized>(
+    genome: &str,
+    kind: MutationKind,
+    ops: &MutationOperators,
+    rng: &mut R,
+) -> Option<String> {
     apply_mutation(genome, kind, ops, None, rng).map(|(g, _)| g)
 }
 
@@ -249,7 +284,12 @@ const CHANNEL_MUTATION_ATTEMPTS: usize = 8;
 /// with the loci restricted to the channel's genes (`apply_mutation` scope). A result that still touches the other
 /// channel (`classify_mutation`, e.g. a letter change that forms a new promoter of the other channel) is redrawn, at
 /// most `CHANNEL_MUTATION_ATTEMPTS` times; `None` if no attempt stays in the channel or no operator is applicable.
-pub fn mutate_genome_in_channel<R: rand::Rng + ?Sized>(genome: &str, ops: &MutationOperators, channel: GeneChannel, rng: &mut R) -> Option<Mutation> {
+pub fn mutate_genome_in_channel<R: rand::Rng + ?Sized>(
+    genome: &str,
+    ops: &MutationOperators,
+    channel: GeneChannel,
+    rng: &mut R,
+) -> Option<Mutation> {
     for _ in 0..CHANNEL_MUTATION_ATTEMPTS {
         let mutation = mutate_genome_scoped(genome, ops, Some(channel), rng)?;
         if classify_mutation(genome, &mutation).only(channel) {
@@ -259,7 +299,12 @@ pub fn mutate_genome_in_channel<R: rand::Rng + ?Sized>(genome: &str, ops: &Mutat
     None
 }
 
-fn mutate_genome_scoped<R: rand::Rng + ?Sized>(genome: &str, ops: &MutationOperators, scope: Option<GeneChannel>, rng: &mut R) -> Option<Mutation> {
+fn mutate_genome_scoped<R: rand::Rng + ?Sized>(
+    genome: &str,
+    ops: &MutationOperators,
+    scope: Option<GeneChannel>,
+    rng: &mut R,
+) -> Option<Mutation> {
     let (insertion_rate, deletion_rate) = read_evolution_rates(genome);
     let weights = [
         ops.creep,
@@ -284,9 +329,12 @@ fn mutate_genome_scoped<R: rand::Rng + ?Sized>(genome: &str, ops: &MutationOpera
     if let Some((genome, index)) = apply_mutation(genome, kind, ops, scope, rng) {
         return Some(Mutation { genome, kind, index });
     }
-    apply_mutation(genome, MutationKind::Creep, ops, scope, rng).map(|(genome, index)| Mutation { genome, kind: MutationKind::Creep, index })
+    apply_mutation(genome, MutationKind::Creep, ops, scope, rng).map(|(genome, index)| Mutation {
+        genome,
+        kind: MutationKind::Creep,
+        index,
+    })
 }
-
 
 /// Channel set of a mutated child (union over its operator calls, TCK-181).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,7 +358,11 @@ pub struct MutationTouch {
 
 impl MutationTouch {
     pub fn union(self, other: Self) -> Self {
-        Self { body: self.body || other.body, brain: self.brain || other.brain, organ: self.organ || other.organ }
+        Self {
+            body: self.body || other.body,
+            brain: self.brain || other.brain,
+            organ: self.organ || other.organ,
+        }
     }
 
     pub fn channel(self) -> MutationChannel {
@@ -353,7 +405,10 @@ pub fn classify_mutation(parent: &str, mutation: &Mutation) -> MutationTouch {
     let before = GeneTable::scan(parent).spans;
     let after = GeneTable::scan(&mutation.genome).spans;
     let mut touch = MutationTouch::default();
-    for span in before.iter().filter(|s| s.start <= mutation.index && mutation.index < s.end) {
+    for span in before
+        .iter()
+        .filter(|s| s.start <= mutation.index && mutation.index < s.end)
+    {
         touch.mark(&span.gene.promoter);
     }
     for span in before.iter().filter(|b| !after.iter().any(|a| a.gene == b.gene)) {

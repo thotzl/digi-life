@@ -20,7 +20,13 @@ pub struct LedgerEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpeciesChange {
     /// A species seen for the first time (stored alive with peak 1)
-    Discovered { genome: String, latin_name: String, parent_name: Option<String>, generation: u32, carnivory: f32 },
+    Discovered {
+        genome: String,
+        latin_name: String,
+        parent_name: Option<String>,
+        generation: u32,
+        carnivory: f32,
+    },
     /// New peak population
     Peak { id: String, peak: i32 },
     /// An extinct species has living members again
@@ -69,7 +75,12 @@ impl SpeciesLedger {
         }
         self.ids.insert(agent.species_id.clone());
         self.names.insert(name.clone());
-        self.entries.push(LedgerEntry { id: agent.species_id.clone(), latin_name: name.clone(), alive: true, peak: 1 });
+        self.entries.push(LedgerEntry {
+            id: agent.species_id.clone(),
+            latin_name: name.clone(),
+            alive: true,
+            peak: 1,
+        });
         out.push(SpeciesChange::Discovered {
             genome: agent.genome.clone(),
             latin_name: name.clone(),
@@ -90,7 +101,10 @@ impl SpeciesLedger {
             if count > 0 {
                 if count > entry.peak {
                     entry.peak = count;
-                    out.push(SpeciesChange::Peak { id: entry.id.clone(), peak: count });
+                    out.push(SpeciesChange::Peak {
+                        id: entry.id.clone(),
+                        peak: count,
+                    });
                 }
                 if !entry.alive {
                     entry.alive = true;
@@ -98,7 +112,10 @@ impl SpeciesLedger {
                 }
             } else if entry.alive {
                 entry.alive = false;
-                out.push(SpeciesChange::Extinct { id: entry.id.clone(), latin_name: entry.latin_name.clone() });
+                out.push(SpeciesChange::Extinct {
+                    id: entry.id.clone(),
+                    latin_name: entry.latin_name.clone(),
+                });
             }
         }
     }
@@ -107,11 +124,23 @@ impl SpeciesLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+    use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
     use crate::biology::genome::WILDTYPE_GENOME;
 
     fn agent(id: u32) -> CreatureAgent {
-        spawn_creature(WILDTYPE_GENOME, SpawnOptions { id, px: 0.0, py: 0.0, heading_angle: 0.0, generation: 2, methylations: None, synapse_weights: None }, crate::config::test_config())
+        spawn_creature(
+            WILDTYPE_GENOME,
+            SpawnOptions {
+                id,
+                px: 0.0,
+                py: 0.0,
+                heading_angle: 0.0,
+                generation: 2,
+                methylations: None,
+                synapse_weights: None,
+            },
+            crate::config::test_config(),
+        )
     }
 
     #[test]
@@ -121,7 +150,11 @@ mod tests {
         let a = agent(1);
         ledger.discover(&a, Some("Parentus"), &mut changes);
         ledger.discover(&a, None, &mut changes);
-        assert!(matches!(&changes[..], [SpeciesChange::Discovered { generation: 2, parent_name: Some(p), .. }] if p == "Parentus"), "{:?}", changes);
+        assert!(
+            matches!(&changes[..], [SpeciesChange::Discovered { generation: 2, parent_name: Some(p), .. }] if p == "Parentus"),
+            "{:?}",
+            changes
+        );
         // Same latin name under another genome id: ignored like the store's unique name
         let mut renamed = agent(2);
         renamed.species_id = "other-genome".into();
@@ -130,17 +163,35 @@ mod tests {
 
         changes.clear();
         ledger.census(&[a.clone(), agent(3)], &mut changes);
-        assert_eq!(changes, vec![SpeciesChange::Peak { id: a.species_id.clone(), peak: 2 }]);
+        assert_eq!(
+            changes,
+            vec![SpeciesChange::Peak {
+                id: a.species_id.clone(),
+                peak: 2
+            }]
+        );
         changes.clear();
         ledger.census(&[a.clone()], &mut changes);
         assert!(changes.is_empty(), "no new peak");
         ledger.census(&[], &mut changes);
-        assert!(matches!(&changes[..], [SpeciesChange::Extinct { latin_name, .. }] if *latin_name == a.phenotype.latin_name));
+        assert!(
+            matches!(&changes[..], [SpeciesChange::Extinct { latin_name, .. }] if *latin_name == a.phenotype.latin_name)
+        );
         changes.clear();
         ledger.census(&[a.clone()], &mut changes);
-        assert_eq!(changes, vec![SpeciesChange::Revived { id: a.species_id.clone() }]);
+        assert_eq!(
+            changes,
+            vec![SpeciesChange::Revived {
+                id: a.species_id.clone()
+            }]
+        );
 
-        ledger.load([LedgerEntry { id: "x".into(), latin_name: "Xus".into(), alive: false, peak: 4 }]);
+        ledger.load([LedgerEntry {
+            id: "x".into(),
+            latin_name: "Xus".into(),
+            alive: false,
+            peak: 4,
+        }]);
         assert_eq!(ledger.entries().len(), 1);
         changes.clear();
         ledger.discover(&a, None, &mut changes);

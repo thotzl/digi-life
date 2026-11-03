@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
 use crate::shared::stats::Distribution;
-use crate::sim::ocean::{ocean_seed, DeathCause, OceanEvent, OceanSim, OceanStep, FRESH_FOUNDERS};
+use crate::sim::ocean::{DeathCause, FRESH_FOUNDERS, OceanEvent, OceanSim, OceanStep, ocean_seed};
 
 /// Default sample period (ticks) of the time series.
 pub const DEFAULT_SAMPLE_EVERY: u64 = 100;
@@ -108,7 +108,11 @@ impl OceanCounts {
                 OceanEvent::Restocked { .. } => self.restocked += 1,
             }
         }
-        self.species_discovered += step.species.iter().filter(|c| matches!(c, crate::sim::ocean::SpeciesChange::Discovered { .. })).count() as u32;
+        self.species_discovered += step
+            .species
+            .iter()
+            .filter(|c| matches!(c, crate::sim::ocean::SpeciesChange::Discovered { .. }))
+            .count() as u32;
     }
 
     fn merge(&mut self, other: &OceanCounts) {
@@ -146,7 +150,8 @@ impl OceanState {
         energies.clear();
         energies.extend(creatures.iter().map(|c| c.energy));
         let energy = Distribution::of(energies);
-        let mean_age = (!creatures.is_empty()).then(|| (creatures.iter().map(|c| c.age as f64).sum::<f64>() / creatures.len() as f64) as f32);
+        let mean_age = (!creatures.is_empty())
+            .then(|| (creatures.iter().map(|c| c.age as f64).sum::<f64>() / creatures.len() as f64) as f32);
         let entries = sim.ledger().entries();
         let species_alive = entries.iter().filter(|e| e.alive).count();
         let spores = &sim.spores().spores;
@@ -233,7 +238,11 @@ pub fn run_ocean(config: &OceanRunConfig, app: &AppConfig, mut on_sample: impl F
 
     let mut energies = Vec::new();
     let mut samples = Vec::with_capacity((config.ticks / sample_every) as usize + 2);
-    let first = OceanSample { tick: 0, state: OceanState::of(&sim, &mut energies), counts: OceanCounts::default() };
+    let first = OceanSample {
+        tick: 0,
+        state: OceanState::of(&sim, &mut energies),
+        counts: OceanCounts::default(),
+    };
     on_sample(&first);
     samples.push(first);
 
@@ -250,7 +259,11 @@ pub fn run_ocean(config: &OceanRunConfig, app: &AppConfig, mut on_sample: impl F
         max_population = max_population.max(population);
         population_sum += population as u64;
         if tick % sample_every == 0 || tick == config.ticks {
-            let sample = OceanSample { tick, state: OceanState::of(&sim, &mut energies), counts: interval };
+            let sample = OceanSample {
+                tick,
+                state: OceanState::of(&sim, &mut energies),
+                counts: interval,
+            };
             on_sample(&sample);
             samples.push(sample);
             total.merge(&interval);
@@ -265,14 +278,25 @@ pub fn run_ocean(config: &OceanRunConfig, app: &AppConfig, mut on_sample: impl F
         deaths_total: total.deaths.total(),
         min_population,
         max_population,
-        mean_population: if config.ticks > 0 { (population_sum as f64 / config.ticks as f64) as f32 } else { founders as f32 },
+        mean_population: if config.ticks > 0 {
+            (population_sum as f64 / config.ticks as f64) as f32
+        } else {
+            founders as f32
+        },
         species_total: sim.ledger().entries().len(),
     };
     OceanReport {
         meta,
         samples,
         summary,
-        perf: OceanPerf { wall_seconds, ticks_per_second: if wall_seconds > 0.0 { config.ticks as f64 / wall_seconds } else { 0.0 } },
+        perf: OceanPerf {
+            wall_seconds,
+            ticks_per_second: if wall_seconds > 0.0 {
+                config.ticks as f64 / wall_seconds
+            } else {
+                0.0
+            },
+        },
     }
 }
 
@@ -281,7 +305,15 @@ mod tests {
     use super::*;
 
     fn run(seed: &str, ticks: u64, sample_every: u64) -> OceanReport {
-        run_ocean(&OceanRunConfig { seed: seed.to_string(), ticks, sample_every }, crate::config::test_config(), |_| {})
+        run_ocean(
+            &OceanRunConfig {
+                seed: seed.to_string(),
+                ticks,
+                sample_every,
+            },
+            crate::config::test_config(),
+            |_| {},
+        )
     }
 
     /// Report without the run-dependent `perf` (the comparator also drops `meta.version`).
@@ -296,20 +328,38 @@ mod tests {
         let a = run("ocean-test", 250, 100);
         let b = run("ocean-test", 250, 100);
         assert_eq!(reproducible(&a), reproducible(&b), "same seed, same report");
-        assert_ne!(reproducible(&a), reproducible(&run("ocean-other", 250, 100)), "the seed matters");
+        assert_ne!(
+            reproducible(&a),
+            reproducible(&run("ocean-other", 250, 100)),
+            "the seed matters"
+        );
 
-        assert_eq!(a.samples.iter().map(|s| s.tick).collect::<Vec<_>>(), vec![0, 100, 200, 250], "tick 0, every K, the last tick");
+        assert_eq!(
+            a.samples.iter().map(|s| s.tick).collect::<Vec<_>>(),
+            vec![0, 100, 200, 250],
+            "tick 0, every K, the last tick"
+        );
         assert_eq!(a.samples[0].state.population, FRESH_FOUNDERS);
         // The first tick restocks the fresh founders up to the target population
         let target = crate::config::test_config().ocean.target_population;
-        assert!(a.samples[1].counts.restocked as usize >= target - FRESH_FOUNDERS, "{:?}", a.samples[1].counts);
+        assert!(
+            a.samples[1].counts.restocked as usize >= target - FRESH_FOUNDERS,
+            "{:?}",
+            a.samples[1].counts
+        );
         // Interval counts add up to the summary
         let births: u32 = a.samples.iter().map(|s| s.counts.births).sum();
         let deaths: u32 = a.samples.iter().map(|s| s.counts.deaths.total()).sum();
         assert_eq!((births, deaths), (a.summary.counts.births, a.summary.deaths_total));
         // Population balance: founders + restocked - deaths (mitosis children are not simulated, RV-B01)
-        assert_eq!(a.summary.state.population as i64, FRESH_FOUNDERS as i64 + a.summary.counts.restocked as i64 - deaths as i64);
-        assert_eq!(a.summary.species_total, a.summary.state.species_alive + a.summary.state.species_extinct);
+        assert_eq!(
+            a.summary.state.population as i64,
+            FRESH_FOUNDERS as i64 + a.summary.counts.restocked as i64 - deaths as i64
+        );
+        assert_eq!(
+            a.summary.species_total,
+            a.summary.state.species_alive + a.summary.state.species_extinct
+        );
         assert_eq!(a.summary.state, a.samples.last().unwrap().state);
     }
 }

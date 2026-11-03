@@ -1,11 +1,11 @@
 //! `species_records`: tables, migration steps and the SQLite `SpeciesRepo`.
 
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{Connection, OptionalExtension, Result, params};
 
 use super::dto::*;
 use super::repos::SpeciesRepo;
 use super::schema::TableDef;
-use super::{collect_rows, Db};
+use super::{Db, collect_rows};
 use crate::shared::time;
 
 pub(super) const TABLES: &[TableDef] = &[TableDef {
@@ -48,7 +48,8 @@ pub(super) fn v1_baseline(conn: &Connection) -> Result<()> {
 }
 
 fn status_of(text: String) -> Result<SpeciesStatus> {
-    SpeciesStatus::parse(&text).ok_or_else(|| rusqlite::Error::InvalidColumnType(0, format!("status '{}'", text), rusqlite::types::Type::Text))
+    SpeciesStatus::parse(&text)
+        .ok_or_else(|| rusqlite::Error::InvalidColumnType(0, format!("status '{}'", text), rusqlite::types::Type::Text))
 }
 
 impl SpeciesRepo for Db {
@@ -82,27 +83,51 @@ impl SpeciesRepo for Db {
     }
 
     fn species_states(&self) -> RepoResult<Vec<SpeciesState>> {
-        let mut stmt = self.conn().prepare("SELECT id, status, peak_population FROM species_records")?;
-        let rows = stmt.query_map([], |row| Ok(SpeciesState { id: row.get(0)?, status: status_of(row.get(1)?)?, peak_population: row.get(2)? }))?;
+        let mut stmt = self
+            .conn()
+            .prepare("SELECT id, status, peak_population FROM species_records")?;
+        let rows = stmt.query_map([], |row| {
+            Ok(SpeciesState {
+                id: row.get(0)?,
+                status: status_of(row.get(1)?)?,
+                peak_population: row.get(2)?,
+            })
+        })?;
         Ok(collect_rows(rows, "species_records"))
     }
 
     fn species_name(&self, id: &str) -> RepoResult<Option<String>> {
-        Ok(self.conn().query_row("SELECT latin_name FROM species_records WHERE id = ?1", params![id], |r| r.get(0)).optional()?)
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT latin_name FROM species_records WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     fn mark_species_alive(&self, id: &str) -> RepoResult<()> {
-        self.conn().execute("UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1", params![id])?;
+        self.conn().execute(
+            "UPDATE species_records SET status = 'alive', extinction_time = NULL WHERE id = ?1",
+            params![id],
+        )?;
         Ok(())
     }
 
     fn mark_species_extinct(&self, id: &str) -> RepoResult<()> {
-        self.conn().execute("UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2", params![time::now_secs(), id])?;
+        self.conn().execute(
+            "UPDATE species_records SET status = 'extinct', extinction_time = ?1 WHERE id = ?2",
+            params![time::now_secs(), id],
+        )?;
         Ok(())
     }
 
     fn set_species_peak(&self, id: &str, peak: i32) -> RepoResult<()> {
-        self.conn().execute("UPDATE species_records SET peak_population = ?1 WHERE id = ?2", params![peak, id])?;
+        self.conn().execute(
+            "UPDATE species_records SET peak_population = ?1 WHERE id = ?2",
+            params![peak, id],
+        )?;
         Ok(())
     }
 

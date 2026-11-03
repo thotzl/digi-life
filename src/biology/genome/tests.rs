@@ -116,14 +116,25 @@ fn test_mutation() {
     // A 200-base genome is in the safe range for every letter-level operator
     let mut rng = crate::shared::rng::seeded(2);
     let original = generate_random_genome(200, &mut rng);
-    for (kind, delta) in [(MutationKind::Creep, 0), (MutationKind::Point, 0), (MutationKind::Insertion, 1), (MutationKind::Deletion, -1)] {
+    for (kind, delta) in [
+        (MutationKind::Creep, 0),
+        (MutationKind::Point, 0),
+        (MutationKind::Insertion, 1),
+        (MutationKind::Deletion, -1),
+    ] {
         let (mutated, idx) = apply_mutation(&original, kind, ops(), None, &mut rng).expect("applicable at 200 bases");
         assert_ne!(mutated, original);
         assert_eq!(mutated.len() as isize, original.len() as isize + delta, "{:?}", kind);
         match kind {
-            MutationKind::Deletion => assert_eq!(format!("{}{}{}", &mutated[..idx], &original[idx..idx + 1], &mutated[idx..]), original),
+            MutationKind::Deletion => assert_eq!(
+                format!("{}{}{}", &mutated[..idx], &original[idx..idx + 1], &mutated[idx..]),
+                original
+            ),
             MutationKind::Insertion => assert_eq!(format!("{}{}", &mutated[..idx], &mutated[idx + 1..]), original),
-            _ => assert_eq!((&mutated[..idx], &mutated[idx + 1..]), (&original[..idx], &original[idx + 1..])),
+            _ => assert_eq!(
+                (&mutated[..idx], &mutated[idx + 1..]),
+                (&original[..idx], &original[idx + 1..])
+            ),
         }
     }
     let mutation = mutate_genome(&original, ops(), &mut rng).expect("non-empty genome");
@@ -135,7 +146,10 @@ fn test_mutation() {
         for _ in 0..100 {
             let (mutated, idx) = apply_mutation(genome_with_promoter, kind, ops(), None, &mut rng).expect("applicable");
             assert!((3..=5).contains(&idx), "{:?} hit protected index {}", kind, idx);
-            assert!(matches_degenerate(&mutated[0..3], "COL") && matches_degenerate(&mutated[mutated.len() - 2..], "EN"), "Promoters and terminators must never be broken!");
+            assert!(
+                matches_degenerate(&mutated[0..3], "COL") && matches_degenerate(&mutated[mutated.len() - 2..], "EN"),
+                "Promoters and terminators must never be broken!"
+            );
         }
     }
 }
@@ -148,7 +162,11 @@ fn test_structured_genome_parses_to_exactly_the_planned_genes() {
     for seed in 0..n {
         let plan = structured_gene_plan(c, &mut crate::shared::rng::seeded(seed));
         let genome = generate_structured_genome(c, &mut crate::shared::rng::seeded(seed));
-        assert!((GENOME_LENGTH_MIN..=GENOME_LENGTH_MAX).contains(&genome.len()), "length {}", genome.len());
+        assert!(
+            (GENOME_LENGTH_MIN..=GENOME_LENGTH_MAX).contains(&genome.len()),
+            "length {}",
+            genome.len()
+        );
 
         let mut planned = std::collections::BTreeMap::new();
         for (promoter, _) in &plan {
@@ -163,16 +181,34 @@ fn test_structured_genome_parses_to_exactly_the_planned_genes() {
 
         let phenotype = parse_genome(&genome, None, None, &crate::config::test_config().brain);
         // Distinct promoter spellings: every gene has occurrence 0 (stable identity, TCK-179)
-        assert!(phenotype.genes.iter().all(|s| s.gene.occurrence == 0), "repeated spelling: {}", genome);
+        assert!(
+            phenotype.genes.iter().all(|s| s.gene.occurrence == 0),
+            "repeated spelling: {}",
+            genome
+        );
         for (promoter, kind) in plan.iter().filter_map(|(p, k)| k.map(|k| (p, k))) {
-            assert!(phenotype.organelles.iter().any(|o| o.kind == kind), "{} planned as {:?}: {}", promoter, kind, genome);
+            assert!(
+                phenotype.organelles.iter().any(|o| o.kind == kind),
+                "{} planned as {:?}: {}",
+                promoter,
+                kind,
+                genome
+            );
         }
-        if phenotype.organelles.iter().any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose)) {
+        if phenotype
+            .organelles
+            .iter()
+            .any(|o| matches!(o.kind, OrganKind::Eye | OrganKind::Nose))
+        {
             food_organ += 1;
         }
     }
     // p(food organ) = pFoodOrgan plus random organs that happen to be eyes or noses
-    assert!(food_organ as f32 / n as f32 >= c.p_food_organ - 0.03, "food organ share {}", food_organ as f32 / n as f32);
+    assert!(
+        food_organ as f32 / n as f32 >= c.p_food_organ - 0.03,
+        "food organ share {}",
+        food_organ as f32 / n as f32
+    );
 }
 
 #[test]
@@ -182,12 +218,24 @@ fn test_gene_duplication_adds_exactly_one_gene_of_its_promoter() {
     for seed in 0..300 {
         let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
         let before = promoter_counts(&genome);
-        let Some((child, start)) = apply_mutation(&genome, MutationKind::GeneDuplication, ops(), None, &mut rng) else { continue };
+        let Some((child, start)) = apply_mutation(&genome, MutationKind::GeneDuplication, ops(), None, &mut rng) else {
+            continue;
+        };
         applied += 1;
-        let promoter = PROMOTERS.iter().map(|s| s.motif).find(|p| matches_degenerate(&genome[start..start + p.len()], p)).expect("gene start");
+        let promoter = PROMOTERS
+            .iter()
+            .map(|s| s.motif)
+            .find(|p| matches_degenerate(&genome[start..start + p.len()], p))
+            .expect("gene start");
         let mut expected = before.clone();
         *expected.get_mut(promoter).unwrap() += 1;
-        assert_eq!(promoter_counts(&child), expected, "duplicating {} at {}", promoter, start);
+        assert_eq!(
+            promoter_counts(&child),
+            expected,
+            "duplicating {} at {}",
+            promoter,
+            start
+        );
     }
     assert!(applied > 250, "only {} duplications applied", applied);
 }
@@ -206,7 +254,10 @@ fn test_gene_deletion_removes_one_gene_and_never_an_essential_one() {
         while let Some((child, start)) = apply_mutation(&genome, MutationKind::GeneDeletion, ops(), None, &mut rng) {
             let before = promoter_counts(&genome);
             let after = promoter_counts(&child);
-            let changed: Vec<_> = before.iter().filter(|(p, n)| after.get(*p).copied().unwrap_or(0) != **n).collect();
+            let changed: Vec<_> = before
+                .iter()
+                .filter(|(p, n)| after.get(*p).copied().unwrap_or(0) != **n)
+                .collect();
             assert_eq!(changed.len(), 1, "deletion at {} changed {:?}", start, changed);
             assert_eq!(after.get(changed[0].0).copied().unwrap_or(0) + 1, *changed[0].1);
             genome = child;
@@ -229,8 +280,11 @@ fn test_creep_changes_a_tape_weight_by_at_most_the_step() {
         let genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
         let parent = parse_genome(&genome, None, None, &crate::config::test_config().brain);
         for _ in 0..5 {
-            let (child_genome, idx) = apply_mutation(&genome, MutationKind::Creep, ops(), None, &mut rng).expect("creep applies");
-            let letter_delta = (char_to_value(child_genome.as_bytes()[idx] as char) as isize - char_to_value(genome.as_bytes()[idx] as char) as isize).unsigned_abs();
+            let (child_genome, idx) =
+                apply_mutation(&genome, MutationKind::Creep, ops(), None, &mut rng).expect("creep applies");
+            let letter_delta = (char_to_value(child_genome.as_bytes()[idx] as char) as isize
+                - char_to_value(genome.as_bytes()[idx] as char) as isize)
+                .unsigned_abs();
             assert!((1..=step).contains(&letter_delta), "letter step {}", letter_delta);
 
             let child = parse_genome(&child_genome, None, None, &crate::config::test_config().brain);
@@ -239,8 +293,19 @@ fn test_creep_changes_a_tape_weight_by_at_most_the_step() {
             }
             let owner = parent.genes.iter().position(|g| (g.start..g.end).contains(&idx));
             let tape_owner = owner.filter(|&o| parent.genes[o].gene.promoter != "SY");
-            for (p, c) in parent.brain.synapses.iter().filter(|s| Some(s.owner) == tape_owner).filter_map(|p| child.brain.synapses.iter().find(|c| c.key == p.key).map(|c| (p, c))) {
-                assert!((p.weight - c.weight).abs() <= max_delta, "weight {} -> {}", p.weight, c.weight);
+            for (p, c) in parent
+                .brain
+                .synapses
+                .iter()
+                .filter(|s| Some(s.owner) == tape_owner)
+                .filter_map(|p| child.brain.synapses.iter().find(|c| c.key == p.key).map(|c| (p, c)))
+            {
+                assert!(
+                    (p.weight - c.weight).abs() <= max_delta,
+                    "weight {} -> {}",
+                    p.weight,
+                    c.weight
+                );
                 checked += 1;
             }
         }
@@ -271,10 +336,16 @@ fn test_structured_genome_and_mutation_are_deterministic() {
 #[test]
 fn test_mutate_genome_keeps_length_bounds() {
     let mut rng = crate::shared::rng::seeded(5);
-    let starts = [generate_random_genome(128, &mut rng), generate_random_genome(512, &mut rng), generate_structured_genome(composition(), &mut rng)];
+    let starts = [
+        generate_random_genome(128, &mut rng),
+        generate_random_genome(512, &mut rng),
+        generate_structured_genome(composition(), &mut rng),
+    ];
     for mut genome in starts {
         for _ in 0..10_000 {
-            genome = mutate_genome(&genome, ops(), &mut rng).expect("non-empty genome").genome;
+            genome = mutate_genome(&genome, ops(), &mut rng)
+                .expect("non-empty genome")
+                .genome;
             assert!((128..=512).contains(&genome.len()), "length {}", genome.len());
         }
     }
@@ -284,12 +355,34 @@ fn test_mutate_genome_keeps_length_bounds() {
 fn test_letter_mutations_never_change_a_promoter_spelling() {
     let mut rng = crate::shared::rng::seeded(14);
     let mut checked = 0;
-    for genome in golden_genomes().into_iter().map(|g| normalize_genome(&g)).chain((0..100).map(|seed| generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed)))) {
-        let promoters: Vec<std::ops::Range<usize>> = parse_genome(&genome, None, None, &crate::config::test_config().brain).genes.iter().map(|s| s.start..s.start + s.gene.promoter.len()).collect();
-        for kind in [MutationKind::Creep, MutationKind::Point, MutationKind::Insertion, MutationKind::Deletion] {
+    for genome in golden_genomes()
+        .into_iter()
+        .map(|g| normalize_genome(&g))
+        .chain((0..100).map(|seed| generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed))))
+    {
+        let promoters: Vec<std::ops::Range<usize>> =
+            parse_genome(&genome, None, None, &crate::config::test_config().brain)
+                .genes
+                .iter()
+                .map(|s| s.start..s.start + s.gene.promoter.len())
+                .collect();
+        for kind in [
+            MutationKind::Creep,
+            MutationKind::Point,
+            MutationKind::Insertion,
+            MutationKind::Deletion,
+        ] {
             for _ in 0..20 {
-                let Some((_, idx)) = apply_mutation(&genome, kind, ops(), None, &mut rng) else { continue };
-                assert!(!promoters.iter().any(|p| p.contains(&idx)), "{:?} at {} hit a promoter: {}", kind, idx, genome);
+                let Some((_, idx)) = apply_mutation(&genome, kind, ops(), None, &mut rng) else {
+                    continue;
+                };
+                assert!(
+                    !promoters.iter().any(|p| p.contains(&idx)),
+                    "{:?} at {} hit a promoter: {}",
+                    kind,
+                    idx,
+                    genome
+                );
                 checked += 1;
             }
         }
@@ -305,7 +398,11 @@ fn letter_change(genome: &str, index: usize) -> Mutation {
         let mut child = genome.to_string();
         child.replace_range(index..index + 1, &(c as char).to_string());
         if refs(&child) == original {
-            return Mutation { genome: child, kind: MutationKind::Point, index };
+            return Mutation {
+                genome: child,
+                kind: MutationKind::Point,
+                index,
+            };
         }
     }
     panic!("no clean letter change at {}", index);
@@ -319,11 +416,30 @@ fn test_classify_mutation_by_gene_channel() {
         let spans = GeneTable::scan(&genome).spans;
         let alone = |s: &GeneSpan| spans.iter().filter(|o| o.start < s.end && s.start < o.end).count() == 1;
         // A payload letter of a gene that overlaps no other gene
-        let payload_letter = |promoter: &str| spans.iter().find(|s| s.gene.promoter == promoter && alone(s)).map(|s| s.start + promoter.len());
-        for (promoter, body, brain) in [("NEU", false, true), ("OUT", false, true), ("COL", true, false), ("SIZ", true, false)] {
-            let Some(index) = payload_letter(promoter) else { continue };
+        let payload_letter = |promoter: &str| {
+            spans
+                .iter()
+                .find(|s| s.gene.promoter == promoter && alone(s))
+                .map(|s| s.start + promoter.len())
+        };
+        for (promoter, body, brain) in [
+            ("NEU", false, true),
+            ("OUT", false, true),
+            ("COL", true, false),
+            ("SIZ", true, false),
+        ] {
+            let Some(index) = payload_letter(promoter) else {
+                continue;
+            };
             let touch = classify_mutation(&genome, &letter_change(&genome, index));
-            assert_eq!((touch.body, touch.brain, touch.organ), (body, brain, false), "{} letter at {}: {}", promoter, index, genome);
+            assert_eq!(
+                (touch.body, touch.brain, touch.organ),
+                (body, brain, false),
+                "{} letter at {}: {}",
+                promoter,
+                index,
+                genome
+            );
             checked[brain as usize] += 1;
         }
         if let Some(index) = promoters::with_role(GeneRole::Organ).find_map(|p| payload_letter(p)) {
@@ -332,14 +448,30 @@ fn test_classify_mutation_by_gene_channel() {
             assert!(touch.organ);
         }
         // A filler letter outside every gene
-        if let Some(index) = unprotected_indices(&genome).into_iter().find(|&i| !spans.iter().any(|s| s.start <= i && i < s.end)) {
+        if let Some(index) = unprotected_indices(&genome)
+            .into_iter()
+            .find(|&i| !spans.iter().any(|s| s.start <= i && i < s.end))
+        {
             let mutation = letter_change(&genome, index);
-            assert_eq!(classify_mutation(&genome, &mutation).channel(), MutationChannel::Neutral);
+            assert_eq!(
+                classify_mutation(&genome, &mutation).channel(),
+                MutationChannel::Neutral
+            );
             checked[2] += 1;
         }
         // Gene duplication of a brain gene: the new copy is a new identity of a brain promoter
-        if let Some((child, start)) = apply_mutation(&genome, MutationKind::GeneDuplication, ops(), Some(GeneChannel::Brain), &mut crate::shared::rng::seeded(seed)) {
-            let mutation = Mutation { genome: child, kind: MutationKind::GeneDuplication, index: start };
+        if let Some((child, start)) = apply_mutation(
+            &genome,
+            MutationKind::GeneDuplication,
+            ops(),
+            Some(GeneChannel::Brain),
+            &mut crate::shared::rng::seeded(seed),
+        ) {
+            let mutation = Mutation {
+                genome: child,
+                kind: MutationKind::GeneDuplication,
+                index: start,
+            };
             assert_eq!(classify_mutation(&genome, &mutation).channel(), MutationChannel::Brain);
             checked[3] += 1;
         }
@@ -352,11 +484,28 @@ fn test_mutate_genome_in_channel_touches_only_its_channel() {
     let mut applied = 0;
     for seed in 0..150u64 {
         let mut genome = generate_structured_genome(composition(), &mut crate::shared::rng::seeded(seed));
-        for (step, channel) in [GeneChannel::Body, GeneChannel::Brain, GeneChannel::Body, GeneChannel::Brain].into_iter().enumerate() {
+        for (step, channel) in [
+            GeneChannel::Body,
+            GeneChannel::Brain,
+            GeneChannel::Body,
+            GeneChannel::Brain,
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let mut rng = crate::shared::rng::seeded(seed * 10 + step as u64);
-            let Some(mutation) = mutate_genome_in_channel(&genome, ops(), channel, &mut rng) else { continue };
+            let Some(mutation) = mutate_genome_in_channel(&genome, ops(), channel, &mut rng) else {
+                continue;
+            };
             let touch = classify_mutation(&genome, &mutation);
-            assert!(touch.only(channel), "{:?} mutation ({:?} at {}) touched {:?}", channel, mutation.kind, mutation.index, touch);
+            assert!(
+                touch.only(channel),
+                "{:?} mutation ({:?} at {}) touched {:?}",
+                channel,
+                mutation.kind,
+                mutation.index,
+                touch
+            );
             applied += 1;
             genome = mutation.genome;
         }

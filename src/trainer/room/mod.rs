@@ -16,7 +16,7 @@ use crate::sim::WorldSettings;
 
 use super::chamber::Chamber;
 
-pub use level::{calculate_fitness, LevelRoom};
+pub use level::{LevelRoom, calculate_fitness};
 
 /// Index of a creature in its chamber (`Chamber::creatures`); entity 0 is the creature of the sandbox's breeding slot.
 pub type EntityId = usize;

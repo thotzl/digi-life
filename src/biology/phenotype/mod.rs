@@ -10,11 +10,11 @@ pub(crate) mod tests;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::biology::brain::compile::compile_brain;
 use crate::biology::brain::BrainTopology;
+use crate::biology::brain::compile::compile_brain;
 use crate::biology::genome::alphabet::{get_complementary_string, normalize_genome};
 use crate::biology::genome::table::{GeneSpan, GeneTable};
-use crate::biology::organs::{decode_organs, Organ};
+use crate::biology::organs::{Organ, decode_organs};
 use crate::shared::brain::BrainConfig;
 
 /// Body symmetry (TCK-155: typed instead of a string).
@@ -146,12 +146,21 @@ pub struct CreaturePhenotype {
 
 /// Genotype -> phenotype. Every trait is read from its own gene only (TCK-179, trait locality); a missing gene reads
 /// the empty payload (every value at the middle of its range, h = 0.5), never other genes or active DNA.
-pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylations: Option<&[f32]>, brain_config: &BrainConfig) -> CreaturePhenotype {
+pub fn parse_genome(
+    genome: &str,
+    antisense_input: Option<&str>,
+    parent_methylations: Option<&[f32]>,
+    brain_config: &BrainConfig,
+) -> CreaturePhenotype {
     let clean_genome = normalize_genome(genome);
     let current_length = clean_genome.len();
 
     let mut antisense_strand = match antisense_input {
-        Some(anti) => anti.to_ascii_uppercase().chars().take(current_length).collect::<String>(),
+        Some(anti) => anti
+            .to_ascii_uppercase()
+            .chars()
+            .take(current_length)
+            .collect::<String>(),
         None => get_complementary_string(&clean_genome),
     };
     while antisense_strand.len() < current_length {
@@ -181,7 +190,13 @@ pub fn parse_genome(genome: &str, antisense_input: Option<&str>, parent_methylat
         flattening_head: body.flattening_head,
     };
     let emergent_chambers_count = body::chamber_count(&spinal_harmonics);
-    let latin_name = naming::latin_name(&clean_genome, body.symmetry, emergent_chambers_count, &organelles, body.carnivory);
+    let latin_name = naming::latin_name(
+        &clean_genome,
+        body.symmetry,
+        emergent_chambers_count,
+        &organelles,
+        body.carnivory,
+    );
 
     CreaturePhenotype {
         symmetry: body.symmetry,

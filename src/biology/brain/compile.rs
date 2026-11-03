@@ -1,14 +1,14 @@
 //! Brain compiler (Brain v2, TCK-179/182/144/153): genes and organs -> `BrainTopology`.
 
 use super::{
-    Activation, BrainTopology, CTRNNNeuron, CTRNNSynapse, Motor, NeuronRole, NeuronType, SystemicInput, ThalamusKind, SYSTEMIC_BASE_INPUTS_COUNT, TAU_MAX,
-    TAU_MIN,
+    Activation, BrainTopology, CTRNNNeuron, CTRNNSynapse, Motor, NeuronRole, NeuronType, SYSTEMIC_BASE_INPUTS_COUNT,
+    SystemicInput, TAU_MAX, TAU_MIN, ThalamusKind,
 };
 use crate::biology::genome::alphabet::char_to_value;
-use crate::biology::genome::payload::{get_payload_linear_value_offset, Payload};
+use crate::biology::genome::payload::{Payload, get_payload_linear_value_offset};
 use crate::biology::genome::promoters::{self, GeneRole};
 use crate::biology::genome::table::{GeneRef, GeneTable};
-use crate::biology::organs::{self, Organ, OrganGene, CHANNELS_PER_ORGANELLE};
+use crate::biology::organs::{self, CHANNELS_PER_ORGANELLE, Organ, OrganGene};
 use crate::shared::brain::BrainConfig;
 
 /// Hidden neurons: at most this many `NEU` genes are expressed.
@@ -69,9 +69,21 @@ fn tape_weight(tape: &str, owner: &GeneRef, src: &NeuronRole, dst: &NeuronRole) 
 /// - thalamus/systemic → hidden and hidden → motor: the hidden neuron's `NEU` gene;
 /// - systemic → motor: the `OUT` brain-base gene (not wired without one);
 /// - explicit `SY` genes override or add one synapse each (first `SY` gene per pair wins).
-pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes: &[OrganGene], brain_config: &BrainConfig) -> BrainTopology {
+pub(crate) fn compile_brain(
+    genes: &GeneTable,
+    organelles: &[Organ],
+    organ_genes: &[OrganGene],
+    brain_config: &BrainConfig,
+) -> BrainTopology {
     let input_count = organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT;
-    let neuron = |id: usize, neuron_type: NeuronType, role: NeuronRole, tau: f32, bias: f32, activation: Option<Activation>, x: f32, y: f32| CTRNNNeuron {
+    let neuron = |id: usize,
+                  neuron_type: NeuronType,
+                  role: NeuronRole,
+                  tau: f32,
+                  bias: f32,
+                  activation: Option<Activation>,
+                  x: f32,
+                  y: f32| CTRNNNeuron {
         id,
         neuron_type,
         role,
@@ -89,7 +101,12 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
         for patch in &organelles[og.organs.clone()] {
             for channel in 0..CHANNELS_PER_ORGANELLE {
                 let id = neurons.len();
-                let role = NeuronRole::Sensor { gene: og.gene.clone(), side: patch.side, channel, kind: patch.kind };
+                let role = NeuronRole::Sensor {
+                    gene: og.gene.clone(),
+                    side: patch.side,
+                    channel,
+                    kind: patch.kind,
+                };
                 neurons.push(neuron(id, NeuronType::Input, role, 1.0, 0.0, None, 0.0, input_y(id)));
             }
         }
@@ -98,17 +115,37 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
     // B. Systemic inputs
     for input in SystemicInput::ALL {
         let id = neurons.len();
-        neurons.push(neuron(id, NeuronType::Input, NeuronRole::Systemic { input }, 1.0, 0.0, None, 0.0, input_y(id)));
+        neurons.push(neuron(
+            id,
+            NeuronType::Input,
+            NeuronRole::Systemic { input },
+            1.0,
+            0.0,
+            None,
+            0.0,
+            input_y(id),
+        ));
     }
     let systemic: Vec<usize> = (input_count - SYSTEMIC_BASE_INPUTS_COUNT..input_count).collect();
 
     // C. Thalamus relays (tau TAU_MIN: near pass-through): per organ gene and live channel a Sum node, plus a Diff node for HOX pairs
     let paired = |og: &OrganGene| og.organs.len() == 2;
-    let live: Vec<[bool; CHANNELS_PER_ORGANELLE]> = organ_genes.iter().map(|og| organs::live_channels(&organelles[og.organs.start])).collect();
-    let thalamus_count: usize = organ_genes.iter().zip(&live).map(|(og, l)| l.iter().filter(|&&x| x).count() * if paired(og) { 2 } else { 1 }).sum();
+    let live: Vec<[bool; CHANNELS_PER_ORGANELLE]> = organ_genes
+        .iter()
+        .map(|og| organs::live_channels(&organelles[og.organs.start]))
+        .collect();
+    let thalamus_count: usize = organ_genes
+        .iter()
+        .zip(&live)
+        .map(|(og, l)| l.iter().filter(|&&x| x).count() * if paired(og) { 2 } else { 1 })
+        .sum();
     let mut thalamus: Vec<(usize, usize, ThalamusKind, usize)> = Vec::new(); // (organ gene, channel, node, neuron id)
     for (g, og) in organ_genes.iter().enumerate() {
-        let nodes: &[ThalamusKind] = if paired(og) { &[ThalamusKind::Sum, ThalamusKind::Diff] } else { &[ThalamusKind::Sum] };
+        let nodes: &[ThalamusKind] = if paired(og) {
+            &[ThalamusKind::Sum, ThalamusKind::Diff]
+        } else {
+            &[ThalamusKind::Sum]
+        };
         for &node in nodes {
             for channel in (0..CHANNELS_PER_ORGANELLE).filter(|&c| live[g][c]) {
                 let id = neurons.len();
@@ -117,8 +154,21 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
                     ThalamusKind::Diff => Activation::Tanh,
                 };
                 let y = (thalamus.len() + 1) as f32 / (thalamus_count as f32 + 1.0);
-                let role = NeuronRole::Thalamus { gene: og.gene.clone(), channel, node };
-                neurons.push(neuron(id, NeuronType::Hidden, role, TAU_MIN, 0.0, Some(activation), 0.20, y));
+                let role = NeuronRole::Thalamus {
+                    gene: og.gene.clone(),
+                    channel,
+                    node,
+                };
+                neurons.push(neuron(
+                    id,
+                    NeuronType::Hidden,
+                    role,
+                    TAU_MIN,
+                    0.0,
+                    Some(activation),
+                    0.20,
+                    y,
+                ));
                 thalamus.push((g, channel, node, id));
             }
         }
@@ -157,7 +207,16 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
         let id = neurons.len();
         hidden_ids[h] = id;
         let role = NeuronRole::Hidden { gene: hg.gene.clone() };
-        neurons.push(neuron(id, NeuronType::Hidden, role, hg.tau, hg.bias, Some(hg.activation), 0.5, hg.depth));
+        neurons.push(neuron(
+            id,
+            NeuronType::Hidden,
+            role,
+            hg.tau,
+            hg.bias,
+            Some(hg.activation),
+            0.5,
+            hg.depth,
+        ));
     }
 
     // E. Motors: bias and tau from the OUT brain-base gene (without one: empty payload, bias 0, tau 1.1)
@@ -169,7 +228,16 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
         let tau = (0.2 + get_payload_linear_value_offset(out_payload, i + 10) * 1.8).clamp(TAU_MIN, TAU_MAX);
         let id = neurons.len();
         motor_ids.push(id);
-        neurons.push(neuron(id, NeuronType::Output, NeuronRole::Motor { motor }, tau, bias, None, 1.0, (i + 1) as f32 / 3.0));
+        neurons.push(neuron(
+            id,
+            NeuronType::Output,
+            NeuronRole::Motor { motor },
+            tau,
+            bias,
+            None,
+            1.0,
+            (i + 1) as f32 / 3.0,
+        ));
     }
 
     // Synapses
@@ -178,10 +246,22 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
         let (source, target) = (&neurons[from].role, &neurons[to].role);
         let key = synapse_key(source, target);
         // Sensor → thalamus reflexes (fixed ±1 sum/difference relays) do not learn (TCK-152)
-        let plastic = !matches!((source, target), (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. }));
-        synapses.push(CTRNNSynapse { from_node: from, to_node: to, weight, key, owner, plastic });
+        let plastic = !matches!(
+            (source, target),
+            (NeuronRole::Sensor { .. }, NeuronRole::Thalamus { .. })
+        );
+        synapses.push(CTRNNSynapse {
+            from_node: from,
+            to_node: to,
+            weight,
+            key,
+            owner,
+            plastic,
+        });
     };
-    let tape = |payload: &str, owner: &GeneRef, from: usize, to: usize| tape_weight(payload, owner, &neurons[from].role, &neurons[to].role);
+    let tape = |payload: &str, owner: &GeneRef, from: usize, to: usize| {
+        tape_weight(payload, owner, &neurons[from].role, &neurons[to].role)
+    };
 
     // 1. Reflex sensor → thalamus (fixed ±1, organ gene); a pair shares one weight set through its Sum/Diff nodes
     for &(g, channel, node, id) in &thalamus {
@@ -243,7 +323,11 @@ pub(crate) fn compile_brain(genes: &GeneTable, organelles: &[Organ], organ_genes
     let sources: [&[usize]; 3] = [&systemic, &thalamus_ids, &hidden_ids];
     let targets: [&[usize]; 2] = [&hidden_ids, &motor_ids];
     let mut explicit = vec![false; synapses.len()];
-    for gene in genes.genes(promoters::motif_of(GeneRole::Synapse)).iter().take(MAX_EXPLICIT_SYNAPSES) {
+    for gene in genes
+        .genes(promoters::motif_of(GeneRole::Synapse))
+        .iter()
+        .take(MAX_EXPLICIT_SYNAPSES)
+    {
         let p = gene.payload;
         let (src_class, dst_class) = (sources[Payload(p).index(1) % 3], targets[Payload(p).index(3) % 2]);
         if src_class.is_empty() || dst_class.is_empty() {

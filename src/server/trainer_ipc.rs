@@ -32,23 +32,40 @@ pub fn display_slots(origins: &[SandboxOrigin], n: usize) -> Vec<usize> {
     if n >= len {
         return (0..len).collect();
     }
-    let groups: Vec<Vec<usize>> = [SandboxOrigin::Elite, SandboxOrigin::Hof, SandboxOrigin::Random, SandboxOrigin::Mutant]
-        .iter()
-        .map(|origin| (0..len).filter(|&i| origins[i] == *origin).collect())
-        .collect();
+    let groups: Vec<Vec<usize>> = [
+        SandboxOrigin::Elite,
+        SandboxOrigin::Hof,
+        SandboxOrigin::Random,
+        SandboxOrigin::Mutant,
+    ]
+    .iter()
+    .map(|origin| (0..len).filter(|&i| origins[i] == *origin).collect())
+    .collect();
     let mut quota: Vec<usize> = groups
         .iter()
-        .map(|g| if g.is_empty() { 0 } else { ((n * g.len()) as f32 / len as f32).round().max(1.0) as usize })
+        .map(|g| {
+            if g.is_empty() {
+                0
+            } else {
+                ((n * g.len()) as f32 / len as f32).round().max(1.0) as usize
+            }
+        })
         .collect();
     while quota.iter().sum::<usize>() < n {
-        let g = (0..groups.len()).max_by_key(|&g| groups[g].len() - quota[g]).unwrap_or(0);
+        let g = (0..groups.len())
+            .max_by_key(|&g| groups[g].len() - quota[g])
+            .unwrap_or(0);
         quota[g] += 1;
     }
     while quota.iter().sum::<usize>() > n {
         let g = (0..groups.len()).max_by_key(|&g| quota[g]).unwrap_or(0);
         quota[g] -= 1;
     }
-    let mut slots: Vec<usize> = groups.iter().zip(&quota).flat_map(|(g, &q)| g.iter().take(q).copied()).collect();
+    let mut slots: Vec<usize> = groups
+        .iter()
+        .zip(&quota)
+        .flat_map(|(g, &q)| g.iter().take(q).copied())
+        .collect();
     slots.sort_unstable();
     slots
 }
@@ -107,9 +124,17 @@ impl TrainerTelemetryTick {
     /// mutants), so the displayed ids are stable for the whole generation. The payload size depends on
     /// `display_count`, not on the population. The brain view gets activations only for a displayed sandbox.
     /// Reads the sim only: the display count never changes the simulation.
-    pub fn build(trainer: &TrainerSim, display_count: usize, selected_sandbox_id: Option<u32>, is_running: bool) -> Self {
+    pub fn build(
+        trainer: &TrainerSim,
+        display_count: usize,
+        selected_sandbox_id: Option<u32>,
+        is_running: bool,
+    ) -> Self {
         let origins: Vec<SandboxOrigin> = trainer.sandboxes.iter().map(|sb| sb.origin_type).collect();
-        let displayed: Vec<&TrainerSandbox> = display_slots(&origins, display_count).into_iter().map(|i| &trainer.sandboxes[i]).collect();
+        let displayed: Vec<&TrainerSandbox> = display_slots(&origins, display_count)
+            .into_iter()
+            .map(|i| &trainer.sandboxes[i])
+            .collect();
         let scenario = trainer.params.scenario;
         let sandboxes = displayed
             .iter()
@@ -144,11 +169,26 @@ impl TrainerTelemetryTick {
                 }
             })
             .collect();
-        let time_str = format!("{:.1}s", ((trainer.room().episode_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
+        let time_str = format!(
+            "{:.1}s",
+            ((trainer.room().episode_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0)
+        );
         let selected_brain = selected_sandbox_id.and_then(|sel_id| {
-            displayed.iter().find(|s| s.id == sel_id).map(|sb| TrainerSelectedBrain { id: sel_id, activations: sb.agent().neuron_activations.clone() })
+            displayed
+                .iter()
+                .find(|s| s.id == sel_id)
+                .map(|sb| TrainerSelectedBrain {
+                    id: sel_id,
+                    activations: sb.agent().neuron_activations.clone(),
+                })
         });
-        Self { generation: trainer.generation, is_running, time_str, sandboxes, selected_brain }
+        Self {
+            generation: trainer.generation,
+            is_running,
+            time_str,
+            sandboxes,
+            selected_brain,
+        }
     }
 }
 
@@ -277,9 +317,13 @@ pub enum TrainerAction {
     PauseTraining,
     TrainerReset,
     /// Training mode switch; takes effect at the next generation (TCK-176)
-    SetTrainerMode { mode: Scenario },
+    SetTrainerMode {
+        mode: Scenario,
+    },
     /// Manual difficulty level in [0, 1] (turns the curriculum gate off); takes effect at the next generation
-    SetTrainerLevel { level: f32 },
+    SetTrainerLevel {
+        level: f32,
+    },
     SelectTrainerSandbox {
         #[serde(default)]
         #[ts(optional)]
@@ -359,14 +403,39 @@ mod tests {
 
     #[test]
     fn test_trainer_actions_parse_from_ui_json() {
-        assert_eq!(parse(json!({ "type": "START_TRAINING" })), Some(TrainerAction::StartTraining));
-        assert_eq!(parse(json!({ "type": "PAUSE_TRAINING" })), Some(TrainerAction::PauseTraining));
-        assert_eq!(parse(json!({ "type": "TRAINER_RESET" })), Some(TrainerAction::TrainerReset));
-        assert_eq!(parse(json!({ "type": "SET_TRAINER_MODE", "mode": "curriculum" })), Some(TrainerAction::SetTrainerMode { mode: Scenario::Curriculum }));
-        assert_eq!(parse(json!({ "type": "SET_TRAINER_LEVEL", "level": 0.4 })), Some(TrainerAction::SetTrainerLevel { level: 0.4 }));
-        assert_eq!(parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": 3 })), Some(TrainerAction::SelectTrainerSandbox { id: Some(3) }));
-        assert_eq!(parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": null })), Some(TrainerAction::SelectTrainerSandbox { id: None }));
-        let update = parse(json!({ "type": "UPDATE_TRAINER_HYPERPARAMS", "N": 16, "population": 300, "warpSpeed": 2, "eliteRatio": 0.25, "runId": "r1", "lamarckian": true }));
+        assert_eq!(
+            parse(json!({ "type": "START_TRAINING" })),
+            Some(TrainerAction::StartTraining)
+        );
+        assert_eq!(
+            parse(json!({ "type": "PAUSE_TRAINING" })),
+            Some(TrainerAction::PauseTraining)
+        );
+        assert_eq!(
+            parse(json!({ "type": "TRAINER_RESET" })),
+            Some(TrainerAction::TrainerReset)
+        );
+        assert_eq!(
+            parse(json!({ "type": "SET_TRAINER_MODE", "mode": "curriculum" })),
+            Some(TrainerAction::SetTrainerMode {
+                mode: Scenario::Curriculum
+            })
+        );
+        assert_eq!(
+            parse(json!({ "type": "SET_TRAINER_LEVEL", "level": 0.4 })),
+            Some(TrainerAction::SetTrainerLevel { level: 0.4 })
+        );
+        assert_eq!(
+            parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": 3 })),
+            Some(TrainerAction::SelectTrainerSandbox { id: Some(3) })
+        );
+        assert_eq!(
+            parse(json!({ "type": "SELECT_TRAINER_SANDBOX", "id": null })),
+            Some(TrainerAction::SelectTrainerSandbox { id: None })
+        );
+        let update = parse(
+            json!({ "type": "UPDATE_TRAINER_HYPERPARAMS", "N": 16, "population": 300, "warpSpeed": 2, "eliteRatio": 0.25, "runId": "r1", "lamarckian": true }),
+        );
         assert_eq!(
             update,
             Some(TrainerAction::UpdateTrainerHyperparams(TrainerHyperparamsUpdate {
@@ -379,8 +448,18 @@ mod tests {
                 ..Default::default()
             }))
         );
-        let assign = parse(json!({ "type": "ASSIGN_SANDBOX_CREATURE", "sandbox_id": 2, "genome": "AB", "synapse_weights": null, "load_learned_synapses": false }));
-        assert!(matches!(assign, Some(TrainerAction::AssignSandboxCreature(AssignSandboxCreature { sandbox_id: 2, methylations: None, synapse_weights: None, .. }))));
+        let assign = parse(
+            json!({ "type": "ASSIGN_SANDBOX_CREATURE", "sandbox_id": 2, "genome": "AB", "synapse_weights": null, "load_learned_synapses": false }),
+        );
+        assert!(matches!(
+            assign,
+            Some(TrainerAction::AssignSandboxCreature(AssignSandboxCreature {
+                sandbox_id: 2,
+                methylations: None,
+                synapse_weights: None,
+                ..
+            }))
+        ));
     }
 
     #[test]
@@ -394,7 +473,15 @@ mod tests {
     #[test]
     fn test_generation_stats_match_report_serialization() {
         use crate::trainer::sim::{TrainerEvent, TrainerParams, TrainerSim};
-        let mut sim = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::from_config(crate::config::test_config()) }, 7, 4, crate::config::test_config());
+        let mut sim = TrainerSim::new(
+            TrainerParams {
+                population: 4,
+                ..TrainerParams::from_config(crate::config::test_config())
+            },
+            7,
+            4,
+            crate::config::test_config(),
+        );
         let stats = loop {
             if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.step(false) {
                 break stats;
@@ -461,7 +548,10 @@ mod tests {
             is_running: false,
             time_str: "5.0s".to_string(),
             sandboxes: vec![],
-            selected_brain: Some(TrainerSelectedBrain { id: 1, activations: vec![0.5] }),
+            selected_brain: Some(TrainerSelectedBrain {
+                id: 1,
+                activations: vec![0.5],
+            }),
         }))
         .unwrap();
         assert_eq!(tick["type"], "TRAINER_TELEMETRY_TICK");
@@ -475,17 +565,44 @@ mod tests {
     fn test_telemetry_carries_only_the_displayed_sandboxes() {
         use crate::trainer::sandbox::SandboxOrigin;
         use crate::trainer::sim::{TrainerEvent, TrainerParams};
-        let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) }, 11, 200, crate::config::test_config());
+        let mut sim = TrainerSim::new(
+            TrainerParams {
+                population: 12,
+                multi_trial: false,
+                ..TrainerParams::from_config(crate::config::test_config())
+            },
+            11,
+            200,
+            crate::config::test_config(),
+        );
         while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
         let tick = TrainerTelemetryTick::build(&sim, 5, Some(4), true);
-        assert_eq!(tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 4, 6, 8, 9]);
+        assert_eq!(
+            tick.sandboxes.iter().map(|s| s.id).collect::<Vec<_>>(),
+            vec![1, 4, 6, 8, 9]
+        );
         assert_eq!(
             tick.sandboxes.iter().map(|s| s.origin_type).collect::<Vec<_>>(),
-            vec![SandboxOrigin::Elite, SandboxOrigin::Hof, SandboxOrigin::Random, SandboxOrigin::Mutant, SandboxOrigin::Mutant]
+            vec![
+                SandboxOrigin::Elite,
+                SandboxOrigin::Hof,
+                SandboxOrigin::Random,
+                SandboxOrigin::Mutant,
+                SandboxOrigin::Mutant
+            ]
         );
         assert_eq!(tick.selected_brain.as_ref().map(|b| b.id), Some(4));
-        assert!(TrainerTelemetryTick::build(&sim, 5, Some(3), true).selected_brain.is_none(), "sandbox 3 is not displayed");
-        assert_eq!(TrainerTelemetryTick::build(&sim, 100, None, true).sandboxes.len(), 12, "display count above the population");
+        assert!(
+            TrainerTelemetryTick::build(&sim, 5, Some(3), true)
+                .selected_brain
+                .is_none(),
+            "sandbox 3 is not displayed"
+        );
+        assert_eq!(
+            TrainerTelemetryTick::build(&sim, 100, None, true).sandboxes.len(),
+            12,
+            "display count above the population"
+        );
     }
 
     /// TCK-194: edge cases of the display sample.
@@ -497,7 +614,12 @@ mod tests {
         // Sample covers the population
         assert_eq!(display_slots(&[Elite, Hof, Mutant], 5), vec![0, 1, 2]);
         // Fewer tiles than groups: exactly n slots, first slots first
-        let origins: Vec<_> = [Elite; 25].into_iter().chain([Hof; 15]).chain([Random; 15]).chain([Mutant; 45]).collect();
+        let origins: Vec<_> = [Elite; 25]
+            .into_iter()
+            .chain([Hof; 15])
+            .chain([Random; 15])
+            .chain([Mutant; 45])
+            .collect();
         assert_eq!(display_slots(&origins, 2), vec![0, 25]);
         // Every n gives exactly n distinct slots
         for n in 1..=100 {
@@ -514,14 +636,37 @@ mod tests {
         use crate::biology::genome::WILDTYPE_GENOME;
         use crate::trainer::sandbox::SandboxOrigin;
         use crate::trainer::sim::{GenomeRecord, TrainerParams};
-        let record = |fitness: f32| GenomeRecord { genome: WILDTYPE_GENOME.to_string(), name: "p".to_string(), fitness, generation: 1, methylations: Vec::new(), synapse_weights: Vec::new() };
+        let record = |fitness: f32| GenomeRecord {
+            genome: WILDTYPE_GENOME.to_string(),
+            name: "p".to_string(),
+            fitness,
+            generation: 1,
+            methylations: Vec::new(),
+            synapse_weights: Vec::new(),
+        };
         let parents: Vec<GenomeRecord> = (0..25).map(|i| record(25.0 - i as f32)).collect();
         let hof: Vec<GenomeRecord> = (0..15).map(|i| record(15.0 - i as f32)).collect();
-        let sim = TrainerSim::restore(TrainerParams { population: 100, ..TrainerParams::from_config(crate::config::test_config()) }, 5, 2, parents, hof, 200, crate::config::test_config());
+        let sim = TrainerSim::restore(
+            TrainerParams {
+                population: 100,
+                ..TrainerParams::from_config(crate::config::test_config())
+            },
+            5,
+            2,
+            parents,
+            hof,
+            200,
+            crate::config::test_config(),
+        );
         let tick = TrainerTelemetryTick::build(&sim, 16, None, true);
         let count = |origin: SandboxOrigin| tick.sandboxes.iter().filter(|s| s.origin_type == origin).count();
         assert_eq!(
-            [count(SandboxOrigin::Elite), count(SandboxOrigin::Hof), count(SandboxOrigin::Random), count(SandboxOrigin::Mutant)],
+            [
+                count(SandboxOrigin::Elite),
+                count(SandboxOrigin::Hof),
+                count(SandboxOrigin::Random),
+                count(SandboxOrigin::Mutant)
+            ],
             [4, 2, 2, 8]
         );
     }
@@ -532,7 +677,16 @@ mod tests {
     fn test_display_count_does_not_change_the_simulation() {
         use crate::trainer::sim::{TrainerEvent, TrainerParams};
         let run = |display_count: Option<usize>| {
-            let mut sim = TrainerSim::new(TrainerParams { population: 10, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 21, 200, crate::config::test_config());
+            let mut sim = TrainerSim::new(
+                TrainerParams {
+                    population: 10,
+                    trials: 2,
+                    ..TrainerParams::from_config(crate::config::test_config())
+                },
+                21,
+                200,
+                crate::config::test_config(),
+            );
             let mut stats = Vec::new();
             while stats.len() < 2 {
                 if let Some(n) = display_count {

@@ -1,7 +1,7 @@
 //! Procedural Latin name: chamber prefix, symmetry, dominant organ kind (or predator) and a strain id from the genome.
 
 use super::Symmetry;
-use crate::biology::genome::alphabet::{char_to_value, ALPHABET};
+use crate::biology::genome::alphabet::{ALPHABET, char_to_value};
 use crate::biology::organs::Organ;
 
 /// Carnivory from which the name says "raptor" (display only; `is_predator` uses 0.50).
@@ -30,7 +30,10 @@ pub fn latin_name(genome: &str, symmetry: Symmetry, chambers: usize, organs: &[O
     let hash_char2 = ALPHABET[(mid_loci + last_loci) % 26] as char;
     let hash_num = (first_loci * mid_loci + last_loci) % 10;
 
-    format!("{} {} {} (Str. {}{}-{})", prefix, mid_sym, suffix, hash_char1, hash_char2, hash_num)
+    format!(
+        "{} {} {} (Str. {}{}-{})",
+        prefix, mid_sym, suffix, hash_char1, hash_char2, hash_num
+    )
 }
 
 /// Latin suffix of the most frequent suffix group of the organs (`OrganSpec::latin_suffix`); ties go to the lower

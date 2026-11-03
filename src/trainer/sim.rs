@@ -40,21 +40,21 @@ use std::sync::Arc;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
+use crate::biology::creature_factory::{SpawnOptions, spawn_creature};
 use crate::config::AppConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::shared::rng::{derive, seed_from_str};
 
-pub use crate::biology::trainer_config::{LayoutPolicy, MutationChannelMode, TrialAggregation};
-pub use super::breeder::{elites_solved_layout, one_fifth_update, GenomeRecord};
-pub use super::curriculum::{gate_level, metabolic_ramp, rehearsal_trials, snap_level, CurriculumParams, LevelMove};
+pub use super::breeder::{GenomeRecord, elites_solved_layout, one_fifth_update};
+pub use super::curriculum::{CurriculumParams, LevelMove, gate_level, metabolic_ramp, rehearsal_trials, snap_level};
 pub use super::evaluator::aggregate_trials;
-pub use super::stats::{ChannelStats, GenerationStats, MutationChannelStats, IMMOBILE_DISTANCE_PX};
+pub use super::stats::{ChannelStats, GenerationStats, IMMOBILE_DISTANCE_PX, MutationChannelStats};
+pub use crate::biology::trainer_config::{LayoutPolicy, MutationChannelMode, TrialAggregation};
 
 use super::breeder::Breeder;
 use super::evaluator::{Evaluator, SoloTrials};
 use super::mode::{Scenario, TrainingMode};
-use super::room::{registry, LevelRoom, Room};
+use super::room::{LevelRoom, Room, registry};
 use super::sandbox::{SandboxOrigin, TrainerSandbox};
 use super::stats::TrialRecord;
 use super::streams;
@@ -76,8 +76,12 @@ enum RoomSpec {
 impl RoomSpec {
     fn build(self, config: &AppConfig) -> Arc<dyn Room> {
         match self {
-            RoomSpec::Registered(id) => registry::build(id, config).unwrap_or_else(|| panic!("room '{}' is registered", id)),
-            RoomSpec::Level { level, metabolic_scale } => Arc::new(LevelRoom::at(level, config).with_metabolic_scale(metabolic_scale)),
+            RoomSpec::Registered(id) => {
+                registry::build(id, config).unwrap_or_else(|| panic!("room '{}' is registered", id))
+            }
+            RoomSpec::Level { level, metabolic_scale } => {
+                Arc::new(LevelRoom::at(level, config).with_metabolic_scale(metabolic_scale))
+            }
         }
     }
 }
@@ -277,7 +281,9 @@ impl TrainerRunState {
         params.room = None;
         params.level = snap_level(self.level);
         params.level_auto = self.level_auto;
-        params.mutation_ops_max = self.mutation_ops_max.clamp(lo, config.trainer.mutation_ops_limit.max(lo));
+        params.mutation_ops_max = self
+            .mutation_ops_max
+            .clamp(lo, config.trainer.mutation_ops_limit.max(lo));
         if let Some(population) = self.population {
             params.population = population.max(1);
         }
@@ -291,13 +297,30 @@ impl TrainerSim {
     }
 
     /// Continues a run: breeds `generation` from `parents` (fitness descending) and `hof` on shared layout 0.
-    pub fn restore(params: TrainerParams, seed: u64, generation: u32, parents: Vec<GenomeRecord>, hof: Vec<GenomeRecord>, hof_retention: usize, config: &AppConfig) -> Self {
+    pub fn restore(
+        params: TrainerParams,
+        seed: u64,
+        generation: u32,
+        parents: Vec<GenomeRecord>,
+        hof: Vec<GenomeRecord>,
+        hof_retention: usize,
+        config: &AppConfig,
+    ) -> Self {
         Self::restore_at_layout(params, seed, generation, 0, parents, hof, hof_retention, config)
     }
 
     /// `restore` on shared layout `layout_id` (the persisted run state, TCK-191, `TrainerRunState`).
     #[allow(clippy::too_many_arguments)]
-    pub fn restore_at_layout(mut params: TrainerParams, seed: u64, generation: u32, layout_id: u64, parents: Vec<GenomeRecord>, hof: Vec<GenomeRecord>, hof_retention: usize, config: &AppConfig) -> Self {
+    pub fn restore_at_layout(
+        mut params: TrainerParams,
+        seed: u64,
+        generation: u32,
+        layout_id: u64,
+        parents: Vec<GenomeRecord>,
+        hof: Vec<GenomeRecord>,
+        hof_retention: usize,
+        config: &AppConfig,
+    ) -> Self {
         params.population = params.population.max(1);
         params.level = snap_level(params.level);
         let room_spec = RoomSpec::Registered("standard");
@@ -408,7 +431,10 @@ impl TrainerSim {
 
     /// Manual difficulty level: curriculum mode at `level` with the gate off. Takes effect at the next generation.
     pub fn set_level(&mut self, level: f32) {
-        self.request(RoomSwitch { mode: TrainingMode::Curriculum, level: Some(snap_level(level)) });
+        self.request(RoomSwitch {
+            mode: TrainingMode::Curriculum,
+            level: Some(snap_level(level)),
+        });
     }
 
     fn request(&mut self, switch: RoomSwitch) {
@@ -422,7 +448,9 @@ impl TrainerSim {
 
     /// Applies a pending switch to the params; returns whether there was one.
     fn apply_pending(&mut self) -> bool {
-        let Some(switch) = self.pending.take() else { return false };
+        let Some(switch) = self.pending.take() else {
+            return false;
+        };
         self.params.set_mode(switch.mode);
         match switch.level {
             Some(level) => {
@@ -453,19 +481,32 @@ impl TrainerSim {
         }
         self.use_room(spec);
         for sb in self.sandboxes.iter_mut() {
-            sb.reset_trial_in(self.room.clone(), &mut streams::layout(self.seed, self.layout_id, 0), &self.config);
+            sb.reset_trial_in(
+                self.room.clone(),
+                &mut streams::layout(self.seed, self.layout_id, 0),
+                &self.config,
+            );
         }
     }
 
     /// Trials per generation.
     fn trial_count(&self) -> u32 {
-        if self.params.multi_trial { self.params.trials.max(1) } else { 1 }
+        if self.params.multi_trial {
+            self.params.trials.max(1)
+        } else {
+            1
+        }
     }
 
     /// Chooses the rehearsal trials of the current layout (curriculum only).
     fn plan_rehearsal(&mut self) {
         self.rehearsal = if self.params.mode() == TrainingMode::Curriculum {
-            rehearsal_trials(self.seed, self.layout_id, self.trial_count(), self.params.curriculum.rehearsal_share)
+            rehearsal_trials(
+                self.seed,
+                self.layout_id,
+                self.trial_count(),
+                self.params.curriculum.rehearsal_share,
+            )
         } else {
             Vec::new()
         };
@@ -479,8 +520,15 @@ impl TrainerSim {
             TrainingMode::Room(id) => RoomSpec::Registered(id),
             TrainingMode::Curriculum => {
                 let c = &p.curriculum;
-                let level = if self.rehearsal.contains(&trial) { c.rehearsal_level.min(p.level) } else { p.level };
-                RoomSpec::Level { level, metabolic_scale: metabolic_ramp(p.level, c.metabolic_ramp_start) }
+                let level = if self.rehearsal.contains(&trial) {
+                    c.rehearsal_level.min(p.level)
+                } else {
+                    p.level
+                };
+                RoomSpec::Level {
+                    level,
+                    metabolic_scale: metabolic_ramp(p.level, c.metabolic_ramp_start),
+                }
             }
         }
     }
@@ -502,17 +550,28 @@ impl TrainerSim {
         let trials = trials.unwrap_or_else(|| self.trial_count()).max(1);
         let seed = self.seed;
         let layout = move |trial: u32| derive(seed, &[streams::EVAL, trial as u64]);
-        let evals = self.evaluator.evaluate(room, &self.sandboxes, trials, &layout, &self.config, parallel);
+        let evals = self
+            .evaluator
+            .evaluate(room, &self.sandboxes, trials, &layout, &self.config, parallel);
         let aggregation = self.params.trial_aggregation;
         let results: Vec<(f32, u32, bool)> = evals
             .iter()
             .zip(&self.sandboxes)
-            .map(|(e, sb)| (self.evaluator.aggregate(&e.trial_fitness, aggregation), e.successes, sb.origin_type == SandboxOrigin::Elite))
+            .map(|(e, sb)| {
+                (
+                    self.evaluator.aggregate(&e.trial_fitness, aggregation),
+                    e.successes,
+                    sb.origin_type == SandboxOrigin::Elite,
+                )
+            })
             .collect();
         let summary = |selected: Vec<&(f32, u32, bool)>| {
             (!selected.is_empty()).then(|| {
                 let n = selected.len() as f32;
-                (selected.iter().map(|r| r.1).sum::<u32>() as f32 / (n * trials as f32), selected.iter().map(|r| r.0).sum::<f32>() / n)
+                (
+                    selected.iter().map(|r| r.1).sum::<u32>() as f32 / (n * trials as f32),
+                    selected.iter().map(|r| r.0).sum::<f32>() / n,
+                )
             })
         };
         let all = summary(results.iter().collect()).unwrap_or((0.0, 0.0));
@@ -533,12 +592,33 @@ impl TrainerSim {
     /// record), while its trial clock stays that of the generation. The slot's trial fitness of this generation and its
     /// lineage are cleared (TCK-201), so the previous creature's trials do not count for it and the slot leaves the
     /// 1/5 rule and the mutation channel statistics. Returns the new creature, `None` for an unknown id.
-    pub fn assign_creature(&mut self, sandbox_id: u32, genome: &str, methylations: Option<&[f32]>, synapse_weights: Option<Vec<f32>>) -> Option<AssignedCreature<'_>> {
+    pub fn assign_creature(
+        &mut self,
+        sandbox_id: u32,
+        genome: &str,
+        methylations: Option<&[f32]>,
+        synapse_weights: Option<Vec<f32>>,
+    ) -> Option<AssignedCreature<'_>> {
         let slot = self.sandboxes.iter().position(|s| s.id == sandbox_id)?;
-        let (tick, mut layout) = (self.epoch_ticks, streams::layout(self.seed, self.layout_id, self.trial_index));
+        let (tick, mut layout) = (
+            self.epoch_ticks,
+            streams::layout(self.seed, self.layout_id, self.trial_index),
+        );
         let sb = &mut self.sandboxes[slot];
         let (id, generation) = (sb.agent().id, sb.agent().generation);
-        *sb.agent_mut() = spawn_creature(genome, SpawnOptions { id, px: 0.0, py: 0.0, heading_angle: 0.0, generation, methylations, synapse_weights }, &self.config);
+        *sb.agent_mut() = spawn_creature(
+            genome,
+            SpawnOptions {
+                id,
+                px: 0.0,
+                py: 0.0,
+                heading_angle: 0.0,
+                generation,
+                methylations,
+                synapse_weights,
+            },
+            &self.config,
+        );
         sb.reset_trial(&mut layout, &self.config);
         sb.chamber.tick = tick;
 
@@ -550,7 +630,10 @@ impl TrainerSim {
         }
         self.trial_records.retain(|r| r.slot != slot);
         self.breeder.forget_slot(slot);
-        Some(AssignedCreature { sandbox_id, agent: self.sandboxes[slot].agent() })
+        Some(AssignedCreature {
+            sandbox_id,
+            agent: self.sandboxes[slot].agent(),
+        })
     }
 
     /// End of a trial: records every slot's trial score, then starts the next trial or completes the generation.
@@ -586,7 +669,11 @@ impl TrainerSim {
             self.epoch_ticks = 0;
             self.use_room(self.trial_room(self.trial_index));
             for sb in self.sandboxes.iter_mut() {
-                sb.reset_trial_in(self.room.clone(), &mut streams::layout(self.seed, self.layout_id, self.trial_index), &self.config);
+                sb.reset_trial_in(
+                    self.room.clone(),
+                    &mut streams::layout(self.seed, self.layout_id, self.trial_index),
+                    &self.config,
+                );
             }
             return None;
         }
@@ -596,7 +683,9 @@ impl TrainerSim {
         if self.params.multi_trial {
             // Generation fitness = aggregate of the per-trial fitness (catch units, no gate)
             for (slot, sb) in self.sandboxes.iter_mut().enumerate() {
-                sb.current_fitness = self.evaluator.aggregate(&self.acc_fitness[slot], self.params.trial_aggregation);
+                sb.current_fitness = self
+                    .evaluator
+                    .aggregate(&self.acc_fitness[slot], self.params.trial_aggregation);
             }
         }
         self.trial_index = 0;
@@ -608,14 +697,21 @@ impl TrainerSim {
 
     fn complete_generation(&mut self, parallel: bool, solved: Vec<bool>) -> TrainerEvent {
         let n = self.sandboxes.len();
-        let mut stats = GenerationStats::compute(self.generation, &self.trial_records, &self.sandboxes, self.params.mode());
+        let mut stats = GenerationStats::compute(
+            self.generation,
+            &self.trial_records,
+            &self.sandboxes,
+            self.params.mode(),
+        );
         self.trial_records.clear();
         stats.layout_id = self.layout_id;
         stats.mutation_ops_max = self.params.mutation_ops_max;
         stats.level = self.current_level();
 
         // Ranking, elites, parents and hall of fame, breeding statistics
-        let selection = self.breeder.select(&mut self.sandboxes, solved, self.params.elite_ratio, self.generation);
+        let selection = self
+            .breeder
+            .select(&mut self.sandboxes, solved, self.params.elite_ratio, self.generation);
         stats.child_success_share = selection.child_success_share();
         stats.mutation_channels = selection.mutation_channels.clone();
         stats.elite_last_mutation = selection.elite_last_mutation.clone();
@@ -649,7 +745,14 @@ impl TrainerSim {
         self.epoch_ticks = 0;
         self.breed(parallel);
 
-        TrainerEvent::GenerationCompleted { generation, best_fitness, avg_fitness, best_genome, elites: selection.elites, stats }
+        TrainerEvent::GenerationCompleted {
+            generation,
+            best_fitness,
+            avg_fitness,
+            best_genome,
+            elites: selection.elites,
+            stats,
+        }
     }
 
     /// Builds the sandboxes of `self.generation` in the room of its trial 0 (curriculum: level and rehearsal choice
@@ -658,7 +761,15 @@ impl TrainerSim {
         self.plan_rehearsal();
         self.use_room(self.trial_room(0));
         let n = self.params.population;
-        self.sandboxes = self.breeder.breed(&self.params, self.seed, self.generation, self.layout_id, &self.room, &self.config, parallel);
+        self.sandboxes = self.breeder.breed(
+            &self.params,
+            self.seed,
+            self.generation,
+            self.layout_id,
+            &self.room,
+            &self.config,
+            parallel,
+        );
         self.trial_index = 0;
         self.acc_fitness = vec![Vec::new(); n];
         self.acc_eaten = vec![0; n];

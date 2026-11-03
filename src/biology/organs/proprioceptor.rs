@@ -1,6 +1,6 @@
 //! Proprioceptor: water temperature and spine flexion (affinity < 0.25, style >= 0.70).
 
-use super::{common, contact, Organ, OrganKind, OrganSpec, SenseCtx, CHANNELS_PER_ORGANELLE};
+use super::{CHANNELS_PER_ORGANELLE, Organ, OrganKind, OrganSpec, SenseCtx, common, contact};
 
 /// Spine flexion that reads as a full signal (rad).
 const MAX_FLEXION: f32 = 1.2;

@@ -1,6 +1,6 @@
-use super::schema::{latest_version, model_tables, tables, MIGRATIONS};
+use super::schema::{MIGRATIONS, latest_version, model_tables, tables};
 use super::*;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!("digi-life-test-{}-{}", name, std::process::id()));
@@ -10,7 +10,9 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 }
 
 fn model_version(conn: &Connection) -> Option<String> {
-    conn.query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |r| r.get(0)).optional().unwrap()
+    conn.query_row("SELECT value FROM meta WHERE key = 'model_version'", [], |r| r.get(0))
+        .optional()
+        .unwrap()
 }
 
 fn user_version(conn: &Connection) -> u32 {
@@ -18,12 +20,26 @@ fn user_version(conn: &Connection) -> u32 {
 }
 
 fn genome(fitness: f64, generation: i64) -> TrainerGenome {
-    TrainerGenome { name: "elite".to_string(), genome: format!("GENOME{}", fitness), fitness, generation, methylations: vec![0.5], synapse_weights: vec![0.25, 0.75] }
+    TrainerGenome {
+        name: "elite".to_string(),
+        genome: format!("GENOME{}", fitness),
+        fitness,
+        generation,
+        methylations: vec![0.5],
+        synapse_weights: vec![0.25, 0.75],
+    }
 }
 
 /// One row in every model table.
 fn fill_model_tables(db: &Db) {
-    db.insert_species(&NewSpecies { genome: "COL".into(), latin_name: "Name".into(), parent_name: None, generation: 1, carnivory: 0.0 }).unwrap();
+    db.insert_species(&NewSpecies {
+        genome: "COL".into(),
+        latin_name: "Name".into(),
+        parent_name: None,
+        generation: 1,
+        carnivory: 0.0,
+    })
+    .unwrap();
     db.save_catalogue_entry(&NewCatalogueEntry {
         id: "c".into(),
         name: "n".into(),
@@ -38,27 +54,56 @@ fn fill_model_tables(db: &Db) {
     db.save_trainer_generation("run", &[genome(1.0, 1)], Some(10)).unwrap();
     db.save_trainer_run_state(
         "run",
-        &TrainerRunStateRow { scenario: "standard".into(), level: 0.0, level_auto: true, layout_id: 0, mutation_ops_max: 3, population: None, seed: None },
+        &TrainerRunStateRow {
+            scenario: "standard".into(),
+            level: 0.0,
+            level_auto: true,
+            layout_id: 0,
+            mutation_ops_max: 3,
+            population: None,
+            seed: None,
+        },
     )
     .unwrap();
     db.save_ocean_snapshot("{}").unwrap();
 }
 
 fn row_counts(conn: &Connection) -> Vec<i64> {
-    model_tables().iter().map(|t| conn.query_row(&format!("SELECT COUNT(*) FROM {}", t), [], |r| r.get(0)).unwrap()).collect()
+    model_tables()
+        .iter()
+        .map(|t| {
+            conn.query_row(&format!("SELECT COUNT(*) FROM {}", t), [], |r| r.get(0))
+                .unwrap()
+        })
+        .collect()
 }
 
 /// Columns (name, type, notnull, default, pk) of every table and the index names: the comparable schema.
 fn schema_shape(conn: &Connection) -> Vec<String> {
     let mut shape = Vec::new();
-    let mut stmt = conn.prepare("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").unwrap();
-    let objects: Vec<(String, String)> = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(|r| r.unwrap()).collect();
+    let mut stmt = conn
+        .prepare("SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name")
+        .unwrap();
+    let objects: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
     for (kind, name) in objects {
         shape.push(format!("{} {}", kind, name));
         if kind == "table" {
             let mut info = conn.prepare(&format!("PRAGMA table_info({})", name)).unwrap();
             let mut columns: Vec<String> = info
-                .query_map([], |r| Ok(format!("  {} {} notnull={} default={:?} pk={}", r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?, r.get::<_, Option<String>>(4)?, r.get::<_, i64>(5)?)))
+                .query_map([], |r| {
+                    Ok(format!(
+                        "  {} {} notnull={} default={:?} pk={}",
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, i64>(3)?,
+                        r.get::<_, Option<String>>(4)?,
+                        r.get::<_, i64>(5)?
+                    ))
+                })
                 .unwrap()
                 .map(|r| r.unwrap())
                 .collect();
@@ -108,7 +153,8 @@ fn build_v1_12_30_schema(conn: &Connection, old_columns: bool) {
         )
         .unwrap();
     }
-    conn.execute_batch("CREATE INDEX idx_trainer_run ON trainer_genomes(run_id);").unwrap();
+    conn.execute_batch("CREATE INDEX idx_trainer_run ON trainer_genomes(run_id);")
+        .unwrap();
 }
 
 /// Rows of v1.12.30 in every table (written with that version's statements).
@@ -160,42 +206,118 @@ fn test_v1_12_30_database_migrates_without_data_loss() {
         let db = init_db(&path).unwrap();
         assert_eq!(user_version(db.conn()), latest_version());
         assert_eq!(model_version(db.conn()), Some(MODEL_VERSION.to_string()));
-        assert!(!dir.read_dir().unwrap().any(|e| e.unwrap().file_name().to_string_lossy().contains(".bak.")), "no model reset, no backup");
+        assert!(
+            !dir.read_dir()
+                .unwrap()
+                .any(|e| e.unwrap().file_name().to_string_lossy().contains(".bak.")),
+            "no model reset, no backup"
+        );
 
         let species = db.list_species().unwrap();
         assert_eq!(species.len(), 2);
-        assert_eq!((species[0].id.as_str(), species[0].latin_name.as_str(), species[0].status, species[0].peak_population, species[0].birth_time), ("GENOME-A", "Aqueus pulsa", SpeciesStatus::Alive, 4, 1700000000));
-        assert_eq!((species[1].status, species[1].parent_name.as_deref(), species[1].extinction_time, species[1].generation, species[1].carnivory), (SpeciesStatus::Extinct, Some("Aqueus pulsa"), Some(1700000200), 2, 0.5));
+        assert_eq!(
+            (
+                species[0].id.as_str(),
+                species[0].latin_name.as_str(),
+                species[0].status,
+                species[0].peak_population,
+                species[0].birth_time
+            ),
+            ("GENOME-A", "Aqueus pulsa", SpeciesStatus::Alive, 4, 1700000000)
+        );
+        assert_eq!(
+            (
+                species[1].status,
+                species[1].parent_name.as_deref(),
+                species[1].extinction_time,
+                species[1].generation,
+                species[1].carnivory
+            ),
+            (SpeciesStatus::Extinct, Some("Aqueus pulsa"), Some(1700000200), 2, 0.5)
+        );
 
         let catalogue = db.list_catalogue().unwrap();
         assert_eq!(catalogue.len(), 1);
-        assert_eq!((catalogue[0].name.as_str(), catalogue[0].fitness, catalogue[0].created_at.as_str()), ("Super Predator", 12.5, "2026-10-01 12:00:00"));
-        assert_eq!((catalogue[0].methylations.clone(), catalogue[0].synapse_weights.clone()), (vec![0.5, 0.0, 0.9], vec![1.5, -2.0, 0.4]));
+        assert_eq!(
+            (
+                catalogue[0].name.as_str(),
+                catalogue[0].fitness,
+                catalogue[0].created_at.as_str()
+            ),
+            ("Super Predator", 12.5, "2026-10-01 12:00:00")
+        );
+        assert_eq!(
+            (catalogue[0].methylations.clone(), catalogue[0].synapse_weights.clone()),
+            (vec![0.5, 0.0, 0.9], vec![1.5, -2.0, 0.4])
+        );
 
-        assert_eq!(db.ocean_snapshot().unwrap().as_deref(), Some("{\"creatures\":[],\"highestGeneration\":7}"));
+        assert_eq!(
+            db.ocean_snapshot().unwrap().as_deref(),
+            Some("{\"creatures\":[],\"highestGeneration\":7}")
+        );
 
         let parents = db.trainer_genomes("run", true, 10).unwrap();
         assert_eq!(parents.len(), 1);
-        assert_eq!((parents[0].genome.as_str(), parents[0].fitness, parents[0].generation), ("GEN5", 9.5, 5));
+        assert_eq!(
+            (parents[0].genome.as_str(), parents[0].fitness, parents[0].generation),
+            ("GEN5", 9.5, 5)
+        );
         let state = db.trainer_run_state("run").unwrap().unwrap();
         if old_columns {
-            assert_eq!((parents[0].methylations.clone(), parents[0].synapse_weights.clone()), (vec![], vec![]), "added columns default to []");
-            assert_eq!((state.scenario.as_str(), state.layout_id, state.mutation_ops_max, state.population, state.seed), ("curriculum", 5, 2, None, None));
+            assert_eq!(
+                (parents[0].methylations.clone(), parents[0].synapse_weights.clone()),
+                (vec![], vec![]),
+                "added columns default to []"
+            );
+            assert_eq!(
+                (
+                    state.scenario.as_str(),
+                    state.layout_id,
+                    state.mutation_ops_max,
+                    state.population,
+                    state.seed
+                ),
+                ("curriculum", 5, 2, None, None)
+            );
         } else {
-            assert_eq!((parents[0].methylations.clone(), parents[0].synapse_weights.clone()), (vec![0.5], vec![0.25, 0.75]));
-            assert_eq!((state.layout_id, state.population, state.seed), (u64::MAX - 1, Some(64), Some(u64::MAX - 2)));
+            assert_eq!(
+                (parents[0].methylations.clone(), parents[0].synapse_weights.clone()),
+                (vec![0.5], vec![0.25, 0.75])
+            );
+            assert_eq!(
+                (state.layout_id, state.population, state.seed),
+                (u64::MAX - 1, Some(64), Some(u64::MAX - 2))
+            );
         }
 
         for dropped in ["simulation_history", "sessions"] {
-            let exists: bool = db.conn().query_row("SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)", params![dropped], |r| r.get(0)).unwrap();
+            let exists: bool = db
+                .conn()
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)",
+                    params![dropped],
+                    |r| r.get(0),
+                )
+                .unwrap();
             assert!(!exists, "{} dropped", dropped);
         }
-        assert_eq!(schema_shape(db.conn()), schema_shape(init_db(":memory:").unwrap().conn()), "migrated schema equals a fresh one");
+        assert_eq!(
+            schema_shape(db.conn()),
+            schema_shape(init_db(":memory:").unwrap().conn()),
+            "migrated schema equals a fresh one"
+        );
 
         // Reopening runs no migration again and keeps everything
         drop(db);
         let db = init_db(&path).unwrap();
-        assert_eq!((db.list_species().unwrap().len(), db.list_catalogue().unwrap().len(), db.trainer_genomes("run", false, -1).unwrap().len()), (2, 1, 1));
+        assert_eq!(
+            (
+                db.list_species().unwrap().len(),
+                db.list_catalogue().unwrap().len(),
+                db.trainer_genomes("run", false, -1).unwrap().len()
+            ),
+            (2, 1, 1)
+        );
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -223,7 +345,11 @@ fn test_migrated_schema_equals_latest_tables() {
 fn test_newer_schema_version_is_left_alone() {
     let dir = temp_dir("newer-schema");
     let path = dir.join("test.db");
-    init_db(&path).unwrap().conn().pragma_update(None, "user_version", latest_version() + 1).unwrap();
+    init_db(&path)
+        .unwrap()
+        .conn()
+        .pragma_update(None, "user_version", latest_version() + 1)
+        .unwrap();
     let db = init_db(&path).unwrap();
     assert_eq!(user_version(db.conn()), latest_version() + 1);
     fill_model_tables(&db);
@@ -296,9 +422,17 @@ fn test_model_reset_backs_up_the_old_data_first() {
     drop(init_db(&path).unwrap());
     assert!(!backup.exists(), "same version: no backup");
 
-    init_db(&path).unwrap().conn().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+    init_db(&path)
+        .unwrap()
+        .conn()
+        .execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", [])
+        .unwrap();
     let db = init_db(&path).unwrap();
-    assert_eq!(row_counts(db.conn()), vec![0; model_tables().len()], "model tables reset");
+    assert_eq!(
+        row_counts(db.conn()),
+        vec![0; model_tables().len()],
+        "model tables reset"
+    );
     let old = Connection::open(&backup).unwrap();
     assert_eq!(row_counts(&old), full, "backup holds the old data");
     assert_eq!(model_version(&old), Some("1".to_string()));
@@ -306,12 +440,20 @@ fn test_model_reset_backs_up_the_old_data_first() {
 
     // A second reset from the same old version keeps the first backup
     fill_model_tables(&db);
-    db.conn().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+    db.conn()
+        .execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", [])
+        .unwrap();
     db.clear_species().unwrap();
     drop(db);
     drop(init_db(&path).unwrap());
     assert_eq!(row_counts(&Connection::open(&backup).unwrap()), full);
-    assert_eq!(std::fs::read_dir(&dir).unwrap().filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".bak.")).count(), 1);
+    assert_eq!(
+        std::fs::read_dir(&dir)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().file_name().to_string_lossy().contains(".bak."))
+            .count(),
+        1
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -327,7 +469,11 @@ fn test_file_db_model_version_reset_on_reopen() {
     assert_eq!(row_counts(init_db(&path).unwrap().conn()), full);
 
     // Stored version differs: model tables recreated empty, version updated, meta kept
-    init_db(&path).unwrap().conn().execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", []).unwrap();
+    init_db(&path)
+        .unwrap()
+        .conn()
+        .execute("UPDATE meta SET value = '1' WHERE key = 'model_version'", [])
+        .unwrap();
     let db = init_db(&path).unwrap();
     assert_eq!(row_counts(db.conn()), empty);
     assert_eq!(model_version(db.conn()), Some(MODEL_VERSION.to_string()));
@@ -354,16 +500,27 @@ fn test_old_model_and_schema_version_together() {
         let conn = Connection::open(&path).unwrap();
         build_v1_12_30_schema(&conn, true);
         fill_v1_12_30_rows(&conn, true);
-        conn.execute("UPDATE meta SET value = '5' WHERE key = 'model_version'", []).unwrap();
+        conn.execute("UPDATE meta SET value = '5' WHERE key = 'model_version'", [])
+            .unwrap();
     }
     let db = init_db(&path).unwrap();
     assert_eq!(row_counts(db.conn()), vec![0; model_tables().len()]);
-    assert_eq!((user_version(db.conn()), model_version(db.conn())), (latest_version(), Some(MODEL_VERSION.to_string())));
-    assert_eq!(schema_shape(db.conn()), schema_shape(init_db(":memory:").unwrap().conn()));
+    assert_eq!(
+        (user_version(db.conn()), model_version(db.conn())),
+        (latest_version(), Some(MODEL_VERSION.to_string()))
+    );
+    assert_eq!(
+        schema_shape(db.conn()),
+        schema_shape(init_db(":memory:").unwrap().conn())
+    );
     // The backup is the file as v1.12.30 left it (taken before the migration)
     let old = Connection::open(dir.join("test.db.model-v5.bak.db")).unwrap();
     assert_eq!(user_version(&old), 0);
-    assert_eq!(old.query_row("SELECT COUNT(*) FROM simulation_history", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+    assert_eq!(
+        old.query_row("SELECT COUNT(*) FROM simulation_history", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
     drop((db, old));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -388,7 +545,13 @@ mod contract {
     use super::*;
 
     fn species(genome: &str, name: &str) -> NewSpecies {
-        NewSpecies { genome: genome.into(), latin_name: name.into(), parent_name: Some("Parent".into()), generation: 2, carnivory: 0.5 }
+        NewSpecies {
+            genome: genome.into(),
+            latin_name: name.into(),
+            parent_name: Some("Parent".into()),
+            generation: 2,
+            carnivory: 0.5,
+        }
     }
 
     fn species_ledger(repo: &impl SpeciesRepo) {
@@ -398,13 +561,36 @@ mod contract {
         repo.insert_species(&species("G3", "Two")).unwrap(); // same latin name: ignored
         let list = repo.list_species().unwrap();
         assert_eq!(list.iter().map(|s| s.id.as_str()).collect::<Vec<_>>(), vec!["G1", "G2"]);
-        assert_eq!((list[0].status, list[0].peak_population, list[0].generation, list[0].parent_name.as_deref(), list[0].extinction_time), (SpeciesStatus::Alive, 1, 2, Some("Parent"), None));
+        assert_eq!(
+            (
+                list[0].status,
+                list[0].peak_population,
+                list[0].generation,
+                list[0].parent_name.as_deref(),
+                list[0].extinction_time
+            ),
+            (SpeciesStatus::Alive, 1, 2, Some("Parent"), None)
+        );
         assert!(list[0].birth_time > 1_600_000_000, "birth time in Unix seconds");
 
         repo.set_species_peak("G1", 7).unwrap();
         repo.mark_species_extinct("G2").unwrap();
         let states = repo.species_states().unwrap();
-        assert_eq!(states, vec![SpeciesState { id: "G1".into(), status: SpeciesStatus::Alive, peak_population: 7 }, SpeciesState { id: "G2".into(), status: SpeciesStatus::Extinct, peak_population: 1 }]);
+        assert_eq!(
+            states,
+            vec![
+                SpeciesState {
+                    id: "G1".into(),
+                    status: SpeciesStatus::Alive,
+                    peak_population: 7
+                },
+                SpeciesState {
+                    id: "G2".into(),
+                    status: SpeciesStatus::Extinct,
+                    peak_population: 1
+                }
+            ]
+        );
         assert!(repo.list_species().unwrap()[1].extinction_time.is_some());
         repo.mark_species_alive("G2").unwrap();
         assert_eq!(repo.list_species().unwrap()[1].extinction_time, None);
@@ -413,12 +599,17 @@ mod contract {
 
         // Retention: alive species stay, only the newest `keep` extinct ones are kept
         for i in 0..5 {
-            repo.insert_species(&species(&format!("X{}", i), &format!("Extinct {}", i))).unwrap();
+            repo.insert_species(&species(&format!("X{}", i), &format!("Extinct {}", i)))
+                .unwrap();
             repo.mark_species_extinct(&format!("X{}", i)).unwrap();
         }
         assert_eq!(repo.prune_extinct_species(2).unwrap(), 3);
         let ids: Vec<String> = repo.list_species().unwrap().into_iter().map(|s| s.id).collect();
-        assert_eq!(ids, vec!["G1", "G2", "X3", "X4"], "same extinction second: the later insert counts as newer");
+        assert_eq!(
+            ids,
+            vec!["G1", "G2", "X3", "X4"],
+            "same extinction second: the later insert counts as newer"
+        );
         assert_eq!(repo.prune_extinct_species(2).unwrap(), 0);
 
         repo.clear_species().unwrap();
@@ -448,14 +639,29 @@ mod contract {
         repo.save_catalogue_entry(&entry("cryo-1", "Aqueus pulsa")).unwrap();
         repo.save_catalogue_entry(&entry("cryo-2", "Second")).unwrap();
         let one = repo.catalogue_entry("cryo-1").unwrap().unwrap();
-        assert_eq!((one.name.as_str(), one.fitness, one.carnivory, one.methylations.clone(), one.synapse_weights.clone()), ("Aqueus pulsa", 1250.5, 0.25, vec![0.5, 0.0, 0.9], vec![1.5, -2.0, 0.4]));
+        assert_eq!(
+            (
+                one.name.as_str(),
+                one.fitness,
+                one.carnivory,
+                one.methylations.clone(),
+                one.synapse_weights.clone()
+            ),
+            ("Aqueus pulsa", 1250.5, 0.25, vec![0.5, 0.0, 0.9], vec![1.5, -2.0, 0.4])
+        );
         assert_eq!(one.created_at.len(), "YYYY-MM-DD HH:MM:SS".len());
         assert_eq!(repo.list_catalogue().unwrap().len(), 2);
 
         repo.rename_catalogue_entry("cryo-1", "Super Predator").unwrap();
         assert_eq!(repo.catalogue_entry("cryo-1").unwrap().unwrap().name, "Super Predator");
         repo.save_catalogue_entry(&entry("cryo-1", "Replaced")).unwrap();
-        assert_eq!((repo.list_catalogue().unwrap().len(), repo.catalogue_entry("cryo-1").unwrap().unwrap().name), (2, "Replaced".to_string()));
+        assert_eq!(
+            (
+                repo.list_catalogue().unwrap().len(),
+                repo.catalogue_entry("cryo-1").unwrap().unwrap().name
+            ),
+            (2, "Replaced".to_string())
+        );
 
         repo.delete_catalogue_entry("cryo-1").unwrap();
         assert_eq!(repo.catalogue_entry("cryo-1").unwrap(), None);
@@ -469,29 +675,75 @@ mod contract {
     }
 
     fn trainer(repo: &impl TrainerRepo) {
-        repo.save_trainer_generation("b", &[genome(5.0, 1), genome(3.0, 1)], None).unwrap();
+        repo.save_trainer_generation("b", &[genome(5.0, 1), genome(3.0, 1)], None)
+            .unwrap();
         repo.save_trainer_generation("b", &[genome(4.0, 2)], None).unwrap();
         repo.save_trainer_generation("a", &[genome(1.0, 9)], None).unwrap();
-        assert_eq!(repo.trainer_genomes("b", true, -1).unwrap().iter().map(|g| g.fitness).collect::<Vec<_>>(), vec![4.0]);
-        assert_eq!(repo.trainer_genomes("b", false, -1).unwrap().iter().map(|g| g.fitness).collect::<Vec<_>>(), vec![5.0, 4.0, 3.0]);
+        assert_eq!(
+            repo.trainer_genomes("b", true, -1)
+                .unwrap()
+                .iter()
+                .map(|g| g.fitness)
+                .collect::<Vec<_>>(),
+            vec![4.0]
+        );
+        assert_eq!(
+            repo.trainer_genomes("b", false, -1)
+                .unwrap()
+                .iter()
+                .map(|g| g.fitness)
+                .collect::<Vec<_>>(),
+            vec![5.0, 4.0, 3.0]
+        );
         assert_eq!(repo.trainer_genomes("b", false, 2).unwrap().len(), 2);
         assert_eq!(
             repo.trainer_runs().unwrap(),
-            vec![TrainerRunSummary { run_id: "a".into(), max_generation: 9, max_fitness: 1.0 }, TrainerRunSummary { run_id: "b".into(), max_generation: 2, max_fitness: 5.0 }]
+            vec![
+                TrainerRunSummary {
+                    run_id: "a".into(),
+                    max_generation: 9,
+                    max_fitness: 1.0
+                },
+                TrainerRunSummary {
+                    run_id: "b".into(),
+                    max_generation: 2,
+                    max_fitness: 5.0
+                }
+            ]
         );
 
         // An assignment of the same slot in the same generation replaces the previous one; it is an active parent
         repo.assign_trainer_genome("b", 3, &genome(0.0, 2)).unwrap();
         repo.assign_trainer_genome("b", 3, &genome(0.5, 2)).unwrap();
         repo.add_trainer_genome("b", &genome(2.0, 2)).unwrap();
-        assert_eq!(repo.trainer_genomes("b", true, -1).unwrap().iter().map(|g| g.fitness).collect::<Vec<_>>(), vec![4.0, 2.0, 0.5]);
+        assert_eq!(
+            repo.trainer_genomes("b", true, -1)
+                .unwrap()
+                .iter()
+                .map(|g| g.fitness)
+                .collect::<Vec<_>>(),
+            vec![4.0, 2.0, 0.5]
+        );
 
         // Retention keeps the best N plus every active row
         repo.prune_trainer_genomes("b", 1).unwrap();
-        assert_eq!(repo.trainer_genomes("b", false, -1).unwrap().iter().map(|g| g.fitness).collect::<Vec<_>>(), vec![5.0, 4.0, 2.0, 0.5]);
+        assert_eq!(
+            repo.trainer_genomes("b", false, -1)
+                .unwrap()
+                .iter()
+                .map(|g| g.fitness)
+                .collect::<Vec<_>>(),
+            vec![5.0, 4.0, 2.0, 0.5]
+        );
 
         let ranked = repo.ranked_trainer_genomes().unwrap();
-        assert_eq!(ranked.iter().map(|g| (g.run_id.as_str(), g.fitness)).collect::<Vec<_>>(), vec![("b", 5.0), ("b", 4.0), ("b", 2.0), ("a", 1.0), ("b", 0.5)]);
+        assert_eq!(
+            ranked
+                .iter()
+                .map(|g| (g.run_id.as_str(), g.fitness))
+                .collect::<Vec<_>>(),
+            vec![("b", 5.0), ("b", 4.0), ("b", 2.0), ("a", 1.0), ("b", 0.5)]
+        );
         assert_eq!(ranked[3].generation, 9);
 
         repo.delete_trainer_run("b").unwrap();

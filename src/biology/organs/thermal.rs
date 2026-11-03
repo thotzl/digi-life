@@ -1,6 +1,6 @@
 //! Thermal organ: long-wave (red/IR) distance sense (affinity 0.65..0.80).
 
-use super::{common, spectral, OrganKind, OrganSpec};
+use super::{OrganKind, OrganSpec, common, spectral};
 
 pub const SPEC: OrganSpec = OrganSpec {
     kind: OrganKind::Thermal,

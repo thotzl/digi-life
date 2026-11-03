@@ -84,11 +84,27 @@ pub struct PromoterSpec {
 }
 
 const fn body(motif: &'static str, meaning: &'static str) -> PromoterSpec {
-    PromoterSpec { motif, role: GeneRole::Body, channel: GeneChannel::Body, expression: Expression::FirstOnly, essential: true, wobble: Wobble::FirstExact, meaning }
+    PromoterSpec {
+        motif,
+        role: GeneRole::Body,
+        channel: GeneChannel::Body,
+        expression: Expression::FirstOnly,
+        essential: true,
+        wobble: Wobble::FirstExact,
+        meaning,
+    }
 }
 
 const fn organ(motif: &'static str, meaning: &'static str) -> PromoterSpec {
-    PromoterSpec { motif, role: GeneRole::Organ, channel: GeneChannel::Body, expression: Expression::EveryCopy, essential: false, wobble: Wobble::FirstExact, meaning }
+    PromoterSpec {
+        motif,
+        role: GeneRole::Organ,
+        channel: GeneChannel::Body,
+        expression: Expression::EveryCopy,
+        essential: false,
+        wobble: Wobble::FirstExact,
+        meaning,
+    }
 }
 
 /// Every promoter `parse_genome` expresses, in compiler order: body genes first (the generator's plan order), organ
@@ -153,11 +169,23 @@ pub const LEGACY_MOTIFS: &[&str] = &["SYM"];
 
 /// Every motif the genome tools know: expressed promoters, legacy motifs and the terminator. Protected from
 /// point-level mutation; never formed by accident in structured genomes.
-pub static GENE_MOTIFS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| PROMOTERS.iter().map(|p| p.motif).chain(LEGACY_MOTIFS.iter().copied()).chain([TERMINATOR]).collect());
+pub static GENE_MOTIFS: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    PROMOTERS
+        .iter()
+        .map(|p| p.motif)
+        .chain(LEGACY_MOTIFS.iter().copied())
+        .chain([TERMINATOR])
+        .collect()
+});
 
 /// Motifs matched with full wobble (`Wobble::Full`).
-static FULL_WOBBLE: LazyLock<Vec<&'static str>> = LazyLock::new(|| PROMOTERS.iter().filter(|p| p.wobble == Wobble::Full).map(|p| p.motif).collect());
+static FULL_WOBBLE: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    PROMOTERS
+        .iter()
+        .filter(|p| p.wobble == Wobble::Full)
+        .map(|p| p.motif)
+        .collect()
+});
 
 /// Whether `motif` is matched letter by letter by biochemical class: full-wobble promoters and one-letter motifs.
 pub fn full_wobble(motif: &str) -> bool {
@@ -204,8 +232,18 @@ mod tests {
         let unique: std::collections::BTreeSet<&str> = motifs.iter().copied().collect();
         assert_eq!(unique.len(), motifs.len(), "duplicate promoter");
         for p in PROMOTERS {
-            assert_eq!(p.channel == GeneChannel::Brain, matches!(p.role, GeneRole::Hidden | GeneRole::Synapse | GeneRole::BrainBase), "{}", p.motif);
-            assert_eq!(p.essential, matches!(p.role, GeneRole::Body | GeneRole::BrainBase), "{}", p.motif);
+            assert_eq!(
+                p.channel == GeneChannel::Brain,
+                matches!(p.role, GeneRole::Hidden | GeneRole::Synapse | GeneRole::BrainBase),
+                "{}",
+                p.motif
+            );
+            assert_eq!(
+                p.essential,
+                matches!(p.role, GeneRole::Body | GeneRole::BrainBase),
+                "{}",
+                p.motif
+            );
         }
         for role in [GeneRole::Hox, GeneRole::Hidden, GeneRole::Synapse, GeneRole::BrainBase] {
             assert_eq!(with_role(role).count(), 1, "{:?}", role);
@@ -217,7 +255,10 @@ mod tests {
         for p in ["NEU", "SY", "OUT"] {
             assert_eq!(promoter_channel(p), Some(GeneChannel::Brain), "{}", p);
         }
-        for p in with_role(GeneRole::Body).chain(with_role(GeneRole::Organ)).chain(["HOX"]) {
+        for p in with_role(GeneRole::Body)
+            .chain(with_role(GeneRole::Organ))
+            .chain(["HOX"])
+        {
             assert_eq!(promoter_channel(p), Some(GeneChannel::Body), "{}", p);
         }
         assert_eq!(promoter_channel("SYM"), None);

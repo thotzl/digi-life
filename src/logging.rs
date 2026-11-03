@@ -30,7 +30,12 @@ impl FileSink {
         }
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let size = file.metadata()?.len();
-        Ok(Self { path, file, size, max_bytes })
+        Ok(Self {
+            path,
+            file,
+            size,
+            max_bytes,
+        })
     }
 
     fn write_line(&mut self, line: &str) {
@@ -38,7 +43,12 @@ impl FileSink {
             let backup = self.path.with_extension("log.1");
             let _ = self.file.flush();
             let _ = std::fs::rename(&self.path, &backup);
-            match OpenOptions::new().create(true).write(true).truncate(true).open(&self.path) {
+            match OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&self.path)
+            {
                 Ok(file) => {
                     self.file = file;
                     self.size = 0;
@@ -66,7 +76,13 @@ impl Log for Logger {
         if !self.enabled(record.metadata()) {
             return;
         }
-        let line = format!("{} {:<5} {}: {}\n", crate::shared::time::now_ms(), record.level(), record.target(), record.args());
+        let line = format!(
+            "{} {:<5} {}: {}\n",
+            crate::shared::time::now_ms(),
+            record.level(),
+            record.target(),
+            record.args()
+        );
         if self.console {
             eprint!("{}", line);
         }
@@ -94,7 +110,10 @@ fn install(logger: Logger) {
 
 /// Console (stderr) logging: dev tools and the headless runner.
 pub fn init_console() {
-    install(Logger { console: true, file: None });
+    install(Logger {
+        console: true,
+        file: None,
+    });
 }
 
 /// Logging of the app: release builds write `<log_dir>/broodbattle.log` (rotating); dev builds log to the console.
@@ -105,7 +124,10 @@ pub fn init_app(log_dir: &Path) {
         return;
     }
     match FileSink::open(log_dir.join(LOG_FILE_NAME), MAX_FILE_BYTES) {
-        Ok(sink) => install(Logger { console: false, file: Some(Mutex::new(sink)) }),
+        Ok(sink) => install(Logger {
+            console: false,
+            file: Some(Mutex::new(sink)),
+        }),
         Err(e) => {
             init_console();
             log::error!("cannot open log file in '{}': {}", log_dir.display(), e);
@@ -129,9 +151,15 @@ mod tests {
         let _ = sink.file.flush();
         let current = std::fs::read_to_string(&path).unwrap();
         let backup = std::fs::read_to_string(path.with_extension("log.1")).unwrap();
-        assert!(current.len() <= 100 && backup.len() <= 100, "files stay below the rotation size");
+        assert!(
+            current.len() <= 100 && backup.len() <= 100,
+            "files stay below the rotation size"
+        );
         assert!(current.contains("line 09"), "the newest line is in the current file");
-        assert!(!current.contains("line 00") && !backup.contains("line 00"), "only one backup is kept");
+        assert!(
+            !current.contains("line 00") && !backup.contains("line 00"),
+            "only one backup is kept"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

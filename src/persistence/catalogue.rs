@@ -1,11 +1,11 @@
 //! `creature_catalogue`: tables, migration steps and the SQLite `CatalogueRepo`.
 
-use rusqlite::{params, Connection, OptionalExtension, Result, Row};
+use rusqlite::{Connection, OptionalExtension, Result, Row, params};
 
 use super::dto::*;
 use super::repos::CatalogueRepo;
 use super::schema::TableDef;
-use super::{collect_rows, Db};
+use super::{Db, collect_rows};
 use crate::shared::json_col;
 
 pub(super) const TABLES: &[TableDef] = &[TableDef {
@@ -53,21 +53,33 @@ fn entry(row: &Row) -> Result<CatalogueEntry> {
         source: row.get(3)?,
         fitness: row.get(4)?,
         carnivory: row.get(5)?,
-        methylations: json_col::decode(&row.get::<_, String>(6)?, "creature_catalogue.methylations").unwrap_or_default(),
-        synapse_weights: json_col::decode(&row.get::<_, String>(7)?, "creature_catalogue.synapse_weights").unwrap_or_default(),
+        methylations: json_col::decode(&row.get::<_, String>(6)?, "creature_catalogue.methylations")
+            .unwrap_or_default(),
+        synapse_weights: json_col::decode(&row.get::<_, String>(7)?, "creature_catalogue.synapse_weights")
+            .unwrap_or_default(),
         created_at: row.get(8)?,
     })
 }
 
 impl CatalogueRepo for Db {
     fn list_catalogue(&self) -> RepoResult<Vec<CatalogueEntry>> {
-        let mut stmt = self.conn().prepare(&format!("SELECT {} FROM creature_catalogue ORDER BY created_at DESC", COLUMNS))?;
+        let mut stmt = self.conn().prepare(&format!(
+            "SELECT {} FROM creature_catalogue ORDER BY created_at DESC",
+            COLUMNS
+        ))?;
         let rows = stmt.query_map([], entry)?;
         Ok(collect_rows(rows, "creature_catalogue"))
     }
 
     fn catalogue_entry(&self, id: &str) -> RepoResult<Option<CatalogueEntry>> {
-        Ok(self.conn().query_row(&format!("SELECT {} FROM creature_catalogue WHERE id = ?1", COLUMNS), params![id], entry).optional()?)
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {} FROM creature_catalogue WHERE id = ?1", COLUMNS),
+                params![id],
+                entry,
+            )
+            .optional()?)
     }
 
     fn save_catalogue_entry(&self, e: &NewCatalogueEntry) -> RepoResult<()> {
@@ -89,12 +101,16 @@ impl CatalogueRepo for Db {
     }
 
     fn rename_catalogue_entry(&self, id: &str, name: &str) -> RepoResult<()> {
-        self.conn().execute("UPDATE creature_catalogue SET name = ?1 WHERE id = ?2", params![name, id])?;
+        self.conn().execute(
+            "UPDATE creature_catalogue SET name = ?1 WHERE id = ?2",
+            params![name, id],
+        )?;
         Ok(())
     }
 
     fn delete_catalogue_entry(&self, id: &str) -> RepoResult<()> {
-        self.conn().execute("DELETE FROM creature_catalogue WHERE id = ?1", params![id])?;
+        self.conn()
+            .execute("DELETE FROM creature_catalogue WHERE id = ?1", params![id])?;
         Ok(())
     }
 }
