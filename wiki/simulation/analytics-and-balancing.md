@@ -1,10 +1,10 @@
 ---
-sources: [.agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/diagnostics/report.rs, src/diagnostics/probes.rs, src/trainer/room/registry.rs, tickets/closed/TCK-201-r3-rooms-evaluator-breeder.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-176-automatic-training-curriculum.md]
+sources: [.agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-183-trainer-persistence-and-db-reset.md, tickets/closed/TCK-188-targets-adr-and-analytics-skill.md, tickets/closed/TCK-182-brain-topology-compaction.md, tickets/closed/TCK-184-genome-operators.md, src/bin/trainer_runner.rs, src/diagnostics/report.rs, src/diagnostics/probes.rs, src/trainer/room/registry.rs, src/diagnostics/ocean_report.rs, tickets/open/TCK-158-seedable-rng-headless-runner.md, tickets/closed/TCK-201-r3-rooms-evaluator-breeder.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-178-trainer-energy-budget.md, tickets/closed/TCK-174-fair-evaluation-and-selection.md, tickets/closed/TCK-175-trainer-fitness-rebuild.md, tickets/closed/TCK-181-body-brain-mutation-decoupling.md, tickets/closed/TCK-176-automatic-training-curriculum.md]
 ---
 
 # Analytics and Balancing
 
-Trainer measurements run headless with `trainer_runner` (TCK-173): reproducible, without UI and warp cap, in memory. It replaced the outdated `cli_trainer` (RV-S11). Agent rules for measuring: `.agents/skills/simulation-analytics/SKILL.md`.
+Trainer and Ocean measurements run headless with `trainer_runner` (TCK-173, Ocean since TCK-158): reproducible, without UI and warp cap, in memory. It replaced the outdated `cli_trainer` (RV-S11). Agent rules for measuring: `.agents/skills/simulation-analytics/SKILL.md`.
 
 ## Headless runner
 
@@ -61,6 +61,31 @@ cargo run --release --features runner --bin trainer_runner -- probe heredity|spe
 
 The UI receives a subset of these fields as `TRAINER_GENERATION_COMPLETED.stats` (`TrainerGenerationStats`, same values; [[wiki/architecture/ipc-protocol]]).
 
+## Ocean run (TCK-158)
+
+```
+cargo run --release --features runner --bin trainer_runner -- ocean --seed <text> --ticks <N> [--sample-every <K; default 100>] [--out <file>]
+```
+
+- Runs `diagnostics::ocean_report::run_ocean` on the IO-free `OceanSim` ([[wiki/simulation/ocean]]): a fresh Ocean (`OceanSim::fresh`, 15 mutated wildtype founders, `ocean.foodSporeCount` spores) for `--ticks` ticks, each tick `OceanSim::tick` with the restock. No DB is opened: the restock always uses structured random founders (the app's empty-catalogue branch), so a run differs from the app as soon as the app's catalogue is non-empty.
+- Seed: the Ocean seed is `ocean_seed(<text>, None)` = `seed_from_str("ocean:<text>")`, the seed the app uses for a fresh Ocean with `core.seed` = `<text>`. The procedural world (reefs, vents) always comes from `core.seed` in `config.json`, not from `--seed`.
+- Determinism: the Ocean step is sequential (no rayon), so there is no parallel flag; same seed, ticks, sample period and config → identical report except `perf` (`test_ocean_report_is_reproducible_per_seed_and_samples_every_k_ticks`). Release speed ≈ 4,000–4,600 ticks/s at the target population of 25 (Windows dev machine, 2026-11-03).
+- Unknown flags are rejected (exit code 2 with usage); progress per sample goes to stderr, the report to `--out` or stdout.
+
+`OceanReport`:
+
+| Field | Content |
+| :--- | :--- |
+| `meta` | `seed`, `ocean_seed` (16 hex digits), `world_seed` (`core.seed`), `ticks`, `sample_every`, `founders`, `target_population`, `max_creatures`, `food_spore_count`, `world_width`, `world_height`, `restock` (`structured_random`), `version` |
+| `samples[]` | at tick 0 (the founders), every `sample_every` ticks and at the last tick: state after the tick plus event counts since the previous sample (below) |
+| `summary` | state after the last tick, event counts over the run, `deaths_total`, `min_population` / `max_population` (incl. the founders before tick 1), `mean_population` (after each tick), `species_total` (ledger size) |
+| `perf` | `wall_seconds`, `ticks_per_second` |
+
+- State: `population`, `species_alive` / `species_extinct` (species ledger, species = genome, RV-B10), `mean_energy`, `median_energy`, `mean_age` (living population; `null` when empty), `spores_plant` / `spores_meat` (the field keeps its size), `highest_generation`.
+- Counts: `births` (mitosis splits; the children are not simulated, RV-B01), `mutated_births`, `restocked`, `deaths` `{starved, aged, hunted}` (`OceanEvent::Died.cause`: no energy left / lifespan reached / bite damage this tick), `bites`, `spores_eaten`, `species_discovered`, `extinctions`.
+- First numbers (12,000 ticks, seeds `ci-ocean-1..3`; 40,000 ticks, seeds `ci-ocean`, `ocean-b`): the population sits at the target 25 after every tick (restock), ≈ 4.1–4.4 deaths per 1,000 ticks, 84–92 % of them starved, 6–16 % aged, 0–3 hunted per run, 0–5 mitosis births per 40,000 ticks, ≈ 1 bite per 1,000 ticks with bursts. The population is held by restocking (RV-B01), mitosis is rare (RV-S07 food scarcity hypothesis, unmeasured beyond these counts).
+- CI reference: `--seed ci-ocean-2 --ticks 12000 --sample-every 500` against `tests/reference/ocean-ci.json` (seed chosen because it has mitosis, bites and all three death causes within 12,000 ticks; [[wiki/quality/ci-and-tooling]]).
+
 ## Probes (TCK-172)
 
 `src/diagnostics/probes.rs`, measurement only; the trainer-room probes (`equipment`, `wall`, `hebbian`, `metabolism`) run on the trainer's own code (registry rooms, `TrainerSandbox`, `SoloTrials`). Each probe is deterministic for its seed (own RNG sub-stream per probe, so `all` equals single runs) and writes JSON (default `.agents/artifacts/probes/<name>.json`). `--db` loads up to `--hof-limit` distinct hall-of-fame genomes read-only from a DB; without it the HoF sets are skipped and the Hebbian probe uses the best elites of a seeded 5-generation trainer run instead.
@@ -81,7 +106,7 @@ Genome set: `structured` = `generate_structured_genome` with config `genomeCompo
 ## Comparing runs
 
 - Use fixed seed sets and identical flags for before/after; never compare runs of different seeds one by one.
-- Exact equality (refactorings, "behaviour-preserving" changes): compare the reports minus `perf` and `meta.version`, e.g. with `node tests/reference/compare-trainer-report.mjs <a.json> <b.json>`; the CI reference run does exactly this ([[wiki/quality/ci-and-tooling]]).
+- Exact equality (refactorings, "behaviour-preserving" changes): compare the reports minus `perf` and `meta.version`, e.g. with `node tests/reference/compare-trainer-report.mjs <a.json> <b.json>` (generic since TCK-158: trainer and Ocean reports); the CI reference runs do exactly this ([[wiki/quality/ci-and-tooling]]).
 - Model changes: aggregate per configuration over several seeds (the P2 baseline uses 5 seeds × 30 generations at population 16), using the mean of the last 5 generations and generation 1 for the learning slope. Single seeds vary strongly (P2, small room: best generation 0.125 vs. mean 0.040). The 5-seed mean of the last-5 success rate has a standard error of ≈ 0.05 (small room) and ≈ 0.01–0.02 (large room) at population 16; smaller differences need more seeds (P5 added b6–b10, [[wiki/simulation/trainer]]).
 - `perf` is machine- and load-dependent: compare only on the same machine, release build, same `--parallel`.
 - **Evaluation protocol from P8 on** (TCK-174 post-fix, TCK-176): read capability on the final population on unseen layouts, not on training success: `--eval-final standard,exploration --eval-trials 10`, compare `final_eval[].success_rate` (population) and `elite_success_rate` per room, mean over the seed set (b1–b10 for decisions). P8 runs: pop 16, 8 trials, `--layout-policy rotate`, 60 generations. Training success overstated capability under `hold` (P7: 0.438 training vs. 0.149 unseen in the small room); under `rotate` the two are close. The local helper scripts `.agents/artifacts/baseline/curr.sh` (one configuration over a seed list, with these flags) and `evalsum.py` (mean training success of the last 5 generations and mean `final_eval` success per room and configuration) are not in the repo.
@@ -96,7 +121,7 @@ Genome set: `structured` = `generate_structured_genome` with config `genomeCompo
 - **HoF-based probes depend on the local DB** (`--db`): their numbers are reproducible only with the same DB content.
 - **Config keys:** every key has a test-enforced read site, without exemptions (TCK-149, TCK-145, [[wiki/architecture/configuration]]), so every tuning has an effect.
 - **Energy metrics depend on the room length:** the 300-tick small room hardly drains the budget (`starved_share` 0 after P6), the 1800-tick large room does (≈ 0.18); compare energy metrics only within one room.
-- **Ocean:** seeded and IO-free since TCK-156 (`OceanSim`), but no headless runner yet (RV-T03, TCK-158); no Ocean offspring (RV-B01), so Ocean lineage analysis is meaningless; species = genome string (RV-B10), so species counts measure mutation volume, not cladogenesis.
+- **Ocean:** measured with `trainer_runner ocean` since TCK-158 (RV-T03); the restock never reads the catalogue, so app Oceans with a filled catalogue differ. No Ocean offspring (RV-B01), so Ocean lineage analysis is meaningless and `births` never raise the population; species = genome string (RV-B10), so species counts measure mutation and restock volume, not cladogenesis. The Ocean still uses std `sin`/`cos` for the clock input and the mitosis recoil (fmath switch in TCK-202), and the world generator uses them too, so its bit-identity across platforms rests on the platform libm agreeing for these inputs (the CI reference is generated on Windows and checked on Ubuntu).
 
 ## DB data (Ocean, persisted trainer runs)
 
@@ -115,8 +140,8 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 ## Key Takeaways
 
-- `trainer_runner run` gives a reproducible JSON report per generation; `probe` measures the mechanics; both are deterministic per seed. Since P8 it also runs the curriculum, room schedules and a final evaluation on unseen layouts.
+- `trainer_runner run` gives a reproducible JSON report per generation; `probe` measures the mechanics; `ocean` gives a reproducible Ocean time series (TCK-158); all are deterministic per seed. Since P8 it also runs the curriculum, room schedules and a final evaluation on unseen layouts.
 - Compare reports minus `perf`, over fixed seed sets, against the TCK-171 targets; read targets on `final_eval` (unseen layouts), not on training success.
-- The Ocean has no reproducible measurement path yet; trainer data is the evolution signal.
+- The Ocean is measured headless with `trainer_runner ocean`; trainer data stays the evolution signal while Ocean children are not simulated (RV-B01).
 
-Sources: `.agents/skills/simulation-analytics/SKILL.md`, TCK-149, TCK-150, TCK-151, TCK-172, TCK-173, TCK-174, TCK-175, TCK-176, TCK-178, TCK-181, TCK-182, TCK-183, TCK-184, TCK-186, TCK-188, TCK-201, `src/bin/trainer_runner.rs`, `src/diagnostics/report.rs`, `src/diagnostics/probes.rs`.
+Sources: `.agents/skills/simulation-analytics/SKILL.md`, TCK-149, TCK-150, TCK-151, TCK-172, TCK-173, TCK-174, TCK-175, TCK-176, TCK-178, TCK-181, TCK-182, TCK-183, TCK-184, TCK-158, TCK-186, TCK-188, TCK-201, `src/bin/trainer_runner.rs`, `src/diagnostics/report.rs`, `src/diagnostics/ocean_report.rs`, `src/diagnostics/probes.rs`.

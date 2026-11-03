@@ -9,7 +9,7 @@ use crate::server::ocean_ipc::{OceanAction, OceanInitState, OceanRules, OceanTel
 use crate::shared::dto::{CreatureAgent, TelemetryCreature};
 use crate::shared::time;
 use crate::sim::ocean::spore_field::SPORE_AMOUNT;
-use crate::sim::ocean::{ocean_seed, CatalogueFounder, Founder, LedgerEntry, OceanEvent, OceanSim, OceanStep, SpawnRejected, SpeciesChange, RESET_FOUNDERS};
+use crate::sim::ocean::{ocean_seed, CatalogueFounder, DeathCause, Founder, LedgerEntry, OceanEvent, OceanSim, OceanStep, SpawnRejected, SpeciesChange, RESET_FOUNDERS};
 
 use super::mode::{clamp_warp, Interval, Mode, ModeCtx};
 use super::store::{read_snapshot, EngineStore, SnapshotWriter};
@@ -292,8 +292,8 @@ fn ui_event(event: OceanEvent) -> UiEvent {
         OceanEvent::Bite { attacker, attacker_name, victim, damage, gain, .. } => {
             UiEvent::log(format!("⚡ [BITE ATTACK] {} #{} bites #{}! (-{:.0}nJ damage, +{:.0}nJ gain)", attacker_name, attacker, victim, damage, gain), LogKind::Mutation)
         }
-        OceanEvent::Died { id, latin_name, hunted } => {
-            let (message, kind) = death_log(id, &latin_name, hunted);
+        OceanEvent::Died { id, latin_name, cause } => {
+            let (message, kind) = death_log(id, &latin_name, cause == DeathCause::Hunted);
             UiEvent::log(message, kind)
         }
         OceanEvent::Mitosis { parent, child_name, generation, mutated: true } => {

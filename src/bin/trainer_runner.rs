@@ -1,11 +1,13 @@
-//! Headless trainer runner (TCK-173): runs `TrainerSim` without UI and warp cap and writes a JSON report.
+//! Headless runner (TCK-173): runs `TrainerSim` without UI and warp cap and writes a JSON report.
 //! In memory by default; `--persist --db <path>` writes the elites and the run state (TCK-191) of every generation to
 //! that DB.
 //! `probe` runs the mechanics diagnosis probes of TCK-172 (`diagnostics::probes`); its `--db` is opened read-only.
+//! `ocean` runs the IO-free `OceanSim` from a fresh start and writes a time-series report (TCK-158); it opens no DB.
 
 use std::collections::HashMap;
 use std::process::ExitCode;
 
+use src_tauri::diagnostics::ocean_report::{run_ocean, OceanRunConfig, DEFAULT_SAMPLE_EVERY};
 use src_tauri::diagnostics::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
 use src_tauri::diagnostics::report::{run_trainer, RunConfig, ScheduleSpan};
 use src_tauri::trainer::mode::TrainingMode;
@@ -34,7 +36,9 @@ const USAGE: &str = "Usage:
   trainer_runner probe heredity|speed|equipment|steering|wall|hebbian|topology|metabolism|all --seed <str>
                      [--out <file; directory for 'all'>] [--db <path: HoF genomes, opened read-only>]
                      [--hof-limit 64] [--samples <N random genomes>]
-                     (default out: .agents/artifacts/probes/<name>.json)";
+                     (default out: .agents/artifacts/probes/<name>.json)
+  trainer_runner ocean --seed <str> --ticks <N> [--sample-every <K; default 100>] [--out <file>]
+                     (fresh Ocean, restock with structured random founders, no DB)";
 
 /// Default output directory of the probes.
 const PROBE_DIR: &str = ".agents/artifacts/probes";
@@ -49,6 +53,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("run") => parse_flags(&args[1..]).and_then(|flags| run(&flags, app)),
+        Some("ocean") => parse_flags(&args[1..]).and_then(|flags| ocean(&flags, app)),
         Some("probe") => match args.get(1) {
             Some(name) if !name.starts_with("--") => parse_flags(&args[2..]).and_then(|flags| probe(name, &flags, app)),
             _ => Err("probe needs a name".to_string()),
@@ -288,6 +293,47 @@ fn write_file(path: &str, json: String) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {}", dir.display(), e))?;
     }
     std::fs::write(path, json + "\n").map_err(|e| format!("cannot write {}: {}", path, e))
+}
+
+fn ocean(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
+    const KNOWN: &[&str] = &["seed", "ticks", "sample-every", "out"];
+    if let Some(unknown) = flags.keys().find(|k| !KNOWN.contains(&k.as_str())) {
+        return Err(format!("unknown flag --{}", unknown));
+    }
+    let config = OceanRunConfig {
+        seed: required(flags, "seed")?.to_string(),
+        ticks: parse(flags, "ticks", None)?,
+        sample_every: parse(flags, "sample-every", Some(DEFAULT_SAMPLE_EVERY))?,
+    };
+    if config.sample_every == 0 {
+        return Err("--sample-every must be at least 1".to_string());
+    }
+    log::info!("ocean seed '{}', {} ticks, sample every {}", config.seed, config.ticks, config.sample_every);
+    let report = run_ocean(&config, app, |sample| {
+        log::info!(
+            "tick {}: population {}, births {}, deaths {}, species alive {}, mean energy {}",
+            sample.tick,
+            sample.state.population,
+            sample.counts.births,
+            sample.counts.deaths.total(),
+            sample.state.species_alive,
+            sample.state.mean_energy.map_or("-".to_string(), |e| format!("{:.2}", e))
+        );
+    });
+    let s = &report.summary;
+    log::info!(
+        "done in {:.2} s ({:.0} ticks/s): population {} (min {}, max {}), births {}, deaths {} (starved {}, aged {}, hunted {}), restocked {}, species {} alive / {} extinct",
+        report.perf.wall_seconds, report.perf.ticks_per_second, s.state.population, s.min_population, s.max_population, s.counts.births, s.deaths_total,
+        s.counts.deaths.starved, s.counts.deaths.aged, s.counts.deaths.hunted, s.counts.restocked, s.state.species_alive, s.state.species_extinct
+    );
+    let json = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
+    match flags.get("out") {
+        Some(path) => write_file(path, json),
+        None => {
+            println!("{}", json);
+            Ok(())
+        }
+    }
 }
 
 fn probe(name: &str, flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {

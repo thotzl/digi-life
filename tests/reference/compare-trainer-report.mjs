@@ -1,4 +1,4 @@
-// Compares a headless trainer report against the committed reference (TCK-186).
+// Compares a headless runner report (trainer: TCK-186, Ocean: TCK-158) against the committed reference.
 // Ignores `perf` (timing) and `meta.version` (bumped every release); everything else must match exactly.
 // Usage: node tests/reference/compare-trainer-report.mjs <reference.json> <actual.json>
 import { readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ if (!referencePath || !actualPath) {
 const normalize = (path) => {
   const report = JSON.parse(readFileSync(path, "utf8"));
   delete report.perf;
-  delete report.meta.version;
+  if (report.meta) delete report.meta.version;
   return report;
 };
 
@@ -32,9 +32,9 @@ const walk = (a, b, at) => {
 walk(reference, actual, "report");
 
 if (diffs.length > 0) {
-  console.error(`Trainer report differs from the reference (${diffs.length} values). First differences:`);
+  console.error(`Report differs from the reference ${referencePath} (${diffs.length} values). First differences:`);
   diffs.slice(0, 20).forEach((d) => console.error(`  ${d}`));
-  console.error(`An intended model change updates ${referencePath} in the same commit (see TCK-186).`);
+  console.error(`An intended model change updates ${referencePath} in the same commit (see TCK-186, TCK-158).`);
   process.exit(1);
 }
-console.log("Trainer report matches the reference.");
+console.log(`Report matches the reference ${referencePath}.`);

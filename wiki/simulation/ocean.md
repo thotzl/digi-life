@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-156-engine-decomposition.md, src/sim/ocean/mod.rs, src/server/engine/ocean_mode.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/closed/TCK-156-engine-decomposition.md, src/sim/ocean/mod.rs, src/server/engine/ocean_mode.rs, src/diagnostics/ocean_report.rs, tickets/open/TCK-158-seedable-rng-headless-runner.md, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md]
 ---
 
 # Ocean
@@ -29,6 +29,12 @@ The open-world mode: a closed basin with a free-living population.
   respawn and corpse decomposition are applied after each creature's step rather than inside its eat loop; the
   creature systems and their arithmetic are those of `engine.rs` before). Nutrient centres survive a restart (before,
   a restart drew new centres for the restored spores). The stale "15 unique wildtype cells" line after a reset is gone.
+- `OceanEvent::Died` carries a `DeathCause` (TCK-158): `Starved` (0 energy in its step, or ≤ `POST_DAMAGE_MIN_ENERGY`
+  after a tick without bite damage), `Aged` (lifespan reached with energy left), `Hunted` (bite damage this tick). The
+  engine logs "hunted down" for `Hunted` only, as before.
+- Headless runs: `trainer_runner ocean --seed <text> --ticks <N>` runs a fresh `OceanSim` without UI, warp cap or DB
+  and writes a time series (population, births, deaths by cause, species, energy, spores); CI checks a fixed run
+  against `tests/reference/ocean-ci.json` (TCK-158, [[wiki/simulation/analytics-and-balancing]]).
 
 ## World
 
@@ -52,7 +58,8 @@ The open-world mode: a closed basin with a free-living population.
 - Income: plant and meat spores (`metabolism::food_energy`, `foodSporeEnergy` 15 · diet efficiency), photosynthesis in the light zone (`photosynthesisEnergyGain`), and bites.
 - **Predation** (TCK-145): one bite per attacker and tick on the nearest eligible victim, per-pair cooldown `biteCooldownTicks` (60); the attacker gains `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`, capped by the 35 damage and by what the victim still has after earlier bites in the same tick, and the bite counts as eating for mitosis (`has_eaten`). Predators can now live from biting; before P6 a bite gave no energy and the same victim could be bitten every tick (RV-B07 resolved). The `[BITE ATTACK]` log event shows damage and gain.
 - Death log: "hunted down by predators" only for an agent that took bite damage in that tick, otherwise starvation/senescence (`death_log`); before P6 every death in the damage pass was reported as predation (P5: 101 "hunted" deaths with 0 bites in 90 s).
-- **Measured economy check** (UI, 90 s at maximum warp, single run, before TCK-156 with `thread_rng`): total deaths P5 ≈ 149 vs. P6 ≈ 147; P6: 13 bites, 5 predation deaths, 142 starvation/senescence deaths, 157 restocks; the population stays at the target 25. The death turnover is unchanged against P5 and is held by restocking (RV-B01); predation is rare. No headless Ocean runner, so there are no seeded multi-run numbers.
+- **Measured economy check** (UI, 90 s at maximum warp, single run, before TCK-156 with `thread_rng`): total deaths P5 ≈ 149 vs. P6 ≈ 147; P6: 13 bites, 5 predation deaths, 142 starvation/senescence deaths, 157 restocks; the population stays at the target 25. The death turnover is unchanged against P5 and is held by restocking (RV-B01); predation is rare.
+- **Headless numbers** (TCK-158, `trainer_runner ocean`, empty catalogue, 5 seeds, 12,000–40,000 ticks): the population is back at the target 25 after every tick; 4.1–4.4 deaths per 1,000 ticks (84–92 % starved, 6–16 % aged, 0–3 hunted per run), ≈ 1 bite per 1,000 ticks with bursts, 0–5 mitosis splits per 40,000 ticks. The UI check above is not comparable per tick (its tick count was not recorded).
 
 ## Auto-save
 
@@ -71,6 +78,7 @@ The open-world mode: a closed basin with a free-living population.
 - Rust-generated world, rendered by the client; biomes are cosmetic.
 - Population is held by restocking only (RV-B01).
 - Locomotion is fixed for every genome (1–5 px/tick, turning at rest; RV-S02, TCK-150); sparse food remains unmeasured (RV-S07).
+- Measured headless since TCK-158 (`trainer_runner ocean`, CI reference `tests/reference/ocean-ci.json`): turnover ≈ 4 deaths per 1,000 ticks, mostly starvation, mitosis rare.
 - Energy uses the shared activity-based cost (TCK-151); bites transfer energy with a cooldown (TCK-145); a 90 s UI check shows P5-level death turnover (≈ 147 deaths, 5 by predation) at a stable population of 25.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-156, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-156, TCK-158, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.

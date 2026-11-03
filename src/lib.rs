@@ -4,10 +4,11 @@ pub mod logging;
 pub mod server;
 pub mod sim;
 pub mod trainer;
-/// Diagnosis probes and the headless trainer report (TCK-201): compiled for tests and the `runner` feature only, not
-/// into the game library.
+/// Diagnosis probes, the headless trainer report (TCK-201) and the headless Ocean report (TCK-158): compiled for tests
+/// and the `runner` feature only, not into the game library.
 #[cfg(any(test, feature = "runner"))]
 pub mod diagnostics {
+    pub mod ocean_report;
     pub mod probes;
     pub mod report;
 }

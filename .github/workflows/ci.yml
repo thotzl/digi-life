@@ -64,6 +64,12 @@ jobs:
           cargo run --release --features runner --bin trainer_runner -- run --seed ci-rehearsal --generations 4 --scenario curriculum --population 16 --rehearsal 0.25 --curriculum-upper 0.05 --curriculum-lower 0.02 --parallel true --out target/trainer-ci-rehearsal.json
           node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci-rehearsal.json target/trainer-ci-rehearsal.json
 
+      # Fixed-seed headless Ocean run (fresh start, no DB; the seed has mitosis, bites and all death causes) against the committed reference (TCK-158)
+      - name: ocean reference run
+        run: |
+          cargo run --release --features runner --bin trainer_runner -- ocean --seed ci-ocean-2 --ticks 12000 --sample-every 500 --out target/ocean-ci.json
+          node tests/reference/compare-trainer-report.mjs tests/reference/ocean-ci.json target/ocean-ci.json
+
       # Wikilinks, `sources:` and doc paths in the wiki, skills and open/ongoing tickets must resolve (TCK-197)
       - name: doc link check
         run: node scripts/check-links.mjs

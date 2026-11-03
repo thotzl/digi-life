@@ -67,14 +67,25 @@ pub enum OceanEvent {
     Ate { x: f32, y: f32 },
     /// `attacker` bit `victim` at the victim's position
     Bite { attacker: u32, attacker_name: String, victim: u32, damage: f32, gain: f32, x: f32, y: f32 },
-    /// A creature died (`hunted`: it took bite damage this tick) and decomposed
-    Died { id: u32, latin_name: String, hunted: bool },
+    /// A creature died and decomposed
+    Died { id: u32, latin_name: String, cause: DeathCause },
     /// `parent` split; the child's species is new when `mutated`
     Mitosis { parent: u32, child_name: String, generation: u32, mutated: bool },
     /// The last member of a species died
     Extinct { latin_name: String },
     /// A founder refilled the population (`catalogue_name`: catalogue clone, else structured random)
     Restocked { id: u32, catalogue_name: Option<String> },
+}
+
+/// Why a creature died (TCK-158).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeathCause {
+    /// No energy left: 0 in its step, or at most `POST_DAMAGE_MIN_ENERGY` after a tick without bite damage
+    Starved,
+    /// Reached its lifespan with energy left
+    Aged,
+    /// Took bite damage this tick and kept at most `POST_DAMAGE_MIN_ENERGY`
+    Hunted,
 }
 
 /// Result of one tick or action.
@@ -302,7 +313,8 @@ impl OceanSim {
             let agent = &mut world.creatures[idx];
             if step.died {
                 self.alive[idx] = false;
-                out.events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), hunted: false });
+                let cause = if agent.energy <= 0.0 { DeathCause::Starved } else { DeathCause::Aged };
+                out.events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), cause });
                 continue;
             }
             agent.age += 1;
@@ -353,7 +365,8 @@ impl OceanSim {
             }
             let spore_count = self.settings.death.spores(agent);
             decompose(spores, agent.px, agent.py, spore_count, &mut food_rng);
-            events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), hunted: bite_damage.is_some_and(|d| d > 0.0) });
+            let cause = if bite_damage.is_some_and(|d| d > 0.0) { DeathCause::Hunted } else { DeathCause::Starved };
+            events.push(OceanEvent::Died { id: agent.id, latin_name: agent.phenotype.latin_name.clone(), cause });
             false
         });
 
@@ -423,6 +436,10 @@ impl OceanSim {
 
     pub fn spores_mut(&mut self) -> &mut SporeField {
         &mut self.spores
+    }
+
+    pub fn ledger(&self) -> &SpeciesLedger {
+        &self.ledger
     }
 
     pub fn ledger_mut(&mut self) -> &mut SpeciesLedger {

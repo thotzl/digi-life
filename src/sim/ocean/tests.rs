@@ -48,7 +48,7 @@ fn test_starved_creature_dies_and_decomposes_into_meat_near_its_corpse() {
     sim.spores.spores = (0..20).map(|i| spore(i, 1, 15000.0, 1000.0 + i as f32)).collect();
     let id = sim.creatures[idx].id;
     let step = sim.step();
-    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id: dead, hunted: false, .. } if *dead == id)), "{:?}", step.events);
+    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id: dead, cause: DeathCause::Starved, .. } if *dead == id)), "{:?}", step.events);
     assert!(sim.creatures.is_empty());
     let meat: Vec<&FoodSpore> = sim.spores.spores.iter().filter(|s| s.type_id == 2).collect();
     assert!(!meat.is_empty() && meat.iter().all(|s| (s.x - 3000.0).abs() <= 16.0 && (s.y - 9000.0).abs() <= 16.0));
@@ -70,7 +70,7 @@ fn test_bite_damage_kills_a_weak_victim_as_hunted() {
     let victim_id = sim.creatures[victim].id;
     let step = sim.step();
     assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Bite { victim, .. } if *victim == victim_id)), "{:?}", step.events);
-    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id, hunted: true, .. } if *id == victim_id)));
+    assert!(step.events.iter().any(|e| matches!(e, OceanEvent::Died { id, cause: DeathCause::Hunted, .. } if *id == victim_id)));
     assert_eq!(sim.creatures.len(), 1);
     assert!(sim.creatures[0].has_eaten, "a bite counts as eating");
 }
@@ -148,4 +148,58 @@ fn test_snapshot_of_an_earlier_version_restores_with_new_centres() {
     assert_eq!((sim.seed(), sim.highest_generation(), sim.next_creature_id, sim.spores.next_id), (42, 3, 9, 1300));
     assert_eq!(sim.spores.nutrient_centers.len(), spore_field::NUTRIENT_CENTER_COUNT);
     assert_eq!(sim.snapshot().nutrient_centers, sim.spores.nutrient_centers, "centres are persisted now");
+}
+
+/// Makes creature `idx` ready to split this tick: mature (after the step's age + 1), fed and with a full stomach.
+fn ready_to_split(sim: &mut OceanSim, idx: usize) {
+    let rule = MitosisRule::from_ocean(&config().ocean);
+    let agent = &mut sim.creatures[idx];
+    agent.age = agent.phenotype.mature_age.max(rule.mature_age_floor);
+    agent.has_eaten = true;
+    agent.energy = agent.phenotype.stomach_capacity;
+}
+
+#[test]
+fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_it() {
+    let rule = MitosisRule::from_ocean(&config().ocean);
+    let mut sim = OceanSim::empty(config(), 9);
+    let idx = founder(&mut sim, 7000.0, 5000.0);
+    ready_to_split(&mut sim, idx);
+    let parent = sim.creatures[idx].clone();
+    assert!(parent.phenotype.repro_threshold.max(rule.stomach_threshold_floor) < 0.99, "the step's drain must not drop it below the threshold");
+    let next_id = sim.next_creature_id;
+
+    let step = sim.step();
+    let after = &sim.creatures[idx];
+    let mitosis = step.events.iter().find_map(|e| match e {
+        OceanEvent::Mitosis { parent: p, child_name, generation, mutated } => Some((*p, child_name.clone(), *generation, *mutated)),
+        _ => None,
+    });
+    let (parent_id, child_name, generation, mutated) = mitosis.unwrap_or_else(|| panic!("no mitosis: {:?}", step.events));
+    assert_eq!((parent_id, generation), (parent.id, parent.generation + 1));
+    assert!(!after.has_eaten, "the split resets the fed flag");
+    assert!(after.energy < parent.energy * rule.split_loss_ratio + 1e-3, "the split costs energy");
+
+    // The child is reported for the UI with the next id at the parent's place, but not simulated (RV-B01)
+    let [child] = &step.born[..] else { panic!("one child: {:?}", step.born) };
+    assert_eq!((child.id, child.generation, &child.phenotype.latin_name), (next_id, generation, &child_name));
+    assert_eq!((child.px, child.py, child.energy), (after.px, after.py, after.energy));
+    assert_eq!(sim.creatures.len(), 1, "children are not simulated");
+    assert_eq!((sim.next_creature_id, sim.highest_generation()), (next_id + 1, generation));
+    // A new species is recorded only for a mutated child, under the parent's name
+    for change in &step.species {
+        if let SpeciesChange::Discovered { parent_name, .. } = change {
+            assert!(mutated && parent_name.as_deref() == Some(parent.phenotype.latin_name.as_str()), "{:?}", change);
+        }
+    }
+
+    // At `ocean.maxCreatures` a ready creature does not split
+    let mut sim = OceanSim::empty(config(), 9);
+    for i in 0..config().ocean.max_creatures {
+        founder(&mut sim, 500.0 + 300.0 * i as f32, 9000.0);
+    }
+    ready_to_split(&mut sim, 0);
+    let step = sim.step();
+    assert!(!step.events.iter().any(|e| matches!(e, OceanEvent::Mitosis { .. })) && step.born.is_empty(), "population cap");
+    assert!(sim.creatures[0].has_eaten, "no split happened");
 }

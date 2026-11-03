@@ -1,5 +1,5 @@
 ---
-sources: [README.md, .agents/skills/project-baseline/SKILL.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-189-dependency-security-alerts.md]
+sources: [README.md, .agents/skills/project-baseline/SKILL.md, tickets/closed/TCK-134-rust-toolchain-baseline-and-ci.md, tickets/closed/TCK-114-tauri-v2-github-actions-workflow-desktop-releases.md, tickets/closed/FIX-126-rebuild-loop.md, tickets/closed/FIX-126-B-taurignore.md, .github/workflows/sync-tickets.yml, .github/workflows/ci.yml, package.json, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-189-dependency-security-alerts.md, tickets/open/TCK-158-seedable-rng-headless-runner.md]
 ---
 
 # CI, Toolchain and Releases
@@ -17,6 +17,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, tickets/closed/TC
 | `npm run test:all` | Vitest + cargo test + `cargo check --features runner --bin trainer_runner` |
 | `npm run sim:balance` | headless trainer run (release): `--seed baseline --generations 20 --scenario standard --population 16 --parallel true`, report to `.agents/artifacts/runner/balance.json` |
 | `cargo run --release --features runner --bin trainer_runner -- run ...` | headless trainer run with JSON report ([[wiki/simulation/analytics-and-balancing]]) |
+| `cargo run --release --features runner --bin trainer_runner -- ocean --seed <s> --ticks <N>` | headless Ocean run with a time-series JSON report (TCK-158, [[wiki/simulation/analytics-and-balancing]]) |
 | `cargo run --release --features runner --bin trainer_runner -- probe <name>\|all --seed <s>` | mechanics probes (TCK-172), JSON to `.agents/artifacts/probes/` |
 
 ## Dev server
@@ -49,7 +50,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, tickets/closed/TC
 
 ## Workflows (`.github/workflows/`)
 
-- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134), then step "trainer reference run": `cargo run --release --features runner --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json` and `node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json` (TCK-186). The comparator ignores `perf` and `meta.version`, prints the first 20 differing values and fails on any difference; an intended model change updates `tests/reference/trainer-ci.json` in the same commit. Step "trainer curriculum reference run" does the same for the curriculum room with final evaluation against `tests/reference/trainer-ci-curriculum.json` (flags in [[wiki/quality/testing]]), step "doc link check" runs `node scripts/check-links.mjs`: wikilinks and frontmatter `sources:` in `wiki/`, skills and `tickets/open|ongoing`, plus backtick doc paths (`wiki/`, `tickets/`, `.agents/` `.md`) in the wiki and skills must resolve; optional `.agents/state/` notes are exempt (TCK-197).
+- `ci.yml` — push to master / PR / manual: `npm ci`, `npm run build`, `cargo test`, `git diff --exit-code -- bindings/` (TCK-134), then step "trainer reference run": `cargo run --release --features runner --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json` and `node tests/reference/compare-trainer-report.mjs tests/reference/trainer-ci.json target/trainer-ci.json` (TCK-186). The comparator ignores `perf` and `meta.version`, prints the first 20 differing values and fails on any difference; an intended model change updates `tests/reference/trainer-ci.json` in the same commit. Step "trainer curriculum reference run" does the same for the curriculum room with final evaluation against `tests/reference/trainer-ci-curriculum.json` (flags in [[wiki/quality/testing]]); step "ocean reference run" runs `trainer_runner -- ocean --seed ci-ocean-2 --ticks 12000 --sample-every 500 --out target/ocean-ci.json` and compares it with the same comparator against `tests/reference/ocean-ci.json` (TCK-158; ≈ 3 s in release, 14.6 KB, 25 samples); step "doc link check" runs `node scripts/check-links.mjs`: wikilinks and frontmatter `sources:` in `wiki/`, skills and `tickets/open|ongoing`, plus backtick doc paths (`wiki/`, `tickets/`, `.agents/` `.md`) in the wiki and skills must resolve; optional `.agents/state/` notes are exempt (TCK-197).
 - `release.yml` — only `v*` tags and manual dispatch; matrix macOS / Windows / Ubuntu 22.04 via `tauri-action`; draft release (TCK-114, TCK-134).
 - `sync-tickets.yml` — on push to master/main: `.github/scripts/sync_github.cjs` mirrors `tickets/` to GitHub issues (`[TCK-…] title`, labels `priority:*`, `status:*`; closed folder = closed issue). Needs valid ticket frontmatter.
 - `.gitattributes` pins `bindings/**` and `gen/**` to LF so the drift check is stable on Windows.
@@ -77,8 +78,8 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, tickets/closed/TC
 
 ## Key Takeaways
 
-- CI verifies build, tests, binding drift and the trainer reference report; releases only on tags.
+- CI verifies build, tests, binding drift, the three trainer reference reports and the Ocean reference report; releases only on tags.
 - Tickets are mirrored to GitHub issues on every push to master.
 - Every closed ticket = patch bump + changelog entry.
 
-Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, TCK-114, TCK-134, TCK-173, TCK-186, TCK-187, TCK-189, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.
+Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, TCK-114, TCK-134, TCK-158, TCK-173, TCK-186, TCK-187, TCK-189, FIX-126, FIX-126-B, `.github/workflows/`, `package.json`.
