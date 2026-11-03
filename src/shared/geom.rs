@@ -28,10 +28,10 @@ pub fn wrap_angle(mut a: f32) -> f32 {
     a
 }
 
-/// Offset `(r · cos θ, r · sin θ)` of a point at distance `radius` and angle `angle`.
+/// Offset `(r · cos θ, r · sin θ)` of a point at distance `radius` and angle `angle` (`fmath`, platform-independent).
 #[inline]
 pub fn polar_offset(radius: f32, angle: f32) -> (f32, f32) {
-    (radius * angle.cos(), radius * angle.sin())
+    (radius * super::fmath::cos(angle), radius * super::fmath::sin(angle))
 }
 
 #[cfg(test)]

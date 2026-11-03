@@ -10,8 +10,6 @@ use crate::sim::systems::eat::patchy_spore_position;
 pub const NUTRIENT_CENTER_COUNT: usize = 12;
 /// Distance of a nutrient centre from the world edge (px).
 pub const NUTRIENT_CENTER_MARGIN: f32 = 1000.0;
-/// Energy content of a spore (`FoodSpore::amount`, `INIT_STATE.rules.sporeEnergy`).
-pub const SPORE_AMOUNT: f32 = 15.0;
 /// Drift speed bound of a new spore (px/tick, each axis).
 pub const SPORE_DRIFT: f32 = 0.15;
 /// First spore id of a new Ocean.
@@ -50,8 +48,9 @@ impl SporeField {
         }
     }
 
-    /// Adds `count` plant spores at patchy positions around the centres, each with a slow random drift.
-    pub fn spawn<R: Rng + ?Sized>(&mut self, count: usize, rng: &mut R, width: f32, height: f32) {
+    /// Adds `count` plant spores of energy content `amount` (config `metabolism.foodSporeEnergy`) at patchy positions
+    /// around the centres, each with a slow random drift.
+    pub fn spawn<R: Rng + ?Sized>(&mut self, count: usize, amount: f32, rng: &mut R, width: f32, height: f32) {
         for _ in 0..count {
             let (x, y) = patchy_spore_position(rng, &self.nutrient_centers, width, height);
             let vx = rng.gen_range(-SPORE_DRIFT..SPORE_DRIFT);
@@ -61,7 +60,7 @@ impl SporeField {
                 type_id: PLANT,
                 x,
                 y,
-                amount: SPORE_AMOUNT,
+                amount,
                 vx,
                 vy,
             });
@@ -70,10 +69,10 @@ impl SporeField {
     }
 
     /// Fresh field: spores cleared, new centres, `count` new spores (ids continue).
-    pub fn reseed<R: Rng + ?Sized>(&mut self, count: usize, rng: &mut R, width: f32, height: f32) {
+    pub fn reseed<R: Rng + ?Sized>(&mut self, count: usize, amount: f32, rng: &mut R, width: f32, height: f32) {
         self.spores.clear();
         self.regenerate_centers(rng, width, height);
-        self.spawn(count, rng, width, height);
+        self.spawn(count, amount, rng, width, height);
     }
 }
 
@@ -85,7 +84,7 @@ mod tests {
     #[test]
     fn test_reseed_places_spores_inside_with_fresh_ids_and_centres() {
         let mut field = SporeField::default();
-        field.reseed(50, &mut seeded(1), 4000.0, 3000.0);
+        field.reseed(50, 15.0, &mut seeded(1), 4000.0, 3000.0);
         assert_eq!(
             (field.spores.len(), field.nutrient_centers.len()),
             (50, NUTRIENT_CENTER_COUNT)
@@ -97,14 +96,14 @@ mod tests {
                 .all(|&(x, y)| (1000.0..3000.0).contains(&x) && (1000.0..2000.0).contains(&y))
         );
         assert!(field.spores.iter().all(|s| s.type_id == PLANT
-            && s.amount == SPORE_AMOUNT
+            && s.amount == 15.0
             && (100.0..=3900.0).contains(&s.x)
             && (100.0..=2900.0).contains(&s.y)));
         assert_eq!(
             (field.spores[0].id, field.next_id),
             (FIRST_SPORE_ID, FIRST_SPORE_ID + 50)
         );
-        field.reseed(10, &mut seeded(2), 4000.0, 3000.0);
+        field.reseed(10, 15.0, &mut seeded(2), 4000.0, 3000.0);
         assert_eq!(
             (field.spores.len(), field.spores[0].id),
             (10, FIRST_SPORE_ID + 50),

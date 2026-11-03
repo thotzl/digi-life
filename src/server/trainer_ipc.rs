@@ -636,16 +636,17 @@ mod tests {
         use crate::biology::genome::WILDTYPE_GENOME;
         use crate::trainer::sandbox::SandboxOrigin;
         use crate::trainer::sim::{GenomeRecord, TrainerParams};
-        let record = |fitness: f32| GenomeRecord {
-            genome: WILDTYPE_GENOME.to_string(),
+        // Distinct genomes: the hall of fame keeps every genome once (TCK-202)
+        let record = |i: usize, fitness: f32| GenomeRecord {
+            genome: format!("{}{}", WILDTYPE_GENOME, "A".repeat(i)),
             name: "p".to_string(),
             fitness,
             generation: 1,
             methylations: Vec::new(),
             synapse_weights: Vec::new(),
         };
-        let parents: Vec<GenomeRecord> = (0..25).map(|i| record(25.0 - i as f32)).collect();
-        let hof: Vec<GenomeRecord> = (0..15).map(|i| record(15.0 - i as f32)).collect();
+        let parents: Vec<GenomeRecord> = (0..25).map(|i| record(i, 25.0 - i as f32)).collect();
+        let hof: Vec<GenomeRecord> = (0..15).map(|i| record(i, 15.0 - i as f32)).collect();
         let sim = TrainerSim::restore(
             TrainerParams {
                 population: 100,

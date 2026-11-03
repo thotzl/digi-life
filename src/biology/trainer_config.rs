@@ -30,6 +30,12 @@ pub struct TrainerConfig {
     pub mutation_channels: MutationChannelMode,
     /// When the shared trial layout changes: "hold" (until all elites solve it) or "rotate" (every generation)
     pub trainer_layout_policy: LayoutPolicy,
+    /// Wall contacts within this many ticks after a counted one are not counted again (rubbing; telemetry
+    /// `wall_collisions`, TCK-202: formerly a literal)
+    pub trainer_wall_collision_cooldown: u32,
+    /// Margin (px) of food placement from the chamber walls in the trainer rooms (layout and respawns; TCK-202:
+    /// formerly a literal)
+    pub trainer_spawn_margin: f32,
     /// Trainer fitness weights (TCK-175)
     pub trainer_fitness: TrainerFitnessConfig,
     /// Minimum food distance per trainer room for trial starts and respawns after eating (TCK-154 / RV-S08); the same

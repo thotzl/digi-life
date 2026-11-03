@@ -22,8 +22,8 @@ Computed in `compute_sensory_inputs` (`src/shared/brain.rs`), one implementation
 
 ## Tactile organs (affinity < 0.25)
 
-- Channels: 1 mechanical hardness (walls 1.0, spores 0.3, reefs 1.0 on proximity — FIX-131), 2 fluid drag, 3 water temperature (center gradient), 4 spine strain, 5 impact pain.
-- Subtypes (TCK-133): `Bristle` hardness + pain (channels 1, 5), `LateralLine` flow + pain (channels 2, 5; flow computed signed but clamped to `[0, 1]` at write), `Proprioceptor` temperature + spine flexion (channels 3, 4). Only these two channels per subtype are wired; tactile organs have no ΔI. Pain thresholds (speed 1.5, wall pressure 0.3) are reviewed in TCK-202.
+- Channels: 1 mechanical hardness (walls 1.0, spores 0.3, reefs 1.0 on proximity — FIX-131), 2 fluid drag, 3 water temperature (depth: warm surface, cold bottom, the field `shared::temperature::TemperatureField::WATER` that the Ocean's thermal stress uses, reading `0.15 + 0.8 · warmth` times the organ's power; TCK-202, before: a warm chamber centre with cold edges), 4 spine strain, 5 impact pain.
+- Subtypes (TCK-133): `Bristle` hardness + pain (channels 1, 5), `LateralLine` flow + pain (channels 2, 5; flow computed signed but clamped to `[0, 1]` at write: by design each organ registers flow arriving head-on at its own axis, backward-facing organs the opposite flow; reviewed in TCK-202), `Proprioceptor` temperature + spine flexion (channels 3, 4). Only these two channels per subtype are wired; tactile organs have no ΔI. Pain thresholds (speed 1.5, wall pressure 0.3) are model constants, kept in TCK-202.
 
 ## Motion vision ΔI (TCK-144)
 

@@ -15,9 +15,11 @@ fatigue). Read first: [[wiki/contracts/creature-system]] and [[wiki/architecture
 2. Declare it in `src/sim/systems/mod.rs` (`pub mod <name>;`).
 3. Registration: a variant in `sim::System` and its arm in `step_creature` (`src/sim/mod.rs`).
 4. Put the variant into the system list of each world that runs it, at its place in the order:
-   `TRAINER_SYSTEMS` / `OCEAN_SYSTEMS` / `BRAIN_ONLY_SYSTEMS` in `src/sim/world.rs`.
-5. If Ocean and trainer need different rules, add a field to `WorldSettings` and set it in
-   `LevelRoom::world_settings` (`src/trainer/room/level.rs`), `WorldSettings::ocean` and `probes::brain_world`.
+   `CREATURE_SYSTEMS` (trainer rooms and Ocean) / `BRAIN_ONLY_SYSTEMS` (probes) in `src/sim/world.rs`.
+5. A dynamic of the creature is one rule for every world. Only a real feature of a world (no light zone in a trainer
+   room, a trial that freezes a starved creature) becomes a field of `WorldSettings`, set in
+   `LevelRoom::world_settings` (`src/trainer/room/level.rs`), `WorldSettings::ocean` and `probes::brain_world`
+   (TCK-202 removed the clock, eat-radius and food-drift divergences).
 6. Tunables: a key in the section that owns the rule (`metabolism`, `ocean`, `trainer`); no literals in the system.
 7. New events: apply them in the owner after the step (`trainer::chamber::Chamber::step`; the Ocean
    from TCK-156).

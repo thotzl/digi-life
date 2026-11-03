@@ -1,7 +1,7 @@
 //! Shared simulation kernel (TCK-200): one per-creature tick for every simulation (trainer rooms, diagnosis probes,
 //! the Ocean since TCK-156). Contract: `wiki/contracts/creature-system.md`, guide `wiki/guides/add-dynamic.md`.
 //!
-//! - `world`: `World` (the borrowed tick view), `WorldSettings` (the rules, divergences as named fields), `TickCtx`
+//! - `world`: `World` (the borrowed tick view), `WorldSettings` (the world features as named fields), `TickCtx`
 //! - `systems`: one module per dynamic, each a plain function over the world
 //! - `step_creature`: runs a world's ordered system list for one creature; events are collected in `CreatureStep`
 //!   and applied by the owner after the step (respawn, decomposition, bookkeeping)
@@ -11,12 +11,13 @@ pub mod ocean;
 pub mod systems;
 pub mod world;
 
+#[cfg(test)]
+mod model_tests;
+
 use crate::biology::brain::MotorOutputs;
 use crate::shared::dto::FoodSpore;
 
-pub use world::{
-    BRAIN_ONLY_SYSTEMS, OCEAN_SYSTEMS, PeerSnapshot, TRAINER_SYSTEMS, TemperatureField, TickCtx, World, WorldSettings,
-};
+pub use world::{BRAIN_ONLY_SYSTEMS, CREATURE_SYSTEMS, PeerSnapshot, TemperatureField, TickCtx, World, WorldSettings};
 
 /// One step of the per-creature tick. A world lists the systems it runs, in order (`WorldSettings::systems`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -31,8 +32,6 @@ pub enum System {
     Death,
     /// Kinematics (`systems::r#move`)
     Move,
-    /// Food pushed by this creature (`systems::food_drift`, only with `FoodDriftOrder::AfterEachCreature`)
-    FoodDrift,
     /// Eating food in reach (`systems::eat`)
     Eat,
 }
@@ -87,7 +86,6 @@ pub fn step_creature(world: &mut World, idx: usize, ctx: &TickCtx, step: &mut Cr
             System::Metabolize => systems::metabolize::metabolize(world, idx, ctx, step),
             System::Death => systems::death::death(world, idx, step),
             System::Move => systems::r#move::move_creature(world, idx, ctx, step),
-            System::FoodDrift => systems::food_drift::drift_after_creature(world, idx),
             System::Eat => systems::eat::eat(world, idx, ctx, step),
         }
         if step.died {
@@ -103,7 +101,7 @@ mod tests {
     use crate::biology::genome::WILDTYPE_GENOME;
     use crate::shared::dto::CreatureAgent;
     use crate::sim::systems::death::DeathPolicy;
-    use crate::sim::systems::sense::{ClockVariant, TargetSelector};
+    use crate::sim::systems::sense::TargetSelector;
     use crate::trainer::room::registry;
 
     fn agent(px: f32, py: f32) -> CreatureAgent {
@@ -160,14 +158,11 @@ mod tests {
 
     #[test]
     fn test_ocean_settings_run_drain_eat_and_decompose_at_the_lifespan() {
-        // The Ocean's world (`OceanSim`, TCK-156): std clock, prey selector, photosynthesis and
-        // thermal stress after the drain, food eaten with the config radius, decomposition at the lifespan
+        // The Ocean's world (`OceanSim`, TCK-156): prey selector, photosynthesis and thermal stress after the drain,
+        // food eaten with the config radius, decomposition at the lifespan
         let config = crate::config::test_config();
         let settings = WorldSettings::ocean(&config.ocean, vec![(1000.0, 800.0)]);
-        assert_eq!(
-            (settings.clock, settings.targets),
-            (ClockVariant::Std, TargetSelector::NearestPerTypeWithPrey)
-        );
+        assert_eq!(settings.targets, TargetSelector::NearestPerTypeWithPrey);
         let mut a = agent(1000.0, 800.0);
         a.energy = 50.0;
         let mut foods = vec![food(1000.0, 800.0)];
@@ -175,7 +170,6 @@ mod tests {
         let mut step = CreatureStep::default();
         {
             let mut world = World {
-                temperature: Some(TemperatureField::OCEAN),
                 peers: &peers,
                 height: 1600.0,
                 ..World::single(&mut a, &mut foods, 2000.0, &settings)
@@ -197,14 +191,13 @@ mod tests {
         );
 
         let DeathPolicy::Decompose {
-            lifespan_multiplier,
-            max_age_ticks,
-            ..
+            lifespan_multiplier, ..
         } = settings.death
         else {
             panic!("the Ocean decomposes")
         };
-        a.age = (a.phenotype.mature_age * lifespan_multiplier).min(max_age_ticks);
+        a.age = a.phenotype.mature_age * lifespan_multiplier;
+        assert_eq!(settings.death.lifespan(&a), Some(a.age));
         let (px, py) = (a.px, a.py);
         step_creature(
             &mut World::single(&mut a, &mut foods, 2000.0, &settings),

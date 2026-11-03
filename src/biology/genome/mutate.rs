@@ -61,6 +61,34 @@ pub(crate) fn unprotected_indices(genome: &str) -> Vec<usize> {
     (0..current_length).filter(|&i| !protected[i]).collect()
 }
 
+/// Letters of the promoters and terminators of every gene `parse_genome` reads (the strict protection: a letter
+/// mutation here would change or break a gene's `GeneRef` or its end).
+fn gene_signal_letters(genome: &str) -> Vec<bool> {
+    let mut signal = vec![false; genome.len()];
+    for promoter in PROMOTERS.iter().map(|p| p.motif) {
+        for gene in scan_genes(genome, promoter, TERMINATOR) {
+            signal[gene.start..gene.start + promoter.len()].fill(true);
+            let tail = gene.end.saturating_sub(TERMINATOR.len());
+            if tail >= gene.start + promoter.len() && matches_degenerate(&genome[tail..gene.end], TERMINATOR) {
+                signal[tail..gene.end].fill(true);
+            }
+        }
+    }
+    signal
+}
+
+/// Fallback loci when every letter lies in some motif match (`unprotected_indices` empty, which degenerate matching
+/// produces in long mutation walks): every letter outside the promoters and terminators of the genes the genome
+/// actually reads (TCK-202; before, the locus was drawn over the whole genome and could split a promoter).
+fn gene_signal_free_indices(genome: &str) -> Vec<usize> {
+    gene_signal_letters(genome)
+        .into_iter()
+        .enumerate()
+        .filter(|&(_, signal)| !signal)
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Mutation operator of `mutate_genome`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -159,7 +187,8 @@ fn splice_gene<R: rand::Rng + ?Sized>(
 }
 
 /// Applies one mutation of `kind` at a random applicable locus; `None` if the kind is not applicable
-/// (length bounds [128, 512], no unprotected locus, no suitable gene, or no clean gene splice).
+/// (length bounds [128, 512], no unprotected locus, no suitable gene, or no clean gene splice). Without an unprotected
+/// locus (and without scope) point, creep and insertion use a letter outside every read gene's promoter and terminator.
 /// With `scope` (TCK-181) only loci of that channel are candidates: gene operators pick among the channel's genes,
 /// letter operators among unprotected positions inside a gene of the channel and of no other channel (`None` if there
 /// is none). Without `scope` the candidates and RNG draws are unchanged.
@@ -202,26 +231,34 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(
             splice_gene(genome, start..end, "", p, -1, rng).map(|g| (g, start))
         }
         _ => {
+            let in_scope_locus = |candidates: &mut Vec<usize>| {
+                if let Some(channel) = scope {
+                    let spans = GeneTable::scan(genome).spans;
+                    candidates.retain(|&i| {
+                        let mut hits = spans.iter().filter(|s| s.start <= i && i < s.end).peekable();
+                        hits.peek().is_some() && hits.all(|s| promoter_channel(&s.gene.promoter) == Some(channel))
+                    });
+                }
+            };
             let mut unprotected = unprotected_indices(genome);
-            if let Some(channel) = scope {
-                let spans = GeneTable::scan(genome).spans;
-                unprotected.retain(|&i| {
-                    let mut hits = spans.iter().filter(|s| s.start <= i && i < s.end).peekable();
-                    hits.peek().is_some() && hits.all(|s| promoter_channel(&s.gene.promoter) == Some(channel))
-                });
+            in_scope_locus(&mut unprotected);
+            if scope.is_some() && unprotected.is_empty() {
+                return None;
+            }
+            // Without an unprotected locus the letter operators fall back to the letters outside every read gene's
+            // promoter and terminator (TCK-202); none of those either: not applicable
+            let fallback = unprotected.is_empty();
+            if fallback {
+                unprotected = gene_signal_free_indices(genome);
                 if unprotected.is_empty() {
                     return None;
                 }
             }
-            let index = if unprotected.is_empty() {
-                rng.gen_range(0..current_length)
-            } else {
-                unprotected[rng.gen_range(0..unprotected.len())]
-            };
+            let index = unprotected[rng.gen_range(0..unprotected.len())];
             let mut new_genome = String::from(genome);
             match kind {
                 MutationKind::Deletion => {
-                    if current_length <= GENOME_LENGTH_MIN || unprotected.is_empty() {
+                    if current_length <= GENOME_LENGTH_MIN || fallback {
                         return None;
                     }
                     new_genome.remove(index);
@@ -270,7 +307,8 @@ pub fn mutate_genome_with_kind<R: rand::Rng + ?Sized>(
 
 /// One mutation (TCK-184): the operator is drawn by the `ops` weights, the insertion/deletion weights scaled by the
 /// genome's `EVO` rates (2h, so h = 0.5 keeps the configured weight). An operator that is not applicable
-/// (length bounds [128, 512], no suitable gene) falls back to creep. `None` only for an empty genome.
+/// (length bounds [128, 512], no suitable gene) falls back to creep. `None` when creep is not applicable either: an
+/// empty genome, or every letter is a promoter or terminator of a gene the genome reads (TCK-202).
 pub fn mutate_genome<R: rand::Rng + ?Sized>(genome: &str, ops: &MutationOperators, rng: &mut R) -> Option<Mutation> {
     mutate_genome_scoped(genome, ops, None, rng)
 }

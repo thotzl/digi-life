@@ -23,7 +23,7 @@ pub struct PhysicsConfig {
 }
 
 /// Kinematic snapshot of a creature that can push food spores (avoids cloning whole agents).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SporePusher {
     pub px: f32,
     pub py: f32,
@@ -138,17 +138,12 @@ const VELOCITY_DAMPING: f32 = 0.94;
 
 /// Normalised locomotion drive `g` in [0, 1] (TCK-150): 0.4 pulse + 0.4 stiffness + 0.2 appendages, each
 /// normalised to its genome range; appendages = half parapodia amplitude, a quarter per limb (at most two; a limb is
-/// an organ whose kind says so, `OrganSpec::limb`).
+/// `Organ::is_limb`: a limb-capable kind with a high expression style, never a distance sense).
 /// Monotone in pulse and stiffness; limbs and parapodia are folded in instead of a multiplicative bonus.
 pub fn locomotion_drive(phenotype: &crate::biology::phenotype::CreaturePhenotype) -> f32 {
     let pulse = ((phenotype.pulse_speed - PULSE_MIN) / PULSE_SPAN).clamp(0.0, 1.0);
     let stiffness = ((phenotype.stiffness - STIFFNESS_MIN) / STIFFNESS_SPAN).clamp(0.0, 1.0);
-    let limbs = phenotype
-        .organelles
-        .iter()
-        .filter(|o| (o.kind.spec().limb)(o))
-        .count()
-        .min(2) as f32;
+    let limbs = phenotype.organelles.iter().filter(|o| o.is_limb()).count().min(2) as f32;
     let appendages = (0.5 * phenotype.spinal_harmonics.parapodia_amp / PARAPODIA_MAX + 0.25 * limbs).clamp(0.0, 1.0);
     (0.4 * pulse + 0.4 * stiffness + 0.2 * appendages).clamp(0.0, 1.0)
 }
@@ -480,6 +475,10 @@ mod tests {
         p.organelles = vec![template; organs];
         for organ in p.organelles.iter_mut() {
             organ.expression_style = if limbs { 0.9 } else { 0.1 };
+            if limbs {
+                // Only limb-capable kinds grow limbs (`Organ::is_limb`); the template organ is an eye
+                organ.kind = crate::biology::organs::OrganKind::Proprioceptor;
+            }
         }
         agent
     }

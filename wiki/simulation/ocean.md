@@ -15,7 +15,10 @@ The open-world mode: a closed basin with a free-living population.
 - One step runs on the shared creature systems ([[wiki/contracts/creature-system]]): spatial grid, food drift before
   all creatures, peer snapshot; per creature `step_creature` with `WorldSettings::ocean` (sense, think, metabolize
   with photosynthesis and thermal stress, death, move, eat), the eat respawn and the decomposition applied right after
-  that creature's step, then age + 1, bite and mitosis; bite damage after all creatures; species census; restock.
+  that creature's step; then, after every creature's step, per surviving creature age + 1, bite (no target that died
+  in its own step this tick) and mitosis; bite damage after all creatures; species census; restock (order since
+  TCK-202; before, bite and mitosis ran right after each creature's step, so a creature that was about to starve in
+  its own step later in the tick could still feed an attacker).
 - Seeded and reproducible: `ocean_seed(core.seed, nonce)` and per-tick streams `derive(seed, [stream, tick])` for food
   (respawn, decomposition), mitosis and restock, `[STREAM_ACTION, n]` for releases, `[STREAM_POPULATE]` for a fresh
   start or reset. The snapshot stores seed, tick, release count and nutrient centres, so a restored Ocean continues
@@ -29,9 +32,14 @@ The open-world mode: a closed basin with a free-living population.
   respawn and corpse decomposition are applied after each creature's step rather than inside its eat loop; the
   creature systems and their arithmetic are those of `engine.rs` before). Nutrient centres survive a restart (before,
   a restart drew new centres for the restored spores). The stale "15 unique wildtype cells" line after a reset is gone.
-- `OceanEvent::Died` carries a `DeathCause` (TCK-158): `Starved` (0 energy in its step, or ≤ `POST_DAMAGE_MIN_ENERGY`
-  after a tick without bite damage), `Aged` (lifespan reached with energy left), `Hunted` (bite damage this tick). The
-  engine logs "hunted down" for `Hunted` only, as before.
+- `OceanEvent::Died` carries a `DeathCause` (TCK-158): `Starved` (no energy left in its step, or after a tick without
+  bite damage), `Aged` (lifespan reached with energy left), `Hunted` (bite damage this tick left no energy). One death
+  threshold `death::is_dead_energy` (energy ≤ 0) in the step and after the damage pass (TCK-202; the damage pass
+  formerly removed creatures with up to 0.1 energy). The engine logs "hunted down" for `Hunted` only, as before.
+- Same creature model as the trainer rooms (TCK-202): `fmath` clock, eat radius from config, food drift before the
+  creatures, the water temperature as one depth field for sensing and thermal stress
+  ([[wiki/contracts/creature-system]]). World features of the Ocean only: prey targets, photosynthesis, thermal
+  stress, lifespan and decomposition, bite and mitosis.
 - Headless runs: `trainer_runner ocean --seed <text> --ticks <N>` runs a fresh `OceanSim` without UI, warp cap or DB
   and writes a time series (population, births, deaths by cause, species, energy, spores); CI checks a fixed run
   against `tests/reference/ocean-ci.json` (TCK-158, [[wiki/simulation/analytics-and-balancing]]).
@@ -40,7 +48,7 @@ The open-world mode: a closed basin with a free-living population.
 
 - Size `ocean.worldWidth × ocean.worldHeight` (19200 × 10800 px, config since TCK-156, RV-A05), sent to the UI as
   `INIT_STATE.world.width` / `height`; hard elastic walls (no torus since TCK-103).
-- Procedural world generated in Rust (`src/shared/map_generator.rs`, `generate_world(seed, w, h)` with config `seed`, Mulberry32 PRNG, TCK-149): biomes, reef obstacles (`ProceduralObstacle`), current vents, vertices. Sent to the client in `INIT_STATE` on `CLIENT_READY`/`RESET_WORLD`; the client only renders it (FIX-127).
+- Procedural world generated in Rust (`src/shared/map_generator.rs`, `generate_world(seed, w, h)` with config `seed`, Mulberry32 PRNG, TCK-149; trigonometry via `fmath` since TCK-202, so the layout is platform-independent): biomes, reef obstacles (`ProceduralObstacle`), current vents, vertices. Sent to the client in `INIT_STATE` on `CLIENT_READY`/`RESET_WORLD`; the client only renders it (FIX-127).
 - Reefs collide physically and are felt by tactile organs (FIX-131), see [[wiki/simulation/physics]].
 - Biomes are generated and rendered but have no simulation effect; the unused biome config keys were removed (TCK-149).
 
@@ -78,7 +86,7 @@ The open-world mode: a closed basin with a free-living population.
 - Rust-generated world, rendered by the client; biomes are cosmetic.
 - Population is held by restocking only (RV-B01).
 - Locomotion is fixed for every genome (1–5 px/tick, turning at rest; RV-S02, TCK-150); sparse food remains unmeasured (RV-S07).
-- Measured headless since TCK-158 (`trainer_runner ocean`, CI reference `tests/reference/ocean-ci.json`): turnover ≈ 4 deaths per 1,000 ticks, mostly starvation, mitosis rare.
+- Measured headless since TCK-158 (`trainer_runner ocean`, CI reference `tests/reference/ocean-ci.json`): turnover ≈ 4 deaths per 1,000 ticks, mostly starvation, mitosis rare. Since TCK-202 every simulation path uses `fmath`, so the reference is platform-independent; reference run `ci-ocean-2` (12,000 ticks) after TCK-202: 63 deaths (57 starved, 5 aged, 1 hunted), 7 bites, 3 births (before: 49 deaths, 43 / 3 / 3, 15 bites, 2 births).
 - Energy uses the shared activity-based cost (TCK-151); bites transfer energy with a cooldown (TCK-145); a 90 s UI check shows P5-level death turnover (≈ 147 deaths, 5 by predation) at a stable population of 25.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-156, TCK-158, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-156, TCK-158, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184, TCK-202.

@@ -10,8 +10,7 @@ pub const SPEC: OrganSpec = OrganSpec {
     live_channels: spectral::live_channels,
     sense: spectral::sense,
     cost_load: common::cost_load,
-    // TCK-202: an eye with a high expression style counts as a limb (model fix pending)
-    limb: common::limb_by_style,
+    limb: false,
     ballast: 1.0,
     latin_suffix: "ocularium",
     latin_rank: 0,

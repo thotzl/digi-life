@@ -23,13 +23,11 @@ use crate::shared::physics::SporePusher;
 use crate::shared::rng::{SimRng, derive, seed_from_str};
 use crate::shared::spatial_grid::{GridLayer, SpatialGrid};
 use crate::sim::systems::bite::{BiteRule, bite};
-use crate::sim::systems::death::{POST_DAMAGE_MIN_ENERGY, decompose};
+use crate::sim::systems::death::{decompose, is_dead_energy};
 use crate::sim::systems::eat::respawn;
 use crate::sim::systems::food_drift::drift_before_creatures;
 use crate::sim::systems::reproduce::{self, MitosisRule};
-use crate::sim::{
-    CreatureEvent, CreatureStep, PeerSnapshot, TemperatureField, TickCtx, World, WorldSettings, step_creature,
-};
+use crate::sim::{CreatureEvent, CreatureStep, PeerSnapshot, TickCtx, World, WorldSettings, step_creature};
 
 pub use snapshot::OceanSnapshot;
 pub use spawner::{CatalogueFounder, Founder, OceanSpawner};
@@ -99,11 +97,11 @@ pub enum OceanEvent {
 /// Why a creature died (TCK-158).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DeathCause {
-    /// No energy left: 0 in its step, or at most `POST_DAMAGE_MIN_ENERGY` after a tick without bite damage
+    /// No energy left (`death::is_dead_energy`): in its step, or after a tick without bite damage
     Starved,
     /// Reached its lifespan with energy left
     Aged,
-    /// Took bite damage this tick and kept at most `POST_DAMAGE_MIN_ENERGY`
+    /// Took bite damage this tick and has no energy left
     Hunted,
 }
 
@@ -274,8 +272,9 @@ impl OceanSim {
 
     /// One Ocean step without the restock. Order: spatial grid, food drift (before all creatures), peer snapshot;
     /// per creature `step_creature` (sense, think, metabolize, death, move, eat) with the eat and decomposition events
-    /// applied right after the creature's step, then bite and mitosis; bite damage after all creatures (deaths below
-    /// `POST_DAMAGE_MIN_ENERGY` decompose); species census.
+    /// applied right after the creature's step; then per surviving creature age, bite (no target that died this tick)
+    /// and mitosis; bite damage after all creatures (creatures without energy left, `death::is_dead_energy`,
+    /// decompose); species census.
     pub fn step(&mut self) -> OceanStep {
         let mut out = OceanStep::default();
         self.tick += 1;
@@ -320,7 +319,6 @@ impl OceanSim {
             grid: Some(grid),
             width,
             height,
-            temperature: Some(TemperatureField::OCEAN),
             settings: &self.settings,
         };
         drift_before_creatures(&mut world, nearby, &mut self.pushers);
@@ -347,10 +345,10 @@ impl OceanSim {
                     CreatureEvent::Decomposed { x, y, spores } => decompose(world.foods, x, y, spores, &mut food_rng),
                 }
             }
-            let agent = &mut world.creatures[idx];
+            let agent = &world.creatures[idx];
             if step.died {
                 self.alive[idx] = false;
-                let cause = if agent.energy <= 0.0 {
+                let cause = if is_dead_energy(agent.energy) {
                     DeathCause::Starved
                 } else {
                     DeathCause::Aged
@@ -360,16 +358,28 @@ impl OceanSim {
                     latin_name: agent.phenotype.latin_name.clone(),
                     cause,
                 });
+            }
+        }
+
+        // Bite and mitosis after every creature's step (TCK-202): a creature that died in its own step this tick is
+        // no bite target (it decomposes instead of feeding an attacker)
+        let alive = &self.alive;
+        for idx in 0..population {
+            if !alive[idx] {
                 continue;
             }
+            let agent = &mut world.creatures[idx];
             agent.age += 1;
 
             // Bite (TCK-145): candidates from the grid, read from the snapshot of the tick start
-            if agent.phenotype.carnivory >= bite_rule.carnivory_threshold {
+            if BiteRule::is_biter(agent) {
                 let range = bite_rule.range(agent.phenotype.spinal_harmonics.mean_radius);
                 nearby.clear();
                 grid.for_each_nearby(GridLayer::Creatures, agent.px, agent.py, range, |i| nearby.push(i));
-                let candidates = nearby.iter().filter_map(|&i| peers.get(i as usize));
+                let candidates = nearby
+                    .iter()
+                    .filter(|&&i| alive[i as usize])
+                    .filter_map(|&i| peers.get(i as usize));
                 let attacker = agent.id;
                 if let Some(b) = bite(agent, candidates, &bite_rule, &config.metabolism, damage, |victim| {
                     bite_ticks.contains_key(&(attacker, victim))
@@ -429,7 +439,7 @@ impl OceanSim {
             if let Some(d) = bite_damage {
                 agent.energy -= d;
             }
-            if agent.energy > POST_DAMAGE_MIN_ENERGY {
+            if !is_dead_energy(agent.energy) {
                 return true;
             }
             let spore_count = self.settings.death.spores(agent);
@@ -488,8 +498,13 @@ impl OceanSim {
 
     fn reseed_spores(&mut self, rng: &mut SimRng) {
         let (width, height) = self.size();
-        self.spores
-            .reseed(self.config.ocean.food_spore_count, rng, width, height);
+        self.spores.reseed(
+            self.config.ocean.food_spore_count,
+            self.config.metabolism.food_spore_energy,
+            rng,
+            width,
+            height,
+        );
         self.sync_settings();
     }
 

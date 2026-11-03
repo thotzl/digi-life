@@ -397,7 +397,7 @@ export class CreatureRenderer {
     this.ctx.restore(); // end coelom clip
 
     // ==========================================================================
-    // 8. DRAW INTERNAL SKELETAL RIDGES FOR FLESHY LIMBS (`expressionStyle >= 0.72`)
+    // 8. DRAW INTERNAL SKELETAL RIDGES FOR FLESHY LIMBS (`isLimb`: limb-capable kind, `expressionStyle >= LIMB_STYLE`)
     // ==========================================================================
     phenotype.organelles.forEach(patch => {
       if (organShape(patch) === "limb") {

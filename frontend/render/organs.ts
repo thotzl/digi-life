@@ -1,12 +1,14 @@
 // Organ painters (TCK-160): how each `OrganKind` marks the body surface, one entry per kind of the backend organ
 // registry (`bindings/OrganKind.ts`, contract wiki/contracts/organ-kind.md). The kind comes from the backend; the
 // renderer no longer re-derives it from affinity thresholds. The body shape of an organ (limb, head bud, hillock)
-// follows its expression style, as the backend's limb rule (`LIMB_STYLE`) does for every kind.
+// follows the backend's limb rule (`Organ::is_limb`): a limb-capable kind (`ORGAN_KINDS[kind].limb`) with a style of
+// at least `LIMB_STYLE`; distance senses never grow as limbs (TCK-202).
 import type { HSLColor } from "../../bindings/HSLColor";
 import type { Organ } from "../../bindings/Organ";
 import type { OrganKind } from "../../bindings/OrganKind";
+import { ORGAN_KINDS } from "../../bindings/organRegistry";
 
-/** Expression style from which an organ is a fleshy limb (`LIMB_STYLE` in `src/biology/organs/mod.rs`). */
+/** Expression style from which an organ of a limb-capable kind is a fleshy limb (`LIMB_STYLE` in `src/biology/organs/mod.rs`). */
 export const LIMB_STYLE = 0.72;
 /** Below this style an organ is a flat dome on the skin (lens, pit). */
 export const DOME_STYLE = 0.3;
@@ -18,8 +20,13 @@ export const BEAD_BANDWIDTH = 0.35;
 /** Membrane shape of an organ: fleshy limb, cephalic bud or ciliated hillock. */
 export type OrganShape = "limb" | "bud" | "hillock";
 
+/** The backend's `Organ::is_limb`. */
+export function isLimb(organ: Pick<Organ, "kind" | "expressionStyle">): boolean {
+  return ORGAN_KINDS[organ.kind].limb && organ.expressionStyle >= LIMB_STYLE;
+}
+
 export function organShape(organ: Organ): OrganShape {
-  if (organ.expressionStyle >= LIMB_STYLE) return "limb";
+  if (isLimb(organ)) return "limb";
   return organ.spinalPos < HEAD_REGION ? "bud" : "hillock";
 }
 
@@ -77,8 +84,8 @@ export const ORGAN_PAINTERS: Record<OrganKind, OrganPainter> = {
 
 /**
  * Draws the surface mark of `organ`; the context is translated to the organ's surface point and rotated so the
- * outward normal is -y. Flat organs get their kind's dome, mid-style narrow organs their kind's bead, limbs a tip
- * in the organ's hue.
+ * outward normal is -y. Flat organs get their kind's dome, other non-limb organs with a narrow band their kind's bead,
+ * limbs a tip in the organ's hue.
  */
 export function paintOrganMark(ctx: CanvasRenderingContext2D, organ: Organ, bodyColor: HSLColor) {
   const hue: HSLColor = { h: (bodyColor.h + organ.hueShift + 360) % 360, s: bodyColor.s, l: bodyColor.l };
@@ -90,7 +97,7 @@ export function paintOrganMark(ctx: CanvasRenderingContext2D, organ: Organ, body
     ctx.arc(0, 0, 10 * organ.scale - 1, Math.PI, 0);
     ctx.closePath();
     painter.dome(ctx, organ, hue);
-  } else if (style < LIMB_STYLE) {
+  } else if (!isLimb(organ)) {
     if (organ.bandwidth >= BEAD_BANDWIDTH) return;
     const r = 3.5 * organ.scale;
     ctx.beginPath();

@@ -2,6 +2,7 @@
 //! its promoter (TCK-179, trait locality). A missing gene reads the empty payload (h = 0.5 at every locus).
 
 use super::{HSLColor, SpinalHarmonics, Symmetry};
+use crate::biology::diet::DietClass;
 use crate::biology::genome::alphabet::normalize_genome;
 use crate::biology::genome::payload::Payload;
 use crate::biology::genome::table::{GeneTable, first_payload};
@@ -108,14 +109,14 @@ fn decode_stm(p: Payload, t: &mut BodyTraits) {
 
 fn decode_tem(p: Payload, t: &mut BodyTraits) {
     let (h_thermal_c, h_thermal_w) = (p.h(0), p.h(6));
-    // TCK-202: `-5.0f32.max(x)` parses as `-(5.0f32.max(x))`, so the minimum is never above -5 (model fix pending)
-    t.thermal_tolerance_min = -5.0f32.max((h_thermal_c * 60.0 - h_thermal_w * 15.0).round());
+    // Floored at -5 °C (TCK-202: the former `-5.0f32.max(x)` parsed as `-(5.0f32.max(x))` and negated the minimum)
+    t.thermal_tolerance_min = (h_thermal_c * 60.0 - h_thermal_w * 15.0).round().max(-5.0);
     t.thermal_tolerance_max = 105.0f32.min((h_thermal_c * 60.0 + h_thermal_w * 15.0).round());
 }
 
 fn decode_car(p: Payload, t: &mut BodyTraits) {
     t.carnivory = p.h(0);
-    t.is_predator = t.carnivory >= 0.50;
+    t.is_predator = DietClass::from_carnivory(t.carnivory).is_predator();
 }
 
 fn decode_rep(p: Payload, t: &mut BodyTraits) {
@@ -147,7 +148,6 @@ pub fn read_evolution_rates(genome: &str) -> (f32, f32) {
 }
 
 /// Body chambers: radius peaks along the spine (at least 1).
-// TCK-202: std `cos` instead of `fmath` (cross-platform determinism; switching is a model change)
 pub fn chamber_count(sh: &SpinalHarmonics) -> usize {
     let mut peaks_count = 0;
     let mut was_rising = false;
@@ -156,7 +156,7 @@ pub fn chamber_count(sh: &SpinalHarmonics) -> usize {
         let mut modulation = 0.0;
         for j in 0..4 {
             let frequency_factor = (j + 1) as f32 * std::f32::consts::PI;
-            modulation += sh.amplitudes[j] * (frequency_factor * s + sh.phases[j]).cos();
+            modulation += sh.amplitudes[j] * crate::shared::fmath::cos(frequency_factor * s + sh.phases[j]);
         }
         sh.mean_radius * (1.0 + modulation)
     };

@@ -52,15 +52,15 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
   generation read it, the UI gets it as `INIT_STATE.world.width` / `height`.
 - `targetPopulation` 25 (restock target), `foodSporeCount` 300, `maxCreatures` 45 (cap for `INJECT_URZELLE` /
   `SPAWN_CLONE` and mitosis, TCK-149; [[wiki/simulation/ocean]]).
-- Lifespan `min(mature_age · creatureLifespanMatureAgeMultiplier (12), creatureMaxAgeTicks (36000))`; mitosis floors
+- Lifespan `mature_age · creatureLifespanMatureAgeMultiplier (12)` (one source; `creatureMaxAgeTicks` removed in
+  TCK-202, it never bound); mitosis floors
   `creatureMatureAgeFloor` 600 and `reproductionStomachThresholdFloor` 0.60; `reproductionSplitLossRatio` 0.4,
   `reproductionRecoilVelocityScale` 15; `lamarckianAssimilationAgeFloor` 1200 (younger parents pass no learned
   weights) ([[wiki/biology/metabolism-and-reproduction]]).
-- `thermalStressPenaltyScale` 0.0012, `photosynthesisEnergyGain` 0.20 (green creatures below
-  `bitingCarnivoryThreshold` in the light zone).
-- Eat radius `mean_radius · grazingRadiusMultiplier (1.5) + grazingRadiusOffset (4)`; bite range
-  `mean_radius · bitingRadiusMultiplier (1.6) + bitingRadiusOffset (5)` for carnivory ≥ `bitingCarnivoryThreshold`
-  0.35; `biteCooldownTicks` 60 per attacker/victim pair (TCK-145).
+- `thermalStressPenaltyScale` 0.0012, `photosynthesisEnergyGain` 0.20 (green herbivores in the light zone).
+- Bite range `mean_radius · bitingRadiusMultiplier (1.6) + bitingRadiusOffset (5)` for omnivores and carnivores
+  (diet class, `biology::diet`; `bitingCarnivoryThreshold` removed in TCK-202); `biteCooldownTicks` 60 per
+  attacker/victim pair (TCK-145).
 - Corpse meat spores `floor(length · radius / decompositionSizeRatio (1200))` clamped to
   [`decompositionSporeMin` 1, `decompositionSporeMax` 5].
 - `speciesRecordRetention` 2000: extinct `species_records` rows kept (newest extinction first; alive species always
@@ -80,6 +80,8 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
   `"separate"` (experimental: one body or brain channel per child).
 - `trainerFitness` (TCK-175, weights of `trainer::room::calculate_fitness` in catch units, both below 1):
   `firstCatchBonus` 0.5, `approachBonus` 0.3.
+- `trainerWallCollisionCooldown` 20: ticks after a counted wall contact in which further contacts are not counted;
+  `trainerSpawnMargin` 25 px: food distance from the chamber walls (layout and respawns; both former literals, TCK-202).
 - `trainerSpawnMinDistance` (`RoomPair<f32>`, TCK-154): minimum food distance for trial starts and respawns,
   `standard` 200, `exploration` 500 px; reasoning in the doc comment of `TrainerConfig::trainer_spawn_min_distance`.
 - `trainerCurriculum` (TCK-176): gate thresholds `upper` 0.3 / `lower` 0.1 on the success rate of the non-rehearsal
@@ -116,7 +118,10 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
   `movementCostPerMass` 2.636e-5; `trainerMetabolicScale` 1.0 = factor on the trainer drain only (TCK-178).
 - `creatureStartStomachRatio` 0.60: start energy `stomach_capacity · ratio` of every spawned creature, Ocean and
   trainer (`creature_factory::start_energy`, TCK-185).
-- Food and bite energy, shared by Ocean and trainer: `foodSporeEnergy` 15 (TCK-178), diet efficiency
+- Eat radius of every world: `mean_radius · grazingRadiusMultiplier (1.5) + grazingRadiusOffset (4)` (moved from
+  section `ocean` in TCK-202, when the trainer's own `max(r + 10, ..)` rule was dropped).
+- Food and bite energy, shared by Ocean and trainer: `foodSporeEnergy` 15 (TCK-178; also the `amount` of every food
+  spore and `INIT_STATE.rules.sporeEnergy`), diet efficiency
   `grazingEfficiencyHerbivoreScale` 1.50 / `bitingEfficiencyCarnivoreScale` 1.25; bite gain
   `bitingBaseEnergyGain (35) · carnivory · bitingEfficiencyCarnivoreScale`, capped by `bitingEnergyDamage` 35 and the
   victim's energy (TCK-145) ([[wiki/biology/metabolism-and-reproduction]]).

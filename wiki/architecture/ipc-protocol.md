@@ -41,7 +41,9 @@ the frontend IPC client `frontend/core/ipc.ts`, the only module that calls Tauri
 - Field casing: camelCase, except `SpawnClone` and `AssignSandboxCreature` (snake_case kept).
 - Removed in TCK-157: `SPAWN_FOOD` (right-click on empty water; the engine never handled it, so right-click food spawn
   still does nothing, RV-B09) and `CLIENT_LOG` (newborn log line of the Ocean view; unknown to the engine, only
-  produced warnings). Neither had an effect before.
+  produced warnings). Neither had an effect before. Reviewed again in TCK-202 (absorbed TCK-147): both stay removed,
+  the Ocean view sends neither, and the backend rejects them as unknown actions
+  (`test_unknown_and_malformed_actions_are_rejected_with_the_type`).
 - Tests: `ipc::tests::test_client_actions_parse_into_their_group`, `test_unknown_and_malformed_actions_are_rejected_with_the_type`, `trainer_ipc::tests::test_trainer_actions_parse_from_ui_json`.
 
 ## Tauri commands (`src/server/api/`, registered in `src/main.rs`)

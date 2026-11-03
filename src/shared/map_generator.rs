@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::shared::fmath;
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Vertex {
@@ -126,9 +128,9 @@ pub const CLIMATE_MATRIX: [ClimatePoint; 4] = [
 // --------------------------------------------------------------------------
 // Deterministic Hash & PRNG
 // --------------------------------------------------------------------------
-// Kept as the world generator's own RNG family (TCK-198 scope 7): routing `generate_world` through `SimRng` would
-// draw different numbers and so change the world layout of every seed (reefs, vents, biomes) and the `world` sent
-// in `INIT_STATE`. Replace it together with an intended Ocean model change (TCK-202), not in a structural refactor.
+// The world generator's own RNG family (TCK-198 scope 7): integer-only, so platform-independent like `SimRng`; its
+// trigonometry goes through `fmath` (TCK-202). Routing it through `SimRng` would only redraw every world layout
+// without a model benefit, so it stays.
 pub fn hash_string_to_int(s: &str) -> u32 {
     let mut hash: u32 = 0;
     for c in s.chars() {
@@ -176,7 +178,7 @@ pub fn sample_toroidal_noise(x: f32, y: f32, width: f32, height: f32, seed: &str
         let wx = (x / width) * SCALE * freq + phase_x;
         let wy = (y / height) * SCALE * freq + phase_y;
 
-        val += (wx.sin() * wy.cos()) * amp;
+        val += (fmath::sin(wx) * fmath::cos(wy)) * amp;
 
         total_amp += amp;
         amp *= 0.55;
@@ -262,8 +264,8 @@ pub fn generate_world(seed: &str, width: f32, height: f32) -> ProceduralWorld {
             let deform = 0.65 + rand.next_f32() * 0.5; // [65% to 115% of base radius]
             let r = radius * deform;
             vertices.push(Vertex {
-                x: x + r * angle.cos(),
-                y: y + r * angle.sin(),
+                x: x + r * fmath::cos(angle),
+                y: y + r * fmath::sin(angle),
                 r,
                 angle,
             });
@@ -353,8 +355,8 @@ pub fn generate_trainer_world(seed: &str, width: f32, height: f32) -> Procedural
             let deform = 0.65 + rand.next_f32() * 0.5; // [65% to 115% of base radius]
             let r = radius * deform;
             vertices.push(Vertex {
-                x: x + r * angle.cos(),
-                y: y + r * angle.sin(),
+                x: x + r * fmath::cos(angle),
+                y: y + r * fmath::sin(angle),
                 r,
                 angle,
             });

@@ -10,8 +10,7 @@ pub const SPEC: OrganSpec = OrganSpec {
     live_channels: spectral::live_channels,
     sense: spectral::sense,
     cost_load: common::cost_load,
-    // TCK-202: distance senses with a high expression style count as limbs (model fix pending)
-    limb: common::limb_by_style,
+    limb: false,
     ballast: 1.0,
     latin_suffix: "thermum",
     latin_rank: 3,

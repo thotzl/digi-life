@@ -623,9 +623,11 @@ fn test_hof_slots_are_mutated() {
         ..TrainerParams::from_config(crate::config::test_config())
     };
     let parent = lamarck_parent();
+    // Distinct genomes: the hall of fame keeps every genome once (TCK-202)
     let hof: Vec<GenomeRecord> = (0..5)
         .map(|i| GenomeRecord {
             fitness: 50.0 - i as f32,
+            genome: format!("{}{}", parent.genome, "A".repeat(i)),
             ..parent.clone()
         })
         .collect();

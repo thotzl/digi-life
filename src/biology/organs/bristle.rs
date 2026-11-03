@@ -22,7 +22,7 @@ pub const SPEC: OrganSpec = OrganSpec {
     live_channels,
     sense,
     cost_load: common::cost_load,
-    limb: common::limb_by_style,
+    limb: true,
     ballast: 1.0,
     latin_suffix: "vibrans",
     latin_rank: 2,

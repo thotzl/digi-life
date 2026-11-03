@@ -62,6 +62,10 @@ pub struct MetabolismConfig {
     pub creature_start_stomach_ratio: f32,
     /// Energy of one food spore before diet efficiency; the one food energy source of Ocean and trainer (TCK-178)
     pub food_spore_energy: f32,
+    /// Eat radius `mean_radius · grazingRadiusMultiplier + grazingRadiusOffset` for every food, in every world
+    /// (`sim::systems::eat::eat_radius`; one rule for trainer and Ocean since TCK-202)
+    pub grazing_radius_multiplier: f32,
+    pub grazing_radius_offset: f32,
     pub grazing_efficiency_herbivore_scale: f32,
     pub biting_efficiency_carnivore_scale: f32,
     /// Attacker gain per bite before the caps (TCK-145)

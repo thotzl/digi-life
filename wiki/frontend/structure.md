@@ -70,7 +70,9 @@ mount point `<div id="app">`. Since TCK-160 every screen is a `ViewModule` with 
   `organShape` and sway from `organAngle` (`render/organs.ts`), surface marks from `ORGAN_PAINTERS:
   Record<OrganKind, OrganPainter>` (eye lens, thermal pit, bead colour per kind, limb tip). The kind comes from the
   backend organ registry ([[wiki/contracts/organ-kind]]); the renderer no longer re-derives it from affinity
-  thresholds. Same pixels as before.
+  thresholds. A fleshy limb is drawn exactly when the backend counts the organ as a limb (`isLimb`: limb-capable kind
+  from `ORGAN_KINDS[kind].limb` and `expressionStyle ≥ LIMB_STYLE`); since TCK-202 eyes, noses and thermal organs with
+  a high style are drawn as buds or hillocks, not limbs.
 - `render/worldLayer.ts` — `WorldLayer` draws the biome image (built from the biome cells' `x/y/width/height`),
   vents and obstacles of `INIT_STATE.world`; `drawSpores` (glow for the Ocean, halo for trainer tiles) and
   `drawChamber` are shared.
@@ -83,7 +85,8 @@ mount point `<div id="app">`. Since TCK-160 every screen is a `ViewModule` with 
 ## Labels
 
 - Diet class from `shared/creatureLabels.ts` with the backend thresholds (`CARNIVORE_MIN` 0.6, `HERBIVORE_MAX` 0.4 of
-  `DietClass`); the roster, catalogue and pickers used 0.55 / 0.3 before, the trainer 0.6 / 0.4.
+  `biology::diet::DietClass`, imported from the generated `bindings/diet.ts` since TCK-202); the roster, catalogue
+  and pickers used 0.55 / 0.3 before TCK-160, the trainer 0.6 / 0.4.
 - Badge colour from the phenotype's `primaryColor` hue (grey until the phenotype is known); before it was guessed from
   `genome.charCodeAt(17)`.
 - Genome view colours per base and the gene tooltips: TCK-187 ([[wiki/biology/genome-compiler]]).

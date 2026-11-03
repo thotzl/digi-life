@@ -10,7 +10,6 @@ use crate::server::ocean_ipc::{
 };
 use crate::shared::dto::{CreatureAgent, TelemetryCreature};
 use crate::shared::time;
-use crate::sim::ocean::spore_field::SPORE_AMOUNT;
 use crate::sim::ocean::{
     CatalogueFounder, DeathCause, Founder, LedgerEntry, OceanEvent, OceanSim, OceanStep, RESET_FOUNDERS, SpawnRejected,
     SpeciesChange, ocean_seed,
@@ -109,7 +108,7 @@ impl OceanMode {
             seed: ctx.config.core.seed.clone(),
             world: self.sim.world().clone(),
             rules: OceanRules {
-                spore_energy: SPORE_AMOUNT,
+                spore_energy: ctx.config.metabolism.food_spore_energy,
             },
             food_pellets: self.sim.spores().spores.clone(),
             creatures: self.sim.creatures().to_vec(),

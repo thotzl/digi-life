@@ -24,8 +24,10 @@ describe("shared labels (TCK-160)", () => {
 
   it("every backend organ kind has a painter", () => {
     expect(Object.keys(ORGAN_PAINTERS).sort()).toEqual(Object.keys(ORGAN_KINDS).sort());
-    expect(organShape({ expressionStyle: 0.72, spinalPos: 0.1 } as any)).toBe("limb");
-    expect(organShape({ expressionStyle: 0.5, spinalPos: 0.1 } as any)).toBe("bud");
-    expect(organShape({ expressionStyle: 0.5, spinalPos: 0.5 } as any)).toBe("hillock");
+    expect(organShape({ kind: "proprioceptor", expressionStyle: 0.72, spinalPos: 0.1 } as any)).toBe("limb");
+    // Distance senses never grow as limbs (backend `Organ::is_limb`, TCK-202)
+    expect(organShape({ kind: "eye", expressionStyle: 0.9, spinalPos: 0.1 } as any)).toBe("bud");
+    expect(organShape({ kind: "bristle", expressionStyle: 0.5, spinalPos: 0.1 } as any)).toBe("bud");
+    expect(organShape({ kind: "nose", expressionStyle: 0.5, spinalPos: 0.5 } as any)).toBe("hillock");
   });
 });

@@ -3,10 +3,10 @@
 import type { CreaturePhenotype } from "../../bindings/CreaturePhenotype";
 import type { HSLColor } from "../../bindings/HSLColor";
 
-/** Diet thresholds of the backend `DietClass::from_carnivory` (`CARNIVORE_MIN`, `HERBIVORE_MAX` in
- * `src/biology/scenarios.rs`). */
-export const CARNIVORE_MIN = 0.6;
-export const HERBIVORE_MAX = 0.4;
+import { CARNIVORE_MIN, HERBIVORE_MAX } from "../../bindings/diet";
+
+/** Diet thresholds of the backend `DietClass::from_carnivory` (`src/biology/diet.rs`, generated `bindings/diet.ts`). */
+export { CARNIVORE_MIN, HERBIVORE_MAX };
 
 export type DietClass = "herbivore" | "omnivore" | "carnivore";
 

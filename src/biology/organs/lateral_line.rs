@@ -19,7 +19,10 @@ fn sense(ctx: &SenseCtx, organ: &Organ, out: &mut [f32; CHANNELS_PER_ORGANELLE])
     let organ_rad = organ.angle * (std::f32::consts::PI / 180.0);
     let rot_flow = -agent.omega_rot * 12.0 * fmath::sin(organ_rad) * 0.4;
 
-    // Signed flow; the input clamp to [0, 1] keeps only the head-on component
+    // Signed flow; the input clamp to [0, 1] keeps only the head-on component. Intended (reviewed in TCK-202): each
+    // organ is a directional receptor for flow arriving at its own axis; flow from behind reaches organs that face
+    // backwards (organ angle up to ±170°, mirrored pairs with HOX), so a body with several organs still resolves the
+    // direction, as the proprioceptor's flexion does for the bend side.
     out[1] = (flow_proj + rot_flow).clamp(-1.0, 1.0);
     out[4] = contact::pain(ctx, contact::boundary_pressure(ctx, organ.range()));
 }
@@ -32,7 +35,7 @@ pub const SPEC: OrganSpec = OrganSpec {
     live_channels,
     sense,
     cost_load: common::cost_load,
-    limb: common::limb_by_style,
+    limb: true,
     ballast: 1.0,
     latin_suffix: "vibrans",
     latin_rank: 2,

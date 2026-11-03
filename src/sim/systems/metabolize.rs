@@ -1,6 +1,7 @@
 //! Metabolism system: the shared energy function (`biology::metabolism::drain_energy`) times the world's
 //! `metabolic_scale`, then the world's environment energy modifiers in order.
 
+use crate::biology::diet::DietClass;
 use crate::biology::metabolism::drain_energy;
 use crate::config::OceanConfig;
 use crate::shared::dto::CreatureAgent;
@@ -9,25 +10,23 @@ use crate::sim::{CreatureStep, TemperatureField, TickCtx, World};
 /// Environment energy term applied after the drain.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EnergyModifier {
-    /// Green creatures (`carnivory < max_carnivory`, hue in `[hue_min, hue_max]`) in the light zone (top
+    /// Green herbivores (`DietClass::photosynthesises`, hue in `[hue_min, hue_max]`) in the light zone (top
     /// `light_zone_depth` share of the world) gain `gain`, capped by the stomach.
     Photosynthesis {
-        max_carnivory: f32,
         hue_min: f32,
         hue_max: f32,
         light_zone_depth: f32,
         gain: f32,
     },
-    /// Outside the thermal tolerance of the phenotype, by more than `min_stress` degrees of the world's temperature
-    /// field, the creature loses `stress · penalty_scale`. No effect in a world without temperature field.
+    /// Outside the thermal tolerance of the phenotype, by more than `min_stress` degrees of the water temperature
+    /// (`TemperatureField::WATER`, the field the organs sense), the creature loses `stress · penalty_scale`.
     ThermalStress { min_stress: f32, penalty_scale: f32 },
 }
 
 impl EnergyModifier {
-    /// The Ocean's photosynthesis (config `ocean.photosynthesisEnergyGain`, `bitingCarnivoryThreshold`).
+    /// The Ocean's photosynthesis (config `ocean.photosynthesisEnergyGain`).
     pub fn photosynthesis(ocean: &OceanConfig) -> Self {
         EnergyModifier::Photosynthesis {
-            max_carnivory: ocean.biting_carnivory_threshold,
             hue_min: 75.0,
             hue_max: 175.0,
             light_zone_depth: 0.35,
@@ -43,17 +42,17 @@ impl EnergyModifier {
         }
     }
 
-    pub fn apply(&self, agent: &mut CreatureAgent, height: f32, temperature: Option<TemperatureField>) {
+    pub fn apply(&self, agent: &mut CreatureAgent, height: f32) {
         match *self {
             EnergyModifier::Photosynthesis {
-                max_carnivory,
                 hue_min,
                 hue_max,
                 light_zone_depth,
                 gain,
             } => {
                 let hue = agent.phenotype.primary_color.h;
-                let green = agent.phenotype.carnivory < max_carnivory && (hue >= hue_min && hue <= hue_max);
+                let green = DietClass::from_carnivory(agent.phenotype.carnivory).photosynthesises()
+                    && (hue >= hue_min && hue <= hue_max);
                 if green && agent.py < height * light_zone_depth {
                     agent.energy = (agent.energy + gain).min(agent.phenotype.stomach_capacity);
                 }
@@ -62,8 +61,7 @@ impl EnergyModifier {
                 min_stress,
                 penalty_scale,
             } => {
-                let Some(field) = temperature else { return };
-                let local = field.at(agent.py, height);
+                let local = TemperatureField::WATER.at(agent.py, height);
                 let (lo, hi) = (
                     agent.phenotype.thermal_tolerance_min,
                     agent.phenotype.thermal_tolerance_max,
@@ -94,6 +92,6 @@ pub fn metabolize(world: &mut World, idx: usize, ctx: &TickCtx, step: &mut Creat
         world.settings.metabolic_scale,
     );
     for modifier in &world.settings.energy_modifiers {
-        modifier.apply(agent, world.height, world.temperature);
+        modifier.apply(agent, world.height);
     }
 }

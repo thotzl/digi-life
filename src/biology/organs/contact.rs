@@ -2,6 +2,7 @@
 //! water temperature and pain. Each kind reads the ones it uses.
 
 use super::SenseCtx;
+use crate::shared::temperature::TemperatureField;
 
 /// Wall proximity in [0, 1] within half the sensor range of the chamber edge.
 pub fn boundary_pressure(ctx: &SenseCtx, range: f32) -> f32 {
@@ -55,15 +56,14 @@ pub fn touch_pressure(ctx: &SenseCtx, range: f32, organ_power: f32, boundary_pre
     tactile_pressure
 }
 
-/// Water temperature: warm in the chamber centre, cold at the edges.
+/// Water temperature: warm at the surface, cold at the bottom, the field the thermal stress uses
+/// (`TemperatureField::WATER`; TCK-202, formerly a warm chamber centre with cold edges).
 pub fn water_temperature(ctx: &SenseCtx, organ_power: f32) -> f32 {
-    let agent = ctx.agent;
-    let dist_from_center = ((agent.px - ctx.width / 2.0).powi(2) + (agent.py - ctx.height / 2.0).powi(2)).sqrt();
-    (1.0 - dist_from_center / (ctx.width * 0.7)).clamp(0.15, 0.95) * organ_power
+    TemperatureField::WATER.sensed(ctx.agent.py, ctx.height) * organ_power
 }
 
 /// Local pain: fast contact with a wall.
-// TCK-202: pain thresholds (speed 1.5, pressure 0.3) are unreviewed model constants.
+// Pain thresholds (speed 1.5, pressure 0.3): model constants of the tactile kinds (kept as they are in TCK-202).
 pub fn pain(ctx: &SenseCtx, boundary_pressure: f32) -> f32 {
     let agent = ctx.agent;
     let speed = (agent.vx * agent.vx + agent.vy * agent.vy).sqrt();

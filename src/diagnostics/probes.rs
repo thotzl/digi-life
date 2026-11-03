@@ -27,9 +27,8 @@ use crate::shared::physics::step_creature_kinematics;
 use crate::shared::rng::{SimRng, derive, seed_from_str};
 pub use crate::shared::stats::{Distribution, pearson};
 use crate::sim::systems::death::DeathPolicy;
-use crate::sim::systems::eat::{EatRadiusRule, RespawnPolicy};
-use crate::sim::systems::food_drift::FoodDriftOrder;
-use crate::sim::systems::sense::{ABSENT_POS, ClockVariant, TargetSelector};
+use crate::sim::systems::eat::RespawnPolicy;
+use crate::sim::systems::sense::{ABSENT_POS, TargetSelector};
 use crate::sim::{BRAIN_ONLY_SYSTEMS, CreatureStep, TickCtx, World, WorldSettings, step_creature};
 use crate::trainer::evaluator::SoloTrials;
 use crate::trainer::mode::Scenario;
@@ -201,20 +200,20 @@ fn speed_of(agent: &CreatureAgent) -> f32 {
     (agent.vx * agent.vx + agent.vy * agent.vy).sqrt()
 }
 
-/// World of the brain probes: sensing (all food as laid out, `fmath` clock), brain with the config's Hebbian rate and
+/// World of the brain probes: sensing (all food as laid out), brain with the config's Hebbian rate and
 /// kinematics; no drain, death or food interaction (`BRAIN_ONLY_SYSTEMS`; the settings of the systems it does not run
 /// are not read). The creature's age is not advanced, so the clock input stays 0.5.
 fn brain_world() -> WorldSettings {
     WorldSettings {
         systems: BRAIN_ONLY_SYSTEMS,
-        clock: ClockVariant::Fmath,
         targets: TargetSelector::All,
         metabolic_scale: 0.0,
         energy_modifiers: Vec::new(),
         death: DeathPolicy::Freeze,
-        food_drift: FoodDriftOrder::AfterEachCreature,
-        eat_radius: EatRadiusRule::TrainerDiet,
-        respawn: RespawnPolicy::MinDistance { min_distance: 0.0 },
+        respawn: RespawnPolicy::MinDistance {
+            min_distance: 0.0,
+            margin: 0.0,
+        },
     }
 }
 
@@ -230,7 +229,7 @@ fn senses_food(phenotype: &CreaturePhenotype, inputs: &[f32]) -> bool {
 
 /// Limbs as counted by `physics::locomotion_drive` (part of the speed band).
 fn limb_count(phenotype: &CreaturePhenotype) -> usize {
-    phenotype.organelles.iter().filter(|o| (o.kind.spec().limb)(o)).count()
+    phenotype.organelles.iter().filter(|o| o.is_limb()).count()
 }
 
 // ==========================================================================

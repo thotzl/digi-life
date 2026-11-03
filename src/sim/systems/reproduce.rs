@@ -10,6 +10,7 @@ use crate::biology::phenotype::parse_genome;
 use crate::config::OceanConfig;
 use crate::shared::brain::BrainConfig;
 use crate::shared::dto::CreatureAgent;
+use crate::shared::fmath;
 
 /// Probability that a mitosis child's genome mutates.
 pub const MITOSIS_MUTATION_CHANCE: f64 = 0.35;
@@ -53,8 +54,8 @@ pub fn split(agent: &mut CreatureAgent, rule: &MitosisRule) {
     agent.energy *= rule.split_loss_ratio;
     agent.has_eaten = false;
     let recoil = agent.phenotype.split_loss * rule.recoil_velocity_scale;
-    agent.vx += recoil * (agent.heading_angle + std::f32::consts::PI).cos();
-    agent.vy += recoil * (agent.heading_angle + std::f32::consts::PI).sin();
+    agent.vx += recoil * fmath::cos(agent.heading_angle + std::f32::consts::PI);
+    agent.vy += recoil * fmath::sin(agent.heading_angle + std::f32::consts::PI);
 }
 
 /// The child of a split parent (call after `split`): with `MITOSIS_MUTATION_CHANCE` a mutated genome, Lamarckian

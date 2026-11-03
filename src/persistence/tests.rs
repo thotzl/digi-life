@@ -200,6 +200,12 @@ fn test_v1_12_30_database_migrates_without_data_loss() {
             let conn = Connection::open(&path).unwrap();
             build_v1_12_30_schema(&conn, old_columns);
             fill_v1_12_30_rows(&conn, old_columns);
+            // Same model version as the build under test (the fixture stores 6; the model reset is tested separately)
+            conn.execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'model_version'",
+                [MODEL_VERSION.to_string()],
+            )
+            .unwrap();
             assert_eq!(user_version(&conn), 0);
         }
 

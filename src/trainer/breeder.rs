@@ -73,6 +73,15 @@ fn sort_desc_by_fitness(records: &mut [GenomeRecord]) {
     records.sort_by(|a, b| b.fitness.partial_cmp(&a.fitness).unwrap_or(std::cmp::Ordering::Equal));
 }
 
+/// Hall of fame order: fitness descending, every genome once (its best record; TCK-202: surviving elites were
+/// re-added every generation, so the hof slots mostly re-mutated copies of the current parents), at most `retention`.
+fn rank_hof(hof: &mut Vec<GenomeRecord>, retention: usize) {
+    sort_desc_by_fitness(hof);
+    let mut seen = std::collections::HashSet::new();
+    hof.retain(|r| seen.insert(r.genome.clone()));
+    hof.truncate(retention);
+}
+
 /// Outcome of the selection at a generation end (`Breeder::select`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Selection {
@@ -107,7 +116,7 @@ pub struct Breeder {
     parents: Vec<GenomeRecord>,
     /// Channel of the last mutation in each parent's lineage, aligned with `parents`
     parent_last_mutation: Vec<Option<MutationChannel>>,
-    /// Best genomes of the run, fitness descending, at most `hof_retention`
+    /// Best genomes of the run, fitness descending, each genome once, at most `hof_retention`
     hof: Vec<GenomeRecord>,
     hof_retention: usize,
     /// Parent index per breeding slot (elites: their own parent, mutants: their source parent, hof/random: none);
@@ -118,10 +127,10 @@ pub struct Breeder {
 }
 
 impl Breeder {
-    /// Continues from `parents` (fitness descending) and `hof` (sorted and cut to `hof_retention` here).
+    /// Continues from `parents` (fitness descending) and `hof` (sorted, deduplicated by genome and cut to
+    /// `hof_retention` here).
     pub fn new(parents: Vec<GenomeRecord>, mut hof: Vec<GenomeRecord>, hof_retention: usize) -> Self {
-        sort_desc_by_fitness(&mut hof);
-        hof.truncate(hof_retention);
+        rank_hof(&mut hof, hof_retention);
         Self {
             parent_last_mutation: vec![None; parents.len()],
             parents,
@@ -378,8 +387,7 @@ impl Breeder {
         self.parents = elites.clone();
         self.parent_last_mutation = elite_last_mutation.clone();
         self.hof.extend(elites.iter().cloned());
-        sort_desc_by_fitness(&mut self.hof);
-        self.hof.truncate(self.hof_retention);
+        rank_hof(&mut self.hof, self.hof_retention);
 
         Selection {
             elites,

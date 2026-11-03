@@ -76,21 +76,25 @@ generation ends.
 
 One tick of a chamber (`Chamber::step`, TCK-200/201): per creature the shared creature systems of `src/sim/`
 ([[wiki/contracts/creature-system]]) with the room's `world_settings`, then the trainer's bookkeeping. Trainer side
-of the Ocean/trainer divergences (until TCK-202):
+of the world features (since TCK-202 the creature model is the Ocean's: `fmath` clock, eat radius
+`r · grazingRadiusMultiplier + grazingRadiusOffset` from config section `metabolism`, food drift once per tick before
+the creatures, death at energy ≤ 0, the water temperature as a depth field for the temperature sense):
 
 | Setting | Trainer room | Ocean (`WorldSettings::ocean`) |
 | :--- | :--- | :--- |
-| `systems` | sense → think → metabolize → death → move → food drift → eat | same without food drift |
-| `clock` | `Fmath` | `Std` |
+| `systems` | `CREATURE_SYSTEMS`: sense → think → metabolize → death → move → eat | same |
 | `targets` | `All` (one food per type) / `NearestPerType` | `NearestPerTypeWithPrey` |
 | `metabolic_scale` | `trainerMetabolicScale` · room factor | 1 |
-| `energy_modifiers` | none | photosynthesis, thermal stress |
-| `death` | `Freeze` (starvation) | `Decompose` |
-| `food_drift` | `AfterEachCreature` | `BeforeAllCreatures` |
-| `eat_radius` | `TrainerDiet`: `max(r + 10, r · 0.8 + 5)` meat, `max(r + 10, r · 0.75 + 8)` plant | `Linear` (config) |
-| `respawn` | `MinDistance` (spawn distance) | `Patchy` |
+| `energy_modifiers` | none (no light zone, no thermal stress) | photosynthesis, thermal stress |
+| `death` | `Freeze`: frozen for the rest of the trial, no age limit (the trial resets the age and ends long before the shortest lifespan, 3,600 ticks) | `Decompose`: lifespan and meat spores |
+| `respawn` | `MinDistance` (spawn distance, `trainerSpawnMargin` 25 px from the walls) | `Patchy` |
 
-After the systems: age + 1 (also when starved), 8×8 coverage mask, wall counter (20-tick cooldown), approach tracking,
+Before TCK-202 the trainer had its own clock (`fmath` vs the Ocean's std `sin`), food drift order (after each
+creature's move) and eat radius (`max(r + 10, ..)`, smaller than the Ocean's for r > 12), so trainer-bred creatures
+met another catch geometry in the Ocean.
+
+Per tick: food drift (`food_drift::drift_before_creatures`), then per creature the systems and after them: age + 1
+(also when starved), 8×8 coverage mask, wall counter (`trainerWallCollisionCooldown` 20 ticks), approach tracking,
 then the catches (`CreatureEvent::Ate`; energy already added): yield, first-catch tick, respawn, approach restart.
 
 - **Energy** (TCK-178): start energy `stomach_capacity · creatureStartStomachRatio`; the drain is the Ocean cost ×
@@ -127,7 +131,9 @@ then the catches (`CreatureEvent::Ate`; energy already added): yield, first-catc
 ## Selection and breeding (`Breeder`)
 
 - **Selection:** sandboxes ranked by fitness; `clamp(round(N · eliteRatio), 1, N)` elites (0.25) become the parents and
-  enter the hall of fame (bounded to `trainerGenomeRetentionPerRun`, 200).
+  enter the hall of fame (bounded to `trainerGenomeRetentionPerRun`, 200). The hall of fame holds every genome once
+  (its best record); before TCK-202 surviving elites were re-added every generation, so the hof slots mostly
+  re-mutated copies of the current parents.
 - **Slot plan:** elites (unmodified) | hall-of-fame children (`round(N · hofRate)`, mutated) | random immigrants
   (`round(N · inflowRate)`) | mutants of the parents round-robin; missing parents/HoF entries fall back to mutants of
   parent 0. Generation 1: all random.

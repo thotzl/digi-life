@@ -113,7 +113,7 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 
 ## Latin name
 
-- `phenotype/naming.rs`: chamber prefix, symmetry, and the suffix of the dominant organ group (`OrganSpec::latin_suffix`; ties go to the lower `latin_rank`: eye, nose, tactile kinds, thermal; TCK-162, RV-B11) or `raptor` for carnivory ≥ 0.55.
+- `phenotype/naming.rs`: chamber prefix, symmetry, and the suffix of the dominant organ group (`OrganSpec::latin_suffix`; ties go to the lower `latin_rank`: eye, nose, tactile kinds, thermal; TCK-162, RV-B11) or `raptor` for carnivores (`biology::diet::DietClass`, carnivory ≥ 0.6, the class of the predator flag `is_predator`; TCK-202: before, the name used 0.55 and the flag 0.50).
 - Only ~6,760 strain combinations per prefix/suffix; collisions are silently dropped by `INSERT OR IGNORE` on the UNIQUE `latin_name` (RV-B10).
 
 ## Known limitations

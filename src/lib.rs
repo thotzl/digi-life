@@ -15,6 +15,7 @@ pub mod diagnostics {
 pub mod biology {
     pub mod brain;
     pub mod creature_factory;
+    pub mod diet;
     pub mod genome;
     pub mod metabolism;
     pub mod organs;
@@ -33,5 +34,6 @@ pub mod shared {
     pub mod rng;
     pub mod spatial_grid;
     pub mod stats;
+    pub mod temperature;
     pub mod time;
 }

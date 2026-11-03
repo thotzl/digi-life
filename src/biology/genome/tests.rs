@@ -343,9 +343,10 @@ fn test_mutate_genome_keeps_length_bounds() {
     ];
     for mut genome in starts {
         for _ in 0..10_000 {
-            genome = mutate_genome(&genome, ops(), &mut rng)
-                .expect("non-empty genome")
-                .genome;
+            // `None`: no applicable operator (every letter a promoter or terminator of a read gene, TCK-202)
+            if let Some(m) = mutate_genome(&genome, ops(), &mut rng) {
+                genome = m.genome;
+            }
             assert!((128..=512).contains(&genome.len()), "length {}", genome.len());
         }
     }

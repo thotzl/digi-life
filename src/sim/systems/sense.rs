@@ -23,22 +23,10 @@ pub fn absent_target(id: u32, type_id: u32) -> FoodSpore {
     }
 }
 
-/// `sin` used by the clock input `0.5 + 0.5 · sin(age · 0.1)`. The trainer uses the platform-independent
-/// `fmath::sin`, the Ocean the std `sin` (divergence kept until TCK-202).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClockVariant {
-    Fmath,
-    Std,
-}
-
-impl ClockVariant {
-    pub fn clock_input(self, age: u32) -> f32 {
-        let phase = (age as f32) * 0.1;
-        match self {
-            ClockVariant::Fmath => 0.5 + 0.5 * fmath::sin(phase),
-            ClockVariant::Std => 0.5 + 0.5 * phase.sin(),
-        }
-    }
+/// Clock input `0.5 + 0.5 · sin(age · 0.1)` with the platform-independent `fmath::sin`, in every world (TCK-202; the
+/// Ocean formerly used the std `sin`).
+pub fn clock_input(age: u32) -> f32 {
+    0.5 + 0.5 * fmath::sin((age as f32) * 0.1)
 }
 
 /// Which food the sensors see. Every selector but `All` yields exactly two targets: `[0]` the nearest plant,
@@ -50,7 +38,7 @@ pub enum TargetSelector {
     /// Nearest plant (`type_id` 1) and nearest meat (`type_id` 2) (trainer rooms with several food per type)
     NearestPerType,
     /// Nearest plant (every non-meat spore) and the nearer of the nearest meat spore and the nearest prey peer
-    /// (another creature of another species) (Ocean)
+    /// (another creature of another species; its `amount` is the peer's energy) (Ocean)
     NearestPerTypeWithPrey,
 }
 
@@ -96,7 +84,7 @@ impl TargetSelector {
                         type_id: 2,
                         x: p.px,
                         y: p.py,
-                        amount: 15.0,
+                        amount: p.energy,
                         vx: p.vx,
                         vy: p.vy,
                     })
@@ -126,7 +114,7 @@ fn nearest<'a>(agent: &CreatureAgent, foods: impl Iterator<Item = &'a FoodSpore>
 /// Fills `step.inputs` for creature `idx`: clock input, the world's targets, obstacles and bounds.
 pub fn sense(world: &mut World, idx: usize, step: &mut CreatureStep) {
     let agent = &world.creatures[idx];
-    let clock = world.settings.clock.clock_input(agent.age);
+    let clock = clock_input(agent.age);
     let visible = world
         .settings
         .targets
@@ -221,7 +209,7 @@ mod tests {
             .select(&a, &foods, &peers, &mut scratch)
             .to_vec();
         // Self and own species are no prey; peer 9 at 20 px beats the meat spore at 30 px
-        assert_eq!((seen[0].id, seen[1].id, seen[1].x, seen[1].amount), (1, 9, 20.0, 15.0));
+        assert_eq!((seen[0].id, seen[1].id, seen[1].x, seen[1].amount), (1, 9, 20.0, 50.0));
         let seen = TargetSelector::NearestPerTypeWithPrey
             .select(&a, &foods, &peers[..2], &mut scratch)
             .to_vec();
@@ -233,9 +221,8 @@ mod tests {
     }
 
     #[test]
-    fn test_clock_variants_agree_at_age_zero() {
-        assert_eq!(ClockVariant::Fmath.clock_input(0), 0.5);
-        assert_eq!(ClockVariant::Std.clock_input(0), 0.5);
-        assert!((ClockVariant::Fmath.clock_input(17) - ClockVariant::Std.clock_input(17)).abs() < 1e-6);
+    fn test_clock_input_is_fmath() {
+        assert_eq!(clock_input(0), 0.5);
+        assert_eq!(clock_input(17), 0.5 + 0.5 * fmath::sin(17.0 * 0.1));
     }
 }

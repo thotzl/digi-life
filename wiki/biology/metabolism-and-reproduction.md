@@ -22,7 +22,7 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 - `neurons` = thalamus + hidden + motor neurons (`brain_neurons`). Sensor and systemic slots are inputs written by the sensing code; their cost is the organ term.
 - Activity = `BrainRuntime::activity()`: `Σ |w · a_source|` over the active synapses of the last brain step, summed in the existing signal pass (0 before the first step). Pruned and zero weights cost nothing; a silent brain pays only the per-neuron term ([[wiki/biology/ctrnn-brain]]).
 - Backward thrust costs the same as forward thrust; no thrust costs nothing.
-- Ocean only, on top: thermal stress (`thermal_stress · thermalStressPenaltyScale` when the local temperature is more than 0.1 outside the tolerance) and the photosynthesis gain in the light zone ([[wiki/simulation/ocean]]).
+- Ocean only, on top: thermal stress (`thermal_stress · thermalStressPenaltyScale` when the local temperature is more than 0.1 outside the tolerance) and the photosynthesis gain in the light zone for green herbivores ([[wiki/simulation/ocean]]). The local temperature is the depth field `shared::temperature::TemperatureField::WATER` (38 °C at the surface, 12 °C at the bottom), the same field the temperature sense reads (TCK-202). The tolerance window is `[max(-5, round(60·c − 15·w)), min(105, round(60·c + 15·w))]` (`TEM` gene; TCK-202 fixed the minimum, which `-5.0f32.max(x)` had negated to ≤ −5 °C, so cold stress never fired).
 
 ### Calibration (derived, not tuned)
 
@@ -50,14 +50,16 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 
 - Herbivores eat plant spores, carnivores eat meat; dead creatures decompose into meat spores (`type_id = 2`), eaten meat recycles into algae (TCK-129).
 - **Food energy** (TCK-178): one rule `metabolism::food_energy` for Ocean and trainer, `foodSporeEnergy (15) · diet efficiency · scale`; plant `(1 − carnivory) · grazingEfficiencyHerbivoreScale` (1.5), meat `carnivory · bitingEfficiencyCarnivoreScale` (1.25). A pure herbivore gets 22.5 per plant spore, a pure carnivore 18.75 per meat spore. Energy is capped at `stomach_capacity`; eating sets `has_eaten` (Ocean).
-- **Predation** (Ocean only, TCK-145): an agent with `carnivory ≥ bitingCarnivoryThreshold` (0.35) bites at most once per tick, the nearest eligible victim within `mean_radius · bitingRadiusMultiplier + bitingRadiusOffset` (`sim::systems::bite::bite_target`, called by `OceanSim::step`). Not eligible: itself, its own species, and a victim this attacker bit within the last `biteCooldownTicks` (60; per attacker–victim pair, map cleared on `RESET_EVOLUTION`). The value 60 is a default without measurement.
-- A bite deals `bitingEnergyDamage` (35) to the victim (applied after the step) and gives the attacker `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale` (35 · carnivory · 1.25), capped by the damage dealt and by the victim's energy (`metabolism::bite_energy_gain`): a bite moves energy, it never creates it. Full gain (35) from carnivory 0.8; at the threshold 0.35 the gain is ≈ 15.3. The attacker's energy is capped at `stomach_capacity`; a bite sets `has_eaten`, so predators can reach mitosis by biting. RV-B07 is resolved.
+- **Diet classes** (`biology::diet`, TCK-202): one source of every carnivory threshold: herbivore below 0.4, omnivore 0.4–0.6, carnivore from 0.6. Carnivores carry the predator flag (`is_predator`) and the `raptor` name; omnivores and carnivores bite; only herbivores photosynthesise; the trainer's diet target uses the same class; the frontend's diet labels read the generated `bindings/diet.ts`. Before, the thresholds were 0.50 (flag), 0.55 (name), 0.35 (bite and photosynthesis, config `bitingCarnivoryThreshold`, removed) and 0.4/0.6 (trainer, labels).
+- **Predation** (Ocean only, TCK-145): an omnivore or carnivore (`DietClass::bites`, carnivory ≥ 0.4) bites at most once per tick, the nearest eligible victim within `mean_radius · bitingRadiusMultiplier + bitingRadiusOffset` (`sim::systems::bite::bite_target`, called by `OceanSim::step`). Not eligible: itself, its own species, and a victim this attacker bit within the last `biteCooldownTicks` (60; per attacker–victim pair, map cleared on `RESET_EVOLUTION`). The value 60 is a default without measurement.
+- A bite deals `bitingEnergyDamage` (35) to the victim (applied after the step) and gives the attacker `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale` (35 · carnivory · 1.25), capped by the damage dealt and by the victim's energy (`metabolism::bite_energy_gain`): a bite moves energy, it never creates it. Full gain (35) from carnivory 0.8; at the threshold 0.4 the gain is 17.5. The attacker's energy is capped at `stomach_capacity`; a bite sets `has_eaten`, so predators can reach mitosis by biting. RV-B07 is resolved.
 - The victim-energy cap uses what the victim still has after earlier bites in the same tick (energy at step start minus the damage already recorded), so several attackers together never take more than the victim had.
 - The rule "do not bite the same species" only applies to exact clones (species = genome, see below).
 
 ## Starvation and death
 
-- Ocean: an agent dies at `energy ≤ 0` or at its maximum age (lifespan below) and decomposes into meat spores. The damage pass after the step removes every agent with energy ≤ 0.1 (also after metabolism or thermal stress).
+- One death threshold in every world (`sim::systems::death::is_dead_energy`, energy ≤ 0; TCK-202).
+- Ocean: an agent dies at `energy ≤ 0` or at its lifespan (below) and decomposes into meat spores. The damage pass after all creatures removes every agent the bite damage left without energy (before TCK-202: every agent with energy ≤ 0.1). Bites resolve after every creature's step, so a creature that dies in its own step this tick is no bite target (before, it could still feed an attacker).
 - Death log (`death_log` in `server/engine/ocean_mode.rs`, from `OceanEvent::Died { hunted }`): "hunted down by predators" only when the agent took bite damage in that tick, otherwise the starvation/senescence message. Test `sim::ocean::tests::test_bite_damage_kills_a_weak_victim_as_hunted`. Before P6 every death in the damage pass was logged as predation (P5 check: 101 "hunted" deaths with 0 bites in 90 s).
 - Trainer: a creature at 0 energy is starved for the rest of the trial (no brain step, no movement, no eating) and recovers on the next trial reset ([[wiki/simulation/trainer]], TCK-178).
 
@@ -71,8 +73,7 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 
 ## Lifespan
 
-- `max_age_ticks = min(mature_age * creatureLifespanMatureAgeMultiplier (12), creatureMaxAgeTicks (36000))` (`sim::systems::death::DeathPolicy::Decompose`, TCK-149), DNA-dependent (TCK-129) → 3,600–32,400 ticks; the cap lies above the maximum and does not bind with current values.
-- Lifespan and maturity are still split between phenotype and config; no single source of truth (RV-B08).
+- Lifespan `mature_age · creatureLifespanMatureAgeMultiplier` (12) (`DeathPolicy::lifespan`), DNA-dependent (TCK-129) → 3,600–32,400 ticks. One source since TCK-202 (absorbed TCK-146, RV-B08 resolved): the genome sets the lifespan, the config the factor; the former cap `creatureMaxAgeTicks` (36000) lay above the longest lifespan, never bound and is removed. Trainer trials have no age limit (`DeathPolicy::Freeze`; a trial ends long before the shortest lifespan).
 
 ## Lamarckian inheritance
 

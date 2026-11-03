@@ -23,7 +23,10 @@ use super::{catalogue, ocean, species, trainer};
 ///     outrank every new value in the hall of fame, retention and run list, which all sort by raw fitness).
 /// 6 = Thalamus sum nodes with tanh instead of sigmoid (TCK-190: stored weights were selected and learned with a constant
 ///     0.5 drive from every silent channel).
-pub const MODEL_VERSION: u32 = 6;
+/// 7 = R5 model corrections (TCK-202: thermal tolerance, predator flag and names from one diet class, eyes no longer
+///     limbs, one eat radius / food drift / clock / temperature model for trainer and Ocean; stored phenotypes and
+///     weights were selected under the old rules).
+pub const MODEL_VERSION: u32 = 7;
 
 /// Latest definition of one table, owned by its repository module.
 pub(super) struct TableDef {

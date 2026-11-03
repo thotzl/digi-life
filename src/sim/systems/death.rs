@@ -6,8 +6,11 @@ use crate::config::OceanConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::sim::{CreatureEvent, CreatureStep, World};
 
-/// Energy a creature must keep after the bite damage of a tick to survive it (Ocean, applied after the step).
-pub const POST_DAMAGE_MIN_ENERGY: f32 = 0.1;
+/// The one death threshold of every world (TCK-202): a creature with no energy left is dead, in its own step and after
+/// the bite damage of a tick (the Ocean formerly removed creatures with up to 0.1 energy after the damage pass).
+pub fn is_dead_energy(energy: f32) -> bool {
+    energy <= 0.0
+}
 
 /// What happens at death.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -15,11 +18,10 @@ pub enum DeathPolicy {
     /// At 0 energy the creature stops (energy and velocity 0) and does nothing else; the owner keeps it frozen for
     /// the rest of the trial (trainer starvation, TCK-178). No age limit.
     Freeze,
-    /// At 0 energy or at the lifespan `min(mature_age · lifespan_multiplier, max_age_ticks)` the creature dies and
-    /// decomposes into `floor(length · radius / size_ratio)` meat spores clamped to `[spore_min, spore_max]` (Ocean).
+    /// At 0 energy or at the lifespan (`lifespan`) the creature dies and decomposes into
+    /// `floor(length · radius / size_ratio)` meat spores clamped to `[spore_min, spore_max]` (Ocean).
     Decompose {
         lifespan_multiplier: u32,
-        max_age_ticks: u32,
         size_ratio: f32,
         spore_min: i32,
         spore_max: i32,
@@ -31,10 +33,20 @@ impl DeathPolicy {
     pub fn decompose(ocean: &OceanConfig) -> Self {
         DeathPolicy::Decompose {
             lifespan_multiplier: ocean.creature_lifespan_mature_age_multiplier,
-            max_age_ticks: ocean.creature_max_age_ticks,
             size_ratio: ocean.decomposition_size_ratio,
             spore_min: ocean.decomposition_spore_min,
             spore_max: ocean.decomposition_spore_max,
+        }
+    }
+
+    /// Lifespan of `agent` under this policy: `mature_age · lifespan_multiplier`, the one lifespan source (TCK-146);
+    /// `None` without an age limit (`Freeze`: trainer trials reset the age and end long before any lifespan).
+    pub fn lifespan(&self, agent: &CreatureAgent) -> Option<u32> {
+        match *self {
+            DeathPolicy::Freeze => None,
+            DeathPolicy::Decompose {
+                lifespan_multiplier, ..
+            } => Some(agent.phenotype.mature_age * lifespan_multiplier),
         }
     }
 
@@ -61,20 +73,16 @@ pub fn death(world: &mut World, idx: usize, step: &mut CreatureStep) {
     let agent = &mut world.creatures[idx];
     match policy {
         DeathPolicy::Freeze => {
-            if agent.energy <= 0.0 {
+            if is_dead_energy(agent.energy) {
                 agent.energy = 0.0;
                 agent.vx = 0.0;
                 agent.vy = 0.0;
                 step.died = true;
             }
         }
-        DeathPolicy::Decompose {
-            lifespan_multiplier,
-            max_age_ticks,
-            ..
-        } => {
-            let lifespan = (agent.phenotype.mature_age * lifespan_multiplier).min(max_age_ticks);
-            if agent.energy <= 0.0 || agent.age >= lifespan {
+        DeathPolicy::Decompose { .. } => {
+            let aged = policy.lifespan(agent).is_some_and(|lifespan| agent.age >= lifespan);
+            if is_dead_energy(agent.energy) || aged {
                 step.died = true;
                 step.events.push(CreatureEvent::Decomposed {
                     x: agent.px,

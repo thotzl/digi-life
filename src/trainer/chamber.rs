@@ -8,43 +8,19 @@ use rand::RngCore;
 use serde::Serialize;
 
 use crate::biology::creature_factory::start_energy;
+use crate::biology::diet::DietClass;
 use crate::config::AppConfig;
 use crate::shared::brain::food_sense_range;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::geom;
 use crate::shared::map_generator::ProceduralObstacle;
+use crate::shared::physics::SporePusher;
 use crate::shared::rng::{SimRng, derive};
 use crate::sim::systems::eat::respawn;
+use crate::sim::systems::food_drift::drift_before_creatures;
 use crate::sim::{CreatureEvent, CreatureStep, TickCtx, World, WorldSettings, step_creature};
 
 use super::room::Room;
-
-/// Carnivory at or above this value: the creature hunts meat only.
-pub const CARNIVORE_MIN: f32 = 0.6;
-/// Carnivory below this value: the creature grazes plants only (in between: omnivore).
-pub const HERBIVORE_MAX: f32 = 0.4;
-
-/// Wall contacts within this many ticks after a counted one are not counted again (rubbing).
-const WALL_COLLISION_COOLDOWN: u32 = 20;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DietClass {
-    Herbivore,
-    Omnivore,
-    Carnivore,
-}
-
-impl DietClass {
-    pub fn from_carnivory(carnivory: f32) -> Self {
-        if carnivory >= CARNIVORE_MIN {
-            DietClass::Carnivore
-        } else if carnivory >= HERBIVORE_MAX {
-            DietClass::Omnivore
-        } else {
-            DietClass::Herbivore
-        }
-    }
-}
 
 /// Distance from the agent to the nearest food its diet targets (plants = type 1, meat = type 2;
 /// omnivores take the nearer of both). `f32::MAX` if no such food exists.
@@ -171,6 +147,11 @@ pub struct Chamber {
     /// `derive(respawn_seed, [k])`. Drawn from the trial's layout stream after the layout, so in the trainer every
     /// sandbox of a generation has the same seed (TCK-174).
     pub respawn_seed: u64,
+    /// Reused buffers of the food drift (`food_drift::drift_before_creatures`; not state)
+    #[serde(skip)]
+    drift_nearby: Vec<u32>,
+    #[serde(skip)]
+    drift_pushers: Vec<SporePusher>,
 }
 
 impl Chamber {
@@ -185,6 +166,8 @@ impl Chamber {
             tick: 0,
             catches: 0,
             respawn_seed: 0,
+            drift_nearby: Vec::new(),
+            drift_pushers: Vec::new(),
         }
     }
 
@@ -218,7 +201,8 @@ impl Chamber {
         self.respawn_seed = rng.next_u64();
     }
 
-    /// One tick: per entity in order, the shared creature systems of the room's world (`settings`, `obstacles`), then
+    /// One tick: the food drifts once, pushed by the creatures at their tick-start positions (the order of every world,
+    /// TCK-202), then per entity in order the shared creature systems of the room's world (`settings`, `obstacles`), then
     /// the trainer's bookkeeping (age, coverage, wall counter, approach tracking) and the catches (yield, first-catch
     /// tick, respawn). Deterministic without an RNG argument: respawns use `derive(respawn_seed, [catches])`.
     /// A starved entity (`EntityTrial::starved`, TCK-178) does nothing but age for the rest of the trial.
@@ -226,6 +210,20 @@ impl Chamber {
         self.tick += 1;
         let size = self.size;
         let ctx = TickCtx::new(config, self.tick as u64);
+        drift_before_creatures(
+            &mut World {
+                creatures: &mut self.creatures,
+                foods: &mut self.foods,
+                obstacles,
+                peers: &[],
+                grid: None,
+                width: size,
+                height: size,
+                settings,
+            },
+            &mut self.drift_nearby,
+            &mut self.drift_pushers,
+        );
         for idx in 0..self.creatures.len() {
             let trial = &mut self.trials[idx];
             if !trial.starved {
@@ -237,7 +235,6 @@ impl Chamber {
                     grid: None,
                     width: size,
                     height: size,
-                    temperature: None,
                     settings,
                 };
                 step_creature(&mut world, idx, &ctx, &mut trial.step);
@@ -265,7 +262,7 @@ impl Chamber {
 
             if trial.step.hit_wall && trial.wall_collision_cooldown == 0 {
                 trial.wall_collisions += 1;
-                trial.wall_collision_cooldown = WALL_COLLISION_COOLDOWN;
+                trial.wall_collision_cooldown = config.trainer.trainer_wall_collision_cooldown;
             }
             if trial.wall_collision_cooldown > 0 {
                 trial.wall_collision_cooldown -= 1;
@@ -316,14 +313,6 @@ impl Chamber {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_diet_class_thresholds() {
-        assert_eq!(DietClass::from_carnivory(0.39), DietClass::Herbivore);
-        assert_eq!(DietClass::from_carnivory(0.4), DietClass::Omnivore);
-        assert_eq!(DietClass::from_carnivory(0.59), DietClass::Omnivore);
-        assert_eq!(DietClass::from_carnivory(0.6), DietClass::Carnivore);
-    }
 
     #[test]
     fn test_entity_trial_reset_clears_the_record_and_keeps_the_buffers() {

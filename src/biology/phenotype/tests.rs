@@ -649,5 +649,7 @@ fn test_latin_name_is_deterministic() {
 // P6 TCK-151: `basalMetabolicRate` removed from the phenotype (cost computed by `biology::metabolism`),
 // 0xe0a2bfd1c7310306 -> 0x9d206dfd8124f808; TCK-190 tanh thalamus sum nodes -> 0x0ab34073297ace74;
 // TCK-197: hash of the model fields only (`model_fields`) instead of the full serde output, and the motifs OUT, STM,
-// TEM added to `golden_genomes`, 0x0ab34073297ace74 -> 0x6b78c31a4d19b0e8, no model change)
-const GOLDEN_FINGERPRINT: u64 = 0x6b78c31a4d19b0e8;
+// TEM added to `golden_genomes`, 0x0ab34073297ace74 -> 0x6b78c31a4d19b0e8, no model change;
+// TCK-202 model corrections: thermal tolerance minimum floored at -5 instead of negated, 0x6b78c31a4d19b0e8 ->
+// 0x84dd8ffb7b9f87dd)
+const GOLDEN_FINGERPRINT: u64 = 0x84dd8ffb7b9f87dd;

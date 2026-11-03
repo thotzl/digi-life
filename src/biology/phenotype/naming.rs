@@ -1,12 +1,9 @@
 //! Procedural Latin name: chamber prefix, symmetry, dominant organ kind (or predator) and a strain id from the genome.
 
 use super::Symmetry;
+use crate::biology::diet::DietClass;
 use crate::biology::genome::alphabet::{ALPHABET, char_to_value};
 use crate::biology::organs::Organ;
-
-/// Carnivory from which the name says "raptor" (display only; `is_predator` uses 0.50).
-// TCK-202: naming and `is_predator` use different predator thresholds
-const RAPTOR_CARNIVORY: f32 = 0.55;
 
 pub fn latin_name(genome: &str, symmetry: Symmetry, chambers: usize, organs: &[Organ], carnivory: f32) -> String {
     let seg_prefixes = ["Monoplasma", "Biplasma", "Triplasma", "Tetraplasma", "Pentaplasma"];
@@ -16,7 +13,8 @@ pub fn latin_name(genome: &str, symmetry: Symmetry, chambers: usize, organs: &[O
         Symmetry::Quad => "tetramerum",
     };
 
-    let suffix = if carnivory >= RAPTOR_CARNIVORY {
+    // "raptor" for carnivores, the same class as the predator flag (`biology::diet`, TCK-202)
+    let suffix = if DietClass::from_carnivory(carnivory).is_predator() {
         "raptor"
     } else {
         dominant_suffix(organs).unwrap_or("lēvis")

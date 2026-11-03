@@ -1,4 +1,4 @@
-//! Config section `ocean` (`OceanConfig`): world size, population, food, lifespan, grazing, biting, mitosis and
+//! Config section `ocean` (`OceanConfig`): world size, population, food, lifespan, biting, mitosis and
 //! decomposition rules of the Ocean (`sim::ocean::OceanSim`, TCK-156). Food and bite energy live in section `metabolism`
 //! (shared with the trainer).
 
@@ -17,8 +17,8 @@ pub struct OceanConfig {
     pub food_spore_count: usize,
     /// Cap for `INJECT_URZELLE` / `SPAWN_CLONE` and mitosis
     pub max_creatures: usize,
-    /// Lifespan `min(mature_age · creatureLifespanMatureAgeMultiplier, creatureMaxAgeTicks)`
-    pub creature_max_age_ticks: u32,
+    /// Lifespan `mature_age · creatureLifespanMatureAgeMultiplier`, the one lifespan source (TCK-202/TCK-146: the
+    /// former cap `creatureMaxAgeTicks` 36000 lay above the longest lifespan 32,400 and never bound)
     pub creature_lifespan_mature_age_multiplier: u32,
     /// Mitosis floors on the phenotype's mature age and stomach threshold
     pub creature_mature_age_floor: u32,
@@ -26,11 +26,6 @@ pub struct OceanConfig {
     pub lamarckian_assimilation_age_floor: u32,
     pub thermal_stress_penalty_scale: f32,
     pub photosynthesis_energy_gain: f32,
-    /// Eat radius `mean_radius · grazingRadiusMultiplier + grazingRadiusOffset`
-    pub grazing_radius_multiplier: f32,
-    pub grazing_radius_offset: f32,
-    /// Carnivory at or above which a creature bites (and below which green creatures photosynthesise)
-    pub biting_carnivory_threshold: f32,
     /// Bite range `mean_radius · bitingRadiusMultiplier + bitingRadiusOffset`
     pub biting_radius_multiplier: f32,
     pub biting_radius_offset: f32,

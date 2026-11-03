@@ -136,7 +136,7 @@ SQLite `pixel_life_local.db` in the app data dir ([[wiki/architecture/persistenc
 
 - Ancestry via `species_records.parent_name → latin_name`.
 - Rows from an older model version are gone: the first start after a `MODEL_VERSION` bump resets all model tables (TCK-183, [[wiki/architecture/persistence]]).
-- Ocean heuristics: herbivore/predator ratio ~75 % with `carnivory < bitingCarnivoryThreshold`; energy drain (`metabolism` block, derived constants, [[wiki/biology/metabolism-and-reproduction]]) vs. spore availability (`foodSporeCount`, `foodSporeEnergy`) and predator income (`bitingBaseEnergyGain`, `biteCooldownTicks`); `reproductionSplitLossRatio` must keep growth bounded; `maxCreatures` caps spawn actions and mitosis (TCK-149).
+- Ocean heuristics: herbivore/predator ratio ~75 % with carnivory below the biting threshold (since TCK-202 the diet class, `biology::diet`: omnivores and carnivores bite); energy drain (`metabolism` block, derived constants, [[wiki/biology/metabolism-and-reproduction]]) vs. spore availability (`foodSporeCount`, `foodSporeEnergy`) and predator income (`bitingBaseEnergyGain`, `biteCooldownTicks`); `reproductionSplitLossRatio` must keep growth bounded; `maxCreatures` caps spawn actions and mitosis (TCK-149).
 
 ## Key Takeaways
 

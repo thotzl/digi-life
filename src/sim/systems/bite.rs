@@ -4,17 +4,17 @@
 
 use std::collections::HashMap;
 
+use crate::biology::diet::DietClass;
 use crate::biology::metabolism::{MetabolismConfig, bite_energy_gain};
 use crate::config::OceanConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::shared::geom;
 use crate::sim::PeerSnapshot;
 
-/// Who bites and how far (config section `ocean`).
+/// How far a biter reaches (config section `ocean`). Who bites is the diet class (`DietClass::bites`: omnivores and
+/// carnivores, TCK-202).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BiteRule {
-    /// Carnivory at or above which a creature bites
-    pub carnivory_threshold: f32,
     /// Bite range `mean_radius · radius_multiplier + radius_offset`
     pub radius_multiplier: f32,
     pub radius_offset: f32,
@@ -23,7 +23,6 @@ pub struct BiteRule {
 impl BiteRule {
     pub fn from_ocean(ocean: &OceanConfig) -> Self {
         Self {
-            carnivory_threshold: ocean.biting_carnivory_threshold,
             radius_multiplier: ocean.biting_radius_multiplier,
             radius_offset: ocean.biting_radius_offset,
         }
@@ -31,6 +30,11 @@ impl BiteRule {
 
     pub fn range(&self, mean_radius: f32) -> f32 {
         mean_radius * self.radius_multiplier + self.radius_offset
+    }
+
+    /// Whether `attacker` bites at all (its diet class).
+    pub fn is_biter(attacker: &CreatureAgent) -> bool {
+        DietClass::from_carnivory(attacker.phenotype.carnivory).bites()
     }
 }
 
@@ -66,7 +70,7 @@ pub fn bite_target<'a>(
     target.map(|(victim, _)| victim)
 }
 
-/// The attacker bites its target (if it is a biter and has one): the victim's damage is added to `damage_map`, the
+/// The attacker bites its target (if its diet class bites and it has one): the victim's damage is added to `damage_map`, the
 /// attacker gains `bite_energy_gain` capped by what the victim has left after earlier bites this tick and by the
 /// stomach, and is marked as fed.
 pub fn bite<'a>(
@@ -77,7 +81,7 @@ pub fn bite<'a>(
     damage_map: &mut HashMap<u32, f32>,
     bitten_recently: impl Fn(u32) -> bool,
 ) -> Option<BiteEvent> {
-    if attacker.phenotype.carnivory < rule.carnivory_threshold {
+    if !BiteRule::is_biter(attacker) {
         return None;
     }
     let range = rule.range(attacker.phenotype.spinal_harmonics.mean_radius);
@@ -155,7 +159,6 @@ mod tests {
     fn test_two_attackers_cannot_take_more_than_the_victim_had() {
         let config = crate::config::test_config();
         let rule = BiteRule {
-            carnivory_threshold: 0.0,
             radius_multiplier: 0.0,
             radius_offset: 10.0,
         };
@@ -179,10 +182,6 @@ mod tests {
         // Herbivores never bite
         let mut herbivore = attacker();
         herbivore.phenotype.carnivory = 0.0;
-        let rule = BiteRule {
-            carnivory_threshold: 0.6,
-            ..rule
-        };
         assert!(
             bite(
                 &mut herbivore,

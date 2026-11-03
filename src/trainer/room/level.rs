@@ -11,10 +11,9 @@ use crate::shared::dto::FoodSpore;
 use crate::shared::fmath;
 use crate::shared::rng::SimRng;
 use crate::sim::systems::death::DeathPolicy;
-use crate::sim::systems::eat::{EatRadiusRule, RespawnPolicy, SPAWN_MAX_TRIES, spawn_at_min_distance};
-use crate::sim::systems::food_drift::FoodDriftOrder;
-use crate::sim::systems::sense::{ClockVariant, TargetSelector};
-use crate::sim::{TRAINER_SYSTEMS, WorldSettings};
+use crate::sim::systems::eat::{RespawnPolicy, SPAWN_MAX_TRIES, spawn_at_min_distance};
+use crate::sim::systems::sense::TargetSelector;
+use crate::sim::{CREATURE_SYSTEMS, WorldSettings};
 
 use super::{EntityId, Room};
 use crate::trainer::chamber::{Chamber, EntityTrial};
@@ -54,6 +53,10 @@ pub struct LevelRoom {
     food_per_type: u32,
     metabolic_scale: f32,
     fitness: TrainerFitnessConfig,
+    /// Food distance from the walls (config `trainerSpawnMargin`)
+    spawn_margin: f32,
+    /// Energy content of a food (`FoodSpore::amount`, config `metabolism.foodSporeEnergy`)
+    food_amount: f32,
 }
 
 /// Registry constructor of `standard` (level 0).
@@ -89,6 +92,8 @@ impl LevelRoom {
             food_per_type: ((food_lo + (food_hi - food_lo) * d).round() as u32).max(1),
             metabolic_scale: 1.0,
             fitness: config.trainer.trainer_fitness.clone(),
+            spawn_margin: config.trainer.trainer_spawn_margin,
+            food_amount: config.metabolism.food_spore_energy,
         }
     }
 
@@ -146,7 +151,7 @@ impl Room for LevelRoom {
             type_id,
             x: 0.0,
             y: 0.0,
-            amount: 15.0,
+            amount: self.food_amount,
             vx: 0.0,
             vy: 0.0,
         };
@@ -156,20 +161,26 @@ impl Room for LevelRoom {
             .collect();
         let from = (chamber.creatures[0].px, chamber.creatures[0].py);
         for f in &mut chamber.foods {
-            let (x, y) = spawn_at_min_distance(rng, self.chamber_size, from, self.spawn_min_distance, SPAWN_MAX_TRIES);
+            let (x, y) = spawn_at_min_distance(
+                rng,
+                self.chamber_size,
+                self.spawn_margin,
+                from,
+                self.spawn_min_distance,
+                SPAWN_MAX_TRIES,
+            );
             f.x = x;
             f.y = y;
         }
     }
 
     /// Sensors see the nearest food of each type; with one food per type that is all food, passed through without a
-    /// copy. Drain `trainerMetabolicScale · metabolic_scale`; trainer divergences: `fmath::sin` clock, food drift after
-    /// the creature moved, diet eat radius, starvation freezes the creature; eaten food respawns at
-    /// `spawn_min_distance` from it.
+    /// copy. Drain `trainerMetabolicScale · metabolic_scale`; room features: no light zone or thermal stress,
+    /// starvation freezes the creature for the rest of the trial, eaten food respawns at `spawn_min_distance` from it.
+    /// Clock, eat radius, food drift and death threshold are the shared rules of every world (TCK-202).
     fn world_settings(&self, config: &AppConfig) -> WorldSettings {
         WorldSettings {
-            systems: TRAINER_SYSTEMS,
-            clock: ClockVariant::Fmath,
+            systems: CREATURE_SYSTEMS,
             targets: if self.food_per_type <= 1 {
                 TargetSelector::All
             } else {
@@ -178,10 +189,9 @@ impl Room for LevelRoom {
             metabolic_scale: config.metabolism.trainer_metabolic_scale * self.metabolic_scale,
             energy_modifiers: Vec::new(),
             death: DeathPolicy::Freeze,
-            food_drift: FoodDriftOrder::AfterEachCreature,
-            eat_radius: EatRadiusRule::TrainerDiet,
             respawn: RespawnPolicy::MinDistance {
                 min_distance: self.spawn_min_distance,
+                margin: self.spawn_margin,
             },
         }
     }

@@ -11,7 +11,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-103-impr
 - `step_creature_kinematics` — motor outputs → motion. Derives the thrust magnitude from the genome's speed band and multiplies it by `out_thrust` (motor 0) ([[wiki/architecture/invariants]] rule 4).
 - `locomotion_drive`, `target_terminal_speed`, `thrust_for_terminal_speed` — speed band and thrust inversion (TCK-150, below).
 - `apply_creature_physics` — bending, turning, drag, lock-on heading, wall reflection, reef collision (circle-circle, push-out, normal deflection).
-- `step_food_spore_physics` — spore drift and push by creatures via `SporePusher` snapshots. When spores drift is a world setting (`FoodDriftOrder`): trainer after each creature's move, pushed by that creature; Ocean once per tick before all creatures, pushed by the creatures within 80 px.
+- `step_food_spore_physics` — spore drift and push by creatures via `SporePusher` snapshots. Every world drifts the spores once per tick before the creatures move, pushed by the creatures within 80 px at their tick-start positions (`sim::systems::food_drift::drift_before_creatures`; TCK-202: the trainer formerly drifted after each creature's move).
 
 ## Steering model (TCK-104, TCK-150)
 
@@ -23,7 +23,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-103-impr
 
 Thrust is set so that full thrust settles at a terminal speed chosen from the genome; mass and drag only change the acceleration.
 
-- **Drive** `g = 0.4 · pulse_n + 0.4 · stiffness_n + 0.2 · appendages`, clamped to `[0, 1]`, with each trait normalised to its genome range (`parse_genome`): `pulse_n = (pulse − 0.0015) / 0.0075`, `stiffness_n = (stiffness − 0.15) / 0.85`, `appendages = clamp(0.5 · parapodia / 0.45 + 0.25 · min(limbs, 2), 0, 1)` (limb = organ with `expression_style ≥ 0.72`). Monotone in pulse and stiffness.
+- **Drive** `g = 0.4 · pulse_n + 0.4 · stiffness_n + 0.2 · appendages`, clamped to `[0, 1]`, with each trait normalised to its genome range (`parse_genome`): `pulse_n = (pulse − 0.0015) / 0.0075`, `stiffness_n = (stiffness − 0.15) / 0.85`, `appendages = clamp(0.5 · parapodia / 0.45 + 0.25 · min(limbs, 2), 0, 1)` (limb = `Organ::is_limb`: an organ of a limb-capable kind, never a distance sense, with `expression_style ≥ 0.72`; TCK-202: before, eyes, noses and thermal organs with a high style counted as limbs too). Monotone in pulse and stiffness.
 - **Target speed** `v_target = locomotionSpeedMin + (locomotionSpeedMax − locomotionSpeedMin) · g` = 1.0 … 5.0 px/tick.
 - **Thrust** `F = v_target · (0.06 · m + 0.94 · d) / 0.94`, the inverted fixed point of the straight-line update `v' = 0.94 · (v + (F − d · v) / m)` (`thrust_for_terminal_speed`). Mass `m = r^1.5 · L/25`; forward drag `d = (r · dragForwardCoefficient + organs · receptorBallastScale) · (1 − stiffness · dragForwardStiffnessDecay)`.
 - Applied force = `F · out_thrust`; negative `out_thrust` swims backwards at the same scale.

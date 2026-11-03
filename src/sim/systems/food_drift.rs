@@ -7,34 +7,11 @@ use crate::sim::World;
 /// Radius around a spore in which creatures push it (grid query of the Ocean).
 pub const PUSH_QUERY_RADIUS: f32 = 80.0;
 
-/// When the food drifts (divergence kept until TCK-202).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FoodDriftOrder {
-    /// After each creature moved, pushed by that creature only (trainer: `System::FoodDrift` in the system list)
-    AfterEachCreature,
-    /// Once per tick before all creatures, pushed by the creatures near each spore (Ocean: `drift_before_creatures`)
-    BeforeAllCreatures,
-}
-
-/// `System::FoodDrift`: every spore drifts once, pushed by creature `idx` after its move. No-op unless the world's
-/// order is `AfterEachCreature`.
-pub fn drift_after_creature(world: &mut World, idx: usize) {
-    if world.settings.food_drift != FoodDriftOrder::AfterEachCreature {
-        return;
-    }
-    let pusher = [SporePusher::from(&world.creatures[idx])];
-    for pellet in world.foods.iter_mut() {
-        step_food_spore_physics(pellet, &pusher, world.obstacles, world.width, world.height);
-    }
-}
-
-/// Drift before the creature loop (`BeforeAllCreatures`): every spore drifts once, pushed by the creatures within
-/// `PUSH_QUERY_RADIUS` in creature order. Uses the world's grid (creature layer indexed by position in
-/// `world.creatures`) when present, else all creatures. `nearby` / `pushers` are reused buffers. No-op for other orders.
+/// Drift of every world, once per tick before the creature loop (one order for trainer and Ocean since TCK-202; the
+/// trainer formerly drifted after each creature's move): every spore drifts once, pushed by the creatures within
+/// `PUSH_QUERY_RADIUS` in creature order, at their tick-start positions. Uses the world's grid (creature layer indexed
+/// by position in `world.creatures`) when present, else all creatures. `nearby` / `pushers` are reused buffers.
 pub fn drift_before_creatures(world: &mut World, nearby: &mut Vec<u32>, pushers: &mut Vec<SporePusher>) {
-    if world.settings.food_drift != FoodDriftOrder::BeforeAllCreatures {
-        return;
-    }
     for pellet in world.foods.iter_mut() {
         pushers.clear();
         match world.grid {
