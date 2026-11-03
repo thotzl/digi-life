@@ -57,9 +57,9 @@ Run at the end of every phase of the training epic:
 
 ## Not covered
 
-- `engine.rs` except the pure helpers `bite_target` and `death_log` (the loop needs a Tauri window, RV-A01; the trainer IPC types are tested in `trainer_ipc.rs`), `api.rs`; the frontend except the pure modules tested under TCK-160 (router, scope, selection, phenotype cache, Ocean model, trainer settings, labels) and the TCK-177/TCK-187 helpers; DOM controllers follow with TCK-161.
-- No behavioural tests for Ocean mitosis or the warp cap (RV-T02); genome parsing and mutation have property tests since P3.
-- The Ocean still uses `thread_rng`; Ocean behaviour can only be tested statistically (RV-T04).
+- `server::engine::spawn_simulation_thread` and `TauriSink` (need a window; everything else of the engine runs headless with `VecSink` + `MemoryDb` in `server::engine::tests`, TCK-156), the Tauri commands in `server/api/`; the frontend except the pure modules tested under TCK-160 (router, scope, selection, phenotype cache, Ocean model, trainer settings, labels) and the TCK-177/TCK-187 helpers; DOM controllers follow with TCK-161.
+- No behavioural test for Ocean mitosis (RV-T02; the warp cap is tested since TCK-156); genome parsing and mutation have property tests since P3.
+- No Ocean reference run in CI yet (TCK-158); the Ocean is seeded since TCK-156, so `sim::ocean::tests` test it deterministically.
 
 ## CTRNN validation facts
 

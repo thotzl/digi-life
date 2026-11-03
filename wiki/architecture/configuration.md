@@ -33,7 +33,7 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
 | Section | Struct (file) | Read by |
 | :--- | :--- | :--- |
 | `core` | `CoreConfig` (`src/config/mod.rs`) | Ocean world generation, `INIT_STATE.seed`, trainer run seeds |
-| `ocean` | `OceanConfig` (`src/server/ocean_config.rs`) | Ocean step in `server::engine` |
+| `ocean` | `OceanConfig` (`src/config/ocean.rs`) | `sim::ocean::OceanSim` and its systems, `OceanMode` (retention) |
 | `trainer` | `TrainerConfig` (`src/biology/trainer_config.rs`) | `crate::trainer` (`sim`, `room`, `genomes`), runner defaults |
 | `genome` | `GenomeConfig` (`src/biology/genome/mod.rs`) | genome generator, mutation, Lamarckian inheritance |
 | `brain` | `BrainConfig` (`src/shared/brain.rs`) | `parse_genome` (brain compile), brain step (learning) |
@@ -44,10 +44,12 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
 
 - `seed` (`"ALIFE_BASIN_77A"`) → Ocean `generate_world` and `INIT_STATE.seed` (the frontend does not read it); trainer
   run seed `seed_from_str("{seed}:{run_id}")`, after a trainer reset with a clock nonce (`run_seed`, TCK-173, TCK-194).
-  The Ocean simulation RNG is still `thread_rng` (RV-T04).
+  Ocean seed `seed_from_str("ocean:{seed}")`, after `RESET_EVOLUTION` with a clock nonce (`ocean_seed`, TCK-156).
 
 ### `ocean`
 
+- `worldWidth` 19200, `worldHeight` 10800: Ocean world size in px (TCK-156, RV-A05); `OceanSim` and the world
+  generation read it, the UI gets it as `INIT_STATE.world.width` / `height`.
 - `targetPopulation` 25 (restock target), `foodSporeCount` 300, `maxCreatures` 45 (cap for `INJECT_URZELLE` /
   `SPAWN_CLONE` and mitosis, TCK-149; [[wiki/simulation/ocean]]).
 - Lifespan `min(mature_age · creatureLifespanMatureAgeMultiplier (12), creatureMaxAgeTicks (36000))`; mitosis floors

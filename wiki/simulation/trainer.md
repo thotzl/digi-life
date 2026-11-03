@@ -25,10 +25,7 @@ Rooms, evaluation and breeding are separate seams since TCK-201: [[wiki/contract
 | `mode.rs` | `Scenario` (UI mode, ts-rs) and `TrainingMode` (registry room or curriculum) |
 | `stats.rs`, `streams.rs` | `GenerationStats`; named RNG stream ids |
 
-- The engine (`src/server/engine.rs`) keeps only the UI state: active/running flags, warp (cap 35,
-  [[wiki/architecture/invariants]]), selected sandbox, run id, 25 Hz telemetry and DB writes (`biology/trainer_store.rs`).
-  Events and actions are typed in `src/server/trainer_ipc.rs` ([[wiki/architecture/ipc-protocol]]). Until TCK-156 the
-  engine imports the trainer through the compatibility paths `biology::scenarios` and `biology::trainer_sim`.
+- Engine mode `TrainerMode` (`src/server/engine/trainer_mode.rs`, TCK-156, [[wiki/contracts/mode]]) is a thin wrapper over `TrainerSim` and keeps only the UI state: running flag, warp (clamped to 35 and echoed, [[wiki/architecture/invariants]]), selected sandbox, run id, 25 Hz telemetry and DB writes; it rebuilds the population from the store only on the first entry, after a run switch or when a command changed the run's genomes. One method (`TrainerMode::state`) builds the typed `TrainerState` of `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED`; all trainer events and actions are typed in `src/server/trainer_ipc.rs` (TCK-177, [[wiki/architecture/ipc-protocol]], [[wiki/architecture/simulation-engine]]).
 - Creatures come from the shared `CreatureFactory` (`src/biology/creature_factory.rs`, TCK-185), identical to Ocean
   spawns except position, heading, id and generation. Prey mocking ("meatballs") provides meat targets (TCK-106).
 

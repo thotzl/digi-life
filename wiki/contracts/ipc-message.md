@@ -62,7 +62,7 @@ export function onIpcError(handler: (command: Command, error: CallError) => void
 ## Invariants
 
 - No untyped message: no `json!` event payload, no raw-JSON action match, no `serde_json::Value` command result.
-  Check: `grep -n "json!" src/server/engine.rs` lists only the DB snapshot; `grep -rln "@tauri-apps/api" frontend`
+  Check: `grep -rn "json!" src/server/engine` lists nothing (the Ocean snapshot is the typed `OceanSnapshot`, TCK-156); `grep -rln "@tauri-apps/api" frontend`
   lists only `core/ipc.ts` (+ its test) and `views/main-menu/index.ts` (app version via `@tauri-apps/api/app`, no command).
 - Action and event `type` names are unique across the three groups (`ClientAction::from_value` picks the group by
   the tag; a known tag with bad fields is `invalidAction` "malformed client action 'X': ...", an unknown tag
@@ -81,7 +81,7 @@ export function onIpcError(handler: (command: Command, error: CallError) => void
 ## Registration point
 
 - Action: a variant of `EngineAction`, `OceanAction` or `TrainerAction` + its match arm in the engine's action loop
-  (`src/server/engine.rs`).
+  (`Engine::handle` or the mode's `handle`, `src/server/engine/`, [[wiki/contracts/mode]]).
 - Event: a variant of `EngineEvent`, `OceanUiEvent` or `TrainerUiEvent` + its `type` branch in the consuming view.
 - Command: a `#[tauri::command]` in the owning `src/server/api/<area>.rs`, one line in `generate_handler!`
   (`src/main.rs`) and one entry in `Commands` (`frontend/core/ipc.ts`).
@@ -112,10 +112,10 @@ A Pause-all action and its answer:
 /// Freeze every creature in place (answered with SIM_STATE)
 FreezeAll,
 
-// src/server/engine.rs, action loop
-ClientAction::Ocean(OceanAction::FreezeAll) => {
-    is_running = false;
-    emit_state(OceanUiEvent::SimState { running: false }.into());
+// src/server/engine/ocean_mode.rs, OceanMode::handle
+OceanAction::FreezeAll => {
+    self.running = false;
+    ctx.emit(self.sim_state());
 }
 
 // src/server/ipc.rs tests

@@ -6,7 +6,7 @@
 //! | Section      | Type                                         |
 //! | :----------- | :------------------------------------------- |
 //! | `core`       | `config::CoreConfig`                         |
-//! | `ocean`      | `server::ocean_config::OceanConfig`          |
+//! | `ocean`      | `config::ocean::OceanConfig`                 |
 //! | `trainer`    | `biology::trainer_config::TrainerConfig`     |
 //! | `genome`     | `biology::genome::GenomeConfig`              |
 //! | `brain`      | `shared::brain::BrainConfig`                 |
@@ -16,6 +16,8 @@
 //! The config is passed explicitly into the model; `AppConfig::global()` is called only by the entry points (Tauri
 //! setup in `main.rs`, the headless runner).
 
+pub mod ocean;
+
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
@@ -23,9 +25,10 @@ use serde::{Deserialize, Serialize};
 use crate::biology::genome::GenomeConfig;
 use crate::biology::metabolism::MetabolismConfig;
 use crate::biology::trainer_config::TrainerConfig;
-use crate::server::ocean_config::OceanConfig;
 use crate::shared::brain::BrainConfig;
 use crate::shared::physics::PhysicsConfig;
+
+pub use ocean::OceanConfig;
 
 /// Section `core`: settings shared by every mode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

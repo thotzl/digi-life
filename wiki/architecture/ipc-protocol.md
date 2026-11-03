@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/ipc.rs, src/server/ocean_ipc.rs, src/server/trainer_ipc.rs, src/server/api/mod.rs, src/server/engine.rs, frontend/core/ipc.ts]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/project-baseline/SKILL.md, README.md, src/main.rs, tickets/closed/TCK-173-trainer-sim-headless-runner.md, tickets/closed/TCK-179-stable-synapse-identity-and-trait-locality.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-176-automatic-training-curriculum.md, src/server/ipc.rs, src/server/ocean_ipc.rs, src/server/trainer_ipc.rs, src/server/api/mod.rs, src/server/engine/mod.rs, frontend/core/ipc.ts]
 ---
 
 # IPC Protocol
@@ -29,7 +29,7 @@ the frontend IPC client `frontend/core/ipc.ts`, the only module that calls Tauri
 | Ocean | `SPAWN_CLONE` | `SpawnClone`: `genome`, optional `methylations`, `synapse_weights`, `load_learned_synapses` | sent by the command `spawn_catalogue_creature_to_ocean`; same cap rule |
 | Ocean | `RESET_EVOLUTION` | — | clears species, snapshot, creatures and the newborn queue ([[wiki/architecture/invariants]] 3), repopulates, answers `INIT_STATE` |
 | Ocean | `SELECT_AGENT` | `id` (optional) | creature whose activations `TELEMETRY_TICK.selectedBrain` carries |
-| Ocean | `SET_SIMULATION_SPEED` | `speed` | Ocean steps per frame, clamped to 35 ([[wiki/architecture/invariants]] 2) |
+| Ocean | `SET_SIMULATION_SPEED` | `speed` | Ocean steps per frame, clamped to 35 ([[wiki/architecture/invariants]] 2); answers `SIM_STATE` with the clamped value (TCK-156) |
 | Trainer | `UPDATE_TRAINER_HYPERPARAMS` | `TrainerHyperparamsUpdate`, all optional: `N` (visible sandboxes only, TCK-192), `population` (restores the population from the DB when it changes), `warpSpeed`, `eliteRatio`, `mutationRate` (max ops per child, name kept), `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian` | absent fields unchanged; population, Lamarck or run change restores the population from the DB; answers `TRAINER_STATE_CHANGED` |
 | Trainer | `START_TRAINING` / `PAUSE_TRAINING` | — | running flag; answers `TRAINER_STATE_CHANGED` |
 | Trainer | `TRAINER_RESET` | — | deletes the run's rows, fresh `TrainerSim` (automatic curriculum back to `startLevel`); answers `TRAINER_RESET_COMPLETED` |
@@ -83,7 +83,7 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
 | Engine | `DATABASE_CHANGED` | — (UI refetches roster, runs) |
 | Engine | `LOG_EVENT` | `message`, `logType`: `system` \| `mutation` \| `repair` (Ocean log terminal) |
 | Ocean | `INIT_STATE` | `OceanInitState`: `highestGeneration`, `running`, `seed`, `world` (procedural world, once), `rules.sporeEnergy`, `foodPellets`, `creatures` (full, incl. phenotype/brain) |
-| Ocean | `SIM_STATE` | `running` |
+| Ocean | `SIM_STATE` | `running`, `speed` (steps per frame after the cap, TCK-156) |
 | Ocean | `TELEMETRY_TICK` (25 Hz) | `OceanTelemetryTick`: `highestGeneration`, `creatures` (`TelemetryCreature`), `newCreatures` (full, sent once), `selectedBrain` (`{ id, activations }` or null) |
 | Ocean | `FOOD_TICK` (2 Hz) | `foodPellets` |
 | Ocean | `EAT_EVENT` | `x`, `y` (no consumer in the UI) |

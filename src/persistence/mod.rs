@@ -2,7 +2,7 @@
 //!
 //! | File | Content |
 //! | :--- | :--- |
-//! | `mod.rs` | DB location, `Db` (SQLite store), `init_db`, `open_read_only`, `DbState`, `LogDbError` |
+//! | `mod.rs` | DB location, `Db` (SQLite store), `init_db`, `open_db`, `open_read_only`, `DbState`, `LogDbError` |
 //! | `schema.rs` | `user_version` migrations, `MODEL_VERSION` reset with backup |
 //! | `repos.rs` | repository traits `SpeciesRepo`, `CatalogueRepo`, `TrainerRepo`, `OceanSnapshotRepo` |
 //! | `dto.rs` | plain rows the traits take and return, `RepoError` |
@@ -84,12 +84,26 @@ pub fn init_db<P: AsRef<Path>>(path: P) -> RepoResult<Db> {
         std::fs::create_dir_all(parent).ok();
     }
     let conn = Connection::open(path)?;
-    // WAL lets the simulation thread write while commands read; busy timeout instead of SQLITE_BUSY errors
+    configure(&conn)?;
+    schema::prepare(&conn)?;
+    Ok(Db { conn })
+}
+
+/// Opens an existing database that `init_db` already prepared (the engine thread's connections; the desktop app runs
+/// the migrations once at startup for the commands' connection, TCK-156): WAL journal, 5 s busy timeout, foreign keys,
+/// no migration. Fails if the file does not exist.
+pub fn open_db<P: AsRef<Path>>(path: P) -> RepoResult<Db> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+    configure(&conn)?;
+    Ok(Db { conn })
+}
+
+/// WAL lets the simulation thread write while commands read; busy timeout instead of SQLITE_BUSY errors.
+fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.query_row("PRAGMA journal_mode = WAL;", [], |row| row.get::<_, String>(0))?;
     conn.busy_timeout(std::time::Duration::from_secs(5))?;
     conn.execute("PRAGMA foreign_keys = ON;", [])?;
-    schema::prepare(&conn)?;
-    Ok(Db { conn })
+    Ok(())
 }
 
 /// Opens an existing database strictly read-only (probes, analysis): no migration, no model reset, writes fail.

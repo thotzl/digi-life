@@ -1,5 +1,6 @@
-//! Config section `ocean` (`OceanConfig`): population, food, lifespan, grazing, biting, mitosis and decomposition
-//! rules of the Ocean (`server::engine`). Food and bite energy live in section `metabolism` (shared with the trainer).
+//! Config section `ocean` (`OceanConfig`): world size, population, food, lifespan, grazing, biting, mitosis and
+//! decomposition rules of the Ocean (`sim::ocean::OceanSim`, TCK-156). Food and bite energy live in section `metabolism`
+//! (shared with the trainer).
 
 use serde::{Deserialize, Serialize};
 
@@ -7,6 +8,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OceanConfig {
+    /// World width in px (RV-A05, TCK-156); sent to the UI as `INIT_STATE.world.width`
+    pub world_width: f32,
+    /// World height in px; sent to the UI as `INIT_STATE.world.height`
+    pub world_height: f32,
     /// Restock target: below it the Ocean spawns catalogue clones or structured random founders
     pub target_population: usize,
     pub food_spore_count: usize,

@@ -2,7 +2,7 @@
 
 use rand::Rng;
 
-use crate::server::ocean_config::OceanConfig;
+use crate::config::OceanConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::sim::{CreatureEvent, CreatureStep, World};
 

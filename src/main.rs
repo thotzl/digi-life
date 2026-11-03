@@ -8,12 +8,11 @@ use std::sync::Mutex;
 use src_tauri::config::AppConfig;
 use src_tauri::persistence;
 use src_tauri::server::api;
-use src_tauri::server::engine::spawn_simulation_thread;
-use src_tauri::server::ipc::ClientAction;
+use src_tauri::server::engine::{spawn_simulation_thread, EngineInput};
 
 fn main() {
-    // Typed client actions from the commands to the engine thread (TCK-157)
-    let (tx, rx): (Sender<ClientAction>, Receiver<ClientAction>) = channel();
+    // Typed client actions and store notifications from the commands to the engine thread (TCK-157, TCK-156)
+    let (tx, rx): (Sender<EngineInput>, Receiver<EngineInput>) = channel();
 
     tauri::Builder::default()
         .manage(tx)
@@ -54,7 +53,7 @@ fn main() {
 
             let window = app.get_webview_window("main").expect("Failed to locate main window");
 
-            // Start parallel modularized headless simulation and replication thread
+            // The engine thread opens its own connection to the prepared database (no second migration, TCK-156)
             spawn_simulation_thread(window, rx, config);
 
             Ok(())

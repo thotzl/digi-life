@@ -29,14 +29,14 @@ fn to_record(row: TrainerGenome) -> GenomeRecord {
 
 /// Persists a completed generation: previous elites become inactive, the new elites are inserted as active parents,
 /// then the run is pruned to `retention` rows (TCK-183).
-pub fn save_elites(repo: &impl TrainerRepo, run_id: &str, generation: u32, elites: &[GenomeRecord], retention: usize) {
+pub fn save_elites(repo: &(impl TrainerRepo + ?Sized), run_id: &str, generation: u32, elites: &[GenomeRecord], retention: usize) {
     let rows: Vec<TrainerGenome> = elites.iter().map(|e| to_row(e, generation)).collect();
     repo.save_trainer_generation(run_id, &rows, Some(retention)).log_db_err("saving trainer elites");
 }
 
 /// Best genomes of a run by fitness: the active parents (`active_only`) or the hall of fame; empty on a read error
 /// (logged).
-pub fn load_genomes(repo: &impl TrainerRepo, run_id: &str, active_only: bool, limit: usize) -> Vec<GenomeRecord> {
+pub fn load_genomes(repo: &(impl TrainerRepo + ?Sized), run_id: &str, active_only: bool, limit: usize) -> Vec<GenomeRecord> {
     match repo.trainer_genomes(run_id, active_only, limit as i64) {
         Ok(rows) => rows.into_iter().map(to_record).collect(),
         Err(e) => {
@@ -47,13 +47,13 @@ pub fn load_genomes(repo: &impl TrainerRepo, run_id: &str, active_only: bool, li
 }
 
 /// A sandbox assignment from the UI, stored as an active parent of the current generation (fitness 0).
-pub fn save_assigned(repo: &impl TrainerRepo, run_id: &str, generation: u32, slot: u32, record: &GenomeRecord) {
+pub fn save_assigned(repo: &(impl TrainerRepo + ?Sized), run_id: &str, generation: u32, slot: u32, record: &GenomeRecord) {
     repo.assign_trainer_genome(run_id, slot, &to_row(record, generation)).log_db_err("saving the assigned trainer genome");
 }
 
 /// Stores the run state of `sim` (TCK-191, `TrainerRunState::of`); called right after `save_elites`, so it is the
 /// state the next generation runs with.
-pub fn save_run_state(repo: &impl TrainerRepo, run_id: &str, sim: &TrainerSim) {
+pub fn save_run_state(repo: &(impl TrainerRepo + ?Sized), run_id: &str, sim: &TrainerSim) {
     let state = TrainerRunState::of(sim);
     let row = TrainerRunStateRow {
         scenario: state.scenario.mode().to_string(),
@@ -68,7 +68,7 @@ pub fn save_run_state(repo: &impl TrainerRepo, run_id: &str, sim: &TrainerSim) {
 }
 
 /// Saved run state of `run_id`; `None` without a row or on a read error (logged), i.e. today's defaults.
-pub fn load_run_state(repo: &impl TrainerRepo, run_id: &str) -> Option<TrainerRunState> {
+pub fn load_run_state(repo: &(impl TrainerRepo + ?Sized), run_id: &str) -> Option<TrainerRunState> {
     match repo.trainer_run_state(run_id) {
         Ok(row) => row.map(|r| TrainerRunState {
             scenario: Scenario::from_mode(&r.scenario),
@@ -102,7 +102,7 @@ mod tests {
         TrainerSim::restore_at_layout(params, 3, 2, layout_id, Vec::new(), Vec::new(), 10, crate::config::test_config())
     }
 
-    fn retention_keeps_best_rows_and_active_parents(repo: &impl TrainerRepo) {
+    fn retention_keeps_best_rows_and_active_parents(repo: &(impl TrainerRepo + ?Sized)) {
         save_elites(repo, "run", 1, &[elite(90.0), elite(50.0)], 3);
         save_elites(repo, "run", 2, &[elite(80.0), elite(70.0)], 3);
         save_elites(repo, "other", 1, &[elite(1.0)], 3);
@@ -125,7 +125,7 @@ mod tests {
         retention_keeps_best_rows_and_active_parents(&MemoryDb::new());
     }
 
-    fn run_state_round_trip_and_missing_row(repo: &impl TrainerRepo) {
+    fn run_state_round_trip_and_missing_row(repo: &(impl TrainerRepo + ?Sized)) {
         assert_eq!(load_run_state(repo, "run"), None, "no row: today's defaults");
 
         // u64 beyond i64 survives the decimal text column
@@ -151,7 +151,7 @@ mod tests {
         run_state_round_trip_and_missing_row(&MemoryDb::new());
     }
 
-    fn delete_run_clears_that_run_only(repo: &impl TrainerRepo) {
+    fn delete_run_clears_that_run_only(repo: &(impl TrainerRepo + ?Sized)) {
         for run in ["run", "other"] {
             save_elites(repo, run, 1, &[elite(1.0)], 10);
             save_run_state(repo, run, &trainer_with_state(7));

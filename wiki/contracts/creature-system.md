@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/trainer/chamber.rs, src/trainer/room/level.rs]
+sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, tickets/closed/TCK-156-engine-decomposition.md, src/sim/ocean/mod.rs, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/trainer/chamber.rs, src/trainer/room/level.rs]
 ---
 
 # Contract: creature system
@@ -9,8 +9,8 @@ sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.r
 A creature system is one dynamic of the per-creature tick: sensing, brain, metabolism, death, movement, food drift,
 eating, biting, reproduction. All simulations run the same system functions over a `World` (`src/sim/`, TCK-200):
 the trainer rooms (`trainer::chamber::Chamber::step`, [[wiki/contracts/room]]), the diagnosis probes
-(`diagnostics::probes`, brain-only world) and the metabolism calibration (`probes::mean_trial_activity_and_thrust`). The Ocean step in
-`src/server/engine.rs` still runs its inline copy and adopts the systems in TCK-156. A planned dynamic (digestion,
+(`diagnostics::probes`, brain-only world), the metabolism calibration (`probes::mean_trial_activity_and_thrust`) and the Ocean
+(`sim::ocean::OceanSim::step`, TCK-156). A planned dynamic (digestion,
 attack variants) is one new module in `src/sim/systems/`. Where Ocean and trainer behave differently, the difference
 is a named field of `WorldSettings`, never a branch on the mode.
 
@@ -65,8 +65,10 @@ reproduce::{ready, split, child}(.., &MitosisRule, ..)
 4. After the step the owner reads `step` (motors, inputs, `hit_wall`, `old_heading`, `died`) and applies
    `step.events`: respawn eaten food (`eat::respawn` with its own RNG stream), decompose corpses. Trainer bookkeeping
    (age, coverage, wall counter, approach tracking, yield, first catch) runs here, before the respawn.
-5. Ocean only (TCK-156): bite and mitosis per creature with the peer snapshot of the tick start, bite damage applied
-   after all creatures, then `death::POST_DAMAGE_MIN_ENERGY`.
+5. Ocean only (`OceanSim::step`, TCK-156): eat respawns (`eat::respawn`, also sets `has_eaten`) and decompositions
+   are applied right after each creature's step; then, for a living creature, age + 1, bite (candidates from the grid,
+   read from the peer snapshot of the tick start) and mitosis; bite damage after all creatures, then
+   `death::POST_DAMAGE_MIN_ENERGY`, then the species census. RNG: `derive(seed, [STREAM_FOOD | STREAM_MITOSIS, tick])`.
 
 The owner advances `agent.age` (trainer: every tick, also when starved; Ocean: after the move of a living creature).
 
@@ -99,8 +101,9 @@ decomposition, biting, mitosis) ([[wiki/contracts/config-section]]).
 
 ## Events / IPC
 
-`CreatureEvent` and `bite::BiteEvent` are in-process results for the owner. The Ocean turns them into its UI events
-(`EAT_EVENT`, `BITE_EVENT`, log lines) in TCK-156; the systems emit nothing.
+`CreatureEvent` and `bite::BiteEvent` are in-process results for the owner. `OceanSim` turns them into
+`OceanEvent`s, which `OceanMode` maps onto UI events (`EAT_EVENT`, `BITE_EVENT`, log lines; [[wiki/contracts/mode]]);
+the systems emit nothing.
 
 ## Test recipe
 

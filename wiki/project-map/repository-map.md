@@ -32,8 +32,8 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | Module | Responsibility | Article |
 | :--- | :--- | :--- |
 | `main.rs`, `lib.rs` | Tauri setup, command registration, DB setup, starts the engine; module tree | [[wiki/architecture/system-overview]] |
-| `server/engine.rs` | simulation thread: Ocean + Trainer loop, actions, events, auto-save, restock | [[wiki/architecture/simulation-engine]] |
-| `server/api/` | Tauri commands with typed results and `IpcError`: `actions.rs` (`handle_client_action`, `set_mode`), `species.rs`, `trainer.rs`, `catalogue.rs`; helpers `with_store`, `collect_rows`, `send_to_engine` (TCK-157) | [[wiki/contracts/ipc-message]] |
+| `server/engine/` | engine thread (TCK-156): `Engine`, `EngineInput`, `run_loop`, `spawn_simulation_thread` (`mod.rs`); `Mode` trait, warp cap, `Interval` (`mode.rs`); `OceanMode` (`ocean_mode.rs`), `TrainerMode` (`trainer_mode.rs`); `EventSink`/`TauriSink`/`VecSink` (`sink.rs`); `EngineStore`, `open_store`, `SnapshotWriter` (`store.rs`); headless tests (`tests.rs`) | [[wiki/architecture/simulation-engine]], [[wiki/contracts/mode]], [[wiki/contracts/event-sink]] |
+| `server/api/` | Tauri commands with typed results and `IpcError`: `actions.rs` (`handle_client_action`, `set_mode`), `species.rs`, `trainer.rs`, `catalogue.rs`; helpers `with_store`, `collect_rows`, `send_to_engine`, `notify_trainer_store_changed` (TCK-157, TCK-156) | [[wiki/contracts/ipc-message]] |
 | `server/ipc.rs` | IPC protocol: `ClientAction`, `EngineAction`, `UiEvent`, `EngineEvent`, `IpcError`, `SimMode` (TCK-157) | [[wiki/contracts/ipc-message]] |
 | `server/ocean_ipc.rs` | typed Ocean actions (`OceanAction`) and events (`OceanUiEvent`) (TCK-157) | [[wiki/architecture/ipc-protocol]] |
 | `server/trainer_ipc.rs` | typed trainer events (`TrainerUiEvent`) and actions (`TrainerAction`), ts-rs exported (TCK-177) | [[wiki/architecture/ipc-protocol]] |
@@ -48,12 +48,13 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `biology/trainer_store.rs` | IO side of `TrainerSim`: `GenomeRecord`/`TrainerRunState` ↔ `TrainerRepo` (engine and runner, TCK-159) | [[wiki/architecture/persistence]] |
 | `diagnostics/` | tests and `runner` feature only (TCK-201): `report.rs` (headless trainer run, schedule, final evaluation, JSON report), `probes.rs` (mechanics diagnosis probes, cost-calibration helper `mean_trial_activity_and_thrust`) | [[wiki/simulation/analytics-and-balancing]] |
 | `sim/` | shared simulation kernel (TCK-200): `World`, `WorldSettings` (Ocean/trainer divergences as named fields), `TickCtx`, `step_creature`; `systems/` one module per dynamic (sense, think, metabolize, death, move, food_drift, eat, bite, reproduce) | [[wiki/contracts/creature-system]] |
+| `sim/ocean/` | IO-free, seeded Ocean (TCK-156): `OceanSim` (`mod.rs`: step, restock, reset, release, snapshot, `OceanEvent`, `OceanStep`), `OceanSpawner` and `Founder` (`spawner.rs`), `SporeField` (`spore_field.rs`), `SpeciesLedger` (`species_ledger.rs`), `OceanSnapshot` (`snapshot.rs`), headless tests (`tests.rs`) | [[wiki/simulation/ocean]] |
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
 | `shared/spatial_grid.rs` | neighbour grid | [[wiki/simulation/physics]] |
 | `shared/map_generator.rs` | procedural worlds (own Mulberry32 RNG; kept because `SimRng` would change every world layout, TCK-198) | [[wiki/simulation/ocean]] |
 | `config/mod.rs` | `AppConfig` (one field per section), loader (`global()` for entry points only), config tests | [[wiki/architecture/configuration]], [[wiki/contracts/config-section]] |
-| `biology/trainer_config.rs`, `server/ocean_config.rs` | config sections `trainer` and `ocean` (the other sections live in `genome/mod.rs`, `brain.rs`, `metabolism.rs`, `physics.rs`) | [[wiki/architecture/configuration]] |
+| `biology/trainer_config.rs`, `config/ocean.rs` | config sections `trainer` and `ocean` (the other sections live in `genome/mod.rs`, `brain.rs`, `metabolism.rs`, `physics.rs`) | [[wiki/architecture/configuration]] |
 | `shared/dto.rs` | IPC structs of the simulation state (`CreatureAgent`, `FoodSpore`, `TelemetryCreature`) | [[wiki/architecture/ipc-protocol]] |
 | `shared/geom.rs`, `shared/time.rs`, `shared/json_col.rs` | shared helpers: distance and angle wrap, timestamps named by unit, JSON columns with logged failures | [[wiki/architecture/system-overview]] |
 | `logging.rs` | `log` backend: stderr (dev, runner), rotating file in the app data dir (release app) | [[wiki/architecture/system-overview]] |
@@ -62,7 +63,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `shared/stats.rs` | `quantile`, `Distribution`, `pearson` (trainer stats and probes, TCK-201) | [[wiki/simulation/analytics-and-balancing]] |
 | `bin/trainer_runner.rs` | headless runner CLI: `run` and `probe` (replaced `cli_trainer`, RV-S11) | [[wiki/simulation/analytics-and-balancing]] |
 
-Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400; `diagnostics/`); no genome/phenotype/organ/brain module exceeds ~500 lines (TCK-199).
+Largest files: `probes.rs` (~1,600; `diagnostics/`); the engine modules stay below ~350 lines each (TCK-156); no genome/phenotype/organ/brain module exceeds ~500 lines (TCK-199).
 
 ## Frontend (`frontend/`)
 

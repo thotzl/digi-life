@@ -26,7 +26,8 @@ pub enum OceanAction {
         #[ts(optional)]
         id: Option<u32>,
     },
-    /// Ocean steps per frame (clamped to 35 by the engine, invariant 2)
+    /// Ocean steps per frame (clamped to 35 by the engine, invariant 2; answered with `SIM_STATE` carrying the clamped
+    /// value)
     SetSimulationSpeed { speed: u32 },
 }
 
@@ -54,8 +55,9 @@ pub struct SpawnClone {
 pub enum OceanUiEvent {
     /// Full state on `CLIENT_READY` and after `RESET_EVOLUTION`
     InitState(OceanInitState),
-    /// Answer to `TOGGLE_SIMULATION`
-    SimState { running: bool },
+    /// Answer to `TOGGLE_SIMULATION` and `SET_SIMULATION_SPEED`: run state and the steps per frame after the warp cap
+    /// (`speed` ≤ 35, invariant 2; TCK-156)
+    SimState { running: bool, speed: u32 },
     /// 25 Hz while the Ocean runs
     TelemetryTick(OceanTelemetryTick),
     /// 2 Hz: all food spores
@@ -135,7 +137,7 @@ mod tests {
             serde_json::to_value(&tick).unwrap(),
             json!({ "type": "TELEMETRY_TICK", "highestGeneration": 3, "creatures": [], "newCreatures": [], "selectedBrain": { "id": 2, "activations": [0.5] } })
         );
-        assert_eq!(serde_json::to_value(OceanUiEvent::SimState { running: true }).unwrap(), json!({ "type": "SIM_STATE", "running": true }));
+        assert_eq!(serde_json::to_value(OceanUiEvent::SimState { running: true, speed: 35 }).unwrap(), json!({ "type": "SIM_STATE", "running": true, "speed": 35 }));
         assert_eq!(serde_json::to_value(OceanUiEvent::FoodTick { food_pellets: vec![] }).unwrap(), json!({ "type": "FOOD_TICK", "foodPellets": [] }));
         assert_eq!(serde_json::to_value(OceanUiEvent::EatEvent { x: 1.5, y: 2.0 }).unwrap(), json!({ "type": "EAT_EVENT", "x": 1.5, "y": 2.0 }));
         assert_eq!(

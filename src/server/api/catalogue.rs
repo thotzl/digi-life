@@ -5,10 +5,11 @@ use std::sync::mpsc::Sender;
 use tauri::State;
 use ts_rs::TS;
 
-use super::{collect_rows, send_to_engine, with_store, CommandResult};
+use super::{collect_rows, notify_trainer_store_changed, send_to_engine, with_store, CommandResult};
 use crate::biology::phenotype::parse_genome;
 use crate::config::AppConfig;
 use crate::persistence::{CatalogueEntry, CatalogueRepo, DbState, NewCatalogueEntry, TrainerGenome, TrainerRepo};
+use crate::server::engine::EngineInput;
 use crate::server::ipc::{ClientAction, IpcError};
 use crate::server::ocean_ipc::{OceanAction, SpawnClone};
 
@@ -87,7 +88,7 @@ pub fn rename_catalogue_creature(db: State<'_, DbState>, id: String, new_name: S
 #[tauri::command]
 pub fn spawn_catalogue_creature_to_ocean(
     db: State<'_, DbState>,
-    tx: State<'_, Sender<ClientAction>>,
+    tx: State<'_, Sender<EngineInput>>,
     id: String,
     load_learned_synapses: bool,
 ) -> CommandResult<()> {
@@ -104,9 +105,16 @@ fn spawn_clone(entry: CatalogueEntry, load_learned_synapses: bool) -> SpawnClone
     }
 }
 
-/// Adds a catalogue creature to a trainer run as an active genome of `generation`.
+/// Adds a catalogue creature to a trainer run as an active genome of `generation`; the engine rebuilds the run's
+/// population from the store when the trainer is entered next.
 #[tauri::command]
-pub fn add_catalogue_creature_to_training(db: State<'_, DbState>, creature_id: String, run_id: String, generation: i32) -> CommandResult<()> {
+pub fn add_catalogue_creature_to_training(
+    db: State<'_, DbState>,
+    tx: State<'_, Sender<EngineInput>>,
+    creature_id: String,
+    run_id: String,
+    generation: i32,
+) -> CommandResult<()> {
     let command = "add_catalogue_creature_to_training";
     let entry = catalogue_entry(&db, command, &creature_id)?;
     let row = TrainerGenome {
@@ -117,7 +125,9 @@ pub fn add_catalogue_creature_to_training(db: State<'_, DbState>, creature_id: S
         methylations: entry.methylations,
         synapse_weights: entry.synapse_weights,
     };
-    with_store(&db, command, |store| store.add_trainer_genome(&run_id, &row))
+    with_store(&db, command, |store| store.add_trainer_genome(&run_id, &row))?;
+    notify_trainer_store_changed(&tx, &run_id);
+    Ok(())
 }
 
 #[cfg(test)]

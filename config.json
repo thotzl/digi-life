@@ -3,6 +3,8 @@
     "seed": "ALIFE_BASIN_77A"
   },
   "ocean": {
+    "worldWidth": 19200,
+    "worldHeight": 10800,
     "targetPopulation": 25,
     "foodSporeCount": 300,
     "maxCreatures": 45,

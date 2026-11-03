@@ -1,14 +1,39 @@
 ---
-sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, src/server/engine.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md]
+sources: [.agents/skills/server-simulation/SKILL.md, .agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-103-improve-petri-dish.md, tickets/closed/FIX-127-restore-biomes.md, tickets/closed/TCK-129-architecture-refactoring.md, tickets/open/TCK-156-engine-decomposition.md, src/sim/ocean/mod.rs, src/server/engine/ocean_mode.rs, tickets/closed/TCK-125-dry-kiss-cleanup.md, tickets/closed/TCK-149-dead-config-keys.md, tickets/closed/TCK-172-mechanics-diagnosis-for-training.md, tickets/closed/TCK-184-genome-operators.md, tickets/closed/TCK-150-locomotion-and-ecology-measurement.md, tickets/closed/TCK-180-wall-contact-behaviour.md, tickets/closed/TCK-151-bmr-brain-cost-model.md, tickets/closed/TCK-145-predation-energy-and-bite-cooldown.md]
 ---
 
 # Ocean
 
 The open-world mode: a closed basin with a free-living population.
 
+## Simulation (TCK-156)
+
+- `sim::ocean::OceanSim` (`src/sim/ocean/`) is the Ocean without IO: population, `SporeField` (spores + nutrient
+  centres), `SpeciesLedger`, id counters, bite cooldowns, seed and tick. `tick()` = `step()` + restock and returns an
+  `OceanStep` (`OceanEvent`s, `SpeciesChange`s, creatures born for the UI). The engine's `OceanMode` maps it onto UI
+  events and the species store ([[wiki/contracts/mode]], [[wiki/architecture/simulation-engine]]).
+- One step runs on the shared creature systems ([[wiki/contracts/creature-system]]): spatial grid, food drift before
+  all creatures, peer snapshot; per creature `step_creature` with `WorldSettings::ocean` (sense, think, metabolize
+  with photosynthesis and thermal stress, death, move, eat), the eat respawn and the decomposition applied right after
+  that creature's step, then age + 1, bite and mitosis; bite damage after all creatures; species census; restock.
+- Seeded and reproducible: `ocean_seed(core.seed, nonce)` and per-tick streams `derive(seed, [stream, tick])` for food
+  (respawn, decomposition), mitosis and restock, `[STREAM_ACTION, n]` for releases, `[STREAM_POPULATE]` for a fresh
+  start or reset. The snapshot stores seed, tick, release count and nutrient centres, so a restored Ocean continues
+  exactly as an uninterrupted one (`test_same_seed_same_ocean_and_snapshot_continues_identically`). A reset draws a new
+  seed (clock nonce).
+- Founders: `OceanSpawner::founder(Random | Wildtype | Genome)`: fresh start `FRESH_FOUNDERS` (15) wildtype founders
+  (`genome::WILDTYPE_GENOME`, mutated with probability 0.6), reset `RESET_FOUNDERS` (25) random catalogue clones or
+  structured random genomes, inject a structured random genome, clone a given genome; uniform 500 px inside the world.
+- **Behaviour change of TCK-156 (by design, no Ocean reference existed):** the RNG is seeded instead of `thread_rng`,
+  so every Ocean run differs from the former ones; the creature tick runs in the shared system order (eaten-spore
+  respawn and corpse decomposition are applied after each creature's step rather than inside its eat loop; the
+  creature systems and their arithmetic are those of `engine.rs` before). Nutrient centres survive a restart (before,
+  a restart drew new centres for the restored spores). The stale "15 unique wildtype cells" line after a reset is gone.
+
 ## World
 
-- Size `19200 × 10800` px, hard elastic walls (no torus since TCK-103).
+- Size `ocean.worldWidth × ocean.worldHeight` (19200 × 10800 px, config since TCK-156, RV-A05), sent to the UI as
+  `INIT_STATE.world.width` / `height`; hard elastic walls (no torus since TCK-103).
 - Procedural world generated in Rust (`src/shared/map_generator.rs`, `generate_world(seed, w, h)` with config `seed`, Mulberry32 PRNG, TCK-149): biomes, reef obstacles (`ProceduralObstacle`), current vents, vertices. Sent to the client in `INIT_STATE` on `CLIENT_READY`/`RESET_WORLD`; the client only renders it (FIX-127).
 - Reefs collide physically and are felt by tactile organs (FIX-131), see [[wiki/simulation/physics]].
 - Biomes are generated and rendered but have no simulation effect; the unused biome config keys were removed (TCK-149).
@@ -27,24 +52,25 @@ The open-world mode: a closed basin with a free-living population.
 - Income: plant and meat spores (`metabolism::food_energy`, `foodSporeEnergy` 15 · diet efficiency), photosynthesis in the light zone (`photosynthesisEnergyGain`), and bites.
 - **Predation** (TCK-145): one bite per attacker and tick on the nearest eligible victim, per-pair cooldown `biteCooldownTicks` (60); the attacker gains `bitingBaseEnergyGain · carnivory · bitingEfficiencyCarnivoreScale`, capped by the 35 damage and by what the victim still has after earlier bites in the same tick, and the bite counts as eating for mitosis (`has_eaten`). Predators can now live from biting; before P6 a bite gave no energy and the same victim could be bitten every tick (RV-B07 resolved). The `[BITE ATTACK]` log event shows damage and gain.
 - Death log: "hunted down by predators" only for an agent that took bite damage in that tick, otherwise starvation/senescence (`death_log`); before P6 every death in the damage pass was reported as predation (P5: 101 "hunted" deaths with 0 bites in 90 s).
-- **Measured economy check** (UI, 90 s at maximum warp, single run, `thread_rng`): total deaths P5 ≈ 149 vs. P6 ≈ 147; P6: 13 bites, 5 predation deaths, 142 starvation/senescence deaths, 157 restocks; the population stays at the target 25. The death turnover is unchanged against P5 and is held by restocking (RV-B01); predation is rare. No headless Ocean runner, so there are no seeded multi-run numbers.
+- **Measured economy check** (UI, 90 s at maximum warp, single run, before TCK-156 with `thread_rng`): total deaths P5 ≈ 149 vs. P6 ≈ 147; P6: 13 bites, 5 predation deaths, 142 starvation/senescence deaths, 157 restocks; the population stays at the target 25. The death turnover is unchanged against P5 and is held by restocking (RV-B01); predation is rare. No headless Ocean runner, so there are no seeded multi-run numbers.
 
 ## Auto-save
 
-- Every 10 s `simulation_state` (`current_state`) is saved and extinct species beyond `speciesRecordRetention` are pruned; the snapshot is loaded on startup, failures are logged ([[wiki/architecture/persistence]]).
+- Every 10 s the typed `OceanSnapshot` is saved to `simulation_state` (`current_state`; written by the snapshot writer thread off the frame thread) and extinct species beyond `speciesRecordRetention` are pruned; the snapshot is loaded on startup (snapshots of earlier versions without seed, tick or nutrient centres still load), failures are logged ([[wiki/architecture/persistence]]).
 
 ## Observed behaviour
 
 - **No heredity:** mitosis children are not simulated; the population is held by restocking (RV-B01).
-- **Locomotion (RV-S02 resolved, TCK-150):** the "motionless Ocean" was attributed to thrust ∝ `stiffness · (pulse·1000)²`, which left low-pulse genomes near zero speed (speed probe before P5: 23 % of structured random genomes below 0.2 px/tick). Since P5 the Ocean uses the same speed band as the trainer (`step_creature_kinematics` in `src/server/engine.rs`): every genome swims 1–5 px/tick at full thrust and can turn in place; wall and reef contact reflect the heading (TCK-180, [[wiki/simulation/physics]]). Negative `out_thrust` swims backwards (≈ half of random brains have a negative mean thrust, steering probe). The Ocean population itself has not been measured.
+- **Locomotion (RV-S02 resolved, TCK-150):** the "motionless Ocean" was attributed to thrust ∝ `stiffness · (pulse·1000)²`, which left low-pulse genomes near zero speed (speed probe before P5: 23 % of structured random genomes below 0.2 px/tick). Since P5 the Ocean uses the same speed band as the trainer (`step_creature_kinematics` through `sim/systems/move.rs`): every genome swims 1–5 px/tick at full thrust and can turn in place; wall and reef contact reflect the heading (TCK-180, [[wiki/simulation/physics]]). Negative `out_thrust` swims backwards (≈ half of random brains have a negative mean thrust, steering probe). The Ocean population itself has not been measured.
 - **Sparse ecology:** with 300 spores, 25 agents and the sensor range above, random food finding is rare (hypothesis RV-S07, unmeasured; left for the Ocean phase of TCK-169, TCK-150).
 - The earlier explanation (render time scale in `frontend/ocean.ts`) is superseded by RV-S02 (fixed) and RV-S07 (open).
 
 ## Key Takeaways
 
+- IO-free, seeded `OceanSim` on the shared creature systems; reproducible per seed (TCK-156).
 - Rust-generated world, rendered by the client; biomes are cosmetic.
 - Population is held by restocking only (RV-B01).
 - Locomotion is fixed for every genome (1–5 px/tick, turning at rest; RV-S02, TCK-150); sparse food remains unmeasured (RV-S07).
 - Energy uses the shared activity-based cost (TCK-151); bites transfer energy with a cooldown (TCK-145); a 90 s UI check shows P5-level death turnover (≈ 147 deaths, 5 by predation) at a stable population of 25.
 
-Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.
+Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-103, FIX-127, TCK-129, TCK-145, TCK-156, TCK-150, TCK-151, TCK-172, TCK-180, TCK-184.

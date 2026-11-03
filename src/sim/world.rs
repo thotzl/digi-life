@@ -7,7 +7,7 @@
 
 use crate::biology::metabolism::MetabolismConfig;
 use crate::config::AppConfig;
-use crate::server::ocean_config::OceanConfig;
+use crate::config::OceanConfig;
 use crate::shared::brain::BrainConfig;
 use crate::shared::dto::{CreatureAgent, FoodSpore};
 use crate::shared::map_generator::ProceduralObstacle;
@@ -81,7 +81,7 @@ pub struct WorldSettings {
 }
 
 impl WorldSettings {
-    /// The Ocean's rules from config section `ocean` (adopted by the Ocean step in TCK-156).
+    /// The Ocean's rules from config section `ocean` (`sim::ocean::OceanSim`).
     pub fn ocean(ocean: &OceanConfig, nutrient_centers: Vec<(f32, f32)>) -> Self {
         Self {
             systems: OCEAN_SYSTEMS,

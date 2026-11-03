@@ -4,7 +4,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-103-impr
 
 # Physics
 
-`src/shared/physics.rs`, shared by Ocean and Trainer. `sin`/`cos`/`atan2`/`powf` go through `src/shared/fmath.rs` (pure-Rust `libm`), so kinematics are bit-identical across platforms (TCK-173). The per-creature tick calls the kinematics through the movement system `src/sim/systems/move.rs` and the spore physics through `src/sim/systems/food_drift.rs` (TCK-200, [[wiki/contracts/creature-system]]); the Ocean step in `server/engine.rs` still calls them directly until TCK-156.
+`src/shared/physics.rs`, shared by Ocean and Trainer. `sin`/`cos`/`atan2`/`powf` go through `src/shared/fmath.rs` (pure-Rust `libm`), so kinematics are bit-identical across platforms (TCK-173). The per-creature tick calls the kinematics through the movement system `src/sim/systems/move.rs` and the spore physics through `src/sim/systems/food_drift.rs` (TCK-200, [[wiki/contracts/creature-system]]); the Ocean (`sim::ocean::OceanSim`) runs the same systems since TCK-156.
 
 ## Functions
 

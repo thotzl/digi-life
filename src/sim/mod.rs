@@ -1,11 +1,13 @@
-//! Shared simulation kernel (TCK-200): one per-creature tick for every simulation (trainer rooms, diagnosis probes;
-//! the Ocean adopts it in TCK-156). Contract: `wiki/contracts/creature-system.md`, guide `wiki/guides/add-dynamic.md`.
+//! Shared simulation kernel (TCK-200): one per-creature tick for every simulation (trainer rooms, diagnosis probes,
+//! the Ocean since TCK-156). Contract: `wiki/contracts/creature-system.md`, guide `wiki/guides/add-dynamic.md`.
 //!
 //! - `world`: `World` (the borrowed tick view), `WorldSettings` (the rules, divergences as named fields), `TickCtx`
 //! - `systems`: one module per dynamic, each a plain function over the world
 //! - `step_creature`: runs a world's ordered system list for one creature; events are collected in `CreatureStep`
 //!   and applied by the owner after the step (respawn, decomposition, bookkeeping)
+//! - `ocean`: the IO-free Ocean (`OceanSim`, TCK-156) on these systems
 
+pub mod ocean;
 pub mod systems;
 pub mod world;
 
@@ -128,7 +130,7 @@ mod tests {
 
     #[test]
     fn test_ocean_settings_run_drain_eat_and_decompose_at_the_lifespan() {
-        // The Ocean's world (adopted by the Ocean step in TCK-156): std clock, prey selector, photosynthesis and
+        // The Ocean's world (`OceanSim`, TCK-156): std clock, prey selector, photosynthesis and
         // thermal stress after the drain, food eaten with the config radius, decomposition at the lifespan
         let config = crate::config::test_config();
         let settings = WorldSettings::ocean(&config.ocean, vec![(1000.0, 800.0)]);

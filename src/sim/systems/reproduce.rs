@@ -1,6 +1,5 @@
 //! Reproduction system (asexual mitosis, TCK-152): a mature, fed creature above its stomach threshold splits; the
-//! child is a fresh agent at the parent's place. The Ocean step still carries an inline copy (`server::engine`); it
-//! moves onto this module in TCK-156.
+//! child is a fresh agent at the parent's place (`sim::ocean::OceanSim::step`).
 
 use rand::Rng;
 
@@ -8,7 +7,7 @@ use crate::biology::creature_factory::{inherit_learned_weights, spawn_from_pheno
 use crate::biology::genome::{mutate_genome, GenomeConfig};
 use crate::biology::metabolism::MetabolismConfig;
 use crate::biology::phenotype::parse_genome;
-use crate::server::ocean_config::OceanConfig;
+use crate::config::OceanConfig;
 use crate::shared::brain::BrainConfig;
 use crate::shared::dto::CreatureAgent;
 

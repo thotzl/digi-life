@@ -13,7 +13,7 @@ Action (UI → engine):
 1. Add a variant to `EngineAction` (`src/server/ipc.rs`), `OceanAction` (`src/server/ocean_ipc.rs`) or
    `TrainerAction` (`src/server/trainer_ipc.rs`). Pick a `type` name not used by another group. Optional fields:
    `#[serde(default)] #[ts(optional)] Option<T>`.
-2. Handle it in the action loop of `src/server/engine.rs` (one match arm; no SQL per physics step).
+2. Handle it in the owning mode's `handle` (`src/server/engine/ocean_mode.rs` / `trainer_mode.rs`) or, for an `EngineAction`, in `Engine::handle` (`src/server/engine/mod.rs`); one match arm, no SQL per physics step ([[wiki/contracts/mode]]).
 3. Send it from the UI with `send({ type: "...", ... })` (`frontend/core/ipc.ts`); never `invoke` directly.
 
 Event (engine → UI):

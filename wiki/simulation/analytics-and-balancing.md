@@ -96,7 +96,7 @@ Genome set: `structured` = `generate_structured_genome` with config `genomeCompo
 - **HoF-based probes depend on the local DB** (`--db`): their numbers are reproducible only with the same DB content.
 - **Config keys:** every key has a test-enforced read site, without exemptions (TCK-149, TCK-145, [[wiki/architecture/configuration]]), so every tuning has an effect.
 - **Energy metrics depend on the room length:** the 300-tick small room hardly drains the budget (`starved_share` 0 after P6), the 1800-tick large room does (≈ 0.18); compare energy metrics only within one room.
-- **Ocean:** no headless runner and no seeded RNG (`thread_rng`, RV-T03/RV-T04); no Ocean offspring (RV-B01), so Ocean lineage analysis is meaningless; species = genome string (RV-B10), so species counts measure mutation volume, not cladogenesis.
+- **Ocean:** seeded and IO-free since TCK-156 (`OceanSim`), but no headless runner yet (RV-T03, TCK-158); no Ocean offspring (RV-B01), so Ocean lineage analysis is meaningless; species = genome string (RV-B10), so species counts measure mutation volume, not cladogenesis.
 
 ## DB data (Ocean, persisted trainer runs)
 

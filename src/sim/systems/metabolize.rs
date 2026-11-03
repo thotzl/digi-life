@@ -2,7 +2,7 @@
 //! `metabolic_scale`, then the world's environment energy modifiers in order.
 
 use crate::biology::metabolism::drain_energy;
-use crate::server::ocean_config::OceanConfig;
+use crate::config::OceanConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::sim::{CreatureStep, TemperatureField, TickCtx, World};
 

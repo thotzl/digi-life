@@ -6,4 +6,4 @@ import type { OceanTelemetryTick } from "./OceanTelemetryTick";
 /**
  * Ocean events sent to the UI (payload of `simulation-state`, tag `type`).
  */
-export type OceanUiEvent = { "type": "INIT_STATE" } & OceanInitState | { "type": "SIM_STATE", running: boolean, } | { "type": "TELEMETRY_TICK" } & OceanTelemetryTick | { "type": "FOOD_TICK", foodPellets: Array<FoodSpore>, } | { "type": "EAT_EVENT", x: number, y: number, } | { "type": "BITE_EVENT", attackerId: number, victimId: number, x: number, y: number, };
+export type OceanUiEvent = { "type": "INIT_STATE" } & OceanInitState | { "type": "SIM_STATE", running: boolean, speed: number, } | { "type": "TELEMETRY_TICK" } & OceanTelemetryTick | { "type": "FOOD_TICK", foodPellets: Array<FoodSpore>, } | { "type": "EAT_EVENT", x: number, y: number, } | { "type": "BITE_EVENT", attackerId: number, victimId: number, x: number, y: number, };

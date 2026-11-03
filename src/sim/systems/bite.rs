@@ -1,11 +1,11 @@
 //! Bite system (predation, TCK-145): at most one bite per attacker and tick on the nearest eligible peer in range.
 //! The damage is collected in a damage map and applied by the owner after the step, so all attackers of a tick see the
-//! same victims. The Ocean step still carries an inline copy (`server::engine`); it moves onto this module in TCK-156.
+//! same victims (`sim::ocean::OceanSim::step`).
 
 use std::collections::HashMap;
 
 use crate::biology::metabolism::{bite_energy_gain, MetabolismConfig};
-use crate::server::ocean_config::OceanConfig;
+use crate::config::OceanConfig;
 use crate::shared::dto::CreatureAgent;
 use crate::shared::geom;
 use crate::sim::PeerSnapshot;
