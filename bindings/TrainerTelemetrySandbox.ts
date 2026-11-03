@@ -3,6 +3,9 @@ import type { FoodSpore } from "./FoodSpore";
 import type { SandboxOrigin } from "./SandboxOrigin";
 import type { Scenario } from "./Scenario";
 
+/**
+ * One displayed sandbox in the live frame (`TrainerTelemetryTick`).
+ */
 export type TrainerTelemetrySandbox = { id: number, chamberSize: number, px: number, py: number, vx: number, vy: number, heading_angle: number, omega_rot: number, finished: boolean, current_fitness: number, origin_type: SandboxOrigin, consumed_spore_type: string | null, foods: Array<FoodSpore>, latin_name: string, primary_color_h: number, primary_color_s: number, primary_color_l: number, energy: number, age: number, generation: number, genome: string, 
 /**
  * Training mode of the trainer (fixed room or curriculum)

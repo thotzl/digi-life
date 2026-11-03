@@ -5,9 +5,10 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_engine::{SandboxOrigin, TrainerSandbox, TrainerTelemetrySandbox};
-use crate::biology::trainer_sim::{GenerationStats, LevelMove, TrainerSim};
+use crate::shared::dto::FoodSpore;
+use crate::trainer::mode::Scenario;
+use crate::trainer::sandbox::{SandboxOrigin, TrainerSandbox};
+use crate::trainer::sim::{GenerationStats, LevelMove, TrainerSim};
 
 /// Trainer events sent to the UI (payload of the `simulation-state` event, tag `type`).
 #[derive(Debug, Clone, Serialize, TS)]
@@ -52,6 +53,41 @@ pub fn display_slots(origins: &[SandboxOrigin], n: usize) -> Vec<usize> {
     slots
 }
 
+/// One displayed sandbox in the live frame (`TrainerTelemetryTick`).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct TrainerTelemetrySandbox {
+    pub id: u32,
+    #[serde(rename = "chamberSize")]
+    #[ts(rename = "chamberSize")]
+    pub chamber_size: f32,
+    pub px: f32,
+    pub py: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub heading_angle: f32,
+    pub omega_rot: f32,
+    pub finished: bool,
+    pub current_fitness: f32,
+    pub origin_type: SandboxOrigin,
+    pub consumed_spore_type: Option<String>,
+    pub foods: Vec<FoodSpore>,
+    pub latin_name: String,
+    pub primary_color_h: f32,
+    pub primary_color_s: f32,
+    pub primary_color_l: f32,
+    pub energy: f32,
+    pub age: u32,
+    pub generation: u32,
+    pub genome: String,
+    /// Training mode of the trainer (fixed room or curriculum)
+    pub scenario: Scenario,
+    /// Difficulty level of this sandbox's current trial room (TCK-176; 0 = small room, 1 = large room)
+    pub level: f32,
+    pub cumulative_rotation: f32,
+    pub coverage_mask: u64,
+}
+
 /// Live frame of the displayed sandboxes (25 Hz): a sample of `N` covering every origin group (TCK-192, TCK-194).
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -77,37 +113,40 @@ impl TrainerTelemetryTick {
         let scenario = trainer.params.scenario;
         let sandboxes = displayed
             .iter()
-            .map(|sb| TrainerTelemetrySandbox {
-                id: sb.id,
-                chamber_size: sb.room.chamber_size(),
-                px: sb.agent.px,
-                py: sb.agent.py,
-                vx: sb.agent.vx,
-                vy: sb.agent.vy,
-                heading_angle: sb.agent.heading_angle,
-                omega_rot: sb.agent.omega_rot,
-                finished: sb.finished,
-                current_fitness: sb.current_fitness,
-                origin_type: sb.origin_type,
-                consumed_spore_type: sb.consumed_spore_type.clone(),
-                foods: sb.foods.clone(),
-                latin_name: sb.agent.phenotype.latin_name.clone(),
-                primary_color_h: sb.agent.phenotype.primary_color.h,
-                primary_color_s: sb.agent.phenotype.primary_color.s,
-                primary_color_l: sb.agent.phenotype.primary_color.l,
-                energy: sb.agent.energy,
-                age: sb.agent.age,
-                generation: sb.agent.generation,
-                genome: sb.agent.genome.clone(),
-                scenario,
-                level: sb.room.level(),
-                cumulative_rotation: sb.cumulative_rotation,
-                coverage_mask: sb.coverage_mask,
+            .map(|sb| {
+                let (agent, trial) = (sb.agent(), sb.trial());
+                TrainerTelemetrySandbox {
+                    id: sb.id,
+                    chamber_size: sb.chamber.size,
+                    px: agent.px,
+                    py: agent.py,
+                    vx: agent.vx,
+                    vy: agent.vy,
+                    heading_angle: agent.heading_angle,
+                    omega_rot: agent.omega_rot,
+                    finished: trial.finished,
+                    current_fitness: sb.current_fitness,
+                    origin_type: sb.origin_type,
+                    consumed_spore_type: trial.consumed_spore_type.clone(),
+                    foods: sb.chamber.foods.clone(),
+                    latin_name: agent.phenotype.latin_name.clone(),
+                    primary_color_h: agent.phenotype.primary_color.h,
+                    primary_color_s: agent.phenotype.primary_color.s,
+                    primary_color_l: agent.phenotype.primary_color.l,
+                    energy: agent.energy,
+                    age: agent.age,
+                    generation: agent.generation,
+                    genome: agent.genome.clone(),
+                    scenario,
+                    level: sb.room.telemetry(&sb.chamber).level,
+                    cumulative_rotation: trial.cumulative_rotation,
+                    coverage_mask: trial.coverage_mask,
+                }
             })
             .collect();
-        let time_str = format!("{:.1}s", ((trainer.room().epoch_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
+        let time_str = format!("{:.1}s", ((trainer.room().episode_ticks() as f32 - trainer.epoch_ticks as f32) / 60.0).max(0.0));
         let selected_brain = selected_sandbox_id.and_then(|sel_id| {
-            displayed.iter().find(|s| s.id == sel_id).map(|sb| TrainerSelectedBrain { id: sel_id, activations: sb.agent.neuron_activations.clone() })
+            displayed.iter().find(|s| s.id == sel_id).map(|sb| TrainerSelectedBrain { id: sel_id, activations: sb.agent().neuron_activations.clone() })
         });
         Self { generation: trainer.generation, is_running, time_str, sandboxes, selected_brain }
     }
@@ -185,7 +224,7 @@ impl From<&GenerationStats> for TrainerGenerationStats {
             median_time_to_first_catch: s.median_time_to_first_catch,
             immobile_share: s.immobile_share,
             starved_share: s.starved_share,
-            scenario: s.scenario,
+            scenario: s.scenario.scenario(),
             level: s.level,
             level_move: s.level_move,
             mutation_ops_max: s.mutation_ops_max,
@@ -354,7 +393,7 @@ mod tests {
     /// The UI stats are the report's `GenerationStats` values (same JSON numbers), so UI and headless report agree.
     #[test]
     fn test_generation_stats_match_report_serialization() {
-        use crate::biology::trainer_sim::{TrainerEvent, TrainerParams, TrainerSim};
+        use crate::trainer::sim::{TrainerEvent, TrainerParams, TrainerSim};
         let mut sim = TrainerSim::new(TrainerParams { population: 4, ..TrainerParams::from_config(crate::config::test_config()) }, 7, 4, crate::config::test_config());
         let stats = loop {
             if let Some(TrainerEvent::GenerationCompleted { stats, .. }) = sim.step(false) {
@@ -434,8 +473,8 @@ mod tests {
     /// 5 mutants at pop 12, sample 1 / 1 / 1 / 2) and the brain view only a displayed sandbox.
     #[test]
     fn test_telemetry_carries_only_the_displayed_sandboxes() {
-        use crate::biology::trainer_engine::SandboxOrigin;
-        use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
+        use crate::trainer::sandbox::SandboxOrigin;
+        use crate::trainer::sim::{TrainerEvent, TrainerParams};
         let mut sim = TrainerSim::new(TrainerParams { population: 12, multi_trial: false, ..TrainerParams::from_config(crate::config::test_config()) }, 11, 200, crate::config::test_config());
         while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
         let tick = TrainerTelemetryTick::build(&sim, 5, Some(4), true);
@@ -452,7 +491,7 @@ mod tests {
     /// TCK-194: edge cases of the display sample.
     #[test]
     fn test_display_slots_edge_cases() {
-        use crate::biology::trainer_engine::SandboxOrigin::{Elite, Hof, Mutant, Random};
+        use crate::trainer::sandbox::SandboxOrigin::{Elite, Hof, Mutant, Random};
         // Generation 1: one group only
         assert_eq!(display_slots(&[Random; 10], 4), vec![0, 1, 2, 3]);
         // Sample covers the population
@@ -473,8 +512,8 @@ mod tests {
     #[test]
     fn test_telemetry_samples_every_origin_group() {
         use crate::biology::genome::WILDTYPE_GENOME;
-        use crate::biology::trainer_engine::SandboxOrigin;
-        use crate::biology::trainer_sim::{GenomeRecord, TrainerParams};
+        use crate::trainer::sandbox::SandboxOrigin;
+        use crate::trainer::sim::{GenomeRecord, TrainerParams};
         let record = |fitness: f32| GenomeRecord { genome: WILDTYPE_GENOME.to_string(), name: "p".to_string(), fitness, generation: 1, methylations: Vec::new(), synapse_weights: Vec::new() };
         let parents: Vec<GenomeRecord> = (0..25).map(|i| record(25.0 - i as f32)).collect();
         let hof: Vec<GenomeRecord> = (0..15).map(|i| record(15.0 - i as f32)).collect();
@@ -491,7 +530,7 @@ mod tests {
     /// the generation stats of the same seed unchanged.
     #[test]
     fn test_display_count_does_not_change_the_simulation() {
-        use crate::biology::trainer_sim::{TrainerEvent, TrainerParams};
+        use crate::trainer::sim::{TrainerEvent, TrainerParams};
         let run = |display_count: Option<usize>| {
             let mut sim = TrainerSim::new(TrainerParams { population: 10, trials: 2, ..TrainerParams::from_config(crate::config::test_config()) }, 21, 200, crate::config::test_config());
             let mut stats = Vec::new();

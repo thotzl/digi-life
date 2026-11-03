@@ -34,7 +34,7 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
 | :--- | :--- | :--- |
 | `core` | `CoreConfig` (`src/config/mod.rs`) | Ocean world generation, `INIT_STATE.seed`, trainer run seeds |
 | `ocean` | `OceanConfig` (`src/server/ocean_config.rs`) | Ocean step in `server::engine` |
-| `trainer` | `TrainerConfig` (`src/biology/trainer_config.rs`) | `trainer_sim`, `trainer_engine`, `scenarios`, runner defaults |
+| `trainer` | `TrainerConfig` (`src/biology/trainer_config.rs`) | `crate::trainer` (`sim`, `room`, `genomes`), runner defaults |
 | `genome` | `GenomeConfig` (`src/biology/genome/mod.rs`) | genome generator, mutation, Lamarckian inheritance |
 | `brain` | `BrainConfig` (`src/shared/brain.rs`) | `parse_genome` (brain compile), brain step (learning) |
 | `metabolism` | `MetabolismConfig` (`src/biology/metabolism.rs`) | energy function, start energy, food and bite energy |
@@ -76,7 +76,7 @@ How a section or key is added: [[wiki/contracts/config-section]] (contract) and 
   child; `mutationOneFifthRule` true (population 1/5 success rule on the max); `mutationOpsLimit` 8 (upper bound of the
   max for the 1/5 rule and the UI slider, lower bound max(1, `mutationOpsMin`)); `mutationChannels` `"mixed"` |
   `"separate"` (experimental: one body or brain channel per child).
-- `trainerFitness` (TCK-175, weights of `scenarios::calculate_fitness` in catch units, both below 1):
+- `trainerFitness` (TCK-175, weights of `trainer::room::calculate_fitness` in catch units, both below 1):
   `firstCatchBonus` 0.5, `approachBonus` 0.3.
 - `trainerSpawnMinDistance` (`RoomPair<f32>`, TCK-154): minimum food distance for trial starts and respawns,
   `standard` 200, `exploration` 500 px; reasoning in the doc comment of `TrainerConfig::trainer_spawn_min_distance`.

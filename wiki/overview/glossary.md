@@ -10,7 +10,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-
 - **Epoch** — fixed tick budget of one trainer evaluation; **trial** — one of the `trainerTrials` (8 since P8) epochs per generation (multi-trial).
 - **Layout** — shared trainer task of one trial (start heading, food positions, respawn seed), the same for every sandbox of a generation (TCK-174), see [[wiki/simulation/trainer]].
 - **Layout policy** — when the shared layout changes (`trainerLayoutPolicy`): `rotate` = every generation (default since P8), `hold` = until all elites solve it (P7; memorised layouts) (TCK-174 post-fix).
-- **Level / difficulty** — `d` in [0, 1] of the one room plugin `LevelScenario`: chamber, epoch and spawn distance geometric, food per type linear between the small room (0, `standard`) and the large room (1, `exploration`) (TCK-176).
+- **Level / difficulty** — `d` in [0, 1] of the level room `LevelRoom` (`src/trainer/room/level.rs`): chamber, epoch and spawn distance geometric, food per type linear between the small room (0, `standard`) and the large room (1, `exploration`) (TCK-176).
 - **Curriculum / curriculum gate** — training mode that moves the level at generation ends: success of the non-rehearsal trials above `upper` (0.3) → +`step` (0.1), below `lower` (0.1) → −`step` (`trainerCurriculum`, `gate_level`, TCK-176); a manual level turns the gate off.
 - **Rehearsal** — curriculum trials run at an easier level (`rehearsalLevel`) so earlier skills are kept; counted for fitness, ignored by the gate; off by default (`rehearsalShare` 0) (TCK-176).
 - **Unseen-layout evaluation** — the final population run on layouts no training generation used (`EVAL_STREAM`, runner `--eval-final`, report `final_eval`); the capability measure for epic targets from P8 on, because training success overstates it (TCK-174 post-fix, TCK-176).
@@ -33,7 +33,7 @@ sources: [README.md, .agents/skills/biology-dna/SKILL.md, .agents/skills/server-
 - **Thalamus** — preprocessing layer between sensors and hidden neurons, see [[wiki/biology/ctrnn-brain]].
 - **Pruning** — weak synapses (`|w| < 0.015`) frozen at 0 during life. The former exuberance (fully connected brain at birth) was replaced by targeted wiring (TCK-182).
 - **Synapse key / owner / weight tape** — role-based stable synapse identity, the one gene that defines a synapse, and that gene's payload letters as initial weights, see [[wiki/biology/ctrnn-brain]].
-- **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters.
+- **Structured genome / letter soup** — random genome built from valid genes (`generate_structured_genome`) vs. uniformly random letters (no longer a probe set since TCK-201).
 - **Creep mutation** — a letter moved 1–2 alphabet steps (small value change).
 - **Mutation channel** — which genes a mutation touched: body (trait, `HOX`, organ genes), brain (`NEU`, `SY`, `OUT`), both or neutral (outside every gene) (`genome::promoter_channel`, `classify_mutation`, TCK-181), see [[wiki/biology/genome-compiler]].
 - **Lamarckian inheritance** — learned weight offsets passed to offspring, matched by synapse key, per plastic synapse with probability `lamarckianAssimilationChance` (TCK-152).

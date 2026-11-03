@@ -4,7 +4,7 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-139-ocea
 
 # Simulation Engine
 
-`src/server/engine.rs` — `spawn_simulation_thread(window, rx)` is started from `main.rs` setup. The engine is one thread closure holding the Ocean state as local variables (~1,500 lines, RV-A01). The trainer lives in `TrainerSim` (`src/biology/trainer_sim.rs`, TCK-173); the closure keeps only its UI state (active/running, warp, selected sandbox, run id), telemetry and DB writes ([[wiki/simulation/trainer]]).
+`src/server/engine.rs` — `spawn_simulation_thread(window, rx)` is started from `main.rs` setup. The engine is one thread closure holding the Ocean state as local variables (~1,500 lines, RV-A01). The trainer lives in `TrainerSim` (`src/trainer/sim.rs`, TCK-173, TCK-201); the closure keeps only its UI state (active/running, warp, selected sandbox, run id), telemetry and DB writes ([[wiki/simulation/trainer]]).
 
 ## Frame and timing
 

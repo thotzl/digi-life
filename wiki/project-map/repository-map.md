@@ -44,12 +44,9 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `biology/brain/` | brain model types (roles, motors, `MotorOutputs`, `Activation`) and the Brain v2 compiler (`compile.rs`) | [[wiki/biology/ctrnn-brain]] |
 | `biology/creature_factory.rs` | the one spawn path for Ocean and trainer creatures (start energy, buffers); Lamarckian weight inheritance by synapse key | [[wiki/biology/metabolism-and-reproduction]] |
 | `biology/metabolism.rs` | the one energy function of Ocean and trainer (`tick_cost`, `drain_energy`), food and bite energy rules, `MetabolismConfig` | [[wiki/biology/metabolism-and-reproduction]] |
-| `biology/trainer_sim.rs` | IO-free trainer: population, epoch/trial loop, layout policy, curriculum gate, rehearsal, pending room switches, breeding, hall of fame, generation stats, population evaluation | [[wiki/simulation/trainer]] |
-| `biology/trainer_engine.rs` | trainer sandboxes, breeding of one genome, trial reset, sandbox tick (shared creature systems + trainer bookkeeping) | [[wiki/simulation/trainer]] |
-| `biology/scenarios.rs` | rooms: `Scenario` enum, plugin trait and its one implementation `LevelScenario` (room at a difficulty level, its `WorldSettings`), shared fitness function `calculate_fitness` | [[wiki/simulation/trainer]] |
-| `biology/trainer_report.rs` | headless trainer run (room schedule, final evaluation) and its JSON report | [[wiki/simulation/analytics-and-balancing]] |
+| `trainer/` | IO-free trainer (TCK-201): `sim.rs` (`TrainerSim`, orchestration, room switches, run state), `room/` (`Room` trait, registry `ROOMS`, `LevelRoom` and its fitness), `chamber.rs` (owned world of a sandbox, N creatures, tick on the shared systems), `sandbox.rs`, `evaluator.rs` (`Evaluator`, `SoloTrials`), `breeder.rs` (parents, HoF, slot plan, selection), `curriculum.rs`, `genomes.rs`, `mode.rs` (`Scenario`, `TrainingMode`), `stats.rs`, `streams.rs` | [[wiki/simulation/trainer]], [[wiki/contracts/room]], [[wiki/contracts/evaluator]] |
 | `biology/trainer_store.rs` | IO side of `TrainerSim`: `GenomeRecord`/`TrainerRunState` ↔ `TrainerRepo` (engine and runner, TCK-159) | [[wiki/architecture/persistence]] |
-| `biology/probes.rs` | mechanics diagnosis probes (heredity, speed, equipment, steering, wall, Hebbian, topology, metabolism), cost-calibration helper `mean_trial_activity_and_thrust` | [[wiki/simulation/analytics-and-balancing]] |
+| `diagnostics/` | tests and `runner` feature only (TCK-201): `report.rs` (headless trainer run, schedule, final evaluation, JSON report), `probes.rs` (mechanics diagnosis probes, cost-calibration helper `mean_trial_activity_and_thrust`) | [[wiki/simulation/analytics-and-balancing]] |
 | `sim/` | shared simulation kernel (TCK-200): `World`, `WorldSettings` (Ocean/trainer divergences as named fields), `TickCtx`, `step_creature`; `systems/` one module per dynamic (sense, think, metabolize, death, move, food_drift, eat, bite, reproduce) | [[wiki/contracts/creature-system]] |
 | `shared/brain.rs` | CTRNN execution, Oja learning of plastic synapses, sensory inputs | [[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]] |
 | `shared/physics.rs` | kinematics, collisions, spore physics | [[wiki/simulation/physics]] |
@@ -62,9 +59,10 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | `logging.rs` | `log` backend: stderr (dev, runner), rotating file in the app data dir (release app) | [[wiki/architecture/system-overview]] |
 | `shared/rng.rs` | seeded simulation RNG (`SimRng`, text seeds, sub-streams) | [[wiki/simulation/trainer]] |
 | `shared/fmath.rs` | platform-deterministic math (`libm`) for the per-tick path | [[wiki/architecture/performance]] |
+| `shared/stats.rs` | `quantile`, `Distribution`, `pearson` (trainer stats and probes, TCK-201) | [[wiki/simulation/analytics-and-balancing]] |
 | `bin/trainer_runner.rs` | headless runner CLI: `run` and `probe` (replaced `cli_trainer`, RV-S11) | [[wiki/simulation/analytics-and-balancing]] |
 
-Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400); no genome/phenotype/organ/brain module exceeds ~500 lines (TCK-199).
+Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400; `diagnostics/`); no genome/phenotype/organ/brain module exceeds ~500 lines (TCK-199).
 
 ## Frontend (`frontend/`)
 
@@ -84,7 +82,7 @@ Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400); no genome/phenotype/o
 
 ## Key Takeaways
 
-- Rust: `server/` = runtime and API, `biology/` = genome, creature factory, trainer, runner report and probes, `shared/` = brain, physics, world, types, RNG, math; `bin/` = headless runner.
+- Rust: `server/` = runtime and API, `biology/` = genome, creature factory, metabolism, trainer config and store, `trainer/` = trainer, `diagnostics/` = runner report and probes, `shared/` = brain, physics, world, types, RNG, math; `bin/` = headless runner.
 - Frontend: router + two loop modules + views + renderers.
 - Every module row links to the article that explains it.
 

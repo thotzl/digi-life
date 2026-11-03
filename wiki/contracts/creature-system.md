@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/biology/trainer_engine.rs, src/biology/scenarios.rs]
+sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.rs, src/sim/world.rs, src/sim/systems/mod.rs, src/trainer/chamber.rs, src/trainer/room/level.rs]
 ---
 
 # Contract: creature system
@@ -8,8 +8,8 @@ sources: [tickets/closed/TCK-200-r3-world-and-creature-systems.md, src/sim/mod.r
 
 A creature system is one dynamic of the per-creature tick: sensing, brain, metabolism, death, movement, food drift,
 eating, biting, reproduction. All simulations run the same system functions over a `World` (`src/sim/`, TCK-200):
-the trainer rooms (`trainer_engine::step_trainer_sandbox_physics`), the diagnosis probes (`probes`, brain-only
-world) and the metabolism calibration (`probes::mean_trial_activity_and_thrust`). The Ocean step in
+the trainer rooms (`trainer::chamber::Chamber::step`, [[wiki/contracts/room]]), the diagnosis probes
+(`diagnostics::probes`, brain-only world) and the metabolism calibration (`probes::mean_trial_activity_and_thrust`). The Ocean step in
 `src/server/engine.rs` still runs its inline copy and adopts the systems in TCK-156. A planned dynamic (digestion,
 attack variants) is one new module in `src/sim/systems/`. Where Ocean and trainer behave differently, the difference
 is a named field of `WorldSettings`, never a branch on the mode.
@@ -41,7 +41,7 @@ pub struct WorldSettings {
     eat_radius: EatRadiusRule,           // TrainerDiet | Linear { multiplier, offset } (Ocean config)
     respawn: RespawnPolicy,              // MinDistance { min_distance } (trainer) | Patchy { nutrient_centers, recycle_meat } (Ocean)
 }
-impl WorldSettings { pub fn ocean(&OceanConfig, nutrient_centers) -> Self }  // trainer: TrainingScenarioPlugin::world_settings
+impl WorldSettings { pub fn ocean(&OceanConfig, nutrient_centers) -> Self }  // trainer: Room::world_settings
 pub struct TickCtx<'a> { brain: &BrainConfig, metabolism: &MetabolismConfig, physics: &PhysicsConfig, tick: u64 }
 
 // src/sim/systems/<name>.rs: a system in the list is `fn(world: &mut World, idx: usize, [ctx: &TickCtx,] step: &mut CreatureStep)`
@@ -87,7 +87,7 @@ The owner advances `agent.age` (trainer: every tick, also when starved; Ocean: a
 
 A system run by `step_creature`: one variant in `sim::System`, one arm in the `match` of `step_creature` (the compiler
 reports a missing arm), and an entry in each world's list (`TRAINER_SYSTEMS`, `OCEAN_SYSTEMS`, `BRAIN_ONLY_SYSTEMS`) at
-its place in the order. A world rule: one field of `WorldSettings`, set by `TrainingScenarioPlugin::world_settings`
+its place in the order. A world rule: one field of `WorldSettings`, set by `Room::world_settings`
 (trainer rooms), `WorldSettings::ocean` and the probes' `brain_world`.
 
 ## Config keys
@@ -105,7 +105,7 @@ decomposition, biting, mitosis) ([[wiki/contracts/config-section]]).
 ## Test recipe
 
 `cargo test sim::` (selectors, eat radius, respawn, decomposition, bite, mitosis) and
-`cargo test trainer_engine::` (trainer tick on the systems). A refactor must also keep the probe JSON identical:
+`cargo test trainer::` (trainer tick on the systems). A refactor must also keep the probe JSON identical:
 `trainer_runner probe all --seed <s> --samples <n>` before and after, then diff the directories. Full gate: `cargo test`
 (golden master), the three trainer reference runs of `.github/workflows/ci.yml` compared with
 `node tests/reference/compare-trainer-report.mjs`, `npm test`, `npm run build`.

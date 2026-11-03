@@ -1,8 +1,8 @@
 //! The IO side of `TrainerSim` (TCK-159): maps `GenomeRecord` / `TrainerRunState` onto the rows of `TrainerRepo`
 //! and logs failures (the trainer continues without the DB). Used by the engine and the headless runner.
 
-use crate::biology::scenarios::Scenario;
-use crate::biology::trainer_sim::{GenomeRecord, TrainerRunState, TrainerSim};
+use crate::trainer::mode::Scenario;
+use crate::trainer::sim::{GenomeRecord, TrainerRunState, TrainerSim};
 use crate::persistence::{LogDbError, TrainerGenome, TrainerRepo, TrainerRunStateRow};
 
 fn to_row(record: &GenomeRecord, generation: u32) -> TrainerGenome {
@@ -89,7 +89,7 @@ pub fn load_run_state(repo: &impl TrainerRepo, run_id: &str) -> Option<TrainerRu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::biology::trainer_sim::TrainerParams;
+    use crate::trainer::sim::TrainerParams;
     use crate::persistence::{init_db, MemoryDb};
 
     fn elite(fitness: f32) -> GenomeRecord {

@@ -97,7 +97,7 @@ mod tests {
     use super::*;
     use crate::biology::creature_factory::{spawn_creature, SpawnOptions};
     use crate::biology::genome::WILDTYPE_GENOME;
-    use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
+    use crate::trainer::room::registry;
     use crate::shared::dto::CreatureAgent;
     use crate::sim::systems::death::DeathPolicy;
     use crate::sim::systems::sense::{ClockVariant, TargetSelector};
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn test_brain_only_world_moves_without_drain_or_food_interaction() {
         let config = crate::config::test_config();
-        let settings = WorldSettings { systems: BRAIN_ONLY_SYSTEMS, ..Scenario::Standard.plugin(config).world_settings(config) };
+        let settings = WorldSettings { systems: BRAIN_ONLY_SYSTEMS, ..registry::build("standard", config).unwrap().world_settings(config) };
         let mut a = agent(500.0, 500.0);
         let mut foods = vec![food(500.0, 500.0)];
         let (energy, mut step) = (a.energy, CreatureStep::default());

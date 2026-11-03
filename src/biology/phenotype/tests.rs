@@ -393,7 +393,7 @@ fn measure_gene_operator_key_shift() {
                 t.1,
                 t.2 as f32 / t.1.max(1) as f32,
                 t.3 as f32 / t.1.max(1) as f32,
-                crate::biology::probes::pearson(&t.4).unwrap_or(f32::NAN)
+                crate::shared::stats::pearson(&t.4).unwrap_or(f32::NAN)
             );
         }
         println!("{:?} HOX cases (excluded): {}; cases with a later gene of the same spelling: {}", kind, hox, same_spelling);

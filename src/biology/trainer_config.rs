@@ -1,5 +1,5 @@
 //! Config section `trainer` (`TrainerConfig`): defaults of the trainer run (`TrainerParams::from_config`), fitness
-//! weights, spawn distances, curriculum and the minimal criterion. Read by `trainer_sim`, `trainer_engine` and
+//! weights, spawn distances, curriculum and the minimal criterion. Read by `crate::trainer` and
 //! `scenarios`.
 
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ fn default_trainer_population() -> usize {
     100
 }
 
-/// Weights of the trainer fitness in catch units (`scenarios::calculate_fitness`, TCK-175). Both stay below 1 so a
+/// Weights of the trainer fitness in catch units (`trainer::room::calculate_fitness`, TCK-175). Both stay below 1 so a
 /// catch with full diet fit always outweighs the bonuses of a trial without one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -73,7 +73,7 @@ pub struct RoomPair<T> {
 }
 
 /// Automatic training curriculum (TCK-176): one difficulty level `d` in [0, 1] whose room interpolates between the
-/// small room (`standard`, d = 0) and the large room (`exploration`, d = 1); see `scenarios::LevelScenario`.
+/// small room (`standard`, d = 0) and the large room (`exploration`, d = 1); see `trainer::room::LevelRoom`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainerCurriculumConfig {
@@ -101,7 +101,7 @@ pub struct TrainerCurriculumConfig {
 }
 
 /// Minimal criterion for random trainer genomes (generation 1 and immigrants, RV-S09): at least one food-sensing
-/// organ (eye or nose) and able to move (`trainer_engine::meets_minimal_criterion`).
+/// organ (eye or nose) and able to move (`trainer::genomes::meets_minimal_criterion`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct TrainerMinimalCriterion {

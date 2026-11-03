@@ -1,24 +1,27 @@
 //! Headless trainer runner (TCK-173): runs `TrainerSim` without UI and warp cap and writes a JSON report.
 //! In memory by default; `--persist --db <path>` writes the elites and the run state (TCK-191) of every generation to
 //! that DB.
-//! `probe` runs the mechanics diagnosis probes of TCK-172 (`biology::probes`); its `--db` is opened read-only.
+//! `probe` runs the mechanics diagnosis probes of TCK-172 (`diagnostics::probes`); its `--db` is opened read-only.
 
 use std::collections::HashMap;
 use std::process::ExitCode;
 
-use src_tauri::biology::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
-use src_tauri::biology::scenarios::Scenario;
-use src_tauri::biology::trainer_report::{run_trainer, RunConfig, ScheduleSpan};
-use src_tauri::biology::trainer_sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrialAggregation};
+use src_tauri::diagnostics::probes::{load_hof_genomes, run_probe, ProbeOptions, PROBE_NAMES};
+use src_tauri::diagnostics::report::{run_trainer, RunConfig, ScheduleSpan};
+use src_tauri::trainer::mode::TrainingMode;
+use src_tauri::trainer::room::registry;
+use src_tauri::trainer::sim::{CurriculumParams, LayoutPolicy, MutationChannelMode, TrainerEvent, TrainerParams, TrialAggregation};
 use src_tauri::biology::trainer_store;
 use src_tauri::persistence::init_db;
 use src_tauri::config::AppConfig;
 
 const USAGE: &str = "Usage:
-  trainer_runner run --seed <str> --generations <N> --scenario standard|exploration|curriculum
+  trainer_runner run --seed <str> --generations <N> --scenario <room id>|curriculum
+                     (room ids: the room registry, today standard|exploration)
                      [--population <N; default config trainerPopulation>]
-                     [--schedule <room>:<gens>,... (rooms standard|exploration|curriculum; replaces --scenario,
-                      sets --generations)] [--eval-final standard,exploration] [--eval-trials <N; default --trials>]
+                     [--schedule <room>:<gens>,... (room ids or curriculum; replaces --scenario,
+                      sets --generations)] [--eval-final <room id>,... e.g. standard,exploration]
+                     [--eval-trials <N; default --trials>]
                      [--curriculum-upper <x>] [--curriculum-lower <x>] [--curriculum-step <x>] [--start-level <0..1>]
                      [--rehearsal <share 0..1>] [--ramp-start <x>] (defaults: config trainerCurriculum)
                      [--trials <N; default config trainerTrials>] [--aggregation mean|median]
@@ -121,11 +124,16 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         Some(list) => list.split(',').map(|name| parse_room(name.trim())).collect::<Result<Vec<_>, _>>()?,
         None => Vec::new(),
     };
-    if eval_final.contains(&Scenario::Curriculum) {
-        return Err("--eval-final takes fixed rooms (standard, exploration)".to_string());
-    }
+    let eval_final = eval_final
+        .into_iter()
+        .map(|mode| match mode {
+            TrainingMode::Room(id) => Ok(id),
+            TrainingMode::Curriculum => Err(format!("--eval-final takes registry rooms ({})", registry::ids().collect::<Vec<_>>().join(", "))),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let defaults = RunConfig::with_defaults(required(flags, "seed")?, scenario, parse(flags, "population", Some(app.trainer.trainer_population))?, generations, app);
-    let c = defaults.curriculum;
+    let d = &defaults.params;
+    let c = d.curriculum;
     let curriculum = CurriculumParams {
         upper: parse(flags, "curriculum-upper", Some(c.upper))?,
         lower: parse(flags, "curriculum-lower", Some(c.lower))?,
@@ -142,37 +150,41 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         return Err("--curriculum-step must be in (0, 1] and --curriculum-lower <= --curriculum-upper".to_string());
     }
     let trial_aggregation = match flags.get("aggregation").map(String::as_str) {
-        None => defaults.trial_aggregation,
+        None => d.trial_aggregation,
         Some("mean") => TrialAggregation::Mean,
         Some("median") => TrialAggregation::Median,
         Some(other) => return Err(format!("unknown aggregation '{}'", other)),
     };
     let mutation_channels = match flags.get("mutation-channels").map(String::as_str) {
-        None => defaults.mutation_channels,
+        None => d.mutation_channels,
         Some("mixed") => MutationChannelMode::Mixed,
         Some("separate") => MutationChannelMode::Separate,
         Some(other) => return Err(format!("unknown mutation channel mode '{}'", other)),
     };
     let layout_policy = match flags.get("layout-policy").map(String::as_str) {
-        None => defaults.layout_policy,
+        None => d.layout_policy,
         Some("hold") => LayoutPolicy::Hold,
         Some("rotate") => LayoutPolicy::Rotate,
         Some(other) => return Err(format!("unknown layout policy '{}'", other)),
     };
-    let elite_ratio: f32 = parse(flags, "elite-ratio", Some(defaults.elite_ratio))?;
+    let elite_ratio: f32 = parse(flags, "elite-ratio", Some(d.elite_ratio))?;
     if !(elite_ratio > 0.0 && elite_ratio <= 1.0) {
         return Err(format!("--elite-ratio must be in (0, 1], got {}", elite_ratio));
     }
-    let config = RunConfig {
-        trials: parse(flags, "trials", Some(defaults.trials))?,
+    let params = TrainerParams {
+        trials: parse(flags, "trials", Some(d.trials))?,
         trial_aggregation,
-        multi_trial: parse(flags, "multi-trial", Some(defaults.multi_trial))?,
-        one_fifth_rule: parse(flags, "one-fifth", Some(defaults.one_fifth_rule))?,
+        multi_trial: parse(flags, "multi-trial", Some(d.multi_trial))?,
+        one_fifth_rule: parse(flags, "one-fifth", Some(d.one_fifth_rule))?,
         elite_ratio,
-        minimal_criterion: parse(flags, "minimal-criterion", Some(defaults.minimal_criterion))?,
+        minimal_criterion: parse(flags, "minimal-criterion", Some(d.minimal_criterion))?,
         mutation_channels,
         layout_policy,
         curriculum,
+        ..d.clone()
+    };
+    let config = RunConfig {
+        params,
         schedule,
         eval_final,
         eval_trials: if flags.contains_key("eval-trials") { Some(parse(flags, "eval-trials", None)?) } else { None },
@@ -194,23 +206,24 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     };
     let retention = app.trainer.trainer_genome_retention_per_run;
 
+    let p = &config.params;
     log::info!(
-        "seed '{}', scenario {:?}, population {}, generations {}, trials {} ({:?}), multi-trial {}, elite ratio {}, 1/5 rule {}, minimal criterion {}, mutation channels {:?}, parallel {}",
+        "seed '{}', scenario {}, population {}, generations {}, trials {} ({:?}), multi-trial {}, elite ratio {}, 1/5 rule {}, minimal criterion {}, mutation channels {:?}, parallel {}",
         config.seed,
-        config.scenario,
-        config.population,
+        config.first_mode().id(),
+        p.population,
         config.generations,
-        config.trials,
-        config.trial_aggregation,
-        config.multi_trial,
-        config.elite_ratio,
-        config.one_fifth_rule,
-        config.minimal_criterion,
-        config.mutation_channels,
+        p.trials,
+        p.trial_aggregation,
+        p.multi_trial,
+        p.elite_ratio,
+        p.one_fifth_rule,
+        p.minimal_criterion,
+        p.mutation_channels,
         config.parallel
     );
-    if config.scenario == Scenario::Curriculum || config.schedule.iter().any(|span| span.scenario == Scenario::Curriculum) {
-        log::info!("curriculum {:?}", config.curriculum);
+    if p.mode() == TrainingMode::Curriculum || config.schedule.iter().any(|span| span.scenario == TrainingMode::Curriculum) {
+        log::info!("curriculum {:?}", p.curriculum);
     }
     if !config.schedule.is_empty() {
         log::info!("schedule {:?}", config.schedule);
@@ -218,10 +231,10 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     let report = run_trainer(&config, app, |event, sim| {
         let TrainerEvent::GenerationCompleted { generation, elites, stats, .. } = event;
         log::info!(
-            "generation {}/{}: {:?} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
+            "generation {}/{}: {} level {:.2}, best {:.2}, median {:.2}, success {:.2}{}",
             generation,
             config.generations,
-            stats.scenario,
+            stats.scenario.id(),
             stats.level,
             stats.best_fitness,
             stats.median_fitness,
@@ -234,7 +247,7 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
         }
     });
     for eval in &report.final_eval {
-        log::info!("final eval {:?}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
+        log::info!("final eval {}: success {:.3}, mean fitness {:.3}", eval.scenario, eval.eval.success_rate, eval.eval.mean_fitness);
     }
     log::info!(
         "done in {:.2} s ({:.0} ticks/s total, {:.0} per sandbox; generation ends {:.2} s)",
@@ -251,14 +264,9 @@ fn run(flags: &HashMap<String, String>, app: &AppConfig) -> Result<(), String> {
     }
 }
 
-/// Room name of `--scenario`, `--schedule` and `--eval-final`.
-fn parse_room(name: &str) -> Result<Scenario, String> {
-    match name {
-        "standard" => Ok(Scenario::Standard),
-        "exploration" => Ok(Scenario::Exploration),
-        "curriculum" => Ok(Scenario::Curriculum),
-        other => Err(format!("unknown scenario '{}'", other)),
-    }
+/// Room of `--scenario`, `--schedule` and `--eval-final`: a registry room id or "curriculum".
+fn parse_room(name: &str) -> Result<TrainingMode, String> {
+    TrainingMode::parse(name)
 }
 
 /// `room:gens,room:gens,...` (e.g. `standard:30,exploration:30,standard:10`).

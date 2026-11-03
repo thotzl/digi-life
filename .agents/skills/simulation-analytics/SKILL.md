@@ -6,7 +6,7 @@ description: Rules and procedure for measuring, tuning and balancing the trainer
 
 ## I. Knowledge (read first)
 - Runner commands, report fields, probes, comparison method, caveats: `wiki/simulation/analytics-and-balancing.md`
-- Trainer model and P2 baseline: `wiki/simulation/trainer.md`
+- Trainer model: `wiki/simulation/trainer.md`; measured phase results P2–P8: `wiki/history/trainer-measurements-p2-p8.md`; rooms and evaluator: `wiki/contracts/room.md`, `wiki/contracts/evaluator.md`
 - Target values per phase: `tickets/closed/TCK-171-training-track-epic.md` ("Target values")
 
 ## II. Rules

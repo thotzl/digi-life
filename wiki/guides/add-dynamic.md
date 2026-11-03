@@ -17,9 +17,9 @@ fatigue). Read first: [[wiki/contracts/creature-system]] and [[wiki/architecture
 4. Put the variant into the system list of each world that runs it, at its place in the order:
    `TRAINER_SYSTEMS` / `OCEAN_SYSTEMS` / `BRAIN_ONLY_SYSTEMS` in `src/sim/world.rs`.
 5. If Ocean and trainer need different rules, add a field to `WorldSettings` and set it in
-   `LevelScenario::world_settings` (`src/biology/scenarios.rs`), `WorldSettings::ocean` and `probes::brain_world`.
+   `LevelRoom::world_settings` (`src/trainer/room/level.rs`), `WorldSettings::ocean` and `probes::brain_world`.
 6. Tunables: a key in the section that owns the rule (`metabolism`, `ocean`, `trainer`); no literals in the system.
-7. New events: apply them in the owner after the step (`trainer_engine::step_trainer_sandbox_physics`; the Ocean
+7. New events: apply them in the owner after the step (`trainer::chamber::Chamber::step`; the Ocean
    from TCK-156).
 8. Tests: a `#[cfg(test)]` module in the new file with a hand-built `World::single` (fixture creature from
    `spawn_creature`), covering the rule's edges and that it draws no random numbers.
