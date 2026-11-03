@@ -19,12 +19,15 @@ A room is one kind of training trial (arena, reproduction room, obstacle course)
 4. `score(chamber, entity)` from `chamber.trials[entity]` (catch units to compare with the level rooms); `is_done` only
    if the episode can end early.
 5. Registration: one `RoomEntry` in `ROOMS` (`src/trainer/room/registry.rs`).
-6. Tunables, including room geometry (size, ticks, positions, distances): keys in config section `trainer`
+6. Tunables, including room geometry (size, ticks, positions, distances): keys in config section `trainer`, one nested
+   block per room with room-prefixed names (e.g. `trainerSlalom.slalomStartX`; generic names fool the read-site test),
+   geometry as fractions of the chamber edge
    (`wiki/guides/add-config-key.md`, invariant 11); extra RNG streams: a named id in `src/trainer/streams.rs`.
 7. Tests in the room's module (copyable recipes: contract, Test recipe): layout deterministic per seed and complete,
    `score` on a hand-built chamber, one short `TrainerSim` run in the room.
 8. Docs, same commit: the room in the contract (Purpose), the Room row of "Registered plugins" in
-   `wiki/architecture/module-map.md`, `src/trainer/room/README.md` and the Rooms section of `wiki/simulation/trainer.md`.
+   `wiki/architecture/module-map.md` (and its `trainer/room/` module row), `src/trainer/room/README.md` and the Rooms
+   section of `wiki/simulation/trainer.md` (incl. its opening sentence about the registered rooms).
 A UI entry (training-mode select) is a separate frontend step and a `Scenario` variant; headless runs need neither.
 
 ## Add a mode

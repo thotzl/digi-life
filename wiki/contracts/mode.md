@@ -1,5 +1,5 @@
 ---
-sources: [tickets/closed/TCK-156-engine-decomposition.md, tickets/open/TCK-196-plugin-architecture-epic.md, src/server/engine/mod.rs, src/server/engine/mode.rs, src/server/engine/ocean_mode.rs, src/server/engine/trainer_mode.rs, src/sim/ocean/mod.rs]
+sources: [tickets/closed/TCK-156-engine-decomposition.md, tickets/closed/TCK-196-plugin-architecture-epic.md, src/server/engine/mod.rs, src/server/engine/mode.rs, src/server/engine/ocean_mode.rs, src/server/engine/trainer_mode.rs, src/sim/ocean/mod.rs]
 ---
 
 # Contract: engine mode

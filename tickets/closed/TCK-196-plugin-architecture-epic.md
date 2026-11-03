@@ -1,7 +1,7 @@
 ---
 id: TCK-196
 title: "Epic: Plugin Architecture Rebuild (whole codebase, docs, agent setup)"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -75,3 +75,25 @@ TCK-111 Creator (needs rewrite on the `ViewModule` seam), TCK-123 arena/multi-sc
 - Adding an organ kind, a dynamic, a room or a view each touches its own module plus one registry entry (and its contract); verified by TCK-204.
 - Golden master, trainer references and the Ocean reference are in CI; all tests, clippy and lint green on Windows and Linux.
 - Wiki: contracts and guides per extension point, one copy of the invariants, current-state articles without phase logs; skills point to guides; no broken links (checked in CI).
+
+## Result (2026-11-03, v1.12.28 - v1.12.44)
+All phases done; one patch release per sub-ticket, pushed to master.
+
+| Phase | Tickets (version) |
+| :--- | :--- |
+| R0 Safety net | TCK-189 (1.12.28), TCK-197 (1.12.29) |
+| R1 Foundations | TCK-198 (1.12.30), TCK-159 (1.12.31), TCK-157 (1.12.34) |
+| R2 Creature model | TCK-199 + TCK-155 (1.12.32) |
+| R3 Simulation kernel | TCK-200 (1.12.33), TCK-201 (1.12.36), TCK-156 (1.12.37), TCK-158 (1.12.38) |
+| R4 Frontend | TCK-160 (1.12.35), TCK-161 (1.12.39), post-fix (1.12.40) |
+| R5 Model corrections | TCK-202 + TCK-146 + TCK-147 (1.12.41, model version 7), TCK-143 (1.12.42) |
+| R6 Docs and agent setup | TCK-203 (1.12.43) |
+| R7 Proof | TCK-204 (1.12.44) |
+
+Definition of done:
+- Engine, Ocean and trainer run headless and are tested without Tauri (`VecSink` + `MemoryDb`); `AppConfig::global()` only in the two entry points; no SQL outside `src/persistence/`; no untyped IPC message.
+- Adding an organ kind, a dynamic, a room or a view touches its own module plus a registry entry (and what its contract names); verified by TCK-204 (round 2: 17 files read, 2 not named by the docs).
+- Golden master, three trainer references and the Ocean reference in CI; fmt, clippy `-D warnings`, ESLint, Vitest (happy-dom) and a Windows CI job; all green locally (CI results not checked from this environment).
+- Wiki: a contract and a guide per extension point, `invariants.md` the only rule copy, history split, module map, link check in CI; the `plugin-authoring` skill is the entry for feature agents.
+- Training targets still met after the model corrections (small room 0.676, large room 0.408 on unseen layouts).
+Open follow-ups: `.agents/state/next-tasks.md` (seams found in R7, beta identifier, Linux/macOS builds); feature epics on the new seams (active traits, dynamics, arena, creator).

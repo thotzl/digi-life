@@ -55,6 +55,8 @@ Minimal-invasive; every fix covered by a test.
 
 **DoD:** `cargo test` + `npm run build` green in CI; Ocean shows generation growth through real offspring; Windows release starts with DB in AppData; no DB query in the physics step.
 
+- 2026-11-03: Phase 1 done: epic TCK-196 closed (v1.12.28 - v1.12.44, see its `## Result`). Next: feature epics on the new seams (Phase 2), proposed to the user before ticketing.
+
 ## Phase 1 — Targeted rebuild (only what blocks Phase 2)
 
 > Superseded 2026-11-02 by epic TCK-196 (phases R0–R7); the table is kept as history.

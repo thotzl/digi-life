@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.44] - 2026-11-03
+
+Epic TCK-196, phase R7 (proof) - epic closed. Documentation only.
+
+### Changed
+- Contracts and guides corrected from a proof run: fresh agents added an organ kind, a training room and a UI view using only their guide, contract and the project rules. After the fixes a second room needed 17 files read (2 not named by the docs) instead of 23 and compiled on the first try. All guides share one gate (fmt, clippy, tests, references, lint, build, link check) (ref TCK-204, TCK-196).
+
 ## [1.12.43] - 2026-11-03
 
 Epic TCK-196, phase R6. Documentation and agent setup only.

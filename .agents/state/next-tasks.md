@@ -18,6 +18,7 @@ Goal: with this epic and follow-up epics, build the setup that fulfils the game-
 - Linux/macOS builds and code signing: TCK-195 section Later.
 
 ## Findings (not yet ticketed)
+- Room-specific respawn rule (R7 second probe): `RespawnPolicy` is a host type, so a room cannot keep respawned food behind its course; also per-trial obstacles (`Room::obstacles` has no chamber/RNG). Both host changes on the `Room` seam (from TCK-204).
 From the R7 contract probes (TCK-204, 2026-11-03; documented as current limits in `wiki/contracts/room.md` and `wiki/contracts/frontend-view.md`):
 - **Polygon/rectangle obstacles:** `ProceduralObstacle` is simulated as a circle (`x`, `y`, `radius`; `vertices` ignored) in movement collision, contact sense and food drift; walls/rectangles are only chains of circles. A real polygon collision is a host change (physics, contact sense, food drift).
 - **Food respawn avoiding obstacles:** `spawn_at_min_distance` (`RespawnPolicy::MinDistance`) ignores obstacles and can place food inside a reef until drift pushes it out.

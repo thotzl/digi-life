@@ -64,6 +64,10 @@ only be approximated by a chain of overlapping circles; a real polygon collision
 Food respawn (`RespawnPolicy::MinDistance`, `sim::systems::eat::spawn_at_min_distance`) ignores obstacles and can
 place food inside one (drift pushes it out next tick); obstacles are not part of the trainer telemetry
 (`TrainerTelemetrySandbox`), so the trainer UI does not draw them.
+`obstacles(&self)` gets neither the chamber nor an RNG stream: obstacles are fixed per room (build them in the
+constructor from config); obstacles that change per trial, and a room-specific respawn rule (e.g. food that stays
+behind a course), are host changes (stop and report). Constructing one (all fields must be filled):
+`ProceduralObstacle { id: 1, x, y, radius, obstacle_type: "rock".into(), color: String::new(), vertices: Vec::new() }`.
 
 Reusing the level rooms: wrap a `LevelRoom::at(level, config)` in the new room's struct and delegate (`chamber_size`,
 `episode_ticks`, `world_settings`, `layout`, `score`); a new struct is needed because `LevelRoom`'s fields (`id`,
