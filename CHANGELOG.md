@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.38] - 2026-11-03
+
+Epic TCK-196, phase R3. Golden master and trainer references unchanged.
+
+### Added
+- Headless Ocean runs with a JSON report (population, births, deaths by cause, species, energy over time): `cargo run --release --features runner --bin trainer_runner -- ocean --seed <s> --ticks <n>`. CI compares a fixed Ocean run against a committed reference (ref TCK-158).
+
 ## [1.12.37] - 2026-11-03
 
 Epic TCK-196, phase R3. Trainer, golden master and trainer references unchanged; the Ocean changes by design (seeded randomness, shared creature tick).
