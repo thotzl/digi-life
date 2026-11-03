@@ -1,5 +1,5 @@
 //! Reproduction system (asexual mitosis, TCK-152): a mature, fed creature above its stomach threshold splits; the
-//! child is a fresh agent at the parent's place (`sim::ocean::OceanSim::step`).
+//! child is a fresh agent at the parent's place that joins the population (`sim::ocean::OceanSim::step`, TCK-143).
 
 use rand::Rng;
 
@@ -59,7 +59,8 @@ pub fn split(agent: &mut CreatureAgent, rule: &MitosisRule) {
 }
 
 /// The child of a split parent (call after `split`): with `MITOSIS_MUTATION_CHANCE` a mutated genome, Lamarckian
-/// learned weights from parents at least `lamarckian_age_floor` old, the parent's post-split energy. Returns the child
+/// learned weights from parents at least `lamarckian_age_floor` old, the parent's post-split energy and the parent's
+/// recoil along the heading (parent and child drift apart). Returns the child
 /// and whether its genome mutated. Draws the mutation roll, the mutation and the inheritance from `rng` in this order.
 pub fn child<R: Rng + ?Sized>(
     parent: &CreatureAgent,
@@ -107,6 +108,9 @@ pub fn child<R: Rng + ?Sized>(
         metabolism,
     );
     child.energy = parent.energy;
+    let recoil = parent.phenotype.split_loss * rule.recoil_velocity_scale;
+    child.vx = recoil * fmath::cos(parent.heading_angle);
+    child.vy = recoil * fmath::sin(parent.heading_angle);
     (child, is_mutation)
 }
 

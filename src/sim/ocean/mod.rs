@@ -81,7 +81,7 @@ pub enum OceanEvent {
         latin_name: String,
         cause: DeathCause,
     },
-    /// `parent` split; the child's species is new when `mutated`
+    /// `parent` split; the child's genome mutated when `mutated` (a new species unless the genome or name is known)
     Mitosis {
         parent: u32,
         child_name: String,
@@ -111,7 +111,8 @@ pub struct OceanStep {
     pub events: Vec<OceanEvent>,
     /// Changes for the species store, in order
     pub species: Vec<SpeciesChange>,
-    /// Creatures the UI has not seen yet (mitosis children, restocked and released founders)
+    /// Creatures the UI has not seen yet (mitosis children, restocked and released founders); all of them are already
+    /// in the population
     pub born: Vec<CreatureAgent>,
 }
 
@@ -122,7 +123,7 @@ pub enum SpawnRejected {
     PopulationCap(usize),
 }
 
-/// The Ocean ecosystem. Mitosis children are reported in `OceanStep::born` but not simulated (RV-B01, TCK-143).
+/// The Ocean ecosystem. Mitosis children join the population and are reported once in `OceanStep::born` (TCK-143).
 pub struct OceanSim {
     config: AppConfig,
     world: ProceduralWorld,
@@ -274,7 +275,8 @@ impl OceanSim {
     /// per creature `step_creature` (sense, think, metabolize, death, move, eat) with the eat and decomposition events
     /// applied right after the creature's step; then per surviving creature age, bite (no target that died this tick)
     /// and mitosis; bite damage after all creatures (creatures without energy left, `death::is_dead_energy`,
-    /// decompose); species census.
+    /// decompose); mitosis children join the population (a mutated child's species is discovered here); species
+    /// census.
     pub fn step(&mut self) -> OceanStep {
         let mut out = OceanStep::default();
         self.tick += 1;
@@ -364,6 +366,8 @@ impl OceanSim {
         // Bite and mitosis after every creature's step (TCK-202): a creature that died in its own step this tick is
         // no bite target (it decomposes instead of feeding an attacker)
         let alive = &self.alive;
+        // Mitosis children with the parent's name for a mutated child's species
+        let mut births: Vec<(CreatureAgent, Option<String>)> = Vec::new();
         for idx in 0..population {
             if !alive[idx] {
                 continue;
@@ -398,8 +402,9 @@ impl OceanSim {
                 }
             }
 
-            // Mitosis (TCK-152): the child is reported, not simulated (RV-B01)
-            if reproduce::ready(agent, &mitosis_rule, population) {
+            // Mitosis (TCK-152): the child joins the population after the damage pass (TCK-143); the cap counts the
+            // children of this tick
+            if reproduce::ready(agent, &mitosis_rule, population + births.len()) {
                 reproduce::split(agent, &mitosis_rule);
                 let (child, mutated) = reproduce::child(
                     agent,
@@ -410,10 +415,6 @@ impl OceanSim {
                     &config.metabolism,
                     &mut mitosis_rng,
                 );
-                if mutated {
-                    self.ledger
-                        .discover(&child, Some(&agent.phenotype.latin_name), &mut out.species);
-                }
                 out.events.push(OceanEvent::Mitosis {
                     parent: agent.id,
                     child_name: child.phenotype.latin_name.clone(),
@@ -422,7 +423,7 @@ impl OceanSim {
                 });
                 self.highest_generation = self.highest_generation.max(child.generation);
                 self.next_creature_id += 1;
-                out.born.push(child);
+                births.push((child, mutated.then(|| agent.phenotype.latin_name.clone())));
             }
         }
 
@@ -456,6 +457,16 @@ impl OceanSim {
             });
             false
         });
+
+        // Children join the population (simulated from the next tick) before the census, so a mutated child's
+        // species is recorded when it has a living member (no phantom species, RV-B01); the UI gets them once
+        for (child, parent_name) in births {
+            if let Some(parent_name) = parent_name {
+                self.ledger.discover(&child, Some(&parent_name), &mut out.species);
+            }
+            out.born.push(child.clone());
+            self.creatures.push(child);
+        }
 
         let extinct_from = out.species.len();
         self.ledger.census(&self.creatures, &mut out.species);

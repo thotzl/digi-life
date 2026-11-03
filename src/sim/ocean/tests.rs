@@ -251,7 +251,7 @@ fn ready_to_split(sim: &mut OceanSim, idx: usize) {
 }
 
 #[test]
-fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_it() {
+fn test_mitosis_splits_a_ready_parent_and_adds_the_child_to_the_population() {
     let rule = MitosisRule::from_ocean(&config().ocean);
     let mut sim = OceanSim::empty(config(), 9);
     let idx = founder(&mut sim, 7000.0, 5000.0);
@@ -283,7 +283,8 @@ fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_i
         "the split costs energy"
     );
 
-    // The child is reported for the UI with the next id at the parent's place, but not simulated (RV-B01)
+    // The child joins the population with the next id at the parent's place and the parent's energy, and is reported
+    // once for the UI (TCK-143)
     let [child] = &step.born[..] else {
         panic!("one child: {:?}", step.born)
     };
@@ -292,7 +293,15 @@ fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_i
         (next_id, generation, &child_name)
     );
     assert_eq!((child.px, child.py, child.energy), (after.px, after.py, after.energy));
-    assert_eq!(sim.creatures.len(), 1, "children are not simulated");
+    assert_eq!(sim.creatures.len(), 2, "the child is simulated");
+    assert_eq!(sim.creatures[1].id, child.id);
+    let (pv, cv) = ((after.vx, after.vy), (child.vx, child.vy));
+    assert!(
+        pv.0 * cv.0 + pv.1 * cv.1 < 0.0,
+        "parent and child drift apart: {:?} {:?}",
+        pv,
+        cv
+    );
     assert_eq!(
         (sim.next_creature_id, sim.highest_generation()),
         (next_id + 1, generation)
@@ -320,4 +329,83 @@ fn test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_i
         "population cap"
     );
     assert!(sim.creatures[0].has_eaten, "no split happened");
+
+    // One place below the cap and two ready parents: only the first splits (the cap counts this tick's children)
+    let mut sim = OceanSim::empty(config(), 9);
+    for i in 0..config().ocean.max_creatures - 1 {
+        founder(&mut sim, 500.0 + 300.0 * i as f32, 9000.0);
+    }
+    ready_to_split(&mut sim, 0);
+    ready_to_split(&mut sim, 1);
+    let step = sim.step();
+    assert_eq!(step.born.len(), 1, "{:?}", step.events);
+    assert_eq!(sim.creatures.len(), config().ocean.max_creatures);
+    assert!(sim.creatures[1].has_eaten, "the second parent did not split");
+}
+
+/// One mitosis of a ready wildtype parent under `seed`; returns the Ocean after the split tick, the parent's index and
+/// the step.
+fn split_once(seed: u64) -> (OceanSim, usize, OceanStep) {
+    let mut sim = OceanSim::empty(config(), seed);
+    let idx = founder(&mut sim, 7000.0, 5000.0);
+    ready_to_split(&mut sim, idx);
+    let step = sim.step();
+    assert!(
+        step.events.iter().any(|e| matches!(e, OceanEvent::Mitosis { .. })),
+        "no mitosis: {:?}",
+        step.events
+    );
+    (sim, idx, step)
+}
+
+#[test]
+fn test_mitosis_child_is_simulated_and_its_species_is_no_phantom() {
+    let (mut seen_clone, mut seen_new_species) = (false, false);
+    for seed in 0..64 {
+        let (mut sim, idx, step) = split_once(seed);
+        let parent = sim.creatures[idx].clone();
+        let [born] = &step.born[..] else {
+            panic!("one child for the UI: {:?}", step.born)
+        };
+        // RV-B01: the child is part of the population and simulated from the next tick
+        assert_eq!(sim.creatures.len(), 2, "seed {}: the child joins the population", seed);
+        let child = sim.creatures.iter().find(|c| c.id == born.id).expect("child simulated");
+        assert_ne!(child.id, parent.id);
+        assert_eq!(child.age, 0, "born this tick");
+        let discovered = step.species.iter().any(
+            |c| matches!(c, SpeciesChange::Discovered { latin_name, .. } if *latin_name == born.phenotype.latin_name),
+        );
+        if born.species_id == parent.species_id {
+            seen_clone = true;
+            assert!(!discovered, "seed {}: a clone joins the parent's species", seed);
+        } else if discovered {
+            seen_new_species = true;
+        }
+        let next = sim.step();
+        let child = sim.creatures.iter().find(|c| c.id == born.id);
+        assert_eq!(
+            child.map(|c| c.age),
+            Some(1),
+            "seed {}: the child ages in the next tick",
+            seed
+        );
+        // RV-D03: no species is flagged extinct while its only member lives
+        for change in step.species.iter().chain(&next.species) {
+            assert!(
+                !matches!(change, SpeciesChange::Extinct { .. }),
+                "seed {}: phantom extinction {:?}",
+                seed,
+                change
+            );
+        }
+        if discovered {
+            let entry = sim.ledger.entries().iter().find(|e| e.id == born.species_id);
+            assert!(
+                entry.is_some_and(|e| e.alive),
+                "seed {}: the new species is alive",
+                seed
+            );
+        }
+    }
+    assert!(seen_clone && seen_new_species, "both cases covered");
 }

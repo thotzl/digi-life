@@ -77,7 +77,7 @@ impl Deaths {
 /// Event counts over an interval (since the previous sample, or the whole run in the summary).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OceanCounts {
-    /// Mitosis splits (the children are reported, not simulated: RV-B01)
+    /// Mitosis splits (each child joins the population, TCK-143)
     pub births: u32,
     /// Splits whose child genome mutated
     pub mutated_births: u32,
@@ -351,10 +351,10 @@ mod tests {
         let births: u32 = a.samples.iter().map(|s| s.counts.births).sum();
         let deaths: u32 = a.samples.iter().map(|s| s.counts.deaths.total()).sum();
         assert_eq!((births, deaths), (a.summary.counts.births, a.summary.deaths_total));
-        // Population balance: founders + restocked - deaths (mitosis children are not simulated, RV-B01)
+        // Population balance: founders + restocked + mitosis children - deaths (TCK-143)
         assert_eq!(
             a.summary.state.population as i64,
-            FRESH_FOUNDERS as i64 + a.summary.counts.restocked as i64 - deaths as i64
+            FRESH_FOUNDERS as i64 + a.summary.counts.restocked as i64 + births as i64 - deaths as i64
         );
         assert_eq!(
             a.summary.species_total,
