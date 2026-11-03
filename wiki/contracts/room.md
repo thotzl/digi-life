@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-201-r3-rooms-evaluator-breeder.md, src/trainer/room/mod.rs, src/trainer/room/registry.rs, src/trainer/room/level.rs, src/trainer/chamber.rs, src/trainer/sandbox.rs, src/trainer/mode.rs, src/trainer/sim.rs]
+sources: [tickets/closed/TCK-201-r3-rooms-evaluator-breeder.md, src/trainer/room/mod.rs, src/trainer/room/registry.rs, src/trainer/room/level.rs, src/trainer/chamber.rs, src/trainer/sandbox.rs, src/trainer/mode.rs, src/trainer/sim.rs]
 ---
 
 # Contract: room

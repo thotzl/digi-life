@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.36] - 2026-11-03
+
+Epic TCK-196, phase R3. Golden master and all trainer references unchanged.
+
+### Changed
+- Training rooms are plugins behind a registry; a new room is one module plus one registry entry. Chambers can hold several creatures (ready for arenas). Evaluation and breeding are separate components; the trainer only orchestrates them (ref TCK-201).
+- Diagnosis probes and the report builder are no longer compiled into the game; the historical "letter soup" comparison probes are removed (ref TCK-201).
+
+### Fixed
+- Assigning a catalogue creature to a sandbox mid-generation kept the previous creature's trial state and lineage, which skewed the generation's statistics and mutation-strength adaptation (ref TCK-201).
+
 ## [1.12.35] - 2026-11-03
 
 Epic TCK-196, phase R4 (frontend structure). Simulation unchanged.

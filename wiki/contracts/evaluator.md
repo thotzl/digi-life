@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-201-r3-rooms-evaluator-breeder.md, src/trainer/evaluator.rs, src/trainer/sim.rs, src/trainer/breeder.rs, src/trainer/streams.rs, src/diagnostics/probes.rs]
+sources: [tickets/closed/TCK-201-r3-rooms-evaluator-breeder.md, src/trainer/evaluator.rs, src/trainer/sim.rs, src/trainer/breeder.rs, src/trainer/streams.rs, src/diagnostics/probes.rs]
 ---
 
 # Contract: evaluator
