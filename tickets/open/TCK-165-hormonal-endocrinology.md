@@ -6,9 +6,13 @@ priority: pool
 decision: pending
 assigned: unassigned
 created_at: 2026-10-21
+epic_phase: Roadmap TCK-169 Phase 2 (feature epics, to be planned)
 ---
 
 # TCK-165: Hormonal Endocrinology (Adrenaline, Dopamine, Satiety)
+
+## Update (2026-11-03, after TCK-196)
+- Stale premise: the adrenaline brain input and its config keys were removed in TCK-149 (P1). A new hormone input is a new `SystemicInput` variant (`src/biology/brain/mod.rs`, exported to `bindings/`), its dynamics a creature system (`wiki/guides/add-dynamic.md`, `wiki/contracts/creature-system.md`); a change of the brain inputs changes the golden master (`MODEL_VERSION`, invariants 8, 9). Re-scope before starting; candidate for the Phase 2 feature epics.
 
 > Pool ticket from `ideas.md` (section II.4, epoch 16). Context: `wiki/research/porting-concepts.md`.
 

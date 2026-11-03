@@ -4,9 +4,14 @@ title: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocea
 status: open
 assigned: unassigned
 created_at: 2026-08-31
+epic_phase: Roadmap TCK-169 Phase 2 (feature epics, to be planned)
 ---
 
 # TCK-123: Curriculum Learning Framework, Multi-Scenario Playlist, and Champion Ocean Seeding (Master Epic)
+
+## Update (2026-11-03, after TCK-196)
+- `apply_champion` and `progenitor_genome` were removed in TCK-157 (no caller); the line about it above is history. Champion seeding into the Ocean would now go through `OceanSpawner::founder(Founder::Genome)` (`src/sim/ocean/spawner.rs`) or the catalogue restock.
+- Arena / multi-scenario: rooms are plugins (`wiki/guides/add-room-or-mode.md`, `wiki/contracts/room.md`), chambers can hold N entities, the RNG stream `PAIRING` is reserved; a pairing/tournament scheme is an `Evaluator` (`wiki/guides/add-evaluator.md`). Plan within the Phase 2 feature epics (`.agents/state/next-tasks.md`).
 
 ## Re-scope (2026-11-02, epic TCK-196)
 Feature ticket after TCK-196; re-scope on `Room` / `Evaluator` (TCK-201). Curriculum core done (TCK-176), runner `--schedule` covers part of the playlists; section 3 per-scenario kinetic-waste fitness obsolete (TCK-175); `apply_champion` removed in TCK-157, champion seeding into the Ocean still open.

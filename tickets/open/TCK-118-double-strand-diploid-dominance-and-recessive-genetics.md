@@ -2,11 +2,15 @@
 id: TCK-118
 title: Double-Stranded Diploid Genetics (Dominant vs. Recessive Alleles)
 status: open
-assigned: Gemini-CLI
+assigned: unassigned
 created_at: 2026-08-31
+epic_phase: Roadmap TCK-169 Phase 2 (feature epics, to be planned)
 ---
 
 # TCK-118: Double-Stranded Diploid Genetics (Dominant vs. Recessive Alleles)
+
+## Update (2026-11-03, after TCK-196)
+- The genome is now split into modules (`src/biology/genome/`: alphabet, promoter registry, scan, gene table, payload reader, generator, mutation) and the phenotype compiler (`src/biology/phenotype/`). Diploid genetics would touch the scan/table (two strands) and the mutation operators; it changes the golden master and needs a `MODEL_VERSION` bump with a migration decision for stored genomes (invariants 8, 9; backup before a model reset exists since TCK-195). Re-scope before starting.
 
 ## Description
 Unlock the full potential of the existing double-stranded genome representation (Sense and Antisense strands). This module transitions the genetic compiler from a single-strand interpretation to a true diploid-inspired system, where traits are calculated by comparing alleles on both strands, implementing dominance hierarchies and DNA mismatch repair mechanisms.

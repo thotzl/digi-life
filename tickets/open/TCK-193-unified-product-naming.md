@@ -3,12 +3,16 @@ id: TCK-193
 title: Unified Product Naming (and Optional Rename)
 status: open
 priority: low
-decision: pending
+decision: partial (product name BroodBattle decided 2026-11-02; identifier alpha-only)
 assigned: unassigned
 created_at: 2026-10-26
 ---
 
 # TCK-193: Unified Product Naming (and Optional Rename)
+
+## Update (2026-11-03, after TCK-196)
+- Done so far: product name **BroodBattle** in `productName`, `mainBinaryName`, window/page titles, main menu (TCK-195); release name in `.github/workflows/release.yml` (TCK-161); `README.md`, `AGENTS.md`, `wiki/_master-index.md`, skill descriptions (TCK-203). The default session name "Tauri Desktop Laboratory Studio" is gone with the `sessions` table (TCK-159).
+- Still open: crate `src-tauri` (lib `src_tauri`), `package.json` name `digi-life`, DB file `pixel_life_local.db` (`DB_FILE_NAME` in `src/persistence/mod.rs`; a rename needs a one-time copy), `sync-tickets.yml` / User-Agent, test temp folders `digi-life-test-*`, `wiki/overview/whitepaper.md` (user's vision document, still "Pixel DNA Life"), repo name. Identifier is alpha-only (`de.pixlich.broodbattle`, TCK-195).
 
 Low priority, "when there is time". The project uses four name families plus technical leftovers; the app shows four different titles. Decide one name, then align every place below. The repo may be renamed but does not have to be.
 

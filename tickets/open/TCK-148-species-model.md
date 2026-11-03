@@ -7,9 +7,14 @@ decision: pending
 assigned: unassigned
 created_at: 2026-10-19
 revisit: RV-B10
+epic_phase: Roadmap TCK-169 Phase 2 (feature epics, to be planned)
 ---
 
 # TCK-148: Species Model: Distance-Based Speciation
+
+## Update (2026-11-03, after TCK-196)
+- Code locations moved: `species_id = genome` is set in `src/biology/creature_factory.rs` (`spawn_creature`); `latin_name ... UNIQUE` is in `src/persistence/species.rs`; the species bookkeeping is the pure `SpeciesLedger` (`src/sim/ocean/species_ledger.rs`).
+- Phantom species (every mutant recorded, extinct one tick later) fixed by TCK-143 (v1.12.42). The species model itself (identity by genome, unique Latin names) is still open here.
 
 ## Re-scope (2026-11-02, epic TCK-196)
 Feature ticket after TCK-196. The phantom-species bug is fixed in TCK-143/TCK-156 (`SpeciesLedger`); the species model itself (`species_id = genome`, `latin_name UNIQUE`) stays here.

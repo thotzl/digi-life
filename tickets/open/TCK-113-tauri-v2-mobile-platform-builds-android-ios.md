@@ -2,11 +2,15 @@
 id: TCK-113
 title: Tauri v2 Mobile Platform Builds (Android & iOS)
 status: open
-assigned: Gemini-CLI
+assigned: unassigned
 created_at: 2026-08-21
+epic_phase: Roadmap TCK-169 Phase 2 (feature epics, to be planned)
 ---
 
 # TCK-113: Tauri v2 Mobile Platform Builds (Android & iOS)
+
+## Update (2026-11-03, after TCK-196)
+- Desktop release builds exist since TCK-195 (`npm run release:win`, NSIS + portable ZIP; bundle targets are a platform-neutral list; Linux/macOS via `release.yml` still open). Mobile builds would add Tauri mobile targets and a touch-capable UI on the `ViewModule` seam (`wiki/contracts/frontend-view.md`). Re-scope before starting.
 
 This ticket outlines the configuration, initialization, and build requirements for compile-testing the biomorphic sandbox and HUD interfaces on mobile devices.
 
