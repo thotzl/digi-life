@@ -20,4 +20,5 @@ Propose the **feature epic structure for Phase 2** of roadmap TCK-169 (game dyna
 - Long agent runs: redirect long commands to files (stream watchdog stops agents after 600 s without output). The user wants a keep-awake during long autonomous runs: `.agents/artifacts/keep-awake.ps1 -Hours <n>` (max as the user says; stop early when done, restart if work continues).
 
 ## Next step
-Draft the Phase 2 epic proposal and present it to the user.
+1. Retroactive ADRs (section in `.agents/state/next-tasks.md`; user request 2026-11-03, not started because of the spend limit). ADR-003..007 for the decisions of the TCK-196 session exist.
+2. Draft the Phase 2 epic proposal and present it to the user.
