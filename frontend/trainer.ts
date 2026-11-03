@@ -847,7 +847,9 @@ function subscribeTrainerEvents() {
       isRunning = false;
       updateStartButtonUI();
       syncSlidersFromBackend(data);
-      rebuildSandboxGrid();
+      // The grid follows the backend state: pushing would send the reset-time values back and overwrite a slider
+      // change made while this event was in flight (TCK-157)
+      rebuildSandboxGrid(false);
       populateRunSelector();
     }
     else if (data.type === "DATABASE_CHANGED") {

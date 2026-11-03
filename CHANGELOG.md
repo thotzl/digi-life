@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.34] - 2026-11-03
+
+Epic TCK-196, phase R1. Golden master and all trainer references unchanged.
+
+### Changed
+- Every message between UI and engine is typed end to end (actions, events, command results and errors); the UI uses one IPC client, and errors are shown as a notice instead of being swallowed. Mode changes go through a dedicated command (ref TCK-157).
+
+### Removed
+- Unused backend commands (trainer population/hall-of-fame queries, an old generation save, champion export) and two UI actions the engine never handled (ref TCK-157).
+
+### Fixed
+- After a trainer reset, a speed change made right away could be reset to 1x by the delayed reset confirmation (ref TCK-157).
+
 ## [1.12.33] - 2026-11-03
 
 Epic TCK-196, phase R3. Structure only: golden master, trainer references and probe outputs unchanged.
