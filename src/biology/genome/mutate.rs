@@ -41,10 +41,8 @@ pub(crate) fn unprotected_indices(genome: &str) -> Vec<usize> {
         while idx <= current_length.saturating_sub(motif.len()) {
             let segment = &genome[idx..idx + motif.len()];
             if matches_degenerate(segment, motif) {
-                for s in idx..idx + motif.len() {
-                    if s < current_length {
-                        protected[s] = true;
-                    }
+                for p in protected.iter_mut().skip(idx).take(motif.len()) {
+                    *p = true;
                 }
                 idx += motif.len();
             } else {
@@ -177,7 +175,7 @@ pub(crate) fn apply_mutation<R: rand::Rng + ?Sized>(
         return None;
     }
     let pick_gene = |genes: &[(usize, usize, usize)], rng: &mut R| genes[rng.gen_range(0..genes.len())];
-    let in_scope = |p: usize| scope.map_or(true, |c| PROMOTERS[p].channel == c);
+    let in_scope = |p: usize| scope.is_none_or(|c| PROMOTERS[p].channel == c);
     match kind {
         MutationKind::GeneDuplication => {
             let genes: Vec<_> = whole_genes(genome)

@@ -30,11 +30,12 @@
 //!    mean |thrust|) equals D, so active creatures pay what the old model charged (matching only the resting cost
 //!    doubled the Ocean death turnover, P6 Ocean measurement). With the step-1 constants that median is 0.038598, so
 //!    all five constants are multiplied by f = 0.0243 / 0.038598 = 0.6296; shares and the movement ratio are unchanged:
-//!   - `bodyCostPerMass`     = 2.241e-5
-//!   - `organCostPerLoad`    = 6.575e-4
-//!   - `neuronCost`          = 1.639e-5
-//!   - `activityCost`        = 1.84e-4
-//!   - `movementCostPerMass` = 2.636e-5
+//!    - `bodyCostPerMass`     = 2.241e-5
+//!    - `organCostPerLoad`    = 6.575e-4
+//!    - `neuronCost`          = 1.639e-5
+//!    - `activityCost`        = 1.84e-4
+//!    - `movementCostPerMass` = 2.636e-5
+//!
 //!    Resulting median resting cost ≈ 0.0157 per tick.
 //! - `trainerMetabolicScale` multiplies the trainer drain only (pressure ramp of TCK-176); the Ocean uses 1.
 

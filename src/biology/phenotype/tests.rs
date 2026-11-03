@@ -44,7 +44,7 @@ fn test_hox_bilateral_symmetry() {
     assert_eq!(pheno_no_hox.organelles.len(), 1);
     let angle = pheno_no_hox.organelles[0].angle;
     // Verify angle range is primitive [-170 to 170 deg]
-    assert!(angle >= -170.0 && angle <= 170.0);
+    assert!((-170.0..=170.0).contains(&angle));
 
     // B. With HOX gene - Lateral Organelle (Paired/Mirrored)
     // Let's craft a genome with both HOX and EYE promoters.
@@ -284,7 +284,7 @@ fn test_point_mutation_inside_a_gene_changes_only_that_gene() {
                         .any(|(g, _)| parent.genes.iter().position(|s| s.gene.promoter == promoter) == Some(*g))
                 };
                 for n in &parent.brain.neurons {
-                    let own = n.role.gene().is_some_and(|r| is_hit(r))
+                    let own = n.role.gene().is_some_and(is_hit)
                         || (expressed(promoters::motif_of(GeneRole::BrainBase))
                             && matches!(n.role, NeuronRole::Motor { .. }));
                     if !own {
@@ -477,12 +477,15 @@ fn test_gene_duplication_and_deletion_keep_unrelated_synapses() {
 /// the mutated gene (`SY`-owned excluded) the share kept by key, the share with the identical weight and the weight
 /// correlation. "shifting": the genome has a later gene of the mutated gene's promoter type. Excluded: HOX genes
 /// (pairing touches every organ) and synapses an `SY` gene owns in the child.
+/// (cases, unrelated parent synapses, kept, identical weight, weight pairs)
+type Tally = (usize, usize, usize, usize, Vec<(f32, f32)>);
+
 #[test]
 #[ignore]
 fn measure_gene_operator_key_shift() {
     for kind in [MutationKind::GeneDuplication, MutationKind::GeneDeletion] {
         // (cases, unrelated parent synapses, kept, identical weight, weight pairs) for non-shifting / shifting
-        let mut tally: [(usize, usize, usize, usize, Vec<(f32, f32)>); 2] = Default::default();
+        let mut tally: [Tally; 2] = Default::default();
         let mut hox = 0;
         let mut same_spelling = 0;
         for seed in 0..1000 {

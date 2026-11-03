@@ -171,14 +171,14 @@ mod tests {
             }]
         );
         changes.clear();
-        ledger.census(&[a.clone()], &mut changes);
+        ledger.census(std::slice::from_ref(&a), &mut changes);
         assert!(changes.is_empty(), "no new peak");
         ledger.census(&[], &mut changes);
         assert!(
             matches!(&changes[..], [SpeciesChange::Extinct { latin_name, .. }] if *latin_name == a.phenotype.latin_name)
         );
         changes.clear();
-        ledger.census(&[a.clone()], &mut changes);
+        ledger.census(std::slice::from_ref(&a), &mut changes);
         assert_eq!(
             changes,
             vec![SpeciesChange::Revived {

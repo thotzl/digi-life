@@ -54,7 +54,7 @@ fn test_progenitor_parse_genome() {
         phenotype.organelles.len() * CHANNELS_PER_ORGANELLE + SYSTEMIC_BASE_INPUTS_COUNT
     );
     assert_eq!(output_count, OUTPUT_MOTOR_NODES_COUNT);
-    assert!(hidden_count >= 1 && hidden_count <= 35); // Includes our generic thalamus sum/diff pre-processor interneurons!
+    assert!((1..=35).contains(&hidden_count)); // Includes our generic thalamus sum/diff pre-processor interneurons!
 
     // Verify that the resting metabolic cost is finite
     assert!(
@@ -167,7 +167,7 @@ fn test_targeted_wiring_and_active_pruning() {
     assert_eq!(keys.len(), brain.synapses.len(), "synapse keys are unique");
 
     // Gene-tape weights start weak in [-0.5, 0.5] (never exactly 0); SY weights in [-2, 2]
-    assert!(brain.synapses.iter().any(|s| is_sy(s)));
+    assert!(brain.synapses.iter().any(&is_sy));
     for s in &brain.synapses {
         let limit = if is_sy(s) { 2.0 } else { 0.5 };
         assert!(s.weight != 0.0 && s.weight.abs() <= limit, "{:?}", s);

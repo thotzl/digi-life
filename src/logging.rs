@@ -86,18 +86,18 @@ impl Log for Logger {
         if self.console {
             eprint!("{}", line);
         }
-        if let Some(file) = &self.file {
-            if let Ok(mut sink) = file.lock() {
-                sink.write_line(&line);
-            }
+        if let Some(file) = &self.file
+            && let Ok(mut sink) = file.lock()
+        {
+            sink.write_line(&line);
         }
     }
 
     fn flush(&self) {
-        if let Some(file) = &self.file {
-            if let Ok(mut sink) = file.lock() {
-                let _ = sink.file.flush();
-            }
+        if let Some(file) = &self.file
+            && let Ok(mut sink) = file.lock()
+        {
+            let _ = sink.file.flush();
         }
     }
 }

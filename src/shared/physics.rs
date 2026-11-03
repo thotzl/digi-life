@@ -224,6 +224,7 @@ fn reflect_heading(agent: &mut CreatureAgent, nx: f32, ny: f32) {
     agent.heading_angle = fmath::atan2(hy - 2.0 * dot * ny, hx - 2.0 * dot * nx);
 }
 
+#[allow(clippy::too_many_arguments)] // flat physics inputs per call; a parameter struct would only rename them
 pub fn apply_creature_physics(
     agent: &mut CreatureAgent,
     net_thrust_force: f32,

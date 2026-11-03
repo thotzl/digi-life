@@ -147,7 +147,7 @@ impl Mulberry32 {
         Self { a }
     }
 
-    pub fn next(&mut self) -> f32 {
+    pub fn next_f32(&mut self) -> f32 {
         let mut t = self.a.wrapping_add(0x6D2B79F5);
         self.a = t;
         t = (t ^ (t >> 15)).wrapping_mul(t | 1);
@@ -169,8 +169,8 @@ pub fn sample_toroidal_noise(x: f32, y: f32, width: f32, height: f32, seed: &str
     let mut freq = 1.0f32;
 
     for _oct in 0..4 {
-        let phase_x = rand.next() * std::f32::consts::PI * 2.0;
-        let phase_y = rand.next() * std::f32::consts::PI * 2.0;
+        let phase_x = rand.next_f32() * std::f32::consts::PI * 2.0;
+        let phase_y = rand.next_f32() * std::f32::consts::PI * 2.0;
 
         const SCALE: f32 = std::f32::consts::PI * 2.0;
         let wx = (x / width) * SCALE * freq + phase_x;
@@ -240,14 +240,14 @@ pub fn generate_world(seed: &str, width: f32, height: f32) -> ProceduralWorld {
 
     // B. Generate Circular solid obstacles (Reefs / Rock barriers)
     let mut obstacles = Vec::new();
-    let num_obstacles = 18 + (rand.next() * 10.0).floor() as i32;
+    let num_obstacles = 18 + (rand.next_f32() * 10.0).floor() as i32;
 
     for i in 0..num_obstacles {
-        let radius = 180.0 + rand.next() * 260.0;
-        let x = radius + rand.next() * (width - radius * 2.0);
-        let y = radius + rand.next() * (height - radius * 2.0);
+        let radius = 180.0 + rand.next_f32() * 260.0;
+        let x = radius + rand.next_f32() * (width - radius * 2.0);
+        let y = radius + rand.next_f32() * (height - radius * 2.0);
 
-        let type_roll = rand.next();
+        let type_roll = rand.next_f32();
         let (obstacle_type, color) = if type_roll > 0.6 {
             ("coral".to_string(), "rgba(244, 63, 94, 0.75)".to_string())
         } else {
@@ -256,10 +256,10 @@ pub fn generate_world(seed: &str, width: f32, height: f32) -> ProceduralWorld {
 
         // Generate jagged, non-circular polygon vertices
         let mut vertices = Vec::new();
-        let num_vertices = 5 + (rand.next() * 4.0).floor() as i32; // 5 to 8 vertices
+        let num_vertices = 5 + (rand.next_f32() * 4.0).floor() as i32; // 5 to 8 vertices
         for j in 0..num_vertices {
             let angle = ((j as f32) / (num_vertices as f32)) * std::f32::consts::PI * 2.0;
-            let deform = 0.65 + rand.next() * 0.5; // [65% to 115% of base radius]
+            let deform = 0.65 + rand.next_f32() * 0.5; // [65% to 115% of base radius]
             let r = radius * deform;
             vertices.push(Vertex {
                 x: x + r * angle.cos(),
@@ -282,14 +282,14 @@ pub fn generate_world(seed: &str, width: f32, height: f32) -> ProceduralWorld {
 
     // C. Generate Thermal Current Vents
     let mut vents = Vec::new();
-    let num_vents = 6 + (rand.next() * 4.0).floor() as i32;
+    let num_vents = 6 + (rand.next_f32() * 4.0).floor() as i32;
 
     for i in 0..num_vents {
-        let radius = 600.0 + rand.next() * 800.0;
-        let x = radius + rand.next() * (width - radius * 2.0);
-        let y = radius + rand.next() * (height - radius * 2.0);
+        let radius = 600.0 + rand.next_f32() * 800.0;
+        let x = radius + rand.next_f32() * (width - radius * 2.0);
+        let y = radius + rand.next_f32() * (height - radius * 2.0);
 
-        let force_roll = rand.next();
+        let force_roll = rand.next_f32();
         let force_type = if force_roll <= 0.35 {
             "push".to_string()
         } else if force_roll <= 0.70 {
@@ -298,7 +298,7 @@ pub fn generate_world(seed: &str, width: f32, height: f32) -> ProceduralWorld {
             "vortex".to_string()
         };
 
-        let mut strength = 0.08 + rand.next() * 0.16;
+        let mut strength = 0.08 + rand.next_f32() * 0.16;
         if force_type == "vortex" {
             strength *= 1.4;
         }
@@ -331,14 +331,14 @@ pub fn generate_trainer_world(seed: &str, width: f32, height: f32) -> Procedural
 
     // Generate Circular solid obstacles (Reefs / Rock barriers) deterministically
     let mut obstacles = Vec::new();
-    let num_obstacles = 18 + (rand.next() * 10.0).floor() as i32;
+    let num_obstacles = 18 + (rand.next_f32() * 10.0).floor() as i32;
 
     for i in 0..num_obstacles {
-        let radius = 180.0 + rand.next() * 260.0;
-        let x = radius + rand.next() * (width - radius * 2.0);
-        let y = radius + rand.next() * (height - radius * 2.0);
+        let radius = 180.0 + rand.next_f32() * 260.0;
+        let x = radius + rand.next_f32() * (width - radius * 2.0);
+        let y = radius + rand.next_f32() * (height - radius * 2.0);
 
-        let type_roll = rand.next();
+        let type_roll = rand.next_f32();
         let (obstacle_type, color) = if type_roll > 0.6 {
             ("coral".to_string(), "rgba(244, 63, 94, 0.75)".to_string())
         } else {
@@ -347,10 +347,10 @@ pub fn generate_trainer_world(seed: &str, width: f32, height: f32) -> Procedural
 
         // Generate jagged, non-circular polygon vertices
         let mut vertices = Vec::new();
-        let num_vertices = 5 + (rand.next() * 4.0).floor() as i32; // 5 to 8 vertices
+        let num_vertices = 5 + (rand.next_f32() * 4.0).floor() as i32; // 5 to 8 vertices
         for j in 0..num_vertices {
             let angle = ((j as f32) / (num_vertices as f32)) * std::f32::consts::PI * 2.0;
-            let deform = 0.65 + rand.next() * 0.5; // [65% to 115% of base radius]
+            let deform = 0.65 + rand.next_f32() * 0.5; // [65% to 115% of base radius]
             let r = radius * deform;
             vertices.push(Vertex {
                 x: x + r * angle.cos(),

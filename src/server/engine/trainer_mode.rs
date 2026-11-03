@@ -311,11 +311,11 @@ impl Mode for TrainerMode {
                 let mut generation_base = self.sim.generation;
                 let p = &mut self.sim.params;
                 // Population (TCK-192): a change restores the population from the store
-                if let Some(n) = update.population.map(|n| n.max(1)) {
-                    if n != p.population {
-                        p.population = n;
-                        grid_changed = true;
-                    }
+                if let Some(n) = update.population.map(|n| n.max(1))
+                    && n != p.population
+                {
+                    p.population = n;
+                    grid_changed = true;
                 }
                 // Displayed sandboxes: telemetry only, the simulation is not touched
                 if let Some(n) = update.display_count {
@@ -345,19 +345,19 @@ impl Mode for TrainerMode {
                 if let Some(hl) = update.is_headless {
                     self.headless = hl;
                 }
-                if let Some(lam) = update.lamarckian {
-                    if lam != p.lamarckian {
-                        p.lamarckian = lam;
-                        grid_changed = true;
-                    }
+                if let Some(lam) = update.lamarckian
+                    && lam != p.lamarckian
+                {
+                    p.lamarckian = lam;
+                    grid_changed = true;
                 }
-                if let Some(run_id) = update.run_id {
-                    if run_id != self.run_id {
-                        self.run_id = run_id;
-                        generation_base = 1;
-                        grid_changed = true;
-                        self.run_state_loaded = false;
-                    }
+                if let Some(run_id) = update.run_id
+                    && run_id != self.run_id
+                {
+                    self.run_id = run_id;
+                    generation_base = 1;
+                    grid_changed = true;
+                    self.run_state_loaded = false;
                 }
                 if grid_changed {
                     self.restore(generation_base, ctx.store, ctx.config);

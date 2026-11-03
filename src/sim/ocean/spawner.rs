@@ -76,11 +76,10 @@ impl<'a> OceanSpawner<'a> {
             ),
             Founder::Wildtype => {
                 let mut genome = WILDTYPE_GENOME.to_string();
-                if rng.gen_range(0.0..1.0) < WILDTYPE_MUTATION_CHANCE {
-                    if let Some(mutation) = mutate_genome(WILDTYPE_GENOME, &self.config.genome.mutation_operators, rng)
-                    {
-                        genome = mutation.genome;
-                    }
+                if rng.gen_range(0.0..1.0) < WILDTYPE_MUTATION_CHANCE
+                    && let Some(mutation) = mutate_genome(WILDTYPE_GENOME, &self.config.genome.mutation_operators, rng)
+                {
+                    genome = mutation.genome;
                 }
                 (genome, None, None)
             }

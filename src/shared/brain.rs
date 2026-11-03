@@ -335,8 +335,8 @@ pub fn compute_sensory_inputs_into(
 
     // Calculate Search Arousal based on cumulative exteroceptive stimuli!
     let mut total_exteroceptive = 0.0;
-    for s in 0..(k * CHANNELS_PER_ORGANELLE) {
-        total_exteroceptive += inputs[s].abs();
+    for input in &inputs[..k * CHANNELS_PER_ORGANELLE] {
+        total_exteroceptive += input.abs();
     }
     // Arousal is 1.0 if the creature registers no external exteroceptive stimulus at all, allowing it to trigger blind search behaviors
     let search_arousal = if total_exteroceptive < 0.05 { 1.0 } else { 0.0 };
@@ -394,7 +394,7 @@ mod tests {
             let outputs = execute_brain(&brain, &inputs, &mut states, &mut activations);
             for out in outputs.values() {
                 assert!(out.is_finite());
-                assert!(out >= -1.0 && out <= 4.0); // Allowed up to 4.0 for ReLU activations
+                assert!((-1.0..=4.0).contains(&out)); // Allowed up to 4.0 for ReLU activations
             }
         }
 

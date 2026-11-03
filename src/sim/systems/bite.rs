@@ -59,7 +59,7 @@ pub fn bite_target<'a>(
             continue;
         }
         let dist = geom::dist(attacker.px, attacker.py, victim.px, victim.py);
-        if dist <= bite_range && target.map_or(true, |(_, best)| dist < best) {
+        if dist <= bite_range && target.is_none_or(|(_, best)| dist < best) {
             target = Some((victim, dist));
         }
     }

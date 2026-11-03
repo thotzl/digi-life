@@ -719,7 +719,7 @@ fn test_live_telemetry_fitness_equals_epoch_end_fitness() {
                 expected
             );
         }
-        if a.is_empty() && live.epoch_ticks % 50 == 0 {
+        if a.is_empty() && live.epoch_ticks.is_multiple_of(50) {
             expected_next = Some(live.sandboxes.iter().map(|sb| sb.score()).collect());
         }
     }

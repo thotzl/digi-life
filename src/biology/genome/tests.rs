@@ -442,7 +442,7 @@ fn test_classify_mutation_by_gene_channel() {
             );
             checked[brain as usize] += 1;
         }
-        if let Some(index) = promoters::with_role(GeneRole::Organ).find_map(|p| payload_letter(p)) {
+        if let Some(index) = promoters::with_role(GeneRole::Organ).find_map(payload_letter) {
             let touch = classify_mutation(&genome, &letter_change(&genome, index));
             assert_eq!(touch.channel(), MutationChannel::Body);
             assert!(touch.organ);

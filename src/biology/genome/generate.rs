@@ -163,20 +163,14 @@ pub(crate) fn structured_gene_plan<R: rand::Rng + ?Sized>(
     if rng.gen_bool(c.p_hox.clamp(0.0, 1.0) as f64) {
         genes.push((promoters::motif_of(GeneRole::Hox), None));
     }
-    genes.extend(
-        std::iter::repeat((promoters::motif_of(GeneRole::Hidden), None)).take(count(
-            rng,
-            c.neu_count_min,
-            c.neu_count_max,
-        )),
-    );
-    genes.extend(
-        std::iter::repeat((promoters::motif_of(GeneRole::Synapse), None)).take(count(
-            rng,
-            c.sy_count_min,
-            c.sy_count_max,
-        )),
-    );
+    genes.extend(std::iter::repeat_n(
+        (promoters::motif_of(GeneRole::Hidden), None),
+        count(rng, c.neu_count_min, c.neu_count_max),
+    ));
+    genes.extend(std::iter::repeat_n(
+        (promoters::motif_of(GeneRole::Synapse), None),
+        count(rng, c.sy_count_min, c.sy_count_max),
+    ));
     genes.shuffle(rng);
     genes
 }
