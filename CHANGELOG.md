@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.42] - 2026-11-03
+
+Epic TCK-196, phase R5. Golden master and trainer references unchanged; the Ocean reference changes by design.
+
+### Fixed
+- Ocean offspring from cell division were only shown and never simulated, and each mutated child created a species that was marked extinct one tick later. Children now live, move and age in the Ocean, count toward the population cap and join their species (ref TCK-143).
+
 ## [1.12.41] - 2026-11-03
 
 Epic TCK-196, phase R5. **Intended model change (model version 7):** on the first start, trained creatures, catalogue and Ocean state are reset; the database is backed up first (`pixel_life_local.db.model-v6.bak.db`). New golden master and references. Training targets still met (small room 0.676, large room 0.408 on unseen layouts).
