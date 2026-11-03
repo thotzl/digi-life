@@ -9,7 +9,8 @@ sources: [tickets/closed/TCK-199-r2-genome-and-organ-registry.md, src/biology/or
 An organ kind is what an organ gene (`EYE`, `NOS`, `TAC`, `LUM`) becomes once its payload is decoded: the kind
 decides how the organ senses, which input channels are wired, what it costs, whether it counts as a limb and how it
 is named and shown. Kinds today: `Eye`, `Nose`, `Thermal` (spectral distance senses), `Bristle`, `LateralLine`,
-`Proprioceptor` (tactile). Planned kinds (e.g. claws, electroreceptors) are added as one file each. Current behaviour:
+`Proprioceptor` (tactile); current list: the Organ kind row of "Registered plugins" in
+[[wiki/architecture/module-map]]. Planned kinds (e.g. claws, electroreceptors) are added as one file each. Current behaviour:
 [[wiki/biology/sensing]], [[wiki/biology/genome-compiler]].
 
 ## Signature
@@ -34,7 +35,7 @@ pub struct OrganSpec {
     pub limb: bool,                                                  // kind can grow as a limb (never a distance sense)
     pub ballast: f32,                                                // drag units (× physics.receptorBallastScale)
     pub latin_suffix: &'static str,
-    pub latin_rank: u8,                                              // tie-break of the dominant suffix
+    pub latin_rank: u8,                                              // suffix group id and tie-break (see below)
 }
 pub struct Organ { spectral_affinity, bandwidth, expression_style, scale, spinal_pos, angle, hue_shift,
                    gene_start_index, gene_end_index, kind: OrganKind, side: OrganSide }   // range(), power(), is_limb()
@@ -45,6 +46,18 @@ pub struct SenseCtx<'a> { agent: &CreatureAgent, foods: &[FoodSpore], obstacles:
 Shared building blocks a kind points to: `spectral::{live_channels, sense}` (tuning curve over plant/meat emission),
 `contact::{boundary_pressure, touch_pressure, water_temperature, pain}` (`water_temperature` reads the depth field
 `shared::temperature::TemperatureField::WATER`, the field of the Ocean's thermal stress), `common::cost_load`.
+
+Distance normalisation of the spectral senses (`spectral::sense`): a food counts only within `organ.range()`
+(`scale · SENSOR_RANGE_PER_SCALE`, 550 px per scale) and inside the cone `|Δβ| ≤ max(1.5 · bandwidth, 0.1)` rad, where
+`Δβ` is the bearing of the food relative to the organ's axis (`agent.heading_angle` + `organ.angle`). Per channel
+`c` the stimulus is `match_c · power · (1 − dist / range) · cos(Δβ)` with `match_c` = tuning curve × food emission
+and `power = scale · (1.1 − bandwidth)`; the maximum over `foods[0]` and `foods[1]` is kept. A new distance-like
+sense uses the same `(1 − dist / range) · power` falloff so its channels stay on one scale with the others.
+
+Latin naming (`phenotype/naming.rs` `dominant_suffix`): organs are grouped by `latin_rank`, the largest group gives
+the name's suffix, a tie goes to the lower rank. Ranks taken: 0 `ocularium` (Eye), 1 `ciliatum` (Nose), 2 `vibrans`
+(Bristle, LateralLine, Proprioceptor), 3 `thermum` (Thermal). Kinds that share a suffix must share its rank (the group
+key is the rank, its suffix is the first one seen); a new suffix takes the next free rank (4).
 
 ## Lifecycle / call order
 
@@ -76,8 +89,22 @@ Shared building blocks a kind points to: `spectral::{live_channels, sense}` (tun
 
 ## Registration point
 
-One variant in `OrganKind` (and `OrganKind::ALL`), one arm in `OrganKind::spec`, and the region of the (affinity,
-style) square in `OrganKind::classify`. The compiler's exhaustive `match` in `spec` reports a missing arm.
+One variant in `OrganKind` (and `OrganKind::ALL`, whose length `N` grows by one), one arm in `OrganKind::spec`, and
+the region of the (affinity, style) square in `OrganKind::classify`. The compiler's exhaustive `match` in `spec`
+reports a missing arm.
+
+`classify` today: affinity ≥ 0.80 `Eye`, > 0.65 `Thermal`, ≥ 0.25 `Nose`, below 0.25 by style: < 0.35 `Bristle`,
+< 0.70 `LateralLine`, else `Proprioceptor`. Affinity (locus 1) and style (locus 7) each read one payload letter, so
+both take the 26 values `k/25`: Eye 6 steps, Thermal 3, Nose 10, tactile 7. Rules for a new region:
+
+- The structured genome generator (`biology/genome/generate.rs`: `structured_gene_plan`, `affinity_letters`) builds
+  the planned `EYE`/`NOS` food organs by choosing the affinity letter alone and assumes style 0.5. Eye and Nose
+  must therefore stay style-independent and each keep at least one affinity step; a style-based corner cut out of
+  Eye or Nose breaks `test_structured_genome_parses_to_exactly_the_planned_genes` (`biology/genome/tests.rs`).
+- Take the area from the tactile band (affinity < 0.25, split by style) or the Thermal band, or an affinity sub-band
+  (whole `k/25` steps) at an end of Eye or Nose. Size: the share of organ genes is (affinity steps / 26) × (style
+  steps / 26); one affinity step is about 4 %. Take as little as the feature needs; the donor kind loses that share.
+- Update the thresholds in `wiki/biology/sensing.md` and the list above in the same commit.
 
 ## Config keys
 
@@ -91,10 +118,26 @@ The phenotype's `organelles: Organ[]` and `NeuronRole::Sensor { kind }` reach th
 
 ## Test recipe
 
-`cargo test organs::` runs `test_live_channels_match_sense` and `test_specs_belong_to_their_kind` over
-`OrganKind::ALL` (a new kind is covered automatically) and regenerates `bindings/organRegistry.ts`. Then the full gate:
-`cargo test` (golden master), the three trainer reference runs of `.github/workflows/ci.yml`, `npm test`,
-`npm run build`.
+Targeted subset (the guide's "Done when" is the gate): `cargo test organs::` runs `test_live_channels_match_sense`
+and `test_specs_belong_to_their_kind` over `OrganKind::ALL` (a new kind is covered automatically) and regenerates
+`bindings/organRegistry.ts`; `cargo test biology::genome::` runs the generator test (region rule above);
+`cargo test biology::phenotype::` runs the golden master `test_parse_genome_golden_master`.
+
+The four CI reference runs (`.github/workflows/ci.yml`), each followed by
+`node tests/reference/compare-trainer-report.mjs tests/reference/<name>.json target/<name>.json`:
+
+```sh
+cargo run --release --features runner --bin trainer_runner -- run --seed ci-reference --generations 3 --scenario standard --population 16 --parallel true --out target/trainer-ci.json
+cargo run --release --features runner --bin trainer_runner -- run --seed ci-curriculum --generations 4 --scenario curriculum --population 16 --rehearsal 0 --curriculum-upper 0.05 --curriculum-lower 0.02 --eval-final standard,exploration --eval-trials 3 --parallel true --out target/trainer-ci-curriculum.json
+cargo run --release --features runner --bin trainer_runner -- run --seed ci-rehearsal --generations 4 --scenario curriculum --population 16 --rehearsal 0.25 --curriculum-upper 0.05 --curriculum-lower 0.02 --parallel true --out target/trainer-ci-rehearsal.json
+cargo run --release --features runner --bin trainer_runner -- ocean --seed ci-ocean-2 --ticks 12000 --sample-every 500 --out target/ocean-ci.json
+```
+
+Intended model change (a kind with a `classify` region): copy each differing `target/<name>.json` over
+`tests/reference/<name>.json` (not every reference necessarily changes; keep the ones that still match); set
+`GOLDEN_FINGERPRINT` in `src/biology/phenotype/tests.rs` to the value `test_parse_genome_golden_master` prints
+(`cargo test test_parse_genome_golden_master -- --nocapture`); bump `MODEL_VERSION` in `src/persistence/schema.rs`
+whenever the golden master changes (invariant 9).
 
 ## Minimal example
 

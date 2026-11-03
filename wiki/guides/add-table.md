@@ -27,11 +27,13 @@ Read first: [[wiki/contracts/persistence-repo]] and [[wiki/architecture/invarian
 8. Tests: extend the contract suite (`persistence::tests::contract`) so both stores run the new methods; if the
    migration transforms existing rows, add them to the v1.12.30 fixture of
    `test_v1_12_30_database_migrates_without_data_loss` and assert they survive.
-9. Docs: the table row in `wiki/architecture/persistence.md`.
+9. Docs, same commit: the table row in `wiki/architecture/persistence.md` and the row in "Registered plugins" of `wiki/architecture/module-map.md`.
 
 ## Done when
 
 - `cargo test persistence::` is green, including `test_migrated_schema_equals_latest_tables`.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - The contract's grep check finds SQL only in `src/persistence/` (invariant 12); golden master and the trainer
   references unchanged.

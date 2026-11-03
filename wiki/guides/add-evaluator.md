@@ -21,10 +21,12 @@ and [[wiki/architecture/invariants]].
    (`wiki/guides/add-config-key.md`).
 6. Tests next to the scheme: `parallel` true and false give identical results, the given sandboxes stay unchanged,
    and one hand-computed small case for `aggregate`.
-7. Docs: name the scheme in the contract (Purpose).
+7. Docs, same commit: name the scheme in the contract (Purpose) and the row in "Registered plugins" of `wiki/architecture/module-map.md`.
 
 ## Done when
 - `cargo test trainer::evaluator` and `cargo test trainer::sim` pass, including the new tests.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - Trainer references unchanged while `SoloTrials` stays the installed default (changing `SoloTrials` or
   `aggregate_trials` is a model change, invariant 8).

@@ -39,11 +39,14 @@ All:
 1. Tests: the JSON of a new action in `ipc::tests::test_client_actions_parse_into_their_group` (or the group's parse
    test), the JSON of a new event in its group's wire-name test, a DTO serialization test for a new command result.
 2. Run `cargo test`; it regenerates `bindings/` (invariant 7).
-3. Docs: add the message to the lists of the IPC protocol article (`wiki/architecture/ipc-protocol.md`).
+3. Docs, same commit: add the message to the lists of the IPC protocol article (`wiki/architecture/ipc-protocol.md`)
+   and update the counts in the row in "Registered plugins" of `wiki/architecture/module-map.md`.
 
 ## Done when
 
 - `cargo test server::` and `npm test` pass; the new message's test is among them.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green; `git diff -- bindings/`
-  contains only the intended types.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
+- `git diff -- bindings/` contains only the intended types.
 - Golden master and the trainer references are unchanged unless the message changes the model on purpose.

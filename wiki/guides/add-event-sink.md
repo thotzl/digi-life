@@ -19,9 +19,11 @@ of a headless engine run). Read first: [[wiki/contracts/event-sink]] and [[wiki/
 5. Payloads stay typed `UiEvent`s; a sink that writes them to a file serializes the `UiEvent` (invariant 13).
 6. Tests in `src/server/engine/tests.rs`: emit a few events (two `DATABASE_CHANGED`), flush, assert order and the
    coalescing, as in `test_sink_coalesces_database_changed_per_flush`.
-7. Docs: name the sink in the contract (Purpose).
+7. Docs, same commit: name the sink in the contract (Purpose) and the row in "Registered plugins" of `wiki/architecture/module-map.md`.
 
 ## Done when
 - `cargo test server::engine::` passes, including the new test.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - Golden master and CI references unchanged (a sink never changes the simulation).

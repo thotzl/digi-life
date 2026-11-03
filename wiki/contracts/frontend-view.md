@@ -6,7 +6,9 @@ sources: [tickets/closed/TCK-160-frontend-structure.md, frontend/core/view.ts, f
 
 ## Purpose
 
-A view is one screen of the webview: main menu, Ocean Laboratory, Training Room, Creature Catalogue today; a creator
+A view is one screen of the webview: main menu, Ocean Laboratory, Training Room, Creature Catalogue today (ids
+`main-menu`, `ocean`, `trainer`, `catalogue`; current list: the Frontend view row of "Registered plugins" in
+[[wiki/architecture/module-map]]); a creator
 (TCK-111), an arena or a new trainer room's live view are planned. Each view is one `ViewModule` registered in
 `frontend/views/index.ts`. The router creates every view once at boot, shows one at a time and owns the backend mode.
 Everything a view starts while shown (global listeners, signal effects, animation loops, timers, dialogs) lives in a
@@ -26,7 +28,7 @@ export interface ViewContext {
 export interface ViewModule<Id extends string = string> {
   readonly id: Id;
   readonly title: string;           // document.title while shown
-  readonly backendMode: SimMode;    // "ocean" | "trainer", set on entering
+  readonly backendMode: SimMode;    // required, "ocean" | "trainer", set on entering (no view without a mode)
   create(ctx: ViewContext): HTMLElement;   // once at boot: build DOM, keep element references
   mount(ctx: ViewContext): void;           // shown: register listeners/effects/loops on ctx.scope
   unmount?(): void;                        // hidden (mount scope already disposed)
@@ -61,7 +63,12 @@ Shared components a view composes: `components/Modal.ts` (`openModal(scope, opti
    `CLIENT_READY`. No mode switch at boot (the backend starts in Ocean mode).
 2. `navigateTo(id)`: dispose the shown view's scope → its `unmount` → hide it; show the target, new scope, target
    `mount`. Then, serialized across navigations: `suspend` of every other view → `setMode(target.backendMode)` →
-   target `resume`.
+   target `resume`. `setMode` is sent on every navigation to another view, also when the mode does not change (the
+   engine then skips the old mode's `on_exit` but runs the target mode's `on_enter` again); navigating to the shown
+   view or an unknown id does nothing (`router.test.ts`: "navigating to the shown view or an unknown id changes
+   nothing"). A view without its own simulation (main menu, catalogue) sets `backendMode: "ocean"`. Entering it
+   still suspends every other view: the trainer's `suspend` always sends `PAUSE_TRAINING`, the Ocean's pauses a
+   running Ocean (its `resume` restarts it when the user returns to the Ocean).
 3. Every backend event reaches every view's `onEvent`, shown or not (`INIT_STATE` arrives while the menu is shown).
    Keep model state there; draw only from mount-scoped loops.
 
@@ -93,11 +100,28 @@ Consumes `UiEvent`s through `onEvent`; sends actions and calls commands through 
 
 ## Test recipe
 
-`npm test` runs `frontend/core/router.test.ts` (mount/unmount order, scope disposal, pause → set_mode → resume,
-Ocean not paused on entry), `core/scope.test.ts`, `state/selection.test.ts`. A view adds a test for its pure model
-(e.g. `views/ocean/model.test.ts`, `views/trainer/settings.test.ts`) and, for its controller, a case in the happy-dom
-suite `views/views.dom.test.ts` (mount/unmount teardown, no `setMode` from the view; TCK-161). Then `npm run lint`
-and `npm run build`.
+Targeted subset (the guide's "Done when" is the gate): `npm test` runs `frontend/core/router.test.ts` (mount/unmount
+order, scope disposal, pause → set_mode → resume, Ocean not paused on entry), `core/scope.test.ts`,
+`state/selection.test.ts` and the happy-dom suite `views/views.dom.test.ts`. Its first case ("creates every
+registered view once") covers a new view automatically. The teardown case hard-codes `["ocean", "trainer",
+"catalogue"]` and expects global listeners and a frame loop for every id except `catalogue`, so a new view adds an
+`it(...)` case of its own inside the `describe` block (TCK-161) instead of joining that list:
+
+```ts
+it("<name>: leaving the view removes its listeners and loops", async () => {
+  const { listeners, frames, baseline, elements, modes } = boot();
+  await navigateTo("<name>");
+  expect(elements.get("<name>")!.style.display).toBe("");
+  // view-specific checks: buttons send the expected actions (`sent`), events update the DOM (`event(...)`)
+  await navigateTo("main-menu");
+  expect(listeners.count()).toBe(baseline.listeners);
+  expect(frames.pending()).toBe(0);
+  expect(modes).toEqual(["<backendMode>", "ocean"]);
+});
+```
+
+A model test (`views/<name>/model.test.ts`, e.g. `views/ocean/model.test.ts`) is needed only when the view has pure
+logic of its own.
 
 ## Minimal example
 

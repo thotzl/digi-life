@@ -25,12 +25,15 @@ fatigue). Read first: [[wiki/contracts/creature-system]] and [[wiki/architecture
    `sim::ocean::OceanSim::step` in `src/sim/ocean/mod.rs`).
 8. Tests: a `#[cfg(test)]` module in the new file with a hand-built `World::single` (fixture creature from
    `spawn_creature`), covering the rule's edges and that it draws no random numbers.
-9. Docs: the system list and settings table in [[wiki/contracts/creature-system]].
+9. Docs, same commit: the system list and settings table in [[wiki/contracts/creature-system]] and
+   the row in "Registered plugins" of `wiki/architecture/module-map.md`.
 
 ## Done when
 
 - `cargo test sim::` passes, including the new tests.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - A new dynamic in an existing world is a model change: the golden master is unchanged (it covers the phenotype only),
   the trainer references and probe JSON change and are updated on purpose (invariants 8 and 9). A dynamic added to no
   world yet changes nothing.

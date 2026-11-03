@@ -16,10 +16,13 @@ Read first: [[wiki/contracts/_template]] (replace with the seam's contract) and 
 2. _Registration point (one entry)._
 3. _Config keys, if any._
 4. _Tests to add._
-5. _Docs: the contract table or list that names the plugin._
+5. _Docs: the contract's Purpose list, the row in "Registered plugins" of `wiki/architecture/module-map.md`, and
+   any article that lists the plugins._
 
 ## Done when
 
 - _The contract's test recipe passes._
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - _Seam-specific checks (golden master, trainer references) unchanged or intentionally updated._

@@ -21,6 +21,7 @@ Read first: [[wiki/contracts/config-section]] and [[wiki/architecture/invariants
 ## Done when
 
 - `cargo test config::tests` is green (every key read, round trip, unknown keys rejected).
-- `cargo test` (golden master unchanged unless the ticket says the model changes) and the three trainer reference
-  runs of `.github/workflows/ci.yml` match, or the ticket states the intended change.
-- `node scripts/check-links.mjs` is green.
+- The project gate is green: `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`,
+  `cargo test`, `npm test`, `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI
+  reference runs match their committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
+- Golden master and references unchanged unless the ticket or commit states the intended model change.

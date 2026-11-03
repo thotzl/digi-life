@@ -1,6 +1,6 @@
 # Next tasks
 
-Last updated: 2026-11-02. Planned tasks and findings not yet ticketed; remove an entry once it is ticketed or becomes the active task.
+Last updated: 2026-11-03. Planned tasks and findings not yet ticketed; remove an entry once it is ticketed or becomes the active task.
 
 ## Planned after epic TCK-171 (user goal, 2026-10-26; planning only, no tickets yet)
 Goal: with this epic and follow-up epics, build the setup that fulfils the game-dynamics part of the whitepaper (`wiki/overview/whitepaper.md` §3–§4): players train creatures and later send them into arenas against others. The Ocean is secondary (one more training mode, e.g. reproduction dynamics).
@@ -18,4 +18,9 @@ Goal: with this epic and follow-up epics, build the setup that fulfils the game-
 - Linux/macOS builds and code signing: TCK-195 section Later.
 
 ## Findings (not yet ticketed)
-- None open.
+From the R7 contract probes (TCK-204, 2026-11-03; documented as current limits in `wiki/contracts/room.md` and `wiki/contracts/frontend-view.md`):
+- **Polygon/rectangle obstacles:** `ProceduralObstacle` is simulated as a circle (`x`, `y`, `radius`; `vertices` ignored) in movement collision, contact sense and food drift; walls/rectangles are only chains of circles. A real polygon collision is a host change (physics, contact sense, food drift).
+- **Food respawn avoiding obstacles:** `spawn_at_min_distance` (`RespawnPolicy::MinDistance`) ignores obstacles and can place food inside a reef until drift pushes it out.
+- **Obstacles in trainer telemetry:** `TrainerTelemetrySandbox` carries no obstacles, so the trainer UI cannot draw a room's obstacles.
+- **Public test helper for room layout tests:** a small `#[cfg(test)]` helper (e.g. `TrainerSandbox::for_room(room, seed, config)`) would replace the copied 9-argument `TrainerSandbox::spawn` call in every room's tests.
+- **Optional `backendMode: null` for views without a simulation:** today such views use `"ocean"`, so entering them sends `set_mode` and suspends the other views (training pauses); a `null` mode would keep the backend as it is.

@@ -10,19 +10,21 @@ A room is one kind of training trial (arena, reproduction room, obstacle course)
 
 ## Add a room
 1. `src/trainer/room/<name>.rs`: a struct implementing `Room` and `pub fn <name>(config: &AppConfig) -> Arc<dyn Room>`;
-   `pub mod <name>;` in `src/trainer/room/mod.rs`.
+   `pub mod <name>;` in `src/trainer/room/mod.rs`. To reuse the small/standard room, wrap `LevelRoom::at(0.0, config)`
+   and delegate (contract: Signature, "Reusing the level rooms").
 2. `layout`: place every creature (`chamber.creatures`) and the food, drawing only from the given `rng`. More creatures
    per chamber: return the count from `entities()`, push the creatures and their `EntityTrial::default()` in `layout`.
 3. `world_settings`: start from `LevelRoom::at(0.0, config).world_settings(config)`, change only the fields the room
-   needs (contract: Signature); obstacles via `obstacles()`.
+   needs; obstacles via `obstacles()`, circles only (contract: "Obstacle model").
 4. `score(chamber, entity)` from `chamber.trials[entity]` (catch units to compare with the level rooms); `is_done` only
    if the episode can end early.
 5. Registration: one `RoomEntry` in `ROOMS` (`src/trainer/room/registry.rs`).
-6. Tunables: keys in config section `trainer` (`wiki/guides/add-config-key.md`); extra RNG streams: a named id in
-   `src/trainer/streams.rs`.
-7. Tests in the room's module: layout deterministic per seed and complete, `score` on a hand-built chamber, one short
-   `TrainerSim` run with `set_mode(TrainingMode::Room("<name>"))`.
-8. Docs: the room list in the contract (Purpose) and the Rooms section of `wiki/simulation/trainer.md`.
+6. Tunables, including room geometry (size, ticks, positions, distances): keys in config section `trainer`
+   (`wiki/guides/add-config-key.md`, invariant 11); extra RNG streams: a named id in `src/trainer/streams.rs`.
+7. Tests in the room's module (copyable recipes: contract, Test recipe): layout deterministic per seed and complete,
+   `score` on a hand-built chamber, one short `TrainerSim` run in the room.
+8. Docs, same commit: the room in the contract (Purpose), the Room row of "Registered plugins" in
+   `wiki/architecture/module-map.md`, `src/trainer/room/README.md` and the Rooms section of `wiki/simulation/trainer.md`.
 A UI entry (training-mode select) is a separate frontend step and a `Scenario` variant; headless runs need neither.
 
 ## Add a mode
@@ -37,12 +39,16 @@ A UI entry (training-mode select) is a separate frontend step and a `Scenario` v
 5. Frontend: the view that shows the mode sets `backendMode: "<name>"` (`wiki/guides/add-view.md`).
 6. Tests: an engine test with `VecSink` + `MemoryDb` in `src/server/engine/tests.rs` (enter/exit, an action, one frame,
    warp echo) and determinism tests of the simulation struct (same seed, same result).
-7. Docs: the mode list in the contract (Purpose).
+7. Docs, same commit: the mode list in the contract (Purpose) and the Engine mode row of "Registered plugins" in
+   `wiki/architecture/module-map.md`.
 
 ## Done when
-- Room: `cargo test trainer::` passes, incl. `test_every_registered_room_builds_under_its_id_and_ids_are_unique`, and
+- Room: the contract's test recipe passes (`cargo test trainer::`, incl.
+  `test_every_registered_room_builds_under_its_id_and_ids_are_unique`), and
   `cargo run --release --features runner --bin trainer_runner -- run --seed s --generations 3 --scenario <name> --population 16`
-  writes a report.
-- Mode: `cargo test server::engine::` passes, incl. the new tests.
-- `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
+  writes a report. Mode: `cargo test server::engine::` passes, incl. the new tests.
+- The project gate is green, also for a Rust-only room (`npm test`, `npm run lint` and `npm run build` are part of
+  it): `cargo fmt --check`, `cargo clippy --all-targets --features runner -- -D warnings`, `cargo test`, `npm test`,
+  `npm run lint`, `npm run build`, `node scripts/check-links.mjs`, and the four CI reference runs match their
+  committed reports (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate).
 - Golden master and CI references unchanged (a new room or mode changes neither; changing `LevelRoom` does, invariant 8).

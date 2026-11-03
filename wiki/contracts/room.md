@@ -8,9 +8,10 @@ sources: [tickets/closed/TCK-201-r3-rooms-evaluator-breeder.md, src/trainer/room
 
 A room is one kind of training trial: chamber size, episode length, the rules of its world for the shared creature
 tick, the start layout of creatures and food, the end of an episode and the score of a creature (TCK-201). The trainer
-(`TrainerSim`), the headless runner and the diagnosis probes find rooms in one registry by id. Today one
-implementation exists, `LevelRoom` (`src/trainer/room/level.rs`): the registry rooms `standard` (level 0) and
-`exploration` (level 1), and the curriculum's rooms in between. Planned: an arena (several creatures per chamber,
+(`TrainerSim`), the headless runner and the diagnosis probes find rooms in one registry by id. Registered rooms:
+`LevelRoom` (`src/trainer/room/level.rs`) as `standard` (level 0) and `exploration` (level 1), plus the curriculum's
+levels in between (built directly, not registered); the current list is the Room row of "Registered plugins" in
+[[wiki/architecture/module-map]]. Planned: an arena (several creatures per chamber,
 opponents), a reproduction room (births during a trial), an obstacle course. A room holds no per-trial state; the
 trainer owns a `Chamber` per sandbox and lends it to the room's hooks.
 
@@ -55,6 +56,22 @@ pub enum Scenario { Standard, Exploration, Curriculum }       // UI mode (bindin
 pub enum TrainingMode { Room(&'static str), Curriculum }      // any registry room; parse("<id>"|"curriculum")
 ```
 
+Obstacle model: `ProceduralObstacle` (`src/shared/map_generator.rs`) is used as a circle; only `x`, `y` and `radius`
+are read (`vertices`, `obstacle_type`, `color` are ignored by the simulation). Three systems read `obstacles()`:
+movement collision (`shared::physics::step_creature_kinematics`, push-out and bounce), the contact sense
+(`organs::contact`, reefs as hard walls) and food drift (`step_food_spore_physics`, push-out). A rectangle or wall can
+only be approximated by a chain of overlapping circles; a real polygon collision is a host change (stop and report).
+Food respawn (`RespawnPolicy::MinDistance`, `sim::systems::eat::spawn_at_min_distance`) ignores obstacles and can
+place food inside one (drift pushes it out next tick); obstacles are not part of the trainer telemetry
+(`TrainerTelemetrySandbox`), so the trainer UI does not draw them.
+
+Reusing the level rooms: wrap a `LevelRoom::at(level, config)` in the new room's struct and delegate (`chamber_size`,
+`episode_ticks`, `world_settings`, `layout`, `score`); a new struct is needed because `LevelRoom`'s fields (`id`,
+`spawn_margin`, `food_amount`, ...) are private to `level.rs`. Public: `food_per_type()`, `spawn_min_distance()`,
+`metabolic_scale()`, `with_metabolic_scale`; the private ones come from config (`trainer.trainerSpawnMargin`,
+`metabolism.foodSporeEnergy`), so read those keys directly. A wrapping `layout` may call `self.base.layout(chamber, rng)`
+and then move or add things, drawing further numbers from the same `rng`.
+
 ## Lifecycle / call order
 
 1. Selection: `TrainerParams::mode()` (UI `scenario`, or `room` for a registry room without a UI mode) →
@@ -80,6 +97,8 @@ pub enum TrainingMode { Room(&'static str), Curriculum }      // any registry ro
 - Entity 0 is the creature of the sandbox's breeding slot; `score(chamber, 0)` is its fitness. More entities (prey,
   opponents) are added by the room in `layout` (`Chamber::creatures` / `trials` must stay aligned).
 - New RNG streams of a room (e.g. births) use the named ids in `src/trainer/streams.rs` (`BIRTHS`, `PAIRING`).
+- Room geometry and timing (chamber size, episode ticks, start positions, distances, score scales) are tunables:
+  they come from config keys, never literals in Rust ([[wiki/architecture/invariants]] 11).
 - Changing `LevelRoom` values, its layout order or `calculate_fitness` is a model change: trainer references and
   probe JSON change ([[wiki/architecture/invariants]] 8).
 
@@ -105,16 +124,50 @@ creature and `chamber.foods`; the report carries `level()` per generation and in
 
 ## Test recipe
 
-`cargo test trainer::` covers the registry (`test_every_registered_room_builds_under_its_id_and_ids_are_unique`
-builds every entry), the level room and the chamber tick. A new room adds tests for its layout (deterministic for a
-seed, every creature placed), `is_done` and `score`, and runs headless:
+Targeted subset (the guide's "Done when" is the gate): `cargo test trainer::` covers the registry
+(`test_every_registered_room_builds_under_its_id_and_ids_are_unique` builds every entry), the level room and the
+chamber tick. A new room adds tests in its module for its layout (deterministic for a seed, every creature placed),
+`is_done` and `score`, and runs headless:
 `cargo run --release --features runner --bin trainer_runner -- run --seed s --generations 3 --scenario <id> --population 16`.
-A refactor keeps the three trainer references of `.github/workflows/ci.yml` and the probe JSON identical.
+A new room keeps the four CI references (commands: `.agents/skills/plugin-authoring/SKILL.md`, Gate) and the probe JSON
+identical; only a change to `LevelRoom` or `calculate_fitness` changes them.
+
+Layout test: build a sandbox as the helper `sandbox()` in the tests of `src/trainer/room/level.rs` does (copy it;
+`TrainerSandbox::spawn` runs `layout` for trial 0) and inspect `sb.chamber`:
+
+```rust
+use std::sync::Arc;
+use crate::biology::genome::WILDTYPE_GENOME;
+use crate::shared::rng::seeded;
+use crate::trainer::sandbox::{SandboxOrigin, TrainerSandbox};
+
+fn sandbox(seed: u64) -> TrainerSandbox {
+    let config = crate::config::test_config();
+    TrainerSandbox::spawn(1, WILDTYPE_GENOME, 1, SandboxOrigin::Elite, sprint(config), None, None, &mut seeded(seed), config)
+}
+// same seed → same sb.chamber.creatures[i].px/py and sb.chamber.foods; sb.chamber.size == room.chamber_size()
+```
+
+`TrainerSim` run (pattern: `src/trainer/sim/tests.rs`). `TrainerParams::room` selects a registry room without a UI
+mode from generation 1; `set_mode(TrainingMode::Room(id))` applies at once before the first tick and otherwise at the
+next generation boundary:
+
+```rust
+use crate::trainer::sim::{TrainerEvent, TrainerParams, TrainerSim};
+
+let config = crate::config::test_config();
+let params = TrainerParams { population: 4, room: Some("sprint"), ..TrainerParams::from_config(config) };
+let mut sim = TrainerSim::new(params, 7, 200, config);   // params, seed, hall-of-fame retention, config
+assert_eq!(sim.room().id(), "sprint");
+while !matches!(sim.step(false), Some(TrainerEvent::GenerationCompleted { .. })) {}
+```
 
 ## Minimal example
 
 ```rust
-// src/trainer/room/sprint.rs: one creature, no food, scored by distance travelled
+// src/trainer/room/sprint.rs: one creature, no food, scored by distance travelled. Size, episode length and world
+// rules are the small room's (config `trainer.trainerCurriculum`), so no tunable is a literal (invariant 11); own
+// values would be new keys in section `trainer` (wiki/guides/add-config-key.md).
 use std::sync::Arc;
 use rand::Rng;
 use crate::config::AppConfig;
@@ -124,28 +177,31 @@ use crate::trainer::chamber::Chamber;
 use super::{EntityId, LevelRoom, Room};
 
 #[derive(Debug)]
-pub struct SprintRoom;
+pub struct SprintRoom {
+    base: LevelRoom,
+}
 
-pub fn sprint(_config: &AppConfig) -> Arc<dyn Room> {
-    Arc::new(SprintRoom)
+pub fn sprint(config: &AppConfig) -> Arc<dyn Room> {
+    Arc::new(SprintRoom { base: LevelRoom::at(0.0, config) })
 }
 
 impl Room for SprintRoom {
     fn id(&self) -> &str { "sprint" }
-    fn chamber_size(&self) -> f32 { 2000.0 }
-    fn episode_ticks(&self) -> u32 { 300 }
+    fn chamber_size(&self) -> f32 { self.base.chamber_size() }
+    fn episode_ticks(&self) -> u32 { self.base.episode_ticks() }
     fn world_settings(&self, config: &AppConfig) -> WorldSettings {
-        LevelRoom::at(0.0, config).world_settings(config)   // the trainer's creature rules
+        self.base.world_settings(config)   // the trainer's creature rules
     }
     fn layout(&self, chamber: &mut Chamber, rng: &mut SimRng) {
+        let centre = self.chamber_size() / 2.0;
         for agent in &mut chamber.creatures {
-            (agent.px, agent.py) = (1000.0, 1000.0);
+            (agent.px, agent.py) = (centre, centre);
             agent.heading_angle = rng.gen_range(0.0..std::f32::consts::TAU);
         }
         chamber.foods.clear();
     }
     fn score(&self, chamber: &Chamber, entity: EntityId) -> f32 {
-        chamber.trials[entity].distance_traveled / 1000.0
+        chamber.trials[entity].distance_traveled / self.chamber_size()
     }
 }
 // room/mod.rs: `pub mod sprint;`; registry.rs: RoomEntry { id: "sprint", build: super::sprint::sprint, summary: "..." }
