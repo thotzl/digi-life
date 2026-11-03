@@ -289,7 +289,7 @@ class CatalogueController {
     // Highlight of the selected card and card colours once phenotypes are known
     scope.effect(() => {
       const selected = catalogueId(selection.value);
-      phenotypeVersion.value;
+      void phenotypeVersion.value;
       for (const [id, entry] of this.cards) {
         entry.card.classList.toggle("active", id === selected);
         const color = badgeColor(phenotypeCache.get(entry.genome));

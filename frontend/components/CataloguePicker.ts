@@ -108,7 +108,7 @@ export class CataloguePicker {
     this.preview.start(scope);
     // Card dots take the creature's colour once its phenotype is known
     scope.effect(() => {
-      phenotypeVersion.value;
+      void phenotypeVersion.value;
       this.renderCards();
     });
     this.choose(0);

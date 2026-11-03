@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invokeMock(...args) }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
+const listenMock = vi.fn((_event: string, _handler: (e: { payload: unknown }) => void) => Promise.resolve(() => {}));
+vi.mock("@tauri-apps/api/event", () => ({ listen: (event: string, handler: (e: { payload: unknown }) => void) => listenMock(event, handler) }));
 
-import { call, onIpcError, send, setMode, type CallError, type Command } from "./ipc";
+import { call, onIpcError, onUiEvent, send, setMode, type CallError, type Command, type UiEvent } from "./ipc";
 
 describe("IPC client (TCK-157)", () => {
   const reported: { command: Command; error: CallError }[] = [];
@@ -63,5 +64,21 @@ describe("IPC client (TCK-157)", () => {
     await expect(call("get_trainer_runs")).rejects.toMatchObject({ kind: "unavailable" });
     expect(invokeMock).not.toHaveBeenCalled();
     expect(reported).toEqual([]);
+  });
+
+  it("subscribes to 'simulation-state' once and dispatches every payload to all handlers until they unsubscribe", () => {
+    const a: UiEvent[] = [];
+    const b: UiEvent[] = [];
+    const offA = onUiEvent((e) => a.push(e));
+    const offB = onUiEvent((e) => b.push(e));
+    expect(listenMock).toHaveBeenCalledTimes(1);
+    expect(listenMock.mock.calls[0][0]).toBe("simulation-state");
+    const emit = listenMock.mock.calls[0][1];
+    emit({ payload: { type: "DATABASE_CHANGED" } });
+    offA();
+    emit({ payload: { type: "LOG_EVENT", message: "m", logType: "system" } });
+    expect(a).toEqual([{ type: "DATABASE_CHANGED" }]);
+    expect(b.map((e) => e.type)).toEqual(["DATABASE_CHANGED", "LOG_EVENT"]);
+    offB();
   });
 });

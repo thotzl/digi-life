@@ -23,7 +23,7 @@ describe("Scope (TCK-160)", () => {
     scope.listen(target, "ping", () => events++);
     const s = signal(0);
     let runs = 0;
-    scope.effect(() => { s.value; runs++; });
+    scope.effect(() => { void s.value; runs++; });
     let draws = 0;
     scope.frame(() => draws++);
 

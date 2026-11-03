@@ -10,6 +10,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "lint": "eslint frontend --max-warnings 0",
     "test:rust": "cargo test",
     "sim:balance": "cargo run --release --features runner --bin trainer_runner -- run --seed baseline --generations 20 --scenario standard --population 16 --parallel true --out .agents/artifacts/runner/balance.json",
     "types:generate": "cargo test",
@@ -18,9 +19,13 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@tauri-apps/cli": "^2.11.4",
     "@vitest/coverage-v8": "^4.1.12",
+    "eslint": "^9.39.5",
+    "happy-dom": "^21.0.4",
     "typescript": "^5.0.0",
+    "typescript-eslint": "^8.72.1",
     "vite": "^6.4.5",
     "vitest": "^4.1.12"
   },

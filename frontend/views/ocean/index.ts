@@ -256,7 +256,7 @@ class OceanController {
   private renderRoster() {
     const list = this.roster.value;
     const selectedSpecies = this.selectedSpeciesId();
-    phenotypeVersion.value; // re-render when a card colour becomes known
+    void phenotypeVersion.value; // re-render when a card colour becomes known
     const container = this.layout.roster;
     if (list.length === 0) {
       container.innerHTML = `<div class="loading-state">No species registered.</div>`;

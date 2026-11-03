@@ -7,11 +7,11 @@ let classCounter = 0;
  * single head stylesheet, and returns fully typified DOM nodes.
  */
 export function styled<T extends keyof HTMLElementTagNameMap>(tag: T) {
-  return (strings: TemplateStringsArray, ...values: any[]) => {
+  return (strings: TemplateStringsArray, ...values: unknown[]) => {
     // The template is compiled once per factory: every element of one styled component shares its class, so
     // re-rendering a list or opening a dialog again adds no stylesheet rules (TCK-160)
     let className: string | null = null;
-    return (props: Record<string, any> = {}): HTMLElementTagNameMap[T] => {
+    return (props: Record<string, unknown> = {}): HTMLElementTagNameMap[T] => {
       if (className === null) {
         // 1. Compile raw template CSS string
         const css = strings.reduce((acc, str, i) => acc + str + (values[i] !== undefined ? values[i] : ""), "");
@@ -43,7 +43,7 @@ export function styled<T extends keyof HTMLElementTagNameMap>(tag: T) {
       const isSvgTag = ["svg", "path", "g", "circle", "rect", "line", "text"].includes(tag);
       const el = (isSvgTag 
         ? document.createElementNS("http://www.w3.org/2000/svg", tag)
-        : document.createElement(tag)) as any;
+        : document.createElement(tag)) as HTMLElementTagNameMap[T];
 
       el.classList.add(className);
 
@@ -58,12 +58,12 @@ export function styled<T extends keyof HTMLElementTagNameMap>(tag: T) {
           el.classList.add(...String(val).split(/\s+/).filter(Boolean));
         } else if (key.startsWith("on") && typeof val === "function") {
           const eventName = key.slice(2).toLowerCase();
-          el.addEventListener(eventName, val as any);
+          el.addEventListener(eventName, val as EventListener);
         } else {
           if (isSvgTag) {
             el.setAttribute(key, String(val));
           } else {
-            el[key] = val;
+            (el as unknown as Record<string, unknown>)[key] = val;
           }
         }
       }
@@ -168,10 +168,10 @@ export function html(markup: string): TrustedHtml {
  * Helper to append diverse children nodes (strings, numbers, elements, trusted markup, or arrays thereof).
  * Strings and numbers always become text nodes; only `html()` markup is parsed.
  */
-function applyChildren(parent: Element, children: any) {
+function applyChildren(parent: Element, children: unknown) {
   if (children === null || children === undefined) return;
 
-  const appendSingle = (child: any) => {
+  const appendSingle = (child: unknown) => {
     if (child === null || child === undefined) return;
     if (typeof child === "string" || typeof child === "number") {
       parent.appendChild(document.createTextNode(String(child)));

@@ -32,10 +32,11 @@ export class Scope {
   listen<K extends keyof WindowEventMap>(target: Window, type: K, handler: (e: WindowEventMap[K]) => void, options?: AddEventListenerOptions): void;
   listen<K extends keyof DocumentEventMap>(target: Document, type: K, handler: (e: DocumentEventMap[K]) => void, options?: AddEventListenerOptions): void;
   listen(target: EventTarget, type: string, handler: (e: Event) => void, options?: AddEventListenerOptions): void;
-  listen(target: EventTarget, type: string, handler: (e: any) => void, options?: AddEventListenerOptions): void {
+  listen(target: EventTarget, type: string, handler: (e: never) => void, options?: AddEventListenerOptions): void {
     if (this.closed) return;
-    target.addEventListener(type, handler, options);
-    this.add(() => target.removeEventListener(type, handler, options));
+    const listener = handler as EventListener;
+    target.addEventListener(type, listener, options);
+    this.add(() => target.removeEventListener(type, listener, options));
   }
 
   /** Signal `effect` that is disposed with the scope. */

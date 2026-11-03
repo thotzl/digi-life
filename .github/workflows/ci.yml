@@ -20,9 +20,15 @@ jobs:
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - name: cache cargo
         uses: Swatinem/rust-cache@v2
+
+      # rustfmt.toml: max_width 120 (TCK-161)
+      - name: rust format check
+        run: cargo fmt --check
 
       - name: install system dependencies
         run: |
@@ -38,6 +44,14 @@ jobs:
 
       - name: frontend unit tests
         run: npm test
+
+      # ESLint (eslint.config.js), zero warnings (TCK-161)
+      - name: frontend lint
+        run: npm run lint
+
+      # Needs dist/ (build frontend); zero warnings incl. tests and the runner (TCK-161)
+      - name: clippy
+        run: cargo clippy --all-targets --features runner -- -D warnings
 
       # Also regenerates the ts-rs bindings in bindings/
       - name: rust tests
@@ -73,3 +87,37 @@ jobs:
       # Wikilinks, `sources:` and doc paths in the wiki, skills and open/ongoing tickets must resolve (TCK-197)
       - name: doc link check
         run: node scripts/check-links.mjs
+
+  # Shipping target (TCK-161): build, unit tests and binding drift on Windows. The reference runs stay on Ubuntu only
+  # (seeded RNG + libm make them platform-identical; a second release build of the runner would double the CI time).
+  verify-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: build frontend
+        run: npm run build
+
+      - name: frontend unit tests
+        run: npm test
+
+      # Also regenerates the ts-rs bindings in bindings/
+      - name: rust tests
+        run: cargo test
+
+      - name: bindings drift check
+        run: git diff --exit-code -- bindings/

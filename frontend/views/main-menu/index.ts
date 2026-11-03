@@ -214,7 +214,7 @@ function createMainMenu(ctx: ViewContext): HTMLElement {
   // App version from the Tauri bundle (TCK-195), so a tester sees which build runs
   const footer = FooterBlock({ children: "BROODBATTLE ALPHA" });
   footer.id = "app-version";
-  if (typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__) {
+  if (typeof window !== "undefined" && (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
     import("@tauri-apps/api/app")
       .then(({ getVersion }) => getVersion())
       .then((version) => { footer.textContent = `BROODBATTLE ALPHA · v${version}`; })

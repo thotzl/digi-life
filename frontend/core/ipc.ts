@@ -51,11 +51,11 @@ export function onIpcError(handler: IpcErrorHandler) {
 }
 
 function tauriAvailable(): boolean {
-  return typeof window !== "undefined" && !!(window as any).__TAURI_INTERNALS__;
+  return typeof window !== "undefined" && !!(window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
 }
 
 function isIpcError(e: unknown): e is IpcError {
-  return typeof e === "object" && e !== null && typeof (e as any).kind === "string" && typeof (e as any).message === "string";
+  return typeof e === "object" && e !== null && typeof (e as { kind?: unknown }).kind === "string" && typeof (e as { message?: unknown }).message === "string";
 }
 
 /**

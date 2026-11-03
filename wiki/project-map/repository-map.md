@@ -11,6 +11,7 @@ Module-level map of the code. Layout since TCK-124: `Cargo.toml`, `tauri.conf.js
 | Path | Responsibility |
 | :--- | :--- |
 | `Cargo.toml`, `build.rs` | Rust crate (Tauri app + `trainer_runner` binary) |
+| `rustfmt.toml`, `eslint.config.js` | Rust formatting (`max_width = 120`) and frontend ESLint config, both checked in CI (TCK-161, [[wiki/quality/ci-and-tooling]]) |
 | `package.json`, `vite.config.ts`, `tsconfig.json`, `vitest.config.ts` | frontend build and tests |
 | `tauri.conf.json`, `capabilities/`, `icons/`, `gen/` | Tauri config, permissions, bundle icons, generated schemas |
 | `tauri.dev.conf.json` | dev-app override merged by `npm run tauri:dev`: own identifier (`.dev`) and window title (TCK-195) |
