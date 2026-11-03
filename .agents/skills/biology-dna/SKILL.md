@@ -1,18 +1,18 @@
 ---
 name: biology-dna
-description: Rules for changing the genome compiler, CTRNN brain, sensing, metabolism, reproduction or species logic of Pixel DNA Life (src/biology/{genome,phenotype,organs,brain}/, src/shared/brain.rs).
+description: Pointers for changing the BroodBattle creature model - genome compiler, organs, CTRNN brain, sensing, metabolism, reproduction, species (src/biology/, src/shared/brain.rs).
 ---
-# biology-dna: Genome, Brain & Evolution Rules
+# biology-dna: Creature Model Pointers
 
-## I. Knowledge (read first)
-- Genome compiler: `wiki/biology/genome-compiler.md`
-- CTRNN brain: `wiki/biology/ctrnn-brain.md`
-- Sensing: `wiki/biology/sensing.md`
-- Metabolism, reproduction, species: `wiki/biology/metabolism-and-reproduction.md`
+## I. Read first
+- New organ kind: `.agents/skills/plugin-authoring/SKILL.md` (guide + contract `wiki/contracts/organ-kind.md`).
+- Rules: `wiki/architecture/invariants.md` 8 (golden master), 9 (`MODEL_VERSION`), 16 (pure, deterministic).
+- Current model: `wiki/biology/genome-compiler.md`, `wiki/biology/ctrnn-brain.md`, `wiki/biology/sensing.md`,
+  `wiki/biology/metabolism-and-reproduction.md`; measured history in `wiki/history/_index.md`.
 
-## II. Rules
-- `parse_genome` must stay pure and deterministic; no `HashMap` iteration order in results (see RV-B11).
-- Any change that alters phenotypes or brains changes the golden master (`test_parse_genome_golden_master`). Update `GOLDEN_FINGERPRINT` only for intended model changes and state it in the ticket.
-- New promoters must be added to the protected motifs in `mutate_genome`.
+## II. Task rules
+- A phenotype or brain change shows up in `test_parse_genome_golden_master`; state an intended change in the ticket.
+- New promoters go into the promoter registry (`src/biology/genome/promoters.rs`); mutation protects every registered
+  motif automatically.
 - Do not draw evolutionary conclusions from Ocean generation counters while RV-B01 (TCK-143) is open.
-- Plasticity (TCK-152), evaluation order (TCK-153) and motion vision (TCK-144) are decided and closed ([[wiki/biology/ctrnn-brain]], [[wiki/biology/sensing]]). The species model (TCK-148) is still a pool ticket awaiting the user; do not implement it without a decision.
+- The species model (TCK-148) awaits a user decision; do not implement it without one.

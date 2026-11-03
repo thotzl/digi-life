@@ -8,8 +8,9 @@ sources: [tickets/closed/TCK-156-engine-decomposition.md, src/server/engine/sink
 
 An event sink is where the engine's typed UI events go (`src/server/engine/sink.rs`, TCK-156). Modes and the engine
 only `emit`; the run loop `flush`es once per frame. `TauriSink` sends each `UiEvent` as the Tauri event
-`simulation-state` to the window; `VecSink` records them for tests, so the engine runs without a window. A planned
-sink (headless Ocean runner of TCK-158, a recorder for replays) implements the same two methods.
+`simulation-state` to the window; `VecSink` records them for tests, so the engine runs without a window. The headless runners (TCK-158) step
+`OceanSim` / `TrainerSim` directly and need no sink. A planned sink (a recorder for replays, an event log for a
+headless engine run) implements the same two methods. Guide: `wiki/guides/add-event-sink.md`.
 
 ## Signature
 
@@ -38,7 +39,7 @@ pub struct VecSink { pub events: Vec<UiEvent>, pub flushes: usize }   // VecSink
 - `emit` never sends: simulation steps cannot block on the window ([[wiki/architecture/invariants]] 2, 6).
 - Order is kept; only `DATABASE_CHANGED` is coalesced, per flush.
 - A send failure (`TauriSink`) is logged and the next event is still sent.
-- The payload is always a typed `UiEvent` (no `json!`, [[wiki/contracts/ipc-message]]).
+- The payload is always a typed `UiEvent` ([[wiki/architecture/invariants]] 13).
 
 ## Registration point
 

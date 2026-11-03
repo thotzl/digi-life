@@ -22,7 +22,7 @@ Read first: [[wiki/contracts/persistence-repo]] and [[wiki/architecture/invarian
    and for `MemoryDb` in `memory.rs`. Repositories set their own timestamps.
 6. Callers: commands in `src/server/api/` go through `with_store` / `collect_rows` (typed `IpcError`); engine calls use `log_db_err`. No call per
    physics step.
-7. Retention: if the table grows with play time, bound it (config key in the owning section, see
+7. Retention: if the table grows with play time, bound it (config key in the owning section,
    `wiki/guides/add-config-key.md`) and prune on a timer or event.
 8. Tests: extend the contract suite (`persistence::tests::contract`) so both stores run the new methods; if the
    migration transforms existing rows, add them to the v1.12.30 fixture of
@@ -33,4 +33,5 @@ Read first: [[wiki/contracts/persistence-repo]] and [[wiki/architecture/invarian
 
 - `cargo test persistence::` is green, including `test_migrated_schema_equals_latest_tables`.
 - `cargo test`, `npm test`, `npm run build` and `node scripts/check-links.mjs` are green.
-- No SQL outside `src/persistence/`; golden master and the trainer references unchanged.
+- The contract's grep check finds SQL only in `src/persistence/` (invariant 12); golden master and the trainer
+  references unchanged.

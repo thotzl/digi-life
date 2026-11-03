@@ -65,16 +65,8 @@ Turns a genome string into a `CreaturePhenotype` (body, organs, brain). Model si
 - `generate_structured_genome(composition, rng)` (config `genomeComposition`, [[wiki/architecture/configuration]]): all body genes plus one `OUT` gene, 1–3 organ genes (the first is a food organ — eye or nose 50/50 — with probability 0.9, otherwise random organ promoters), `HOX` with probability 0.3, 1–3 `NEU`, 0–2 `SY`; genes shuffled, payloads 8–16 letters, intergenic filler towards 256 bases (no filler when the genes alone are longer; mean length 288). Each promoter gets a random degenerate spelling not used before in the genome; payloads and filler never form a stray motif, so `parse_genome` finds exactly the planned genes (test `test_structured_genome_parses_to_exactly_the_planned_genes`).
 - Used for trainer generation 1 and random immigrants ([[wiki/simulation/trainer]]) and for Ocean `INJECT_URZELLE`, the empty-catalogue restock founder and the `RESET_EVOLUTION` fallback ([[wiki/simulation/ocean]]). The Ocean's fresh-start seeding still mutates the wildtype literal.
 - `generate_random_genome(len)` (uniform letters, "letter soup") remains only for probes and tests as the comparison population.
-- Equipment (TCK-172 probe, 1,000 genomes each):
-
-| Property | Letter soup | Structured |
-| :--- | :--- | :--- |
-| No organ | 21 % | 0 % |
-| ≥ 1 eye / ≥ 1 nose | 29 % / 43 % | 58 % / 66 % |
-| ≥ 1 food-sensing organ (distance sense) | 67 % | 99 % |
-| `HOX` organ pair | 21 % | 31 % |
-| Food in range / non-zero stimulus at spawn, small room | 57 % / 31 % | 86 % / 46 % |
-| Food in range / non-zero stimulus at spawn, large room (650 px, before P7; 500 px since: 35 % in range, [[wiki/biology/sensing]]) | 14 % / 4.8 % | 24 % / 7.5 % |
+- Equipment of structured vs. letter-soup genomes (TCK-172 probe): [[wiki/history/probe-measurements]]; structured
+  genomes all have an organ and 99 % a food sensor.
 
 ## Mutation (TCK-184)
 
@@ -82,7 +74,7 @@ Turns a genome string into a `CreaturePhenotype` (body, organs, brain). Model si
 - Letter operators act only on unprotected positions; protected: every motif match (all expressed promoters incl. `HOX`, legacy `SYM`, terminator `EN`) and the promoter letters of every expressed gene. Gene operators splice only when the result changes exactly the intended promoter's gene count, with at most one spacer letter.
 - Length stays in `[128, 512]` (test `test_mutate_genome_keeps_length_bounds`).
 - `mutate_genome_with_kind` applies one fixed operator for probes and tests. All generators and operators take the caller's RNG (seeded `SimRng` in trainer, runner, probes and, since TCK-156, the Ocean; TCK-173).
-- Trainer mutants and HoF children apply 1–3 operator calls (`draw_mutation_ops`, uniform in [`mutationOpsMin`, `mutationOpsMax`], max adapted by the 1/5 rule; TCK-174, [[wiki/simulation/trainer]]); before P7 `round(genome.len() · mutation_rate)` (0.06 → ≈ 15 at 256 bases). Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
+- Trainer mutants and HoF children apply 1–3 operator calls (`draw_mutation_ops`, uniform in [`mutationOpsMin`, `mutationOpsMax`], max adapted by the 1/5 rule; TCK-174, [[wiki/simulation/trainer]]); Ocean mitosis mutates the child genome with 35 % probability ([[wiki/biology/metabolism-and-reproduction]]).
 - `read_evolution_rates` reads the `EVO` rates without compiling the phenotype (TCK-140).
 
 ## Gene channels (TCK-181)
@@ -92,20 +84,12 @@ Turns a genome string into a `CreaturePhenotype` (body, organs, brain). Model si
 - `classify_mutation(parent, mutation) -> MutationTouch` uses the compiler's gene table (`GeneTable`, no RNG): every parent gene whose span contains the mutation locus, plus every gene identity (`GeneRef`) present in only one of parent and child (formed, destroyed, duplicated or renumbered); a locus outside every gene with an unchanged gene set is neutral; silent copies count by their promoter. A child's `MutationChannel` (body / brain / both / neutral) is the union over its calls.
 - `mutate_genome_in_channel(genome, ops, channel, rng)` restricts the loci to one channel's genes and redraws a result that still touches the other channel (at most `CHANNEL_MUTATION_ATTEMPTS`); used by the trainer mode `mutationChannels: separate`. The measurement and the decision to keep `mixed` are in [[wiki/simulation/trainer]].
 
-## Measured heredity (TCK-172 probe, P3)
+## Heredity
 
-Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): parent–child Pearson correlation of non-`SY`, non-reflex synapse weights on homologous synapses (same key).
-
-| Mutation | 1 op | 5 ops | 15 ops |
-| :--- | :--- | :--- | :--- |
-| Before P3: letter-soup parents, character mix | 0.943 | 0.661 | 0.318 |
-| Structured parents, `mutate_genome` mix | 0.982 | 0.922 | 0.810 |
-| Letter-soup parents, `mutate_genome` mix | 0.979 | 0.906 | 0.757 |
-| Structured parents, legacy character mix | 0.985 | 0.916 | 0.792 |
-
-- Children with ≥ 2× terminal-speed change (structured parents): 0.7 % after 1 op, 3.0 % after 5, 8.1 % after 15 (before P3: 1.4 % / 7.0 % / 16.9 %). Measured with the pre-P5 speed model; the P5 speed band (1–5 px/tick, TCK-150) caps speed ratios at ×5, not re-measured.
-- Gene duplication and deletion keep 100 % of the keys and weights of synapses that neither belong to nor touch the mutated gene (except `SY`-owned synapses and `HOX` genes); test `test_gene_duplication_and_deletion_keep_unrelated_synapses`, measurement `measure_gene_operator_key_shift` (ignored test).
-- Most of the gain over the character mix comes from Brain v2 locality, not from the operator mix (legacy and new mix differ by ≤ 0.02 on structured parents).
+Measured parent–child weight correlation (TCK-172 probe, P3): [[wiki/history/probe-measurements]]. After 15
+trainer ops it rose from 0.32 (letter soup, character mix) to 0.81 (structured parents, `mutate_genome` mix), mostly
+from Brain v2 locality. Gene duplication and deletion keep every unrelated synapse (test
+`test_gene_duplication_and_deletion_keep_unrelated_synapses`).
 
 ## Epigenetics
 
@@ -119,7 +103,6 @@ Probe `trainer_runner probe heredity` (seed `tck172`, 200 parents per set): pare
 ## Known limitations
 
 - Activation (`Activation`), symmetry (`Symmetry`) and organ kind are enums (RV-S10 resolved, TCK-155/199). The phenotype no longer carries display labels or dead payload (neuron labels, ecology scores, diet/habitat strings, survival estimate, chromatin logs, hydraulic pressure, repair fidelity; TCK-199); the golden master still hashes the two retired traits, decoded in the test.
-- Chamber count uses std `cos`, `TEM` minimum parses as `-(5.0.max(x))`; both are kept for bit-identity and listed in TCK-202.
 - `SY` genes address roles modulo the size of their role class, so a changed class size re-addresses them (relative addressing: TCK-168).
 - Only the first gene of each body promoter and of `OUT` is expressed; duplicates are silent until the original is deleted.
 

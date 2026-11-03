@@ -7,7 +7,8 @@ sources: [.agents/skills/server-simulation/SKILL.md, tickets/closed/TCK-156-engi
 `src/server/engine/` (TCK-156) — `spawn_simulation_thread(window, rx, config)` is started from `main.rs` setup. It
 builds an `Engine` (both modes, the store, the config) and runs `run_loop`. Only `spawn_simulation_thread` touches
 Tauri (the window becomes a `TauriSink`); `Engine` and `run_loop` run headless with `VecSink` and `MemoryDb` in
-tests. Contracts: [[wiki/contracts/mode]], [[wiki/contracts/event-sink]].
+tests. Contracts: [[wiki/contracts/mode]], [[wiki/contracts/event-sink]]. Behaviour before TCK-156:
+[[wiki/history/replaced-models]].
 
 | File | Content |
 | :--- | :--- |
@@ -25,11 +26,9 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 
 - Frame ~60 Hz (`FRAME` 16.67 ms sleep budget): all queued inputs in order, then the active mode's `step` and
   `emit_telemetry`, then one `sink.flush()`.
-- **Warp cap: 35 steps per frame** (`MAX_STEPS_PER_FRAME`) for both modes; `clamp_warp` caps the requested warp when
-  it is set and the clamped value is echoed (`SIM_STATE.speed`, `TRAINER_STATE_CHANGED.warpSpeed`). Unbounded steps
-  block the action channel and the UI ([[wiki/architecture/invariants]] 2).
+- Warp cap per frame for both modes ([[wiki/architecture/invariants]] 2).
 - Each mode has its own throttles (`Interval`): Ocean telemetry 25 Hz, food 2 Hz, snapshot 10 s; trainer telemetry
-  25 Hz. Before TCK-156 Ocean and trainer shared one emit clock.
+  25 Hz.
 - `run_loop` returns after the frame in which all senders were dropped (app shutdown, tests).
 
 ## Modes
@@ -41,7 +40,7 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 - `CLIENT_READY` answers with `INIT_STATE`, `DATABASE_CHANGED` and a log line and never changes the mode (TCK-186).
 - Entering the trainer rebuilds its population from the store only if the run state is not loaded yet or a command
   changed the run's genomes (`EngineInput::TrainerStoreChanged`, sent by `add_catalogue_creature_to_training` and
-  `clear_trainer_history`); otherwise the running generation continues (before TCK-156 every navigation rebuilt it).
+  `clear_trainer_history`); otherwise the running generation continues.
 
 ## Events
 
@@ -68,8 +67,7 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 
 - The desktop app runs `init_db` (migrations) once in `main.rs` for the commands' connection; the engine opens its own
   connection with `open_db` (no second migration). If that fails, the engine runs on a `MemoryDb` and repeats
-  "Database unavailable … running without persistence" on every `CLIENT_READY` (before TCK-156 an `expect` panicked the
-  engine thread without any message to the UI).
+  "Database unavailable … running without persistence" on every `CLIENT_READY`.
 - Ocean species: `OceanSim` keeps a pure `SpeciesLedger` and returns `SpeciesChange`s; `OceanMode` writes the changes
   of a frame's steps once per frame (`apply_species`) and reloads the ledger from the store at start and after a
   retention prune.
@@ -102,8 +100,7 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 ## Known limitations
 
 - Mitosis children are reported to the UI but not simulated (RV-B01, TCK-143).
-- The frontend still has its own world-size literals (`camera.ts`, `ocean.ts`); the backend sends the size in
-  `INIT_STATE.world` (RV-A05, frontend part with TCK-160).
+- The frontend keeps a fallback world size until `INIT_STATE.world` arrives ([[wiki/frontend/structure]]).
 - The nearest-food lookup scans all spores and peers per creature (RV-P04).
 
 ## Key Takeaways
@@ -111,6 +108,6 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 - `Engine` + `Mode` (`OceanMode`, `TrainerMode`) + `EventSink` + `EngineStore`; only `spawn_simulation_thread` needs Tauri.
 - One thread, ~60 Hz, max 35 steps per frame (clamped and echoed), events flushed once per frame.
 - The Ocean is the IO-free, seeded `OceanSim` on the shared creature systems; the trainer is `TrainerSim`.
-- Store failures no longer kill the engine; the trainer is rebuilt from the store only when needed.
+- Store failures do not kill the engine; the trainer is rebuilt from the store only when needed.
 
 Sources: `.agents/skills/server-simulation/SKILL.md`, TCK-129, TCK-139, TCK-149, TCK-156, TCK-173, TCK-176, TCK-177, TCK-184, TCK-185, TCK-186.

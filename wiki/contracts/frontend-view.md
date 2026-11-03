@@ -73,8 +73,8 @@ Shared components a view composes: `components/Modal.ts` (`openModal(scope, opti
 - No global listener, `effect`, `requestAnimationFrame` or `setTimeout` loop outside a scope; nothing is registered
   at module import.
 - A view reads selection ids only through its source's accessor; a selection of another source is not its own.
-- Types come from `bindings/` only; the frontend has no hand-written model types.
-- Untrusted strings through `textContent` / `escapeHtml`; `styled` children are text unless `html()` (TCK-197).
+- Types from `bindings/` only, world data from the backend ([[wiki/architecture/invariants]] 14); untrusted strings
+  as text ([[wiki/architecture/invariants]] 15).
 - `suspend` / `resume` change only the view's own simulation, and `resume` restores only what the user had running.
 
 ## Registration point
@@ -95,8 +95,9 @@ Consumes `UiEvent`s through `onEvent`; sends actions and calls commands through 
 
 `npm test` runs `frontend/core/router.test.ts` (mount/unmount order, scope disposal, pause → set_mode → resume,
 Ocean not paused on entry), `core/scope.test.ts`, `state/selection.test.ts`. A view adds a test for its pure model
-(e.g. `views/ocean/model.test.ts`, `views/trainer/settings.test.ts`); DOM-level controller tests follow with
-TCK-161. Then `npm run build`.
+(e.g. `views/ocean/model.test.ts`, `views/trainer/settings.test.ts`) and, for its controller, a case in the happy-dom
+suite `views/views.dom.test.ts` (mount/unmount teardown, no `setMode` from the view; TCK-161). Then `npm run lint`
+and `npm run build`.
 
 ## Minimal example
 

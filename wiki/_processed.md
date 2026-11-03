@@ -12,9 +12,9 @@
 | .agents/skills/workspace-workflows/references/init.md | 2026-10-19 22:15 | — (agent instructions only, no knowledge to extract) |
 | .agents/skills/workspace-workflows/SKILL.md | 2026-10-21 16:16 | — (agent instructions only, no knowledge to extract) |
 | .agents/state/active-task.md | 2026-10-21 16:16 | architecture/invariants, simulation/physics |
-| .github/workflows/ci.yml | 2026-10-19 22:16 | project-map/repository-map |
-| .github/workflows/release.yml | 2026-10-19 22:16 | project-map/repository-map |
-| .github/workflows/sync-tickets.yml | 2026-10-19 21:36 | project-map/repository-map, quality/ci-and-tooling |
+| .github/workflows/ci.yml | 2026-10-19 22:16 | architecture/module-map |
+| .github/workflows/release.yml | 2026-10-19 22:16 | architecture/module-map |
+| .github/workflows/sync-tickets.yml | 2026-10-19 21:36 | architecture/module-map, quality/ci-and-tooling |
 | docs/revisit/00-executive-summary.md (deleted) | 2026-10-19 21:51 | quality/runtime-verification |
 | docs/revisit/01-critical-bugs.md (deleted) | 2026-10-19 22:57 | architecture/configuration, biology/genome-compiler, biology/metabolism-and-reproduction, biology/sensing, simulation/ocean, simulation/trainer |
 | docs/revisit/02-architecture.md (deleted) | 2026-10-19 22:56 | architecture/ipc-protocol, architecture/simulation-engine, architecture/system-overview |
@@ -26,49 +26,49 @@
 | docs/revisit/08-docs-and-agent-context.md (deleted) | 2026-10-19 22:56 | — (docs/context findings, resolved by TCK-142 and TCK-163) |
 | docs/revisit/README.md (deleted) | 2026-10-20 02:21 | overview/glossary |
 | docs/revisit/roadmap.md (deleted) | 2026-10-19 21:51 | decisions/adr-001-non-goals |
-| frontend/api.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/components/Icons.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/core/camera.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/core/escape.ts | 2026-10-19 22:13 | project-map/repository-map |
-| frontend/core/router.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/core/styled.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/main.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/ocean.ts | 2026-10-19 22:12 | project-map/repository-map |
-| frontend/render/brainRenderer.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/render/creatureRenderer.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/shared/types.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/signals.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/styles.css | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/trainer.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/views/CatalogueView.ts | 2026-10-19 22:13 | project-map/repository-map |
-| frontend/views/MainMenu.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/views/OceanView.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/views/TrainerView.ts | 2026-10-19 21:36 | project-map/repository-map |
-| frontend/views/UnifiedDiagnosticsPanel.ts | 2026-10-19 22:13 | project-map/repository-map |
+| frontend/api.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/components/Icons.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/core/camera.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/core/escape.ts | 2026-10-19 22:13 | architecture/module-map |
+| frontend/core/router.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/core/styled.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/main.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/ocean.ts | 2026-10-19 22:12 | architecture/module-map |
+| frontend/render/brainRenderer.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/render/creatureRenderer.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/shared/types.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/signals.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/styles.css | 2026-10-19 21:36 | architecture/module-map |
+| frontend/trainer.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/views/CatalogueView.ts | 2026-10-19 22:13 | architecture/module-map |
+| frontend/views/MainMenu.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/views/OceanView.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/views/TrainerView.ts | 2026-10-19 21:36 | architecture/module-map |
+| frontend/views/UnifiedDiagnosticsPanel.ts | 2026-10-19 22:13 | architecture/module-map |
 | HANDOFF.md (deleted) | 2026-10-19 22:57 | quality/runtime-verification |
 | ideas.md | 2026-10-19 21:36 | research/alife-reference-simulators, research/porting-concepts |
-| package.json | 2026-10-21 15:53 | project-map/repository-map, quality/ci-and-tooling |
+| package.json | 2026-10-21 15:53 | architecture/module-map, quality/ci-and-tooling |
 | README.md | 2026-10-21 16:16 | architecture/configuration, architecture/ipc-protocol, architecture/persistence, architecture/system-overview, biology/ctrnn-brain, biology/genome-compiler, frontend/structure, overview/glossary, quality/ci-and-tooling, quality/testing |
-| src/bin/cli_trainer.rs | 2026-10-19 22:30 | project-map/repository-map |
-| src/biology/dna.rs | 2026-10-19 22:50 | project-map/repository-map |
-| src/biology/scenarios.rs | 2026-10-19 22:34 | project-map/repository-map, simulation/trainer |
-| src/biology/trainer_engine.rs | 2026-10-19 22:43 | project-map/repository-map |
-| src/database.rs | 2026-10-19 22:29 | project-map/repository-map |
-| src/lib.rs | 2026-10-19 21:36 | project-map/repository-map |
-| src/main.rs | 2026-10-19 22:29 | architecture/ipc-protocol, project-map/repository-map |
-| src/server/api.rs | 2026-10-19 22:29 | project-map/repository-map |
-| src/server/engine.rs | 2026-10-19 22:43 | project-map/repository-map, simulation/ocean |
-| src/server/mod.rs | 2026-10-19 21:36 | project-map/repository-map |
-| src/shared/brain.rs | 2026-10-19 21:36 | project-map/repository-map |
-| src/shared/map_generator.rs | 2026-10-19 21:36 | project-map/repository-map |
-| src/shared/physics.rs | 2026-10-19 22:34 | project-map/repository-map |
-| src/shared/spatial_grid.rs | 2026-10-19 21:36 | project-map/repository-map |
-| src/shared/types.rs | 2026-10-19 22:26 | project-map/repository-map |
+| src/bin/cli_trainer.rs | 2026-10-19 22:30 | architecture/module-map |
+| src/biology/dna.rs | 2026-10-19 22:50 | architecture/module-map |
+| src/biology/scenarios.rs | 2026-10-19 22:34 | architecture/module-map, simulation/trainer |
+| src/biology/trainer_engine.rs | 2026-10-19 22:43 | architecture/module-map |
+| src/database.rs | 2026-10-19 22:29 | architecture/module-map |
+| src/lib.rs | 2026-10-19 21:36 | architecture/module-map |
+| src/main.rs | 2026-10-19 22:29 | architecture/ipc-protocol, architecture/module-map |
+| src/server/api.rs | 2026-10-19 22:29 | architecture/module-map |
+| src/server/engine.rs | 2026-10-19 22:43 | architecture/module-map, simulation/ocean |
+| src/server/mod.rs | 2026-10-19 21:36 | architecture/module-map |
+| src/shared/brain.rs | 2026-10-19 21:36 | architecture/module-map |
+| src/shared/map_generator.rs | 2026-10-19 21:36 | architecture/module-map |
+| src/shared/physics.rs | 2026-10-19 22:34 | architecture/module-map |
+| src/shared/spatial_grid.rs | 2026-10-19 21:36 | architecture/module-map |
+| src/shared/types.rs | 2026-10-19 22:26 | architecture/module-map |
 | tickets/closed/FIX-126-B-taurignore.md | 2026-10-19 21:36 | quality/ci-and-tooling |
 | tickets/closed/FIX-126-rebuild-loop.md | 2026-10-19 21:36 | quality/ci-and-tooling |
 | tickets/closed/FIX-127-restore-biomes.md | 2026-10-19 21:36 | simulation/ocean |
 | tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md | 2026-10-19 21:36 | biology/genome-compiler, biology/sensing, frontend/structure, simulation/physics |
-| tickets/closed/TCK-101-initialize-workspace.md | 2026-10-21 16:08 | project-map/repository-map |
+| tickets/closed/TCK-101-initialize-workspace.md | 2026-10-21 16:08 | architecture/module-map |
 | tickets/closed/TCK-102-test-setup.md | 2026-10-19 21:36 | quality/testing |
 | tickets/closed/TCK-103-improve-petri-dish.md | 2026-10-19 21:36 | simulation/ocean, simulation/physics |
 | tickets/closed/TCK-104-better-steering-and-neurons.md | 2026-10-19 21:36 | simulation/physics |
@@ -86,7 +86,7 @@
 | tickets/closed/TCK-120-multi-trial-evaluation-loop-and-min-distance-spawning.md | 2026-10-19 21:36 | simulation/trainer |
 | tickets/closed/TCK-121-synaptic-exuberance-and-active-lifetime-pruning.md | 2026-10-19 21:36 | biology/ctrnn-brain |
 | tickets/closed/TCK-122-multispectral-receptive-fields-and-haptics.md | 2026-10-19 21:36 | biology/sensing |
-| tickets/closed/TCK-124-tauri-exclusive-consolidation.md | 2026-10-19 22:16 | architecture/system-overview, project-map/repository-map |
+| tickets/closed/TCK-124-tauri-exclusive-consolidation.md | 2026-10-19 22:16 | architecture/system-overview, architecture/module-map |
 | tickets/closed/TCK-125-dry-kiss-cleanup.md | 2026-10-19 22:16 | simulation/ocean |
 | tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md | 2026-10-19 21:36 | architecture/persistence, biology/metabolism-and-reproduction, frontend/structure, simulation/trainer |
 | tickets/closed/TCK-129-architecture-refactoring.md | 2026-10-19 21:36 | architecture/simulation-engine, biology/metabolism-and-reproduction, biology/sensing, simulation/ocean |

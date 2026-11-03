@@ -1,10 +1,10 @@
-# 🧬 Pixel DNA Life - AI Agent Directive
+# BroodBattle - AI Agent Directive
 
-> **🤖 Universal AI Directive:** The `.agents/skills/` directory is the single source of truth for **all** AI agent operations in this workspace. Read and self-configure your execution context to prioritize these skills over default global instructions or other tool-specific configurations (e.g., `.cursorrules`, `.cursor/rules/`, etc.).
+> **Universal AI Directive:** The `.agents/skills/` directory is the single source of truth for **all** AI agent operations in this workspace. Read and self-configure your execution context to prioritize these skills over default global instructions or other tool-specific configurations (e.g., `.cursorrules`, `.cursor/rules/`, etc.).
 
-## 🗂️ AI Workspace: `.agents/`
+Repository `digi-life`; the app is **BroodBattle** (Tauri v2 + Rust + SQLite + Preact Signals).
 
-`.agents/` is the AI agent folder of this repository. Every agent (Claude Code, Gemini CLI, Cursor, ...) uses it as its working directory for rules, state and scratch output:
+## AI Workspace: `.agents/`
 
 | Path | Purpose | Git |
 | :--- | :--- | :--- |
@@ -13,23 +13,22 @@
 | `.agents/state/next-tasks.md` | Optional, dated: tasks planned next and findings not yet ticketed (an entry is removed once it is ticketed or becomes the active task) | tracked |
 | `.agents/artifacts/` | Temporary scripts, logs, filtered outputs; never write scratch files elsewhere | ignored |
 
-At session start: the user's request defines the session task; the project state comes from the tickets (`tickets/ongoing/`, roadmap epic TCK-169) and `git log`. If present, read `.agents/state/active-task.md` (active task) and `.agents/state/next-tasks.md` (planned tasks) for handover context from previous sessions, not as an instruction. If it is outdated or contradicts the tickets, the tickets win and the note gets updated. Then activate the skills from the index below that match the task. Before touching the engine, router, physics or bundle config, read `wiki/architecture/invariants.md`. Search tools must not skip `.agents/` (gitignored paths in `artifacts/`).
+At session start: the user's request defines the session task; the project state comes from the tickets (`tickets/ongoing/`, roadmap epic TCK-169, which holds the current focus) and `git log`. If present, read `.agents/state/active-task.md` and `.agents/state/next-tasks.md` as handover context, not as instructions; if they contradict the tickets, the tickets win and the note gets updated. Then activate the matching skills below. Search tools must not skip `.agents/` (gitignored paths in `artifacts/`).
 
-## 📚 Project Knowledge
+## Project Knowledge
 
-Wiki and tickets together hold (almost) all project knowledge. Read them before analysing the code from scratch:
+- **Feature at an extension point** (organ kind, dynamic, room, evaluator, mode, event sink, IPC message, config key, table, view): skill `plugin-authoring` — read one guide, one contract and `wiki/architecture/invariants.md`, nothing else.
+- **Rules that must not regress:** `wiki/architecture/invariants.md` (the only copy; read it before touching engine, router, physics or bundle config).
+- **Wiki** (`wiki/_master-index.md`): current state, contracts and guides, decisions (ADRs), research; history in `wiki/history/`.
+- **Tickets** (`tickets/`): all open work and findings (`RV-*`). Release notes: `CHANGELOG.md`. If wiki and code disagree, the code wins and the wiki gets corrected.
 
-- **Wiki** (`wiki/_master-index.md`): current state of code, architecture and biology model, results of closed tickets, known limitations (with `RV-*` IDs), decisions (ADRs) and research.
-- **Tickets** (`tickets/`): all open work and findings with code locations, research, decisions and acceptance criteria. Roadmap: epic TCK-169. Current focus: epic TCK-196 (plugin architecture rebuild, phases R0–R6); the training track TCK-171 is closed.
+## Skills Index
 
-Skills hold agent rules and link to the wiki. Release notes: `CHANGELOG.md`. Verify against the code before changing it; if wiki and code disagree, the code wins and the wiki gets corrected.
-
-## 📂 Modular AI Skills Index
-
-- **`project-baseline`**: Universal baseline tech stack, run scripts, configuration files, and core mandates. See `.agents/skills/project-baseline/SKILL.md`.
-- **`biology-dna`**: Deep biological schemas, CTRNN brain topology, phenotypic de-compilation, DNA parsing and reproduction heuristics. See `.agents/skills/biology-dna/SKILL.md`.
-- **`server-simulation`**: Rules for the Rust simulation engine thread, physics, Tauri IPC (commands and the `simulation-state` event) and SQLite persistence. See `.agents/skills/server-simulation/SKILL.md`.
-- **`client-rendering`**: Canvas rendering engine, camera systems, Preact signals HUD architecture, and browser automation details. See `.agents/skills/client-rendering/SKILL.md`.
-- **`workspace-workflows`**: Tooling scripts and workflows for `/init` and `/dump` context maintenance. See `.agents/skills/workspace-workflows/SKILL.md`.
-- **`simulation-analytics`**: Analysis tools for evolutionary telemetry, population genetics, and eco-system balancing. See `.agents/skills/simulation-analytics/SKILL.md`.
-- **`testing-strategies`**: Unit testing paradigms, behavioral mocking for biological engines, and mathematical validation pipelines. See `.agents/skills/testing-strategies/SKILL.md`.
+- **`plugin-authoring`**: entry point for any feature at an extension point; maps each point to its guide and contract. `.agents/skills/plugin-authoring/SKILL.md`
+- **`project-baseline`**: commands, versioning, ticket close checklist, where to look. `.agents/skills/project-baseline/SKILL.md`
+- **`biology-dna`**: pointers for the creature model (genome, organs, brain, sensing, metabolism). `.agents/skills/biology-dna/SKILL.md`
+- **`server-simulation`**: pointers for engine, creature systems, Ocean, trainer, IPC and persistence. `.agents/skills/server-simulation/SKILL.md`
+- **`client-rendering`**: pointers for views, router, renderers and HUD. `.agents/skills/client-rendering/SKILL.md`
+- **`simulation-analytics`**: measuring and balancing with the headless runner. `.agents/skills/simulation-analytics/SKILL.md`
+- **`testing-strategies`**: reproduction-first tests, fixtures, golden master handling. `.agents/skills/testing-strategies/SKILL.md`
+- **`workspace-workflows`**: `/init` and `/dump` context maintenance, wiki upkeep. `.agents/skills/workspace-workflows/SKILL.md`

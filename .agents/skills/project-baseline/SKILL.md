@@ -1,28 +1,34 @@
 ---
 name: project-baseline
-description: Baseline rules for working in the Pixel DNA Life repository (Tauri v2 + Rust + SQLite + Preact Signals). Read this before running builds, scripts, or managing dependencies.
+description: Baseline for working in the BroodBattle repository (Tauri v2 + Rust + SQLite + Preact Signals) - commands, versioning, ticket close checklist and where to look. Read this before running builds or scripts, bumping versions or closing a ticket.
 ---
-# project-baseline: Core Directives & Knowledge Pointers
+# project-baseline: Commands, Versioning, Close Checklist
 
-## I. Universal Directives
-- **Agent rules** live in `.agents/skills/` and supersede tool-specific configs (e.g. `.cursorrules`).
-- **Project knowledge** lives in the wiki: `wiki/_master-index.md`. Read the relevant article before changing a subsystem; do not duplicate wiki content into skills.
-- **Work plan:** epic `tickets/ongoing/TCK-169-roadmap-epic.md`. Open findings (`RV-*`) live in their tickets (`revisit:` frontmatter + `## Findings`). Tickets: `tickets/{open,ongoing,closed}/` (no leading dot, so Obsidian shows them).
-- **Wiki vs. tickets:** the wiki documents the current state and the results of closed tickets only; open work never goes into the wiki. When closing a ticket, update the affected wiki articles to the new state (result-oriented, cite the ticket) in the same commit. `CHANGELOG.md` is the list of finished work.
+## I. Where to Look
+- Feature at an extension point: `.agents/skills/plugin-authoring/SKILL.md` (guide + contract + invariants only).
+- Rules that must not regress: `wiki/architecture/invariants.md` (the one copy; refer to rules by number).
+- Code layout and registered plugins: `wiki/architecture/module-map.md`; runtime: `wiki/architecture/system-overview.md`.
+- Everything else: `wiki/_master-index.md`. Work plan: `tickets/ongoing/TCK-169-roadmap-epic.md`; open findings
+  (`RV-*`) live in their tickets (`revisit:` frontmatter + `## Findings`), tickets in `tickets/{open,ongoing,closed}/`.
+- The wiki holds the current state and results of closed tickets only; open work never goes into the wiki.
 
-## II. Where to Look
-| Need | Wiki article |
+## II. Commands (repo root)
+| Command | Purpose |
 | :--- | :--- |
-| Code layout | `wiki/project-map/repository-map.md` |
-| Runtime structure | `wiki/architecture/system-overview.md` |
-| Commands, toolchain, CI, versioning | `wiki/quality/ci-and-tooling.md` |
-| Invariants that must not regress | `wiki/architecture/invariants.md` |
+| `npm run tauri:dev` | desktop app in dev (own `.dev` identifier and data folder) |
+| `cargo test` | Rust tests incl. golden master; regenerates `bindings/` |
+| `npm test` / `npm run lint` / `npm run build` | Vitest, ESLint (zero warnings), tsc + Vite |
+| `cargo fmt --check` / `cargo clippy --all-targets --features runner -- -D warnings` | Rust format / lints (CI gates) |
+| `cargo run --release --features runner --bin trainer_runner -- run\|probe\|ocean ...` | headless measurements (skill `simulation-analytics`) |
+| `node scripts/check-links.mjs` | doc link check (CI step) |
+Toolchain, CI and releases: `wiki/quality/ci-and-tooling.md`. Long outputs go to `.agents/artifacts/`.
 
-## III. Mandates
-- **config.json is SSOT:** do not hardcode new tunables in Rust; add them to the owning section of `config.json` and its section struct, and pass the config explicitly (no `AppConfig::global()` below `main.rs` / the runner). Guide: `wiki/guides/add-config-key.md`; keys: `wiki/architecture/configuration.md`.
-- **No DB work in the hot loop:** keep SQLite out of the per-step physics path; batch writes on timers or events.
-- **Bindings:** after changing a `#[derive(TS)]` struct run `cargo test` and commit the regenerated `bindings/`.
-- **Versioning:** one patch bump per closed ticket in `package.json`, `package-lock.json`, `tauri.conf.json`, `Cargo.toml`/`Cargo.lock`, plus a `CHANGELOG.md` entry referencing the ticket.
-- **Trainer measurements:** use the headless runner `src/bin/trainer_runner.rs` (`npm run sim:balance`); the outdated `cli_trainer` was removed (RV-S11).
-- **Keep the wiki current:** when a change invalidates a wiki statement, update the article in the same commit. Wikilinks are vault-root relative (`[[wiki/topic/article]]`; vault = repo root).
-- **Close checklist:** closing a ticket (move to `tickets/closed/`) updates in the same commit: the affected wiki articles and contracts, skill links that point to the ticket's old path, the parent epic's status/phase table, the `CHANGELOG.md` entry and the version bump. Then run `node scripts/check-links.mjs` (also a CI step): it fails on wikilinks, `sources:` entries and wiki/skill doc paths that no longer resolve.
+## III. Versioning and Close Checklist
+- **Versioning:** one patch bump per closed ticket in `package.json`, `package-lock.json`, `tauri.conf.json`,
+  `Cargo.toml`/`Cargo.lock`, plus a `CHANGELOG.md` entry referencing the ticket.
+- **Close checklist:** closing a ticket (move to `tickets/closed/`) updates in the same commit: the affected wiki
+  articles and contracts (result-oriented, cite the ticket; measurements and replaced models go to `wiki/history/`),
+  skill links that point to the ticket's old path, the parent epic's status/phase table, the `CHANGELOG.md` entry and
+  the version bump. Then run `node scripts/check-links.mjs`; it fails on wikilinks, `sources:` entries and wiki/skill
+  doc paths that no longer resolve.
+- Wikilinks are vault-root relative (`[[wiki/topic/article]]`; vault = repo root).

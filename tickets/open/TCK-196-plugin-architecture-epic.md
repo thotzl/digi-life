@@ -54,6 +54,16 @@ Main findings:
 | R6 Docs and agent setup | TCK-203 | contracts + guides, architecture/module map, history split, skills by extension point, AGENTS.md/README | partly from R1 on |
 | R7 Proof | TCK-204 | a fresh agent adds a small plugin using only guide + contract; measure context and files touched | — |
 
+## Progress (2026-11-03)
+- [x] R0: TCK-197 (v1.12.29), TCK-189 (v1.12.28)
+- [x] R1: TCK-198 (v1.12.30), TCK-159 (v1.12.31), TCK-157 (v1.12.34)
+- [x] R2: TCK-199 (v1.12.32, absorbs TCK-155)
+- [x] R3: TCK-200 (v1.12.33), TCK-201 (v1.12.36), TCK-156 (v1.12.37), TCK-158 (v1.12.38)
+- [x] R4: TCK-160 (v1.12.35), TCK-161 (v1.12.39; follow-up fix v1.12.40)
+- [ ] R5: TCK-202 done (v1.12.41, absorbs TCK-146/147); TCK-143 in progress
+- [ ] R6: TCK-203 in progress (contracts and guides for all ten extension points, module map, history split, skill `plugin-authoring`)
+- [ ] R7: TCK-204 open
+
 ## Dependencies
 R0 → R1 (TCK-198 first, then TCK-159 ∥ TCK-157) → R2 (TCK-199) ∥ R4 part 1 (TCK-160) → R3 (TCK-200 → TCK-156 ∥ TCK-201 → TCK-158) → R4 part 2 (TCK-161) → R5 (TCK-202 ∥ TCK-143) → R6 final (TCK-203) → R7 (TCK-204). TCK-203 writes the doc skeleton in R1 and each sub-ticket fills its contract.
 

@@ -11,14 +11,13 @@ the frontend IPC client `frontend/core/ipc.ts`, the only module that calls Tauri
 ## Frontend → backend: actions
 
 - `send(action)` → command `handle_client_action(action)` (the action object itself, no JSON string) →
-  `ClientAction::from_value` → mpsc channel `Sender<ClientAction>` → the engine thread drains it at the start of every
-  frame and matches the variant.
+  `ClientAction::from_value` → `EngineInput::Action` on the mpsc channel `Sender<EngineInput>` → the engine thread
+  drains it at the start of every frame and matches the variant.
 - `ClientAction` (`src/server/ipc.rs`, untagged) = `EngineAction` | `OceanAction` | `TrainerAction`; each group is
   tagged by `type` (SCREAMING_SNAKE_CASE), the type names are disjoint.
 - Rejected with a logged `IpcError` (`invalidAction`) and a toast, never forwarded: an unknown type ("unknown client
   action type 'X'"), a known type with missing or mistyped fields ("malformed client action 'X': ..."), and `SET_MODE`
-  (only via the `set_mode` command). Before TCK-157 an unknown type was only logged by the engine and missing fields
-  were ignored silently (RV-A02).
+  (only via the `set_mode` command).
 
 | Group | Action | Fields | Effect |
 | :--- | :--- | :--- | :--- |
@@ -75,7 +74,7 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
 ## Backend → frontend: events
 
 - One Tauri event `simulation-state` (`UI_EVENT_NAME`), payload `UiEvent` (untagged) = `EngineEvent` |
-  `OceanUiEvent` | `TrainerUiEvent`, each tagged by `type`. The engine buffers typed events (`emit_state`) and emits
+  `OceanUiEvent` | `TrainerUiEvent`, each tagged by `type`. The engine buffers typed events in its `EventSink` and emits
   them in order once per frame; repeated `DATABASE_CHANGED` within a frame are coalesced.
 - The frontend has one listener (`onUiEvent` in `frontend/core/ipc.ts`); the router hands every event to each
   view's `onEvent`, which switches on `type` ([[wiki/contracts/frontend-view]], TCK-160).
@@ -94,9 +93,8 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
 | Trainer | `TRAINER_GENERATION_COMPLETED` | `TrainerGenerationCompleted`: `generation`, `bestFitness`, `avgFitness`, `bestGenome`, `mutationOpsMax`, `trainingMode`, `nextLevel`, `stats` (`TrainerGenerationStats`, built `From<&GenerationStats>`, one source for UI and headless report; `layoutId` as a decimal string) |
 | Trainer | `TRAINER_STATE_CHANGED` / `TRAINER_RESET_COMPLETED` | `TrainerState`: `isRunning`, `population`, `N`, `warpSpeed`, `eliteRatio`, `mutationRate`, `mutationOpsMin`, `mutationOpsLimit`, `inflowRate`, `hofRate`, `multiTrial`, `isHeadless`, `runId`, `lamarckian`, `trainingMode`, `level`, `levelAuto`, `pendingMode`, `generation`; sent after every state-changing trainer action and after every completed generation |
 
-- Number spelling: events are serialized from the typed values, so f32 fields keep their shortest f32 spelling
-  (before TCK-157 the `json!` payloads widened them to f64, e.g. 0.9 → 0.8999999761581421); the parsed f32 values on
-  the way back are identical.
+- Number spelling: events are serialized from the typed values, so f32 fields keep their shortest f32 spelling; the parsed f32 values on the way
+  back are identical.
 - Tests: `test_engine_events_and_errors_keep_their_wire_names`, `ocean_ipc::tests::test_ocean_events_keep_type_tag_and_ui_field_names`, `trainer_ipc::tests::test_trainer_events_keep_type_tag_and_ui_field_names`.
 
 ## Frontend IPC client (`frontend/core/ipc.ts`)
@@ -107,11 +105,11 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
 - `send(action)` — `Action` = `ClientAction` without `SET_MODE`; resolves `true` / `false` (accepted / rejected), never
   rejects.
 - `setMode(mode)` — the `set_mode` command; called by `navigateTo` and by the trainer's unload reset to Ocean only
-  ([[wiki/architecture/invariants]] 1). `navigateTo` awaits `TOGGLE_SIMULATION false` → `PAUSE_TRAINING` →
-  `set_mode` in this order.
+  ([[wiki/architecture/invariants]] 1). `navigateTo` awaits `suspend` of every other view (Ocean
+  `TOGGLE_SIMULATION false` if running, trainer `PAUSE_TRAINING`) → `set_mode` → `resume` of the target
+  ([[wiki/contracts/frontend-view]]).
 - `onUiEvent(handler)` — the one `simulation-state` listener; `onIpcError(handler)` replaces the default error hook,
-  a toast (`frontend/core/toast.ts`, text only). Replaces `safeInvoke` (`frontend/api.ts`), which returned `null` on
-  errors (RV-F04); the phenotype cache moved to `frontend/core/phenotypes.ts`.
+  a toast (`frontend/core/toast.ts`, text only). The phenotype cache is `frontend/core/phenotypes.ts`.
 
 ## Types (ts-rs)
 

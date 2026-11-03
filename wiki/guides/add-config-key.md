@@ -14,8 +14,7 @@ Read first: [[wiki/contracts/config-section]] and [[wiki/architecture/invariants
    ticket. snake_case in Rust; the JSON key is its camelCase form.
 3. Add the key with its value to the same section of `config.json`. No default in Rust.
 4. Read it where it is used through the config passed in (`config.<section>.<field>` or the section parameter). If
-   the function has no config yet, add a parameter; never call `AppConfig::global()` outside `main.rs` and
-   `src/bin/trainer_runner.rs`.
+   the function has no config yet, add a parameter (invariant 11).
 5. Tests that need the value use `crate::config::test_config()`.
 6. List the key in its section in `wiki/architecture/configuration.md` in the same commit.
 

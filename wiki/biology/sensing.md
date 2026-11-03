@@ -41,25 +41,15 @@ Six inputs after all organ slots (`SystemicInput`, `SYSTEMIC_BASE_INPUTS_COUNT`)
 
 - 0° = straight ahead; left hemisphere `0..−180°`, right `0..+180°`; organs are placed in `[-170°, 170°]`. Shared by Rust, bindings and renderers.
 
-## Measured equipment (TCK-172 equipment probe)
+## Equipment
 
-1,000 genomes per set; structured = `generate_structured_genome` (trainer generation 1 and immigrants since TCK-184), letter soup = the former random 256-base genomes.
-
-| Property | Letter soup | Structured |
-| :--- | :--- | :--- |
-| No organ | 21 % | 0 % |
-| ≥ 1 food-sensing organ (distance sense) | 67 % | 99 % |
-| `HOX` organ pair | 21 % | 31 % |
-| Food in sensor range at spawn: small / large room | 57 % / 14 % | 86 % / 24 % |
-| Non-zero food stimulus at spawn: small / large room | 31 % / 4.8 % | 46 % / 7.5 % |
-
-- The large-room rows were measured at the pre-P7 spawn distance of 650 px. With 500 px since P7 (TCK-154 sweep, 2000 structured genomes) food is in sensor range at spawn for 35 % (13 % also in the view cone); small room 200 px: 89 % ([[wiki/simulation/trainer]]).
-- In the large room most genomes still receive no food signal at the start of a trial.
+Measured equipment of generation-1 genomes and food signals at spawn (TCK-172 probe, P7 sweep):
+[[wiki/history/probe-measurements]].
 
 ## Key Takeaways
 
 - 5 spectral channels plus a signed ΔI slot per organ; organ type is an enum; 6 systemic inputs.
 - Only channels an organ can sense are wired.
-- Structured generation-1 genomes all have an organ and 99 % a food sensor; the large room still gives few spawn-time food signals.
+- Structured generation-1 genomes all have an organ and 99 % a food sensor (measured, P3); the large room gives few spawn-time food signals.
 
 Sources: TCK-122, TCK-129, TCK-133, TCK-144, TCK-149, TCK-172, TCK-173, TCK-154, TCK-182, TCK-184, FIX-131.

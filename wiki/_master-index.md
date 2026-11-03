@@ -1,17 +1,36 @@
-# Pixel DNA Life Wiki
+# BroodBattle Wiki
 
-Project knowledge for Pixel DNA Life (Tauri v2 + Rust + SQLite + Preact Signals). Obsidian vault = repo root. Tickets: `tickets/`; release notes: `CHANGELOG.md`; agent rules: `.agents/skills/`.
+Project knowledge for BroodBattle (repository `digi-life`; Tauri v2 + Rust + SQLite + Preact Signals). Obsidian vault =
+repo root. The wiki documents the current state and the results of closed tickets; open work and the current focus
+live only in `tickets/` (roadmap TCK-169); finished work is listed in `CHANGELOG.md`; agent rules in `.agents/skills/`.
+
+## Add a feature
+
+Read the guide, its contract and [[wiki/architecture/invariants]] — nothing else.
+
+| Extension point | Guide | Contract |
+| :--- | :--- | :--- |
+| Organ kind | [[wiki/guides/add-organ-kind]] | [[wiki/contracts/organ-kind]] |
+| Creature system (dynamic) | [[wiki/guides/add-dynamic]] | [[wiki/contracts/creature-system]] |
+| Room | [[wiki/guides/add-room-or-mode]] | [[wiki/contracts/room]] |
+| Evaluator | [[wiki/guides/add-evaluator]] | [[wiki/contracts/evaluator]] |
+| Engine mode | [[wiki/guides/add-room-or-mode]] | [[wiki/contracts/mode]] |
+| Event sink | [[wiki/guides/add-event-sink]] | [[wiki/contracts/event-sink]] |
+| IPC message | [[wiki/guides/add-ipc-message]] | [[wiki/contracts/ipc-message]] |
+| Config key / section | [[wiki/guides/add-config-key]] | [[wiki/contracts/config-section]] |
+| Persistence table / repository | [[wiki/guides/add-table]] | [[wiki/contracts/persistence-repo]] |
+| Frontend view | [[wiki/guides/add-view]] | [[wiki/contracts/frontend-view]] |
+
+Templates: [[wiki/contracts/_template]], [[wiki/guides/_template]].
+
+## Topics
 
 - [[wiki/overview/_index|Overview]] — vision (whitepaper) and glossary
-- [[wiki/architecture/_index|Architecture]] — runtime structure, engine, IPC, persistence, config, invariants, performance
+- [[wiki/architecture/_index|Architecture]] — runtime and plugin host, module map, engine, IPC, persistence, config, invariants, performance
 - [[wiki/biology/_index|Biology]] — genome compiler, CTRNN brain, sensing, metabolism and species
-- [[wiki/simulation/_index|Simulation]] — Ocean, Trainer, physics, analytics and balancing
+- [[wiki/simulation/_index|Simulation]] — Ocean, trainer, physics, analytics and balancing
 - [[wiki/frontend/_index|Frontend]] — webview structure and rendering
 - [[wiki/quality/_index|Quality]] — testing, CI and tooling, runtime verification
-- [[wiki/project-map/_index|Project Map]] — module-level code map
-- Contracts and guides (TCK-203, filled per extension point): [[wiki/contracts/config-section|config section]] / [[wiki/guides/add-config-key|add a config key]], [[wiki/contracts/persistence-repo|persistence repository]] / [[wiki/guides/add-table|add a table]]; [[wiki/contracts/organ-kind|organ kind]] / [[wiki/guides/add-organ-kind|add an organ kind]]; [[wiki/contracts/creature-system|creature system]] / [[wiki/guides/add-dynamic|add a dynamic]]; [[wiki/contracts/ipc-message|IPC message]] / [[wiki/guides/add-ipc-message|add an IPC message]]; [[wiki/contracts/frontend-view|frontend view]] / [[wiki/guides/add-view|add a view]]; [[wiki/contracts/room|room]] and [[wiki/contracts/evaluator|evaluator]] / [[wiki/guides/add-room-or-mode|add a room or mode]]; [[wiki/contracts/mode|engine mode]], [[wiki/contracts/event-sink|event sink]]; templates [[wiki/contracts/_template]], [[wiki/guides/_template]]
-- [[wiki/research/_index|Research]] — Alife references and porting ideas (from `ideas.md`), neuroevolution and training literature
-- History: [[wiki/history/trainer-measurements-p2-p8|trainer measurements P2–P8]] (measurement logs moved out of the current-state articles); [[wiki/history/model-corrections-r5|model corrections R5]] (TCK-202 before/after)
-- [[wiki/decisions/_index|Decisions]] — ADRs (taken decisions) and template; latest: [[wiki/decisions/adr-002-brain-v2|ADR-002 Brain v2]]
-
-The wiki documents the current state and the results of closed tickets. Open work lives only in `tickets/`; finished work is listed in `CHANGELOG.md`.
+- [[wiki/research/_index|Research]] — Alife references, porting ideas, neuroevolution literature
+- [[wiki/decisions/_index|Decisions]] — ADRs
+- [[wiki/history/_index|History]] — measurement logs and replaced models

@@ -4,7 +4,7 @@ sources: [README.md, .agents/skills/project-baseline/SKILL.md, .agents/skills/se
 
 # System Overview
 
-Pixel DNA Life is a single-user desktop app: **Tauri v2** shell, **Rust 2024** simulation core, **SQLite** persistence, **Vite + TypeScript + Preact Signals** webview UI. There is no network server, no WebSocket and no port.
+BroodBattle (repository `digi-life`, formerly Pixel DNA Life) is a single-user desktop app: **Tauri v2** shell, **Rust 2024** simulation core, **SQLite** persistence, **Vite + TypeScript + Preact Signals** webview UI. There is no network server, no WebSocket and no port.
 
 ## Runtime structure
 
@@ -23,29 +23,47 @@ Webview (frontend/)
  └─ core/ipc.ts onUiEvent("simulation-state") -> render loops (Canvas 2D) + signals HUD
 ```
 
+## Plugin host and registries
+
+The engine is the plugin host; every extension point is a registry or an enum with one registration point
+(TCK-196). Contracts: one per seam; registered plugins: [[wiki/architecture/module-map]].
+
+```
+Engine (src/server/engine/)  -- host: inputs -> active Mode -> EventSink, once per frame
+ ├─ Mode registry: SimMode + Engine arms ............ OceanMode | TrainerMode          contract mode
+ ├─ EventSink ....................................... TauriSink | VecSink             contract event-sink
+ ├─ EngineStore = repository traits (persistence/) .. Db (SQLite) | MemoryDb           contract persistence-repo
+ └─ IPC groups: ClientAction / UiEvent per mode, commands in api/ ...                  contract ipc-message
+OceanSim (sim/ocean/)            TrainerSim (trainer/)
+ └─ World + WorldSettings         ├─ Room registry ROOMS ............ LevelRoom (standard, exploration)   contract room
+     └─ System list (sim/systems/) ├─ Evaluator ...................... SoloTrials                          contract evaluator
+         Sense Think Metabolize    └─ Chamber -> same World + System list
+         Death Move Eat  .........................................................     contract creature-system
+Creature model (biology/): parse_genome -> organs via OrganKind::spec registry ....... contract organ-kind
+Config: config.json -> AppConfig sections, passed down from the entry points ......... contract config-section
+Webview: router + VIEWS registry (ViewModule) -> core/ipc.ts ......................... contract frontend-view
+```
+
 ## Layers
 
 - **Shell** — `src/main.rs`: Tauri builder, command registration, DB setup, starts the simulation thread.
 - **Engine** — `src/server/engine/`: `Engine` + `Mode` (`OceanMode`, `TrainerMode`) + `EventSink` + store ports, ~60 Hz loop; runs headless in tests (TCK-156), see [[wiki/architecture/simulation-engine]], [[wiki/contracts/mode]], [[wiki/contracts/event-sink]].
-- **Headless runner** — `src/bin/trainer_runner.rs`: trainer runs and mechanics probes without UI, see [[wiki/simulation/analytics-and-balancing]].
 - **API** — `src/server/api/`: Tauri commands; protocol types in `src/server/ipc.rs`, `ocean_ipc.rs`, `trainer_ipc.rs`; see [[wiki/architecture/ipc-protocol]] and [[wiki/contracts/ipc-message]].
 - **Simulation kernel** — `src/sim/`: shared creature systems (TCK-200) and the IO-free, seeded Ocean `OceanSim` (`src/sim/ocean/`, TCK-156), see [[wiki/contracts/creature-system]], [[wiki/simulation/ocean]].
-- **Domain** — `src/biology/` (genome compiler, creature factory, IO-free trainer `TrainerSim`, sandboxes, scenarios, runner report, probes) and `src/shared/` (brain, physics, spatial grid, world generation, IPC structs `dto`, geometry/time/JSON-column helpers, seeded RNG, deterministic math). See [[wiki/biology/genome-compiler]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
+- **Trainer** — `src/trainer/`: IO-free `TrainerSim`, rooms, chambers, evaluator, breeder, curriculum (TCK-201), see [[wiki/simulation/trainer]], [[wiki/contracts/room]], [[wiki/contracts/evaluator]].
+- **Creature model** — `src/biology/` (genome, phenotype, organs, brain compiler, creature factory, metabolism, diet, trainer config and store adapter) and `src/shared/` (brain execution, physics, spatial grid, world generation, simulation structs `dto`, RNG, deterministic math, helpers). See [[wiki/biology/genome-compiler]], [[wiki/contracts/organ-kind]], [[wiki/biology/ctrnn-brain]], [[wiki/simulation/physics]].
+- **Headless runner** — `src/bin/trainer_runner.rs` + `src/diagnostics/` (feature `runner`): trainer runs, Ocean runs and mechanics probes without UI, see `wiki/simulation/analytics-and-balancing.md`.
 - **Persistence** — `src/persistence/` (repository traits, the only module with SQL), see [[wiki/architecture/persistence]] and [[wiki/contracts/persistence-repo]].
-- **Frontend** — `frontend/`, see [[wiki/frontend/structure]].
-- **Config** — root `config.json`, one section per subsystem, compiled into the binary, loaded only by the entry points (`main.rs`, `trainer_runner.rs`) and passed explicitly; see [[wiki/architecture/configuration]] and [[wiki/contracts/config-section]].
+- **Frontend** — `frontend/`, see [[wiki/frontend/structure]] and [[wiki/contracts/frontend-view]].
+- **Config** — root `config.json`, one section per subsystem, compiled into the binary, loaded only by the entry points and passed explicitly; see [[wiki/architecture/configuration]] and [[wiki/contracts/config-section]].
 - **Logging** — `log` facade, backend `src/logging.rs` (TCK-198): dev builds and the runner log to stderr; the release app (no console, `windows_subsystem = "windows"`) writes `<app data dir>/logs/broodbattle.log`, rotated at 1 MiB into `broodbattle.log.1`.
 
 ## Design principles
 
-- **Rust is the single source of truth** for simulation, world generation and biology; the client only renders and sends actions, it never mutates authoritative positions (FIX-127, TCK-115).
-- **`config.json` is the single source of truth** for tunables (TCK-138).
-- **No DB work in the hot loop** (RV-P01, TCK-139).
+- Rust owns the simulation, the client renders ([[wiki/architecture/invariants]] 14); `config.json` holds every
+  tunable (11); no DB work in the hot loop (6); simulations are IO-free and seeded (16).
 - Structural changes are targeted, without framework switches ([[wiki/decisions/adr-001-non-goals]]).
-
-## Origin
-
-- The project started as a browser/Node.js prototype with WebSocket replication and isomorphic TS modules (TCK-107, TCK-108). The Rust core (TCK-110) and Tauri shell (TCK-109) replaced it; TCK-115 removed the Express server and duplicate TS parsers. Anything mentioning WebSocket, `src-tauri/` or JSON database files describes the retired design.
+- The retired browser/Node.js design (WebSocket, `src-tauri/`, JSON database files): [[wiki/history/replaced-models]].
 
 ## Known limitations
 
@@ -55,6 +73,7 @@ Webview (frontend/)
 
 - One process: Tauri shell + one simulation thread + webview; IPC via Tauri commands and one event.
 - Rust owns all simulation state; the frontend is a renderer.
-- The engine is decomposed into modes over IO-free simulations and is tested headless (TCK-156).
+- The engine is the plugin host: modes, sinks and stores; simulations take rooms, evaluators, systems and organ kinds
+  from registries, each with a contract (TCK-196).
 
 Sources: `README.md`, `.agents/skills/project-baseline/SKILL.md`, `src/main.rs`, TCK-107..110, TCK-115, TCK-156, TCK-173.

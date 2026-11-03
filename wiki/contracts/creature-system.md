@@ -62,7 +62,7 @@ reproduce::{ready, split, child}(.., &MitosisRule, ..)
 1. Per tick the owner builds a `World` over its storage (cheap: borrows only; the trainer builds its
    `WorldSettings` from the room each tick without allocation).
 2. Every world: `food_drift::drift_before_creatures` once before the creature loop (spores pushed by the creatures at
-   their tick-start positions; TCK-202: the trainer formerly drifted after each creature's move).
+   their tick-start positions).
 3. Per creature: `step_creature` runs `settings.systems` in order and stops after a system sets `step.died`.
    `CREATURE_SYSTEMS` (trainer rooms and Ocean): Sense → Think → Metabolize → Death → Move → Eat.
 4. After the step the owner reads `step` (motors, inputs, `hit_wall`, `old_heading`, `died`) and applies

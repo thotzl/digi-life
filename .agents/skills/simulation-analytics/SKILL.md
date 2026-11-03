@@ -1,6 +1,6 @@
 ---
 name: simulation-analytics
-description: Rules and procedure for measuring, tuning and balancing the trainer, the Ocean and creature mechanics in Pixel DNA Life with the headless runner (trainer_runner run/probe/ocean), plus read-only DB analysis of the Ocean.
+description: Rules and procedure for measuring, tuning and balancing the trainer, the Ocean and creature mechanics in BroodBattle with the headless runner (trainer_runner run/probe/ocean), plus read-only DB analysis of the Ocean.
 ---
 # simulation-analytics: Measurement & Balancing Procedure
 

@@ -1,5 +1,5 @@
 # Frontend
 
-- [[wiki/frontend/structure]] — boot, router, loop modules, views, renderers, signals, open findings
+- [[wiki/frontend/structure]] — boot, router and view registry, lifecycle, selection, renderers, security
 
 Finished work is listed in `CHANGELOG.md`; articles cite the ticket that produced a result.

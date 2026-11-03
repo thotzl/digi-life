@@ -54,9 +54,8 @@ Code receives configuration as a parameter, never from a global:
 
 ## Invariants
 
-- No `AppConfig::global()` below the entry points (`main.rs`, `trainer_runner.rs`); everything else gets the config
-  passed in. Unit tests use `crate::config::test_config()`.
-- No tunable is hardcoded in Rust; a section has no `Default` impl with values (a second source of values was RV-B04).
+- Config is passed in, never read from a global below the entry points; no hardcoded tunables, no `Default` with
+  values ([[wiki/architecture/invariants]] 11; a second source of values was RV-B04).
 - Every key is read by production code and every key of `config.json` maps onto a field (tests below).
 - A key changes its value only with an intended model change: values feed the golden master (`parse_genome` reads
   `brain`) and the trainer references (invariant 8 in [[wiki/architecture/invariants]]).

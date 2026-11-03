@@ -11,7 +11,7 @@ created_at: 2026-10-21
 
 Phased plan from the review of 2026-10-19 (base commit `998244e`, v1.12.2). Each phase ends with a hard stop and explicit user approval (`GO PHASE 1`, `GO PHASE 2`). No feature ticket (TCK-111, TCK-113, TCK-118, TCK-123) starts before Phase 0 is complete. Non-goals: `wiki/decisions/adr-001-non-goals.md`.
 
-## Current state (2026-11-02)
+## Current state (2026-11-03)
 - Phase 0 implemented (TCK-134..142, TCK-162; v1.12.3–v1.12.12).
 - Open from Phase 0: TCK-164 (manual UI flow check); TCK-143 (offspring) deliberately deferred.
 - Next: user decisions on pool tickets TCK-143..161 and TCK-165..168, then `GO PHASE 1`.
@@ -19,6 +19,20 @@ Phased plan from the review of 2026-10-19 (base commit `998244e`, v1.12.2). Each
 - 2026-10-26: Phase 1a done (epic TCK-171 closed, v1.12.15–v1.12.22; results and open gap in TCK-171 `## Result`). Next: plan the after-epic goal (arenas, active traits, dynamics/rooms/modes as plugins, code pass; `.agents/state/next-tasks.md`) together with the rest of Phase 1/2 — needs user decision before ticketing.
 - 2026-10-26 – 2026-11-02: wrap-up of TCK-171 (TCK-190, TCK-191, TCK-192), trainer display/reset fix (TCK-194, v1.12.26), first Windows release build of the BroodBattle alpha (TCK-195, v1.12.27).
 - 2026-11-02: user decision: the rest of Phase 1 runs as **epic TCK-196 (plugin architecture rebuild)** over the whole codebase incl. docs and agent setup; it supersedes the table below (pool tickets TCK-155..161 re-scoped as its sub-tickets or absorbed). Phase 2 features follow on its seams.
+
+## Phase 1 = epic TCK-196 (status 2026-11-03)
+| Phase | Tickets | Status |
+| :--- | :--- | :--- |
+| R0 safety net | TCK-197, TCK-189 | done (v1.12.29, v1.12.28) |
+| R1 foundations | TCK-198, TCK-159, TCK-157 | done (v1.12.30, v1.12.31, v1.12.34) |
+| R2 creature model | TCK-199 (absorbs TCK-155) | done (v1.12.32) |
+| R3 simulation kernel | TCK-200, TCK-201, TCK-156, TCK-158 | done (v1.12.33, v1.12.36, v1.12.37, v1.12.38) |
+| R4 frontend | TCK-160, TCK-161 | done (v1.12.35, v1.12.39; follow-up fix v1.12.40) |
+| R5 model corrections | TCK-202 (absorbs TCK-146, TCK-147); TCK-143 | TCK-202 done (v1.12.41); TCK-143 in progress |
+| R6 docs and agent setup | TCK-203 | in progress |
+| R7 proof | TCK-204 | open |
+
+Pool tickets of the 2026-10-19 review: TCK-144..147 and TCK-149..163 are closed (decided in Phase 1a or absorbed by TCK-196). Still open: TCK-143 (R5), TCK-148 (species model, awaits a user decision), TCK-164 (manual UI flow check), TCK-165..168 (research, Phase 2), TCK-193 (remaining naming).
 
 ## Phase 1a — Training track (epic TCK-171)
 Training produced results only in the small chamber. Analysis points to core mechanics (heredity, speed, steering, walls) before trainer scoring. Phases (details in TCK-171): P1 config (TCK-149) → P2 sim lab (TCK-173, 172, 185, 183, 186, 188; trainer-only slice of TCK-156/TCK-158) → P3 brain v2 (TCK-179, 182, 144, 153, 184, 187) → P4 learning (TCK-152) → P5 locomotion v2 (TCK-150, 180) → P6 energy v2 (TCK-151, 178, 145) → P7 evaluation and fitness (TCK-174, 175, 154) → P8 curriculum and UI (TCK-176 — core of TCK-123 —, 177); TCK-181 conditional. These pool tickets are thereby decided (defaults recorded in each ticket). Each ticket is accepted by a before/after headless measurement. New rooms beyond small/large are decided later.

@@ -34,7 +34,7 @@ pub const UI_EVENT_NAME: &str = "simulation-state";
 pub type CommandResult<T> = Result<T, IpcError>;
 fn with_store<T>(db: &DbState, command: &str, query: impl FnOnce(&Db) -> RepoResult<T>) -> CommandResult<T>;
 fn collect_rows<R, T>(db: &DbState, command: &str, query: impl FnOnce(&Db) -> RepoResult<Vec<R>>, map: impl FnMut(R) -> T) -> CommandResult<Vec<T>>;
-fn send_to_engine(tx: &Sender<ClientAction>, action: ClientAction) -> CommandResult<()>;
+fn send_to_engine(tx: &Sender<EngineInput>, action: ClientAction) -> CommandResult<()>;
 ```
 
 ```ts
@@ -51,25 +51,25 @@ export function onIpcError(handler: (command: Command, error: CallError) => void
 ## Lifecycle / call order
 
 1. UI → `send(action)` → command `handle_client_action(action: Value)` → `ClientAction::from_value` (one typed parse)
-   → `Sender<ClientAction>` → the engine thread drains the channel at the start of every frame (~60 Hz) and matches
+   → `EngineInput::Action` on the `Sender<EngineInput>` → the engine thread drains the channel at the start of every frame (~60 Hz) and matches
    the variant. A rejected action never reaches the engine.
 2. UI → `call(command, args)` → the command runs on the Tauri thread (async commands on the runtime), locks
    `DbState` through `with_store` / `collect_rows`, returns its DTO or `IpcError`.
-3. Engine → `emit_state(event.into())` anywhere in the frame → buffered → `flush_events` emits all events in order at
-   the end of the frame on `simulation-state` (`DATABASE_CHANGED` coalesced to one per frame).
+3. Engine → `ctx.emit(event)` (modes, [[wiki/contracts/mode]]) or `sink.emit(event.into())` (`Engine::handle`) anywhere
+   in the frame → buffered in the `EventSink` → `sink.flush()` sends all events in order at the end of the frame on
+   `simulation-state` (`DATABASE_CHANGED` coalesced to one per frame, [[wiki/contracts/event-sink]]).
 4. UI → `onUiEvent(handler)`: one Tauri listener for the app, every handler gets every event and switches on `type`.
 
 ## Invariants
 
-- No untyped message: no `json!` event payload, no raw-JSON action match, no `serde_json::Value` command result.
-  Check: `grep -rn "json!" src/server/engine` lists nothing (the Ocean snapshot is the typed `OceanSnapshot`, TCK-156); `grep -rln "@tauri-apps/api" frontend`
-  lists only `core/ipc.ts` (+ its test) and `views/main-menu/index.ts` (app version via `@tauri-apps/api/app`, no command).
+- No untyped message ([[wiki/architecture/invariants]] 13). Check: `grep -rn "json!" src/server/engine` lists nothing (the Ocean snapshot is the typed `OceanSnapshot`, TCK-156); `grep -rln "@tauri-apps/api" frontend`
+  lists only `core/ipc.ts`, the tests that mock it (`core/ipc.test.ts`, `views/views.dom.test.ts`) and `views/main-menu/index.ts` (app version via `@tauri-apps/api/app`, no command).
 - Action and event `type` names are unique across the three groups (`ClientAction::from_value` picks the group by
   the tag; a known tag with bad fields is `invalidAction` "malformed client action 'X': ...", an unknown tag
   "unknown client action type 'X'").
 - `SET_MODE` only through the `set_mode` command, called only by `navigateTo` (and the trainer's unload reset to
   Ocean); `handle_client_action` rejects it ([[wiki/architecture/invariants]] 1).
-- Events are emitted through `emit_state` only, never from inside a physics step directly
+- Events go through the `EventSink` only (`ctx.emit`), never `window.emit`; nothing leaves before the frame's flush
   ([[wiki/architecture/invariants]] 6).
 - Errors reach the user: `call` reports every failure once through the error hook (toast); callers catch only for
   control flow. Commands log store errors (`IpcError::database`), rejected actions are logged by

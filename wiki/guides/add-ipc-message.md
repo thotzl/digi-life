@@ -14,13 +14,14 @@ Action (UI → engine):
    `TrainerAction` (`src/server/trainer_ipc.rs`). Pick a `type` name not used by another group. Optional fields:
    `#[serde(default)] #[ts(optional)] Option<T>`.
 2. Handle it in the owning mode's `handle` (`src/server/engine/ocean_mode.rs` / `trainer_mode.rs`) or, for an `EngineAction`, in `Engine::handle` (`src/server/engine/mod.rs`); one match arm, no SQL per physics step ([[wiki/contracts/mode]]).
-3. Send it from the UI with `send({ type: "...", ... })` (`frontend/core/ipc.ts`); never `invoke` directly.
+3. Send it from the UI with `send({ type: "...", ... })` (`frontend/core/ipc.ts`, invariant 13).
 
 Event (engine → UI):
 
 1. Add a variant to `EngineEvent`, `OceanUiEvent` or `TrainerUiEvent`; a payload with several fields gets its own
    `#[derive(Serialize, TS)] #[serde(rename_all = "camelCase")]` struct.
-2. Emit it with `emit_state(MyEvent { .. }.into())`; never call `window.emit` yourself.
+2. Emit it in the mode with `ctx.emit(MyEvent { .. })` (in `Engine::handle`: `sink.emit(event.into())`); the sink
+   sends it at the end of the frame.
 3. Handle its `type` in the view's `onUiEvent` handler.
 
 Command (request / response):
@@ -37,7 +38,7 @@ All:
 
 1. Tests: the JSON of a new action in `ipc::tests::test_client_actions_parse_into_their_group` (or the group's parse
    test), the JSON of a new event in its group's wire-name test, a DTO serialization test for a new command result.
-2. Run `cargo test` and commit the regenerated `bindings/`.
+2. Run `cargo test`; it regenerates `bindings/` (invariant 7).
 3. Docs: add the message to the lists of the IPC protocol article (`wiki/architecture/ipc-protocol.md`).
 
 ## Done when

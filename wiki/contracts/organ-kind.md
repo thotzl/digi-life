@@ -66,7 +66,7 @@ Shared building blocks a kind points to: `spectral::{live_channels, sense}` (tun
   carries a stimulus in some state (test `test_live_channels_match_sense`). A non-live channel is never wired.
 - Food layout: `foods[0]` nearest plant, `foods[1]` nearest meat (scenarios and Ocean build it so).
 - Only limb-capable kinds drive locomotion as limbs; distance senses (`Eye`, `Nose`, `Thermal`) have `limb: false`
-  (TCK-202: before, every organ with `expression_style ≥ 0.72` counted, eyes included).
+  (TCK-202).
 - Channels are clamped to [0, 1]; signed quantities keep one side by design: the lateral line registers flow arriving
   head-on at the organ's axis (backward-facing organs register the opposite flow), the proprioceptor one bend side
   (reviewed in TCK-202).

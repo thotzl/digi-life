@@ -13,6 +13,7 @@ today's trainer: every slot alone in its chamber, all slots on the same shared l
 It is used by `TrainerSim` (live score, trial end, generation end), `TrainerSim::evaluate_population` (final
 evaluation of the runner) and the diagnosis probes (`hebbian`). Planned: a tournament that pairs slots into shared
 chambers (arena). Selection, breeding and the 1/5 rule are not part of an evaluator; they live in `trainer::breeder`.
+Guide: `wiki/guides/add-evaluator.md`.
 
 ## Signature
 

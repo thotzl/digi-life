@@ -12,11 +12,12 @@ Read first: [[wiki/contracts/organ-kind]] and [[wiki/architecture/invariants]].
    `pub const SPEC: OrganSpec` (names, channel names, `distance`, cost, limb, ballast, Latin suffix and rank).
 2. `src/biology/organs/mod.rs`: `pub mod <kind>;`, a variant in `OrganKind` and `OrganKind::ALL`, an arm in
    `OrganKind::spec`, and its region in `OrganKind::classify` (otherwise no genome expresses it).
-3. Config keys: none unless the kind has a tunable; then follow [[wiki/guides/add-config-key]].
+3. Config keys: none unless the kind has a tunable; then follow `wiki/guides/add-config-key.md`.
 4. Tests: `test_live_channels_match_sense` covers the kind automatically; add a unit test for any non-trivial `sense`.
-5. Run `cargo test` and commit the regenerated `bindings/` (`OrganKind.ts`, `organRegistry.ts`); the frontend's
-   names come from there. A new organ shape in the renderer belongs to the frontend organ painter (TCK-160).
-6. Docs: add the kind to the purpose list of [[wiki/contracts/organ-kind]] and to [[wiki/biology/sensing]].
+5. Run `cargo test`; it regenerates `bindings/OrganKind.ts` and `bindings/organRegistry.ts` (invariant 7), where the
+   frontend's names come from. Add a painter for the kind to `ORGAN_PAINTERS` in `frontend/render/organs.ts`
+   (`Record<OrganKind, …>`, so `npm run build` fails without it).
+6. Docs: add the kind to the purpose list of the contract and to `wiki/biology/sensing.md`.
 
 ## Done when
 

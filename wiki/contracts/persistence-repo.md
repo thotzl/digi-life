@@ -79,7 +79,7 @@ logs failures (`save_elites`, `load_genomes`, `save_assigned`, `save_run_state`,
 
 ## Invariants
 
-- SQL and `rusqlite` only in `src/persistence/` (check: `grep -rnE "rusqlite|SELECT |INSERT |DELETE FROM" src
+- SQL and `rusqlite` only in `src/persistence/` ([[wiki/architecture/invariants]] 12; check: `grep -rnE "rusqlite|SELECT |INSERT |DELETE FROM" src
   --include=*.rs` lists only that folder).
 - No repository call per physics step ([[wiki/architecture/invariants]] 6): call on actions, generation ends or the
   10 s timer.

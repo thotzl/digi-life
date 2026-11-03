@@ -9,7 +9,7 @@ sources: [tickets/closed/TCK-156-engine-decomposition.md, tickets/open/TCK-196-p
 A mode is one simulation the engine thread can run. The engine (`src/server/engine/`, TCK-156) holds every mode,
 routes each mode's typed actions to it, and steps and streams only the active one (`SimMode`, set by the router,
 [[wiki/architecture/invariants]] 1). Two modes exist: `OceanMode` (over the IO-free `sim::ocean::OceanSim`) and
-`TrainerMode` (over the IO-free `biology::trainer_sim::TrainerSim`). A mode is a thin adapter: the simulation itself is
+`TrainerMode` (over the IO-free `trainer::sim::TrainerSim`). A mode is a thin adapter: the simulation itself is
 an IO-free struct with a `step()` that returns what happened; the mode turns that into UI events
 ([[wiki/contracts/event-sink]]) and store writes ([[wiki/contracts/persistence-repo]]). A planned mode (arena) is one
 more simulation struct plus one adapter.
