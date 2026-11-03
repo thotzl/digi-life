@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.39] - 2026-11-03
+
+Epic TCK-196, phase R4. Behaviour unchanged (golden master and all references identical).
+
+### Added
+- DOM tests for the UI views (mount/unmount teardown, controllers, mode ownership) with happy-dom; ESLint for the frontend (`npm run lint`) (ref TCK-161).
+- CI checks Rust formatting and clippy with warnings as errors, lints the frontend and runs build and tests on Windows too (ref TCK-161).
+
+### Changed
+- Rust code formatted with `cargo fmt` (`rustfmt.toml`, width 120); all clippy warnings fixed. The release workflow installs with `npm ci` and names releases "BroodBattle" (ref TCK-161).
+
 ## [1.12.38] - 2026-11-03
 
 Epic TCK-196, phase R3. Golden master and trainer references unchanged.

@@ -15,13 +15,13 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 - [x] R1 TCK-198 (v1.12.30), TCK-159 (v1.12.31), TCK-157 (v1.12.34)
 - [x] R2 TCK-199 (v1.12.32, absorbs TCK-155)
 - [x] R3 TCK-200 (v1.12.33), TCK-201 (v1.12.36), TCK-156 (v1.12.37), TCK-158 (v1.12.38)
-- [ ] R4 TCK-160 (v1.12.35) done; TCK-161 next
+- [x] R4 TCK-160 (v1.12.35), TCK-161 (v1.12.39)
 - [ ] R5 TCK-202, TCK-143
 - [ ] R6 TCK-203
 - [ ] R7 TCK-204
 
 ## Next step
-R1: TCK-159 and TCK-157 in parallel worktrees (both touch api.rs/engine.rs: 159 owns SQL/repositories, 157 owns action/event types and api split; merge 159 first). Gate: `bash .agents/artifacts/gate.sh`. Version helper: `python .agents/artifacts/bump.py <version>`.
+R1: TCK-159 and TCK-157 in parallel worktrees (both touch api.rs/engine.rs: 159 owns SQL/repositories, 157 owns action/event types and api split; merge 159 first). Gate: `bash .agents/artifacts/gate.sh` (fmt, clippy, tests, 4 references, vitest, lint, build, links). Version helper: `python .agents/artifacts/bump.py <version>`.
 
 ## Sleep blocker
 `.agents/artifacts/keep-awake.ps1` (user request: max 4 h, stop early when done, restart if work continues). Current run started 2026-11-02 20:39, ends 00:39.
