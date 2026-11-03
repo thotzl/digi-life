@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { TrainerGenerationStats } from "../bindings/TrainerGenerationStats";
+import type { TrainerGenerationStats } from "../../../bindings/TrainerGenerationStats";
 import {
   POPULATION_STEPS, ProgressHistory, formatFirstCatch, formatLevel, formatRate, modeChoice, pendingSwitchLabel, populationStepIndex,
   visibleSandboxRange,
-} from "./trainerMetrics";
+} from "./metrics";
 
 const stats = (generation: number, successRate = 0.5): TrainerGenerationStats => ({
   generation,

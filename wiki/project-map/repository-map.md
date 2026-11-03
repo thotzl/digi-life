@@ -70,17 +70,15 @@ Largest files: `engine.rs` (~1,500), `probes.rs` (~1,400); no genome/phenotype/o
 
 | Path | Responsibility | Article |
 | :--- | :--- | :--- |
-| `main.ts`, `core/router.ts` | view mounting, navigation, backend mode | [[wiki/frontend/structure]] |
-| `ocean.ts`, `trainer.ts` | event handling and render loops per mode | [[wiki/frontend/structure]] |
+| `main.ts`, `core/router.ts`, `core/view.ts`, `core/scope.ts` | boot, view registry routing, backend mode, view lifecycle and teardown scope (TCK-160) | [[wiki/contracts/frontend-view]] |
 | `core/ipc.ts`, `core/ipc.test.ts` | typed IPC client: `call`, `send`, `setMode`, `onUiEvent`, error hook (toast, `core/toast.ts`); the only Tauri caller (TCK-157) | [[wiki/contracts/ipc-message]] |
 | `core/phenotypes.ts` | phenotype cache over `get_fossil_phenotype` | [[wiki/architecture/ipc-protocol]] |
-| `signals.ts` | selection/telemetry signals | [[wiki/frontend/structure]] |
-| `views/` | MainMenu, OceanView, TrainerView, CatalogueView, UnifiedDiagnosticsPanel | [[wiki/frontend/structure]] |
-| `render/` | creature and brain renderers, trainer progress chart | [[wiki/frontend/structure]] |
-| `trainerMetrics.ts`, `trainerMetrics.test.ts` | trainer metric formatting, mode labels, progress history; Vitest tests | [[wiki/frontend/structure]] |
+| `state/selection.ts` | app selection tagged by source, vitals and activations signals | [[wiki/frontend/structure]] |
+| `views/` | registry `index.ts`; `main-menu/`, `ocean/` (layout, model, controller), `trainer/` (layout, settings, metrics, controller), `catalogue/` | [[wiki/frontend/structure]] |
+| `render/` | creature renderer, organ painters per `OrganKind`, world layer, brain renderer, trainer progress chart | [[wiki/frontend/structure]] |
 | `core/` | camera, `styled` engine, HTML escaping | [[wiki/frontend/structure]] |
-| `components/` | icons | — |
-| `shared/types.ts` | model types: brain, gene, species, food and world types re-exported from `bindings/`; phenotype and agent still handwritten | [[wiki/architecture/ipc-protocol]] |
+| `components/` | `Modal`, `CreaturePreview`, `CataloguePicker`, `DiagnosticsPanel` (inspector), icons | [[wiki/frontend/structure]] |
+| `shared/creatureLabels.ts`, `shared/warp.ts` | diet class and badge colour, warp slider mapping | [[wiki/frontend/structure]] |
 | `shared/genome.ts`, `shared/genome.test.ts` | display names for backend gene spans and neuron roles (genome view, neural inspector tooltips); Vitest tests | [[wiki/frontend/structure]] |
 | `styles.css` | global styles | — |
 

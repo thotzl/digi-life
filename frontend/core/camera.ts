@@ -1,3 +1,6 @@
+/** World size used until `INIT_STATE` delivers the real one (`setWorldSize`); the only frontend copy (RV-F08). */
+export const FALLBACK_WORLD_SIZE = { width: 19200, height: 10800 };
+
 export class InteractiveCamera {
   public camX: number;
   public camY: number;
@@ -10,14 +13,20 @@ export class InteractiveCamera {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    private mapWidth = 19200,
-    private mapHeight = 10800,
+    private mapWidth = FALLBACK_WORLD_SIZE.width,
+    private mapHeight = FALLBACK_WORLD_SIZE.height,
     private leftHUDWidth = 680,
     private bottomTerminalHeight = 260
   ) {
     this.camX = mapWidth / 2;
     this.camY = mapHeight / 2;
     this.camZoom = 0.05;
+  }
+
+  /** World size from the backend (`INIT_STATE.world`). */
+  public setWorldSize(width: number, height: number) {
+    this.mapWidth = width;
+    this.mapHeight = height;
   }
 
   // Centering look-at coordinate focal point

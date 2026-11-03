@@ -1,5 +1,5 @@
-import type { Scenario } from "../bindings/Scenario";
-import type { TrainerGenerationStats } from "../bindings/TrainerGenerationStats";
+import type { Scenario } from "../../../bindings/Scenario";
+import type { TrainerGenerationStats } from "../../../bindings/TrainerGenerationStats";
 
 /** Simulation ticks per simulated second (the trainer steps at 60 Hz at warp 1). */
 export const TICKS_PER_SECOND = 60;

@@ -63,7 +63,7 @@ export function onIpcError(handler: (command: Command, error: CallError) => void
 
 - No untyped message: no `json!` event payload, no raw-JSON action match, no `serde_json::Value` command result.
   Check: `grep -n "json!" src/server/engine.rs` lists only the DB snapshot; `grep -rln "@tauri-apps/api" frontend`
-  lists only `core/ipc.ts` (+ its test) and `views/MainMenu.ts` (app version via `@tauri-apps/api/app`, no command).
+  lists only `core/ipc.ts` (+ its test) and `views/main-menu/index.ts` (app version via `@tauri-apps/api/app`, no command).
 - Action and event `type` names are unique across the three groups (`ClientAction::from_value` picks the group by
   the tag; a known tag with bad fields is `invalidAction` "malformed client action 'X': ...", an unknown tag
   "unknown client action type 'X'").

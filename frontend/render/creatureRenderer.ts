@@ -1,16 +1,10 @@
-import { CreaturePhenotype, HSLColor } from "../shared/types";
+import type { CreaturePhenotype } from "../../bindings/CreaturePhenotype";
+import type { HSLColor } from "../../bindings/HSLColor";
+import { organAngle, organShape, paintOrganMark } from "./organs";
 
 function hslToString(color: HSLColor, lightnessModifier = 0, opacity = 1): string {
   const l = Math.max(0, Math.min(100, color.l + lightnessModifier));
   return `hsla(${color.h}, ${color.s}%, ${l}%, ${opacity})`;
-}
-
-function shiftHue(color: HSLColor, shift: number): HSLColor {
-  return {
-    h: (color.h + shift + 360) % 360,
-    s: color.s,
-    l: color.l
-  };
 }
 
 // Seedable PRNG for anatomical noise
@@ -69,40 +63,31 @@ export class CreatureRenderer {
     // 4. Continuous Gaussian Membrane Deformations (Unbounded Sprouting Buds)
     // ==========================================================================
     phenotype.organelles.forEach(patch => {
-      const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
-      
+      const shape = organShape(patch);
       const style = patch.expressionStyle;
-      const aff = patch.spectralAffinity;
       const scale = patch.scale;
-
       // Muscular limb outgrowths sway with higher amplitude
-      const wiggleMultiplier = style >= 0.72 ? 1.8 : 1.0;
-      const wigglePhase = patch.spinalPos * 4.0 + targetAngle * 0.03;
-      const waveFreq = aff > 0.7 ? 0.005 : 0.0035;
-      const sway = phenotype.wiggleAmplitude * wiggleMultiplier * Math.sin(time * waveFreq + wigglePhase);
-      const animatedTargetAngle = targetAngle + sway;
+      const animatedTargetAngle = organAngle(patch, phenotype.wiggleAmplitude, time, shape === "limb" ? 1.8 : 1.0);
 
       let diffAngle = localTheta - animatedTargetAngle;
       while (diffAngle > Math.PI) diffAngle -= Math.PI * 2;
       while (diffAngle < -Math.PI) diffAngle += Math.PI * 2;
 
       const diffS = s - patch.spinalPos;
-      const wLongitudinal = (style >= 0.72 ? 0.12 : 0.07) * scale;
+      const wLongitudinal = (shape === "limb" ? 0.12 : 0.07) * scale;
 
-      if (style >= 0.72) {
+      if (shape === "limb") {
         // A. FLESHY MUSCULAR LIMB (Swimming Foot / Creeping Tentacle)
-        const length = 38 * scale * style; 
+        const length = 38 * scale * style;
         const wAngular = 0.22 + patch.bandwidth * 0.4; // thick muscular root
-        
         const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
         r += length * Math.exp(-distSquared);
-      } else if (patch.spinalPos < 0.25) {
+      } else if (shape === "bud") {
         // B. CEPHALIC SPROUTING BUD (Brain Lobe / Head Crest)
         const length = 22 * scale * (1.0 - style);
         const wAngular = 0.35 + patch.bandwidth * 0.45; // extremely broad head flare
-        const wLongitudinal = 0.15;
-
-        const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinal * wLongitudinal);
+        const wLongitudinalBud = 0.15;
+        const distSquared = (diffAngle * diffAngle) / (wAngular * wAngular) + (diffS * diffS) / (wLongitudinalBud * wLongitudinalBud);
         r += length * Math.exp(-distSquared);
       } else {
         // C. CILIATED PROTRUSION (Cilia / Feeler / Sensory Hillock)
@@ -114,6 +99,20 @@ export class CreatureRenderer {
     });
 
     return Math.max(2, r); // Keep radius safe
+  }
+
+  /** Outer body radius at spinal position `s` towards `angle`, with fin outgrowth and head widening. */
+  private surfaceRadius(s: number, angle: number, phenotype: CreaturePhenotype, time: number): number {
+    const { meanRadius, parapodiaAmp, parapodiaFreq, flatteningHead } = phenotype.spinalHarmonics;
+    let r = this.getSpinalRadiusAt(s, angle, phenotype, time);
+    if (parapodiaAmp > 0) {
+      const finWave = parapodiaAmp * Math.sin(Math.PI * parapodiaFreq * s + time * 0.008);
+      r += Math.max(0, finWave) * meanRadius * 0.95;
+    }
+    if (flatteningHead !== 0 && s < 0.22) {
+      r *= 1.0 + flatteningHead * Math.cos((s / 0.22) * Math.PI / 2);
+    }
+    return r;
   }
 
   /**
@@ -401,25 +400,10 @@ export class CreatureRenderer {
     // 8. DRAW INTERNAL SKELETAL RIDGES FOR FLESHY LIMBS (`expressionStyle >= 0.72`)
     // ==========================================================================
     phenotype.organelles.forEach(patch => {
-      if (patch.expressionStyle >= 0.72) {
-        const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
-        
-        const wigglePhase = patch.spinalPos * 4.0 + targetAngle * 0.03;
-        const waveFreq = patch.spectralAffinity > 0.7 ? 0.005 : 0.0035;
-        const sway = phenotype.wiggleAmplitude * 1.8 * Math.sin(time * waveFreq + wigglePhase);
-        const animatedAngle = targetAngle + sway;
-
-        const sIdx = Math.round(patch.spinalPos * steps);
-        const sCenter = spinalPoints[sIdx];
-        
-        let sRadius = this.getSpinalRadiusAt(patch.spinalPos, animatedAngle, phenotype, time);
-        if (paraAmp > 0) {
-          const finWave = paraAmp * Math.sin(Math.PI * paraFreq * patch.spinalPos + time * 0.008);
-          sRadius += Math.max(0, finWave) * meanRadius * 0.95;
-        }
-        if (flatHead !== 0 && patch.spinalPos < 0.22) {
-          sRadius *= (1.0 + flatHead * Math.cos((patch.spinalPos / 0.22) * Math.PI / 2));
-        }
+      if (organShape(patch) === "limb") {
+        const animatedAngle = organAngle(patch, phenotype.wiggleAmplitude, time, 1.8);
+        const sCenter = spinalPoints[Math.round(patch.spinalPos * steps)];
+        const sRadius = this.surfaceRadius(patch.spinalPos, animatedAngle, phenotype, time);
 
         const ptTip = {
           x: sCenter.x + sRadius * Math.cos(animatedAngle),
@@ -451,101 +435,16 @@ export class CreatureRenderer {
     // ==========================================
     // 9. DRAW GLOSSY SPECTRAL HIGHLIGHTS ON ENVELOPE
     // ==========================================
+    // Surface marks per organ kind (render/organs.ts)
     phenotype.organelles.forEach(patch => {
-      const targetAngle = ((90.0 - patch.angle) * Math.PI) / 180;
-      
-      const wigglePhase = patch.spinalPos * 4.0 + targetAngle * 0.03;
-      const waveFreq = patch.spectralAffinity > 0.7 ? 0.005 : 0.0035;
-      const sway = phenotype.wiggleAmplitude * Math.sin(time * waveFreq + wigglePhase);
-      const animatedAngle = targetAngle + sway;
-
-      const sIdx = Math.round(patch.spinalPos * steps);
-      const sCenter = spinalPoints[sIdx];
-      
-      let sRadius = this.getSpinalRadiusAt(patch.spinalPos, animatedAngle, phenotype, time);
-      
-      if (paraAmp > 0) {
-        const finWave = paraAmp * Math.sin(Math.PI * paraFreq * patch.spinalPos + time * 0.008);
-        sRadius += Math.max(0, finWave) * meanRadius * 0.95;
-      }
-      if (flatHead !== 0 && patch.spinalPos < 0.22) {
-        const headWidenMultiplier = 1.0 + flatHead * Math.cos((patch.spinalPos / 0.22) * Math.PI / 2);
-        sRadius *= headWidenMultiplier;
-      }
-
-      // Protrude relative to local coordinates (no global rotation shifts)
-      const pt = {
-        x: sCenter.x + sRadius * Math.cos(animatedAngle),
-        y: sCenter.y + sRadius * Math.sin(animatedAngle)
-      };
-
-      const normal = animatedAngle;
+      const animatedAngle = organAngle(patch, phenotype.wiggleAmplitude, time, 1.0);
+      const sCenter = spinalPoints[Math.round(patch.spinalPos * steps)];
+      const sRadius = this.surfaceRadius(patch.spinalPos, animatedAngle, phenotype, time);
 
       this.ctx.save();
-      this.ctx.translate(pt.x, pt.y);
-      this.ctx.rotate(normal - Math.PI / 2);
-
-      const scale = patch.scale;
-      const aff = patch.spectralAffinity;
-      const style = patch.expressionStyle;
-      const organelleColor = shiftHue(pColor, patch.hueShift);
-
-      if (style < 0.3) {
-        const baseWidth = 10 * scale;
-        this.ctx.beginPath();
-        this.ctx.arc(0, 0, baseWidth - 1, Math.PI, 0);
-        this.ctx.closePath();
-        
-        if (aff >= 0.8) {
-          const lensGrad = this.ctx.createRadialGradient(-baseWidth * 0.2, -baseWidth * 0.3, 1, 0, 0, baseWidth);
-          lensGrad.addColorStop(0, "#ffffff");
-          lensGrad.addColorStop(0.3, `hsl(${organelleColor.h}, 100%, 75%)`);
-          lensGrad.addColorStop(1, "rgba(255,255,255,0)");
-          this.ctx.fillStyle = lensGrad;
-          this.ctx.fill();
-          
-          this.ctx.beginPath();
-          this.ctx.arc(-baseWidth * 0.4, -baseWidth * 0.4, 2.2 * scale, 0, Math.PI * 2);
-          this.ctx.fillStyle = "#ffffff";
-          this.ctx.fill();
-        } else if (aff > 0.65 && aff < 0.8) {
-          const pitGrad = this.ctx.createRadialGradient(0, 0, 1, 0, 0, baseWidth);
-          pitGrad.addColorStop(0, "#000000");
-          pitGrad.addColorStop(0.5, "hsl(350, 95%, 45%)");
-          pitGrad.addColorStop(1, "rgba(255,0,0,0)");
-          this.ctx.fillStyle = pitGrad;
-          this.ctx.fill();
-        }
-      } else if (style < 0.72) {
-        if (patch.bandwidth < 0.35) {
-          const endX = 0;
-          const endY = -3.5 * scale; // Draw directly on the surface, tangent to the skin hillock
-
-          this.ctx.beginPath();
-          this.ctx.arc(endX, endY, 3.5 * scale, 0, Math.PI * 2);
-          
-          let beadColor = "";
-          if (aff >= 0.8) beadColor = "#ffffff";
-          else if (aff < 0.25) beadColor = "hsl(40, 100%, 70%)";
-          else if (aff >= 0.25 && aff <= 0.65) beadColor = "hsl(120, 100%, 70%)";
-          else beadColor = "hsl(340, 100%, 70%)";
-
-          this.ctx.fillStyle = beadColor;
-          this.ctx.shadowColor = beadColor;
-          this.ctx.shadowBlur = 10;
-          this.ctx.fill();
-        }
-      } else {
-        const tipRadius = 5 * scale;
-        this.ctx.beginPath();
-        this.ctx.arc(0, -6, tipRadius, 0, Math.PI * 2);
-        
-        const tipColor = `hsl(${organelleColor.h}, 95%, 65%)`;
-        this.ctx.fillStyle = tipColor;
-        this.ctx.shadowColor = tipColor;
-        this.ctx.shadowBlur = 8;
-        this.ctx.fill();
-      }
+      this.ctx.translate(sCenter.x + sRadius * Math.cos(animatedAngle), sCenter.y + sRadius * Math.sin(animatedAngle));
+      this.ctx.rotate(animatedAngle - Math.PI / 2);
+      paintOrganMark(this.ctx, patch, pColor);
       this.ctx.restore();
     });
 

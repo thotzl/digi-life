@@ -1,4 +1,4 @@
-import type { ProgressPoint } from "../trainerMetrics";
+import type { ProgressPoint } from "../views/trainer/metrics";
 
 const COLORS = {
   grid: "rgba(148, 163, 184, 0.12)",

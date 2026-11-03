@@ -1,59 +1,22 @@
+// Boot (TCK-160): create every registered view once, route to the main menu, subscribe the views to backend events,
+// then ask the engine for its state (CLIENT_READY → INIT_STATE).
 import "./styles.css";
-import { effect } from "@preact/signals-core";
-import { currentView } from "./core/router";
-import { createMainMenu } from "./views/MainMenu";
-import { createOceanView } from "./views/OceanView";
-import { createTrainerView } from "./views/TrainerView";
-import { createCatalogueView } from "./views/CatalogueView";
+import { call, onUiEvent, send } from "./core/ipc";
+import { dispatchUiEvent, startRouter } from "./core/router";
+import { selectionStore } from "./state/selection";
+import { INITIAL_VIEW, VIEWS } from "./views";
 
-async function bootstrap() {
+function bootstrap() {
   const app = document.getElementById("app");
   if (!app) {
     console.error("[Boot] Fatal error: Mount element '#app' not found.");
     return;
   }
-
-  // 1. Compile and mount all core SPA views once on startup
-  const mainMenuEl = createMainMenu();
-  const oceanEl = createOceanView();
-  const trainerEl = createTrainerView();
-  const catalogueEl = createCatalogueView();
-
-  app.appendChild(mainMenuEl);
-  app.appendChild(oceanEl);
-  app.appendChild(trainerEl);
-  app.appendChild(catalogueEl);
-
-  // 2. Dynamically import simulation logics AFTER DOM is fully initialized
-  // This guarantees that all document.getElementById queries succeed with zero null errors!
-  await import("./ocean");
-  await import("./trainer");
-
-  // 3. Reactively manage the visible SPA container (safeguarding GPU canvas contexts)
-  effect(() => {
-    const activeView = currentView.value;
-    
-    mainMenuEl.style.display = activeView === "main-menu" ? "flex" : "none";
-    oceanEl.style.display = activeView === "ocean" ? "block" : "none";
-    trainerEl.style.display = activeView === "trainer" ? "block" : "none";
-    catalogueEl.style.display = activeView === "catalogue" ? "block" : "none";
-
-    // Set page tab titles matching the active state
-    if (activeView === "main-menu") {
-      document.title = "BroodBattle";
-    } else if (activeView === "ocean") {
-      document.title = "BroodBattle – Ocean Laboratory";
-    } else if (activeView === "trainer") {
-      document.title = "BroodBattle – Training Room";
-    } else if (activeView === "catalogue") {
-      document.title = "BroodBattle – Creature Catalog";
-    }
-  });
-
-  console.log("[Boot] Pure TypeScript SPA bootstrapped successfully with lazy module initialization.");
+  startRouter(VIEWS, { ipc: { call, send }, selection: selectionStore }, { initial: INITIAL_VIEW, root: app });
+  onUiEvent(dispatchUiEvent);
+  void send({ type: "CLIENT_READY" });
 }
 
-// Start booting when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", bootstrap);
 } else {

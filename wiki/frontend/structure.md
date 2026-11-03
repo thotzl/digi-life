@@ -1,64 +1,118 @@
 ---
-sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, frontend/trainer.ts, frontend/trainerMetrics.ts, frontend/render/progressChart.ts]
+sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/open/TCK-160-frontend-structure.md, frontend/core/router.ts, frontend/core/view.ts, frontend/state/selection.ts, frontend/views/index.ts]
 ---
 
 # Frontend Structure
 
-`frontend/` — Vite 5 + TypeScript 5 (strict) + `@preact/signals-core`; plain DOM, no UI framework, no virtual DOM. `index.html` is a single mount point `<div id="app">` (SPA since TCK-115, menu and router since TCK-128).
+`frontend/` — Vite + TypeScript (strict) + `@preact/signals-core`; plain DOM, no UI framework. `index.html` has one
+mount point `<div id="app">`. Since TCK-160 every screen is a `ViewModule` with a teardown scope
+([[wiki/contracts/frontend-view]], guide [[wiki/guides/add-view]]).
 
-## Boot and navigation
+## Module map
 
-- `main.ts` mounts all views once (`views/MainMenu.ts`, `OceanView.ts`, `TrainerView.ts`, `CatalogueView.ts`), then dynamically imports `ocean.ts` and `trainer.ts`; visibility follows the `currentView` signal.
-- `core/router.ts` — `navigateTo(view)` pauses both simulations and switches the backend mode (`setMode` → command `set_mode`, in that order); the only place that sets the mode ([[wiki/architecture/invariants]]).
-- `core/ipc.ts` — typed IPC client, the only module that calls Tauri (TCK-157): `call(command, args)` (typed by the `Commands` map, rejects with `IpcError` / `transport`), `send(action)` (`ClientAction` without `SET_MODE`, resolves accepted or not), `setMode`, `onUiEvent` (one `simulation-state` listener for the app), `onIpcError` (default: toast from `core/toast.ts`). Every failed call or rejected action shows a toast, so failed saves/deletes are visible (RV-F04 resolved); it replaced `api.ts` / `safeInvoke`, which returned `null` on errors. Contract [[wiki/contracts/ipc-message]].
-- `core/phenotypes.ts` — phenotype cache over `get_fossil_phenotype` (bounded, one request per genome).
+| Path | Content |
+| :--- | :--- |
+| `main.ts` | boot: `startRouter(VIEWS, …)`, `onUiEvent(dispatchUiEvent)`, `CLIENT_READY` |
+| `core/view.ts` | `ViewModule`, `ViewContext { ipc, selection, scope, navigate }`, `ViewIpc` |
+| `core/scope.ts` | `Scope`: `listen`, `effect`, `frame` (rAF loop), `timeout`, `child`, `dispose` |
+| `core/router.ts` | `startRouter`, `navigateTo`, `dispatchUiEvent`, `currentView`; owns the backend mode |
+| `core/ipc.ts` | typed IPC client (TCK-157, [[wiki/contracts/ipc-message]]) |
+| `core/phenotypes.ts` | phenotype cache over `get_fossil_phenotype`: one request per genome, failures retried after 10 s, `phenotypeVersion` signal, `peekPhenotype` |
+| `core/camera.ts` | `InteractiveCamera` (pan, zoom, click); world size via `setWorldSize`, `FALLBACK_WORLD_SIZE` until `INIT_STATE` |
+| `core/styled.ts`, `core/escape.ts`, `core/toast.ts` | CSS-in-JS (one class per styled component), `escapeHtml`, toasts |
+| `state/selection.ts` | app selection with source tag; `selection` / `vitals` / `activations` signals; builders per source |
+| `components/` | `Modal`, `CreaturePreview`, `CataloguePicker`, `DiagnosticsPanel` (inspector), `Icons` |
+| `render/` | `creatureRenderer.ts`, `organs.ts` (painter per `OrganKind`), `worldLayer.ts` (biomes, vents, rocks, spores, trainer chamber), `brainRenderer.ts`, `progressChart.ts` |
+| `shared/` | `genome.ts` (gene/role display tables), `creatureLabels.ts` (diet class, badge colour), `warp.ts` (speed slider mapping) |
+| `views/index.ts` | registry `VIEWS = [main-menu, ocean, trainer, catalogue]`, `ViewId` |
+| `views/main-menu/` | launchers, app version (`#app-version`) |
+| `views/ocean/` | `layout.ts` (DOM + element references), `model.ts` (creatures, spores, hit tests, bite flashes), `index.ts` (controller) |
+| `views/trainer/` | `layout.ts`, `settings.ts` (hyperparameters, synced flag), `metrics.ts` (TCK-177 formatting, progress history), `index.ts` (controller, tiles) |
+| `views/catalogue/` | catalogue list, release / seed / rename / wipe dialogs |
 
-## Loop modules
+## Views and lifecycle
 
-- `ocean.ts` / `trainer.ts` — side-effect modules with global state: `onUiEvent` handlers registered on import (never removed, each receives every typed `UiEvent` and switches on `type`, RV-F05 partly) and render loops (`drawBetaSimulationFrame` via `requestAnimationFrame` in Ocean; the trainer loop below). Coupled to views via `document.getElementById`.
-- **Trainer render loop** (TCK-177, P8; `frontend/trainer.ts`): the 25 Hz `TRAINER_TELEMETRY_TICK` handler only stores the latest snapshot per sandbox (`lastTelemetry`) and marks it dirty (`scheduleDraw`); a continuous `requestAnimationFrame` loop (`renderFrame`) draws the dirty sandboxes once per frame and skips unchanged ones, so a slow GPU drops frames instead of queueing draws. The loop runs only while the trainer view is active: a signals `effect` on `currentView` starts it (marking every sandbox dirty) and cancels it when the view is left. Before: P6 coalesced one rAF draw per telemetry burst; earlier, every telemetry tick redrew all canvases.
-- Trainer sandbox tiles have a 360 × 360 px canvas backing store (`canvasWidth` / `canvasHeight`; tiles show at ~130–160 CSS px, so 360 covers DPR 2; a 1000 px store per tile made 16 tiles GPU-bound, P6) ([[wiki/architecture/performance]]).
+- The router creates all four views once (`create` builds the DOM and keeps element references; no
+  `getElementById` lookups) and shows one. Leaving a view disposes its mount scope: window/document listeners (Ocean
+  resize and `r` camera reset, trainer dropdown close), signal effects (roster, inspector), animation loops (Ocean
+  world, trainer tiles, inspector and picker previews) and open dialogs stop.
+- Navigation order: pause the other views' simulations (`suspend`: Ocean `TOGGLE_SIMULATION false` if running,
+  trainer `PAUSE_TRAINING`), `setMode(target.backendMode)`, then `resume` the target. The Ocean resumes on entry if
+  the user had it running (initial backend state or the Pause/Resume button); before TCK-160 every navigation paused
+  it, so entering the Ocean always stopped it ([[wiki/architecture/invariants]] 1).
+- Events: every view's `onEvent` gets every `UiEvent`, shown or not (the Ocean receives `INIT_STATE` while the menu
+  is shown); drawing happens only in mount-scoped loops.
+- Trainer: the tile render loop (TCK-177) draws dirty tiles once per frame while the view is mounted; telemetry only
+  stores snapshots. Tile canvases have a 360 × 360 backing store ([[wiki/architecture/performance]]). The trainer
+  sends no hyperparameters until the backend state (`TRAINER_STATE_CHANGED`, emitted when the trainer mode is
+  entered) has arrived (`TrainerSettings.synced`); before TCK-160 the boot pushed the client defaults (N 16, warp 1,
+  `default_run`, …) over the restored run settings.
+- Trainer stats row, progress card, mode select, pending-switch note and level slider: TCK-176/TCK-177
+  ([[wiki/simulation/trainer]]).
 
-## Views and components
+## Selection
 
-- `views/UnifiedDiagnosticsPanel.ts` — shared inspector sidebar for Ocean, Trainer, Catalogue: HD preview (own animation loop), vitals/meta, Watson-Crick double helix, genome view, CTRNN brain graph, raw DNA copy (TCK-128). The catalogue preview loop also exists in `ocean.ts` (RV-F06). The adrenaline vital row was removed with the agent field (TCK-149).
-- **Genome view** (TCK-187): every base is coloured by the backend gene span covering it (`phenotype.genes`, [[wiki/biology/genome-compiler]]): promoter letters, gene body, silent copies (later copies of first-only promoters, dimmed) or non-coding; the tooltip names the gene and its meaning (e.g. `EYE 1: Sensory organ (EYE) - Eye pair`).
-- `views/CatalogueView.ts` — fullscreen catalogue, selection dialog with synapse restore options.
-- `views/TrainerView.ts` — trainer layout; since P8 (TCK-176/TCK-177) the stats row with success rate, median fitness, time to first catch and level (`#stat-success`, `#stat-median-fit`, `#stat-first-catch`, `#stat-level`), the progress card (`#canvas-progress`, legend success / best / median / level), the mode select with "Curriculum (auto)" and "Manual Level (slider)", the pending-switch note `#lbl-pending-switch` and the difficulty slider `#slider-level` ([[wiki/simulation/trainer]]).
-- `core/styled.ts` — small typed CSS-in-JS engine; `applyChildren` renders string and number children as text; markup is parsed only when marked with `html()` (`TrustedHtml`, used for the static icon SVGs in `components/Icons.ts`), so a user-entered creature name cannot inject HTML (TCK-197, test `core/styled.test.ts`). `class`/`className` props are added to the generated class via `classList` (before the TCK-186 smoke check they were assigned as a no-op JS property, so e.g. the main-menu card hover styles and catalogue classes never applied). `styles.css` global styles.
-- `core/escape.ts` — `escapeHtml` for interpolated DB/user data (TCK-141).
-- `components/Icons.ts` — SVG icons.
+- One selection for the app, tagged by source (`ocean` creature id, `fossil` species id, `trainer` sandbox id,
+  `catalogue` string id). Each inspector shows only its sources (Ocean: ocean + fossil, trainer: trainer, catalogue:
+  catalogue); ids are read through `oceanCreatureId` / `trainerSandboxId` / `catalogueId`. This removed the
+  cross-view collision (a sandbox id read as an Ocean creature id, "Assign From Catalogue" getting an Ocean or
+  catalogue id, a catalogue string id in a number signal).
+- Static data (`selection`) and live data (`vitals`, `activations`) are separate signals: the genome grid and brain
+  layout rebuild only when the creature changes. Fossil and catalogue selections have no age (`null`, shown "–").
+- "Save to Catalogue" stores the selection's fitness (trainer: the sandbox's current fitness; Ocean: 0) and the
+  creature's own synapse weights (Ocean: the agent's weights from its event; trainer: none, the telemetry does not
+  carry them, so the backend compiles them on load). Before TCK-160 it read a nonexistent `phenotype.fitness` (always
+  0) and stored the compiled weights.
 
 ## Rendering
 
-- `render/creatureRenderer.ts` — procedural Canvas 2D creatures (spine, organelles as smooth receptor domes with `wAngular = 0.18 + bandwidth · 0.22` since FIX-131, sensory cones); no image assets; wiggle coupled to forward speed.
-- `render/progressChart.ts` — `drawProgressChart(canvas, points)` (TCK-177): trainer progress curve on a 520 × 180 canvas, success rate and level on a fixed 0–100 % axis, best and median fitness scaled to the run's range; redrawn only on generation completion and reset.
-- `render/brainRenderer.ts` — neural inspector (TCK-187): columns by backend role (inputs → thalamus → hidden by depth → motors), sensors grouped per organ incl. the ΔI channel, thalamus Σ sum / Δ L−R diff nodes, thrust/bend motors; neuron tooltips from `describeRole`, synapse tooltips with source, target, weight and owner gene (`describeSynapse`). No emoji label parsing; `compile(brain, {genes, organelles})`.
-- `core/camera.ts` — `InteractiveCamera`: drag pan, wheel zoom, click selection; no keyboard shortcuts.
+- `render/creatureRenderer.ts` — procedural Canvas 2D creatures; organ shape (limb / head bud / hillock) from
+  `organShape` and sway from `organAngle` (`render/organs.ts`), surface marks from `ORGAN_PAINTERS:
+  Record<OrganKind, OrganPainter>` (eye lens, thermal pit, bead colour per kind, limb tip). The kind comes from the
+  backend organ registry ([[wiki/contracts/organ-kind]]); the renderer no longer re-derives it from affinity
+  thresholds. Same pixels as before.
+- `render/worldLayer.ts` — `WorldLayer` draws the biome image (built from the biome cells' `x/y/width/height`),
+  vents and obstacles of `INIT_STATE.world`; `drawSpores` (glow for the Ocean, halo for trainer tiles) and
+  `drawChamber` are shared.
+- Ocean bite flashes are drawn at the bite's world position with a screen-size ring; before TCK-160 the world
+  position was converted to canvas pixels and then drawn inside the camera transform (wrong place).
+- Ocean hover radius comes from the creature's own phenotype; before it was looked up in the phenotype cache, which
+  only the trainer fills (always the 100-unit fallback in the Ocean).
+- `render/brainRenderer.ts` (TCK-187) and `render/progressChart.ts` (TCK-177) unchanged.
 
-## State
+## Labels
 
-- `signals.ts`: `selectedId`, `selectedEnergy`, `selectedGenome`, `selectedPhenotype`, `selectedBrainActivations`, `speciesRosterSignal`, ...; UI reacts via signal `effect`s.
-- The legacy positional-genome helpers (`getLocusDescription`, `computeActiveGeneSpans` with `ST`/`GO`) were removed; gene meanings come from backend spans (RV-F03 resolved, TCK-187).
-- `shared/genome.ts` — display tables only: promoter → meaning (incl. which promoters are read first-only), systemic input, organ kind, channel and motor names; `describeGene`, `describeRole`, `describeSynapse`, `geneIndexByPosition`. The backend decides which genes and neurons exist. Tests `shared/genome.test.ts` (Vitest).
-- `shared/types.ts` — re-exports the brain, gene, species (`SpeciesRecord` = `SpeciesEntry`), food and world types from `bindings/`; the phenotype and agent model types used by the renderers are still handwritten (RV-A03 partly, RV-F01). All event, action and command result types come from `bindings/` through `core/ipc.ts` (TCK-157); the handwritten `TelemetryPayload` was removed.
-- `trainerMetrics.ts` — trainer UI helpers (TCK-177): `formatRate`, `formatFirstCatch` (ticks and seconds at `TICKS_PER_SECOND` 60), `formatLevel` (fixed / auto / manual), `pendingSwitchLabel`, `TRAINING_MODE_LABELS`, `modeChoice` (curriculum with the gate off = "manual"), `ProgressHistory` (points of the current run). Tests `trainerMetrics.test.ts` (Vitest).
+- Diet class from `shared/creatureLabels.ts` with the backend thresholds (`CARNIVORE_MIN` 0.6, `HERBIVORE_MAX` 0.4 of
+  `DietClass`); the roster, catalogue and pickers used 0.55 / 0.3 before, the trainer 0.6 / 0.4.
+- Badge colour from the phenotype's `primaryColor` hue (grey until the phenotype is known); before it was guessed from
+  `genome.charCodeAt(17)`.
+- Genome view colours per base and the gene tooltips: TCK-187 ([[wiki/biology/genome-compiler]]).
+
+## Types
+
+All model, event, action and command types come from `bindings/` (ts-rs); `shared/types.ts` and `signals.ts` were
+removed (RV-A03 frontend part done).
 
 ## Security
 
-- Untrusted strings (names, genomes, logs) go through `textContent` or `escapeHtml`, never raw `innerHTML` (RV-F02, TCK-141).
-- CSP in `tauri.conf.json` (TCK-197): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost`. `style-src` needs `'unsafe-inline'` for the `styled` stylesheet, inline `style` attributes and Vite's dev style injection; `dangerousDisableAssetCspModification: ["style-src"]` keeps Tauri from adding nonces there, which would make browsers ignore `'unsafe-inline'`.
+- Untrusted strings through `textContent` or `escapeHtml`; `styled` children are text unless `html()` (TCK-141,
+  TCK-197). `styled` compiles each template once per component (before: once per element, so every list refresh and
+  dialog added stylesheet rules; the dialogs also appended `<style>` tags with conflicting `.modal-card` rules).
+- CSP in `tauri.conf.json` (TCK-197): `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
+  'self' data:; connect-src ipc: http://ipc.localhost`.
 
 ## Hardcoded values
 
-- World size 19200/10800 (5×), population display `/ 25`, fossil fallback `selectedAge = 2700` (RV-F08).
-- `ActiveView` contains `"creator"` without a view (RV-F07; the unused `concurrently`, `tsx` and Stryker were removed in TCK-189).
+- `FALLBACK_WORLD_SIZE` (19200 × 10800) in `core/camera.ts`, used only until `INIT_STATE.world` arrives.
+- The Ocean shows the creature count without a cap: the cap (`ocean.maxCreatures`) is not in `INIT_STATE` yet.
+- `AGE_BAR_MAX` 2700 s in `components/DiagnosticsPanel.ts` (no lifespan in the model, TCK-146).
 
 ## Key Takeaways
 
-- Four views mounted once, router owns the backend mode, renderers are pure Canvas 2D.
-- Genome view and neural inspector render backend gene spans and neuron roles; the frontend only maps them to text (TCK-187).
-- The trainer draws its tiles in a rAF loop scoped to the trainer view from stored telemetry snapshots and shows the report's generation stats and a progress curve (TCK-177).
-- Output escaping and a restrictive CSP are in place (TCK-197); there is no per-view listener lifecycle.
+- Views are registered modules with create/mount/unmount and a scope that stops everything on leave; the router alone
+  switches the backend mode and no longer pauses the Ocean on entry.
+- One tagged selection replaces the per-view signal copies; shared components replace three dialog copies and two
+  preview loops.
+- Organ marks are painted per backend `OrganKind`; world geometry and size come from `INIT_STATE`.
 
-Sources: `.agents/skills/client-rendering/SKILL.md`, TCK-115, TCK-128, TCK-141, FIX-131, TCK-177, TCK-186, TCK-187.
+Sources: `.agents/skills/client-rendering/SKILL.md`, TCK-115, TCK-128, TCK-141, FIX-131, TCK-177, TCK-186, TCK-187, TCK-160.

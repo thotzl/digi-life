@@ -75,8 +75,8 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
 - One Tauri event `simulation-state` (`UI_EVENT_NAME`), payload `UiEvent` (untagged) = `EngineEvent` |
   `OceanUiEvent` | `TrainerUiEvent`, each tagged by `type`. The engine buffers typed events (`emit_state`) and emits
   them in order once per frame; repeated `DATABASE_CHANGED` within a frame are coalesced.
-- The frontend has one listener (`onUiEvent` in `frontend/core/ipc.ts`); `ocean.ts` and `trainer.ts` register a
-  handler each and switch on `type` (per-view listener lifecycle: TCK-160).
+- The frontend has one listener (`onUiEvent` in `frontend/core/ipc.ts`); the router hands every event to each
+  view's `onEvent`, which switches on `type` ([[wiki/contracts/frontend-view]], TCK-160).
 
 | Group | Event | Payload |
 | :--- | :--- | :--- |
@@ -122,9 +122,8 @@ Every command returns `Result<T, IpcError>`; `T` is a ts-rs DTO. `IpcError { kin
   `CatalogueCreature`; model types `CreatureAgent`, `FoodSpore`, `TelemetryCreature`, `CreaturePhenotype`, world and
   brain types.
 - `i64` fields are typed `number` (`#[ts(type = "number")]`); u64 values are sent as decimal strings.
-- `frontend/shared/types.ts` re-exports the brain, gene, species, food and world types from `bindings/`; the
-  phenotype and agent model types used by the renderers are still handwritten (the binding `CreatureAgent` is
-  assignable to them; alignment in TCK-160, RV-A03 partly, RV-F01).
+- The frontend imports all model types directly from `bindings/`; the handwritten `shared/types.ts` was removed
+  (TCK-160).
 - Timestamp units are mixed across payloads and tables (RV-A06), see [[wiki/architecture/persistence]].
 
 ## Key Takeaways

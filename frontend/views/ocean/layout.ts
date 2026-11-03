@@ -1,9 +1,6 @@
-import { styled } from "../core/styled";
-import { navigateTo } from "../core/router";
-import { 
-  IconDashboard, IconLog, IconBack, IconPlus, IconReset 
-} from "../components/Icons";
-import { UnifiedDiagnosticsPanel } from "./UnifiedDiagnosticsPanel";
+// Ocean view DOM (TCK-160): styled components and the layout builder returning element references.
+import { styled } from "../../core/styled";
+import { IconBack, IconDashboard, IconLog, IconPlus, IconReset } from "../../components/Icons";
 
 // --- STYLED COMPONENTS ---
 
@@ -301,145 +298,96 @@ const BackToMenuButton = styled("button")`
   }
 `;
 
-// --- COMPONENT CREATOR ---
+/// --- LAYOUT ---
 
-export function createOceanView(): HTMLElement {
-  const container = OceanContainer({ id: "ocean-view-container" });
+/** Element references of the Ocean view (built once; the controller never looks elements up by id). */
+export interface OceanLayout {
+  root: HTMLElement;
+  canvas: HTMLCanvasElement;
+  btnBack: HTMLButtonElement;
+  statPopulation: HTMLElement;
+  statGeneration: HTMLElement;
+  statSpores: HTMLElement;
+  btnInject: HTMLButtonElement;
+  btnLoadCatalogue: HTMLButtonElement;
+  btnReset: HTMLButtonElement;
+  btnToggleSim: HTMLButtonElement;
+  sliderSpeed: HTMLInputElement;
+  lblSpeed: HTMLElement;
+  roster: HTMLElement;
+  inspector: HTMLElement;
+  btnClearLogs: HTMLButtonElement;
+  logs: HTMLElement;
+}
 
-  // 1. Interactive background canvas
+const Span = styled("span")``;
+
+/** Builds the Ocean DOM. Ids are kept for styles.css and the UI check scripts. */
+export function buildOceanLayout(): OceanLayout {
+  const root = OceanContainer({ id: "ocean-view-container" });
   const canvas = BackgroundCanvas({ id: "creature-canvas" });
-  container.appendChild(canvas);
+  const btnBack = BackToMenuButton({ children: [IconBack, "Main Menu"] });
 
-  // 2. Navigation "Leave" Button
-  const btnLeave = BackToMenuButton({
-    onClick: () => navigateTo("main-menu"),
-    children: [
-      IconBack,
-      "Main Menu"
-    ]
+  const statPopulation = StatsValue({ id: "stat-population", class: "val-green", children: "0" });
+  const statGeneration = StatsValue({ id: "stat-generation", class: "val-blue", children: "1" });
+  const statSpores = StatsValue({ id: "stat-spores", class: "val-gold", children: "0 Spores" });
+  const btnInject = CyberButton({ id: "btn-inject", children: [IconPlus, "Release Protocell"] });
+  const btnLoadCatalogue = CyberButton({
+    id: "btn-load-catalogue",
+    style: { borderColor: "rgba(245, 158, 11, 0.3)", color: "#f59e0b", background: "rgba(245, 158, 11, 0.04)" },
+    children: [IconPlus, "Load from Catalog"],
   });
-  container.appendChild(btnLeave);
+  const btnReset = CyberButton({ id: "btn-reset", class: "btn-danger", children: [IconReset, "Reset Evolution"] });
+  const btnToggleSim = CyberButton({ id: "btn-toggle-sim", children: "Pause Substrate" });
+  const lblSpeed = Span({ id: "lbl-ocean-speedup", children: "1x" });
+  const sliderSpeed = SliderInput({ id: "slider-ocean-speedup", type: "range", min: "1", max: "12", value: "1", step: "1" });
+  const roster = SpeciesListContainer({ id: "species-roster" });
+  const btnClearLogs = ClearButton({ id: "btn-clear-console", children: "Clear Terminal" });
+  const logs = LogStreamContainer({ id: "terminal-logs" });
 
-  // 3. Assemble Dashboard Grid Panels
   const panelLeft = LeftGlassPanel({
     children: [
       PanelHeader({
         children: [
-          PanelTitle({ 
-            children: [
-              IconDashboard,
-              "Control Deck"
-            ] 
-          }),
-          PanelSubtitle({ children: "Global Biosphere Telemetry" })
-        ]
+          PanelTitle({ children: [IconDashboard, "Control Deck"] }),
+          PanelSubtitle({ children: "Global Biosphere Telemetry" }),
+        ],
       }),
       StatsCard({
         children: [
-          StatsItem({
-            children: [
-              StatsLabel({ children: "Organisms:" }),
-              StatsValue({ id: "stat-population", class: "val-green", children: "0 / 25" })
-            ]
-          }),
-          StatsItem({
-            children: [
-              StatsLabel({ children: "Highest Gen:" }),
-              StatsValue({ id: "stat-generation", class: "val-blue", children: "1" })
-            ]
-          }),
-          StatsItem({
-            children: [
-              StatsLabel({ children: "Nutrient Spores:" }),
-              StatsValue({ id: "stat-spores", class: "val-gold", children: "0 Spores" })
-            ]
-          })
-        ]
+          StatsItem({ children: [StatsLabel({ children: "Organisms:" }), statPopulation] }),
+          StatsItem({ children: [StatsLabel({ children: "Highest Gen:" }), statGeneration] }),
+          StatsItem({ children: [StatsLabel({ children: "Nutrient Spores:" }), statSpores] }),
+        ],
       }),
       ButtonGroup({
         children: [
-          CyberButton({
-            id: "btn-inject",
-            children: [
-              IconPlus,
-              "Release Protocell"
-            ]
-          }),
-          CyberButton({
-            id: "btn-load-catalogue",
-            style: { borderColor: "rgba(245, 158, 11, 0.3)", color: "#f59e0b", background: "rgba(245, 158, 11, 0.04)" },
-            children: [
-              IconPlus,
-              "Load from Catalog"
-            ]
-          }),
-          CyberButton({
-            id: "btn-reset",
-            class: "btn-danger",
-            children: [
-              IconReset,
-              "Reset Evolution"
-            ]
-          }),
-          CyberButton({
-            id: "btn-toggle-sim",
-            children: "Pause Substrate"
-          }),
-          SliderControl({
-            children: [
-              SliderLabelRow({
-                children: [
-                  styled("span")``({ children: "Warp Speed" }),
-                  styled("span")``({ id: "lbl-ocean-speedup", children: "1x" })
-                ]
-              }),
-              SliderInput({ id: "slider-ocean-speedup", type: "range", min: "1", max: "12", value: "1", step: "1" })
-            ]
-          })
-        ]
+          btnInject,
+          btnLoadCatalogue,
+          btnReset,
+          btnToggleSim,
+          SliderControl({ children: [SliderLabelRow({ children: [Span({ children: "Warp Speed" }), lblSpeed] }), sliderSpeed] }),
+        ],
       }),
-      PanelSection({
-        children: [
-          SectionTitle({ children: "Registered Species" }),
-          SpeciesListContainer({ id: "species-roster" })
-        ]
-      })
-    ]
+      PanelSection({ children: [SectionTitle({ children: "Registered Species" }), roster] }),
+    ],
   });
 
-  // Reusable, reactive, and completely encapsulated Diagnostics Panel!
-  const panelRight = RightGlassPanel({
-    id: "inspect-panel"
-  });
-  const diagnosticsPanel = new UnifiedDiagnosticsPanel("ocean");
-  panelRight.appendChild(diagnosticsPanel.element);
+  const inspector = RightGlassPanel({ id: "ocean-inspect-panel" });
 
   const panelBottom = BottomGlassPanel({
     children: [
-      TerminalFooterRow({
-        children: [
-          PanelTitle({ 
-            children: [
-              IconLog,
-              "Log Terminal"
-            ] 
-          }),
-          ClearButton({ id: "btn-clear-console", children: "Clear Terminal" })
-        ]
-      }),
-      LogStreamContainer({ id: "terminal-logs" })
-    ]
+      TerminalFooterRow({ children: [PanelTitle({ children: [IconLog, "Log Terminal"] }), btnClearLogs] }),
+      logs,
+    ],
   });
 
-  const grid = DashboardGrid({
-    children: [
-      panelLeft,
-      panelRight,
-      panelBottom
-    ]
-  });
+  root.appendChild(canvas);
+  root.appendChild(btnBack);
+  root.appendChild(DashboardGrid({ children: [panelLeft, inspector, panelBottom] }));
 
-  container.appendChild(grid);
-
-  return container;
+  return {
+    root, canvas, btnBack, statPopulation, statGeneration, statSpores, btnInject, btnLoadCatalogue, btnReset,
+    btnToggleSim, sliderSpeed, lblSpeed, roster, inspector, btnClearLogs, logs,
+  };
 }

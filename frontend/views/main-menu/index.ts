@@ -1,6 +1,7 @@
-import { styled } from "../core/styled";
-import { navigateTo } from "../core/router";
-import { IconDna, IconWeights, IconCatalogue } from "../components/Icons";
+// Main menu view: launchers for the Ocean, the trainer and the catalogue, app version in the footer.
+import { styled } from "../../core/styled";
+import type { ViewContext, ViewModule } from "../../core/view";
+import { IconDna, IconWeights, IconCatalogue } from "../../components/Icons";
 
 // --- STYLED COMPONENTS ---
 
@@ -161,7 +162,7 @@ const FooterBlock = styled("footer")`
 
 // --- COMPONENT CREATOR ---
 
-export function createMainMenu(): HTMLElement {
+function createMainMenu(ctx: ViewContext): HTMLElement {
   const container = MenuContainer();
 
   const header = HeaderBlock({
@@ -173,7 +174,7 @@ export function createMainMenu(): HTMLElement {
 
   const btnOcean = LauncherCard({
     class: "card-ocean",
-    onClick: () => navigateTo("ocean"),
+    onClick: () => ctx.navigate("ocean"),
     children: [
       CardIcon({ children: IconDna }),
       CardTitle({ children: "Ocean Laboratory" }),
@@ -183,7 +184,7 @@ export function createMainMenu(): HTMLElement {
 
   const btnTrainer = LauncherCard({
     class: "card-trainer",
-    onClick: () => navigateTo("trainer"),
+    onClick: () => ctx.navigate("trainer"),
     children: [
       CardIcon({ children: IconWeights }),
       CardTitle({ children: "Training Room" }),
@@ -193,7 +194,7 @@ export function createMainMenu(): HTMLElement {
 
   const btnCatalogue = LauncherCard({
     class: "card-catalogue",
-    onClick: () => navigateTo("catalogue"),
+    onClick: () => ctx.navigate("catalogue"),
     children: [
       CardIcon({ children: IconCatalogue }),
       CardTitle({ children: "Creature Catalog" }),
@@ -227,3 +228,12 @@ export function createMainMenu(): HTMLElement {
 
   return container;
 }
+
+export const mainMenuView: ViewModule<"main-menu"> = {
+  id: "main-menu",
+  title: "BroodBattle",
+  // The menu idles in Ocean mode (the backend starts there)
+  backendMode: "ocean",
+  create: createMainMenu,
+  mount() {},
+};

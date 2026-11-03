@@ -8,30 +8,35 @@ let classCounter = 0;
  */
 export function styled<T extends keyof HTMLElementTagNameMap>(tag: T) {
   return (strings: TemplateStringsArray, ...values: any[]) => {
+    // The template is compiled once per factory: every element of one styled component shares its class, so
+    // re-rendering a list or opening a dialog again adds no stylesheet rules (TCK-160)
+    let className: string | null = null;
     return (props: Record<string, any> = {}): HTMLElementTagNameMap[T] => {
-      // 1. Compile raw template CSS string
-      const css = strings.reduce((acc, str, i) => acc + str + (values[i] !== undefined ? values[i] : ""), "");
+      if (className === null) {
+        // 1. Compile raw template CSS string
+        const css = strings.reduce((acc, str, i) => acc + str + (values[i] !== undefined ? values[i] : ""), "");
 
-      // 2. Generate unique class identifier
-      const className = `styled-${tag}-${classCounter++}`;
+        // 2. Generate unique class identifier
+        className = `styled-${tag}-${classCounter++}`;
 
-      // 3. Ensure document-wide Stylesheet element exists in the head
-      if (typeof document !== "undefined" && !styleSheet) {
-        styleSheet = document.createElement("style");
-        styleSheet.id = "styled-components-stylesheet";
-        document.head.appendChild(styleSheet);
-      }
+        // 3. Ensure document-wide Stylesheet element exists in the head
+        if (typeof document !== "undefined" && !styleSheet) {
+          styleSheet = document.createElement("style");
+          styleSheet.id = "styled-components-stylesheet";
+          document.head.appendChild(styleSheet);
+        }
 
-      // 4. Parse flat & nested CSS blocks (resolving '&' with our class)
-      if (styleSheet) {
-        const rules = parseCSSRules(className, css);
-        rules.forEach(rule => {
-          try {
-            styleSheet!.sheet?.insertRule(rule, styleSheet!.sheet.cssRules.length);
-          } catch (e) {
-            console.warn("[Styled TS] Failed to insert rule:", rule, e);
-          }
-        });
+        // 4. Parse flat & nested CSS blocks (resolving '&' with our class)
+        if (styleSheet) {
+          const rules = parseCSSRules(className, css);
+          rules.forEach(rule => {
+            try {
+              styleSheet!.sheet?.insertRule(rule, styleSheet!.sheet.cssRules.length);
+            } catch (e) {
+              console.warn("[Styled TS] Failed to insert rule:", rule, e);
+            }
+          });
+        }
       }
 
       // 5. Create DOM Element with correct namespace
