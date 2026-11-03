@@ -96,4 +96,5 @@ Definition of done:
 - Golden master, three trainer references and the Ocean reference in CI; fmt, clippy `-D warnings`, ESLint, Vitest (happy-dom) and a Windows CI job; all green locally (CI results not checked from this environment).
 - Wiki: a contract and a guide per extension point, `invariants.md` the only rule copy, history split, module map, link check in CI; the `plugin-authoring` skill is the entry for feature agents.
 - Training targets still met after the model corrections (small room 0.676, large room 0.408 on unseen layouts).
+Decisions recorded as ADR-003 (plugin architecture), ADR-004 (determinism and references), ADR-005 (persistence), ADR-006 (typed IPC), ADR-007 (release identity) in `wiki/decisions/`.
 Open follow-ups: `.agents/state/next-tasks.md` (seams found in R7, beta identifier, Linux/macOS builds); feature epics on the new seams (active traits, dynamics, arena, creator).
