@@ -23,7 +23,7 @@ import {
   POPULATION_STEPS, ProgressHistory, TRAINING_MODE_LABELS, formatFirstCatch, formatLevel, formatRate, modeChoice,
   pendingSwitchLabel, populationStepIndex, visibleSandboxRange, type TrainingModeChoice,
 } from "./metrics";
-import { TrainerSettings } from "./settings";
+import { type HyperparamsAction, TrainerSettings } from "./settings";
 
 // Backing-store size of the tile canvases: tiles show at ~130-160 CSS px, so 360 px covers DPR 2; a 1000 px store
 // per tile made 16 tiles at 25 Hz GPU-bound and backed up the webview
@@ -203,9 +203,9 @@ class TrainerController {
     if (gridChanged) this.rebuildGrid(false);
   }
 
-  private push(include: { mutation?: boolean; population?: boolean } = {}) {
-    const action = this.settings.hyperparams(include);
-    if (action) void this.ctx.ipc.send(action);
+  /** Sends only the changed fields (TCK-161): see `TrainerSettings.update`. */
+  private push(fields: Omit<HyperparamsAction, "type">) {
+    void this.ctx.ipc.send(this.settings.update(fields));
   }
 
   private setRunning(running: boolean) {
@@ -262,7 +262,8 @@ class TrainerController {
   private switchRun(id: string) {
     if (id !== this.settings.runId) this.resetGenerationStats();
     this.settings.runId = id;
-    this.rebuildGrid(true);
+    this.push({ runId: id });
+    this.rebuildGrid(false);
     void this.populateRunSelector();
   }
 
@@ -377,34 +378,34 @@ class TrainerController {
     });
     l.sliderSpeedup.addEventListener("change", () => {
       s.warpSpeed = sliderToWarp(parseInt(l.sliderSpeedup.value));
-      this.push();
+      this.push({ warpSpeed: s.warpSpeed });
     });
-    const percent = (slider: HTMLInputElement, label: HTMLElement, set: (v: number) => void) => {
+    const percent = (slider: HTMLInputElement, label: HTMLElement, key: "eliteRatio" | "inflowRate" | "hofRate") => {
       slider.addEventListener("input", () => {
         label.innerText = `${slider.value}%`;
       });
       slider.addEventListener("change", () => {
-        set(parseFloat(slider.value) / 100);
-        this.push();
+        s[key] = parseFloat(slider.value) / 100;
+        this.push({ [key]: s[key] });
       });
     };
-    percent(l.sliderEliteRatio, l.lblEliteRatio, (v) => { s.eliteRatio = v; });
-    percent(l.sliderInflow, l.lblInflow, (v) => { s.inflowRate = v; });
-    percent(l.sliderHof, l.lblHof, (v) => { s.hofRate = v; });
+    percent(l.sliderEliteRatio, l.lblEliteRatio, "eliteRatio");
+    percent(l.sliderInflow, l.lblInflow, "inflowRate");
+    percent(l.sliderHof, l.lblHof, "hofRate");
     l.sliderMutation.addEventListener("input", () => {
       l.lblMutation.innerText = s.mutationOpsLabel(parseInt(l.sliderMutation.value));
     });
     l.sliderMutation.addEventListener("change", () => {
       s.mutationOpsMax = parseInt(l.sliderMutation.value);
-      this.push({ mutation: true });
+      this.push({ mutationRate: s.mutationOpsMax });
     });
     l.chkMultiTrial.addEventListener("change", () => {
       s.multiTrial = l.chkMultiTrial.checked;
-      this.push();
+      this.push({ multiTrial: s.multiTrial });
     });
     l.chkLamarck.addEventListener("change", () => {
       s.lamarckian = l.chkLamarck.checked;
-      this.push();
+      this.push({ lamarckian: s.lamarckian });
     });
     // The backend answers with TRAINER_STATE_CHANGED (mode, level, pending switch); "manual" sets the slider's level
     l.selectMode.addEventListener("change", () => {
@@ -453,7 +454,7 @@ class TrainerController {
       if (this.mountScope) this.dirty.add(tile);
     }
     this.layout.grid.replaceChildren(...cards);
-    if (push) this.push({ population: includePopulation });
+    if (push) this.push({ N, ...(includePopulation ? { population: this.settings.population } : {}) });
   }
 
   private createTile(idx: number): Tile {

@@ -3042,7 +3042,7 @@ dependencies = [
 
 [[package]]
 name = "src-tauri"
-version = "1.12.39"
+version = "1.12.40"
 dependencies = [
  "libm",
  "log",

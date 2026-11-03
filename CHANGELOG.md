@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.40] - 2026-11-03
+
+Post-fix of TCK-161 / TCK-160 (epic TCK-196). Simulation unchanged.
+
+### Fixed
+- Training Room controls sometimes lost a speed (or other) change made right after opening the room: the UI sent the whole settings set and nothing before the backend state had arrived. Every control now sends only the value it changed (ref TCK-161, TCK-160).
+
+### Added
+- The log records trainer start, pause and speed changes (ref TCK-161).
+
 ## [1.12.39] - 2026-11-03
 
 Epic TCK-196, phase R4. Behaviour unchanged (golden master and all references identical).

@@ -266,10 +266,12 @@ impl Mode for TrainerMode {
                 self.emit_state(ctx);
             }
             TrainerAction::StartTraining => {
+                log::info!("training started (warp {})", self.warp);
                 self.running = true;
                 self.emit_state(ctx);
             }
             TrainerAction::PauseTraining => {
+                log::info!("training paused");
                 self.running = false;
                 self.emit_state(ctx);
             }
@@ -323,6 +325,7 @@ impl Mode for TrainerMode {
                 }
                 if let Some(warp) = update.warp_speed {
                     self.warp = clamp_warp(warp);
+                    log::info!("trainer warp set to {} (requested {})", self.warp, warp);
                 }
                 if let Some(e_r) = update.elite_ratio {
                     p.elite_ratio = e_r;

@@ -9,20 +9,11 @@ const state: any = {
 };
 
 describe("trainer settings (TCK-160)", () => {
-  it("sends no hyperparameters before the backend state arrived (no client defaults at boot)", () => {
+  it("builds partial updates: only the given fields are sent (TCK-161), also before the backend state", () => {
     const s = new TrainerSettings();
-    expect(s.hyperparams()).toBeNull();
-    expect(s.hyperparams({ population: true, mutation: true })).toBeNull();
-  });
-
-  it("after the backend state, pushes its values; population and mutation only on request", () => {
-    const s = new TrainerSettings();
+    expect(s.update({ warpSpeed: 35 })).toEqual({ type: "UPDATE_TRAINER_HYPERPARAMS", warpSpeed: 35 });
     expect(s.apply(state)).toBe(true);
-    const a = s.hyperparams()!;
-    expect(a).toMatchObject({ type: "UPDATE_TRAINER_HYPERPARAMS", N: 25, warpSpeed: 50, runId: "run_b", lamarckian: true });
-    expect(a).not.toHaveProperty("population");
-    expect(a).not.toHaveProperty("mutationRate");
-    expect(s.hyperparams({ population: true, mutation: true })).toMatchObject({ population: 200, mutationRate: 4 });
+    expect(s.update({ N: 25, population: 200 })).toEqual({ type: "UPDATE_TRAINER_HYPERPARAMS", N: 25, population: 200 });
     expect(s.mutationOpsLabel()).toBe("2–4");
   });
 });
