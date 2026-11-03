@@ -67,7 +67,6 @@ Webview: router + VIEWS registry (ViewModule) -> core/ipc.ts ...................
 
 ## Known limitations
 
-- Mitosis children of the Ocean are shown but not simulated (RV-B01, TCK-143).
 
 ## Key Takeaways
 

@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-203-r6-docs-contracts-agent-setup.md, tickets/open/TCK-196-plugin-architecture-epic.md]
+sources: [tickets/closed/TCK-203-r6-docs-contracts-agent-setup.md, tickets/open/TCK-196-plugin-architecture-epic.md]
 ---
 
 # Contract: `<seam name>` (template)

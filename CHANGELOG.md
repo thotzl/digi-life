@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.43] - 2026-11-03
+
+Epic TCK-196, phase R6. Documentation and agent setup only.
+
+### Changed
+- Every extension point (organ kind, creature dynamic, room, evaluator, engine mode, event sink, IPC message, config key, database table, UI view) has a contract and a short how-to guide; one copy of the project rules (`wiki/architecture/invariants.md`); a module map replaces the repository map; measurements and replaced models moved to `wiki/history/`; a new `plugin-authoring` agent skill tells a feature agent to read only its guide, its contract and the rules (ref TCK-203).
+
 ## [1.12.42] - 2026-11-03
 
 Epic TCK-196, phase R5. Golden master and trainer references unchanged; the Ocean reference changes by design.

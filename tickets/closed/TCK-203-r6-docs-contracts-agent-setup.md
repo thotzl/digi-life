@@ -1,7 +1,7 @@
 ---
 id: TCK-203
 title: "R6 Docs: Contracts and Guides per Extension Point, Agent Setup"
-status: open
+status: closed
 priority: high
 assigned: agent
 created_at: 2026-11-02
@@ -34,3 +34,14 @@ A feature agent reads one guide, one contract and `invariants.md` — nothing el
 - Link check (TCK-197) green; no invariant text outside `invariants.md`.
 - Every extension point has contract + guide; each contract has a runnable test recipe.
 - `trainer.md` ≤ ~120 lines current state; history in `wiki/history/`.
+
+## Verification (2026-11-03, v1.12.43)
+- Contracts: all ten extension points (organ-kind, creature-system, room, evaluator, mode, event-sink, ipc-message, config-section, persistence-repo, frontend-view) have the nine template sections; stale names fixed against the code (`Sender<EngineInput>`, `EventSink` emit/flush, `trainer::sim::TrainerSim`, happy-dom test recipe). Every test-recipe filter matches tests: `organs::` 6, `sim::` 70, `sim::ocean::` 11, `trainer::` 71, `trainer::evaluator` 2, `trainer::sim` 32, `server::` 54, `server::engine::` 10, `config::tests` 5, `persistence::` 16, `biology::trainer_store` 3, `test_sink_coalesces_database_changed_per_flush` 1.
+- Guides: add-organ-kind, add-dynamic, add-room-or-mode (mode section filled), add-evaluator (new), add-event-sink (new), add-ipc-message, add-config-key, add-table, add-view; each at most 60 lines, wikilinks only to its contract(s) and the invariants.
+- Architecture: `invariants.md` is the only copy of the rules (1-10 kept, 11-16 added: config as single source of tunables, SQL only in `src/persistence/`, typed IPC, client as renderer, untrusted strings as text, deterministic IO-free simulations); skills, contracts, guides and articles refer to rule numbers. `system-overview.md` has the plugin host and registries diagram; `wiki/architecture/module-map.md` replaces `wiki/project-map/repository-map.md`.
+- History: `wiki/history/` with `_index`, `replaced-models`, `brain-measurements`, `probe-measurements` (plus the earlier trainer and model-correction articles); measurements and "before" notes removed from ctrnn-brain, genome-compiler, sensing, frontend/structure, simulation-engine, ipc-protocol, trainer (194 -> 157 lines), and on integration also from metabolism-and-reproduction, ocean, analytics-and-balancing (left out by the R6 agent while TCK-143 ran); RV-B01 mentions removed after TCK-143 (system-overview, simulation-engine, performance, testing, skill `biology-dna`).
+- Skills: new `.agents/skills/plugin-authoring/SKILL.md` (read the guide for the extension point, its contract and the invariants; stop and report if no contract covers the needed seam); `biology-dna`, `server-simulation`, `client-rendering` reduced to pointers and invariant numbers; `project-baseline` = where to look, commands, versioning, close checklist; `testing-strategies` points to the contracts' test recipes; skills index in `AGENTS.md` updated.
+- `AGENTS.md`, `README.md`, `wiki/_master-index.md`: short indexes (master index with an extension point -> guide -> contract table), product name BroodBattle, current focus only in TCK-169. README stubs in `src/{sim,trainer,trainer/room,biology/organs,server,server/engine,persistence,config}` and `frontend/{views,core}`.
+- TCK-169 Phase 1 status table; TCK-196 progress section.
+- Gate on master: doc links OK (90 files); `cargo test` 297 passed / 1 ignored; `npm test` 49; build and lint unchanged (docs only).
+- Left: `wiki/simulation/trainer.md` stays at 157 lines of dense current state (splitting curriculum/breeder would add reading); the whitepaper keeps the old name (TCK-193).

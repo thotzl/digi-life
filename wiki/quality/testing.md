@@ -60,7 +60,7 @@ Run at the end of every phase of the training epic:
 ## Not covered
 
 - `server::engine::spawn_simulation_thread` and `TauriSink` (need a window; everything else of the engine runs headless with `VecSink` + `MemoryDb` in `server::engine::tests`, TCK-156), the Tauri commands in `server/api/`; in the frontend the renderers (happy-dom has no 2D canvas context, so draw paths return early), the catalogue and main-menu controllers beyond mount/unmount, and the dialogs' confirm paths.
-- Ocean mitosis has a behavioural test on the headless Ocean since TCK-158 (`sim::ocean::tests::test_mitosis_splits_a_ready_parent_and_reports_the_child_without_simulating_it`: a ready parent splits in `OceanSim::step`, the child is reported with the next id and generation + 1 at the parent's place but not simulated (RV-B01), a new species only for a mutated child, no split at `ocean.maxCreatures`); the warp cap is tested since TCK-156 (`test_warp_is_clamped_and_echoed_for_ocean_and_trainer`). Genome parsing and mutation have property tests since P3.
+- Ocean mitosis has a behavioural test on the headless Ocean since TCK-158 (`sim::ocean::tests::test_mitosis_splits_a_ready_parent_and_adds_the_child_to_the_population`: a ready parent splits in `OceanSim::step`, the child joins the population with the next id and generation + 1 at the parent's place and separates from it, no split beyond `ocean.maxCreatures`; `test_mitosis_child_is_simulated_and_its_species_is_no_phantom`, TCK-143); the warp cap is tested since TCK-156 (`test_warp_is_clamped_and_echoed_for_ocean_and_trainer`). Genome parsing and mutation have property tests since P3.
 
 ## CTRNN validation facts
 

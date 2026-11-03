@@ -14,5 +14,4 @@ description: Pointers for changing the BroodBattle creature model - genome compi
 - A phenotype or brain change shows up in `test_parse_genome_golden_master`; state an intended change in the ticket.
 - New promoters go into the promoter registry (`src/biology/genome/promoters.rs`); mutation protects every registered
   motif automatically.
-- Do not draw evolutionary conclusions from Ocean generation counters while RV-B01 (TCK-143) is open.
 - The species model (TCK-148) awaits a user decision; do not implement it without one.

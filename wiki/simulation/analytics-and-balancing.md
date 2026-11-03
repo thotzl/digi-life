@@ -4,7 +4,7 @@ sources: [.agents/skills/simulation-analytics/SKILL.md, tickets/closed/TCK-149-d
 
 # Analytics and Balancing
 
-Trainer and Ocean measurements run headless with `trainer_runner` (TCK-173, Ocean since TCK-158): reproducible, without UI and warp cap, in memory. It replaced the outdated `cli_trainer` (RV-S11). Agent rules for measuring: `.agents/skills/simulation-analytics/SKILL.md`.
+Trainer and Ocean measurements run headless with `trainer_runner` (TCK-173, Ocean since TCK-158): reproducible, without UI and warp cap, in memory. Agent rules for measuring: `.agents/skills/simulation-analytics/SKILL.md`.
 
 ## Headless runner
 

@@ -17,7 +17,7 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 - [x] R3 TCK-200 (v1.12.33), TCK-201 (v1.12.36), TCK-156 (v1.12.37), TCK-158 (v1.12.38)
 - [x] R4 TCK-160 (v1.12.35), TCK-161 (v1.12.39)
 - [x] R5 TCK-202 (v1.12.41, absorbs TCK-146/147), TCK-143 (v1.12.42)
-- [ ] R6 TCK-203 (branch tck203-docs, commit 3327b86, integrate next)
+- [x] R6 TCK-203 (v1.12.43)
 - [ ] R7 TCK-204
 - [ ] Final (user, 2026-11-03): after R7 a new local release build (`npm run release:win`), install the setup over the existing install in `C:\BroodBattle` (silent: `MSYS_NO_PATHCONV=1 <setup> /S '/D=C:\BroodBattle'`), saves stay; then stop the keep-awake script.
 - [ ] Final report (user, 2026-11-03): report on R0-R7 "for everyone", published as an artifact page (goal and starting point from the review, per phase tickets/versions/changes, new extension points before/after, quality gates, fixed bugs incl. XSS, model change and new training numbers, R7 proof, open items and next steps).

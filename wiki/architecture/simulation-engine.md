@@ -99,7 +99,6 @@ The simulations are IO-free structs: the Ocean `sim::ocean::OceanSim` ([[wiki/si
 
 ## Known limitations
 
-- Mitosis children are reported to the UI but not simulated (RV-B01, TCK-143).
 - The frontend keeps a fallback world size until `INIT_STATE.world` arrives ([[wiki/frontend/structure]]).
 - The nearest-food lookup scans all spores and peers per creature (RV-P04).
 

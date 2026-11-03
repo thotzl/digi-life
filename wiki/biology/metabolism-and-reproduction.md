@@ -36,9 +36,7 @@ One energy function for Ocean and trainer: `src/biology/metabolism.rs`. `drain_e
 
 ### Replaced model
 
-- Before P6 the cost was a multiplicative BMR compiled into the phenotype, `(body area + organ tax) · (1 + organs · 5 · 0.08) · 1.4 · stiffness · (1 + synapses · 0.06)`, drained in the Ocean as `basal_metabolic_rate · bmrBaseScale · basalMetabolicRateMultiplier · 0.45`; the trainer had no drain. One sense organ raised the BMR several-fold through the synapse factor (RV-S03).
-- Removed (TCK-151): `brain_complexity_multiplier`, the organ tax as a factor, the phenotype field `basal_metabolic_rate` (`basalMetabolicRate` in the bindings), the Ocean `* 0.45` literal, the keys `basalMetabolicRateMultiplier` and `bmrBaseScale`. RV-S03 is resolved: organs and neurons add cost linearly. The organ load keeps the shape of the former organ tax.
-- `CreatureAgent.adrenaline` and the always-1 surcharge factor were removed in P1 (TCK-149).
+The multiplicative BMR model before P6: [[wiki/history/replaced-models]].
 
 ## Start energy (TCK-185)
 

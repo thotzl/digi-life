@@ -29,11 +29,7 @@ The open-world mode: a closed basin with a free-living population.
 - Founders: `OceanSpawner::founder(Random | Wildtype | Genome)`: fresh start `FRESH_FOUNDERS` (15) wildtype founders
   (`genome::WILDTYPE_GENOME`, mutated with probability 0.6), reset `RESET_FOUNDERS` (25) random catalogue clones or
   structured random genomes, inject a structured random genome, clone a given genome; uniform 500 px inside the world.
-- **Behaviour change of TCK-156 (by design, no Ocean reference existed):** the RNG is seeded instead of `thread_rng`,
-  so every Ocean run differs from the former ones; the creature tick runs in the shared system order (eaten-spore
-  respawn and corpse decomposition are applied after each creature's step rather than inside its eat loop; the
-  creature systems and their arithmetic are those of `engine.rs` before). Nutrient centres survive a restart (before,
-  a restart drew new centres for the restored spores). The stale "15 unique wildtype cells" line after a reset is gone.
+- Seeded RNG streams and the shared system order (eaten-spore respawn and corpse decomposition applied after each creature's step); nutrient centres are saved with the snapshot. The change from the former engine: [[wiki/history/replaced-models]].
 - `OceanEvent::Died` carries a `DeathCause` (TCK-158): `Starved` (no energy left in its step, or after a tick without
   bite damage), `Aged` (lifespan reached with energy left), `Hunted` (bite damage this tick left no energy). One death
   threshold `death::is_dead_energy` (energy ≤ 0) in the step and after the damage pass (TCK-202; the damage pass
@@ -81,7 +77,6 @@ The open-world mode: a closed basin with a free-living population.
 - **Heredity (TCK-143, RV-B01 resolved):** mitosis children are simulated from the next tick, a clone in the parent's species, a mutant in a new species recorded once it lives (no phantom species). Splits are rare, so the population is still held mostly by restocking.
 - **Locomotion (RV-S02 resolved, TCK-150):** the "motionless Ocean" was attributed to thrust ∝ `stiffness · (pulse·1000)²`, which left low-pulse genomes near zero speed (speed probe before P5: 23 % of structured random genomes below 0.2 px/tick). Since P5 the Ocean uses the same speed band as the trainer (`step_creature_kinematics` through `sim/systems/move.rs`): every genome swims 1–5 px/tick at full thrust and can turn in place; wall and reef contact reflect the heading (TCK-180, [[wiki/simulation/physics]]). Negative `out_thrust` swims backwards (≈ half of random brains have a negative mean thrust, steering probe). The Ocean population itself has not been measured.
 - **Sparse ecology:** with 300 spores, 25 agents and the sensor range above, random food finding is rare (hypothesis RV-S07, unmeasured; left for the Ocean phase of TCK-169, TCK-150).
-- The earlier explanation (render time scale in `frontend/ocean.ts`) is superseded by RV-S02 (fixed) and RV-S07 (open).
 
 ## Key Takeaways
 

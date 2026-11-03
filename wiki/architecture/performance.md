@@ -4,7 +4,7 @@ sources: [tickets/closed/TCK-139-ocean-hot-loop-performance.md, tickets/closed/T
 
 # Performance
 
-Context: the UI runs a ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); every operation in the step body multiplies accordingly. The headless trainer runner has no warp cap ([[wiki/simulation/analytics-and-balancing]]). The Ocean population is 25–45 because offspring are not simulated (RV-B01); higher populations will stress the remaining linear searches.
+Context: the UI runs a ~60 Hz loop with up to 35 physics steps per frame (≈ 2,100 steps/s); every operation in the step body multiplies accordingly. The headless trainer runner has no warp cap ([[wiki/simulation/analytics-and-balancing]]). The Ocean population stays near the target 25 (restock) and is capped at 45; offspring are simulated since TCK-143 but rare under the current food supply; higher populations will stress the remaining linear searches.
 
 ## Implemented optimizations (behaviour-preserving)
 

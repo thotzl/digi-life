@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-203-r6-docs-contracts-agent-setup.md]
+sources: [tickets/closed/TCK-203-r6-docs-contracts-agent-setup.md]
 ---
 
 # Guide: add a `<thing>` (template)

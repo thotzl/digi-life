@@ -23,6 +23,9 @@ model change is in [[wiki/history/model-corrections-r5]].
 - Every navigation to the trainer rebuilt its population from the store.
 - A failing engine DB connection panicked the engine thread (`expect`) without any message to the UI.
 
+- Ocean behaviour change of TCK-156 (by design, no Ocean reference existed then): seeded RNG instead of `thread_rng`, so every Ocean run differs from the former ones; eaten-spore respawn and corpse decomposition applied after each creature's step instead of inside its eat loop (creature arithmetic otherwise as in the former `engine.rs`); nutrient centres survive a restart (before, a restart drew new centres for the restored spores); the stale "15 unique wildtype cells" log line after a reset removed.
+- Ocean mitosis children before TCK-143: reported to the UI but never simulated, and every mutated child created a species that was marked extinct one tick later (RV-B01).
+
 ## IPC (before TCK-157)
 
 - An unknown action type was only logged by the engine, missing fields were ignored silently (RV-A02).
