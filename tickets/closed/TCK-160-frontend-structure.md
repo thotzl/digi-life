@@ -1,7 +1,7 @@
 ---
 id: TCK-160
 title: Frontend Structure and SSOT Gene Spans
-status: open
+status: closed
 priority: pool
 decision: pending
 assigned: unassigned
@@ -38,3 +38,13 @@ Gene spans from backend, view mount/unmount lifecycle, shared preview component,
 - **RV-F06 · P2** — catalogue preview with its own `requestAnimationFrame` loop exists in `ocean.ts` and `UnifiedDiagnosticsPanel.ts`. One component.
 - **RV-F08 · P3** — world size 19200/10800 (5×), population display `/ 25`, fossil fallback `selectedAge = 2700` → from `INIT_STATE`/config.
 - From TCK-141: `styled.ts applyChildren` treats strings starting with `<` as HTML.
+
+## Verification (2026-11-03, v1.12.35)
+- Module map (`frontend/`): `core/view.ts` (`ViewModule { id, title, backendMode, create(ctx), mount(ctx), unmount?, onEvent?, suspend?, resume? }`, `ViewContext { ipc, selection, scope, navigate }`), `core/scope.ts` (`Scope`: `add`, `listen`, `effect`, `frame`, `timeout`, `child`, `dispose`), router (`startRouter`, `navigateTo`, `dispatchUiEvent`; on navigation: dispose old scope + unmount, mount target with a fresh scope, then serialized suspend others -> `setMode` -> resume), `state/selection.ts` (tagged `SelectionRef` ocean/fossil/trainer/catalogue; `selection`, `vitals`, `activations` signals; updates ignored for a stale ref), `components/{Modal,CreaturePreview,CataloguePicker,DiagnosticsPanel}.ts`, `render/{organs,worldLayer}.ts` (`ORGAN_PAINTERS: Record<OrganKind, ...>`), `shared/{creatureLabels,warp}.ts`, `views/index.ts` registry `VIEWS` with `ViewId` derived from it, `views/{main-menu,ocean,trainer,catalogue}/`. Removed: `ocean.ts`, `trainer.ts`, `signals.ts`, `shared/types.ts` (types only from `bindings/`).
+- A new view touches `views/<name>/index.ts`, one `VIEWS` entry and a launcher calling `ctx.navigate`.
+- Bugs, reproduction first (logs in `.agents/artifacts/tck160/`): entering the Ocean always paused it (old router sent `TOGGLE_SIMULATION false`; now pause on leave, resume on entry if it was running; `core/router.test.ts`); failed `getPhenotype` re-requested every frame ("expected 1 times, but got 2 times"; retry after 10 s; `core/phenotypes.test.ts`); bite flash at canvas instead of world coordinates (`{960,540}` vs `{9600,5400}`; `views/ocean/model.test.ts`); hover radius from an empty cache (100 instead of 62); catalogue save with nonexistent `p.fitness` and compiled weights (`state/selection.test.ts`); boot pushed client defaults before TRAINER_STATE (code path; `hyperparams()` null until the backend state arrives, `views/trainer/settings.test.ts`); `"creator"` id without a view. Also: listener/effect/preview-loop teardown on leaving a view, modal `<style>` leak, duplicate `#inspect-panel` (now per view), diet labels with backend thresholds, colour from `primaryColor`, warp mapping and spore drawing once, world size and biome image from `INIT_STATE.world`.
+- Changed ids/texts: `#inspect-panel` -> `#ocean-inspect-panel` / `#trainer-inspect-panel`; `#stat-population` shows the count only (cap needs backend data); creatures with carnivory 0.55-0.6 read "Omnivore"; fossil/catalogue age "-". All ids used by the UI check scripts kept.
+- Gate on master: `npm test` 41 passed (11 files); `npm run build` (tsc strict) ok; `cargo test` 249 passed (no Rust change); doc links OK (86 files).
+- UI checks (dev app, DB backed up and restored): smoke OK (Ocean, inject, trainer generation, metrics, curriculum, room switch, pause, reset; 0 console errors); selection/reset check OK (4/2/2/8 tiles, inspector #63, two resets differ); new dialog check `.agents/artifacts/uicheck/dialogs.cjs` OK (catalogue view, save to catalogue, Ocean "Load from Catalog" dialog open/cancel, trainer "Assign From Catalogue" dialog open/cancel, navigation round trip with stable `<style>` count, 0 console errors).
+- Docs: `wiki/contracts/frontend-view.md`, `wiki/guides/add-view.md`, `wiki/frontend/structure.md` rewritten; master index, invariants rule 1 path, ipc-protocol, ipc-message, repository-map, testing, performance, trainer, skill `client-rendering`.
+- Left open: population cap and age maximum need backend data (TCK-156 / TCK-202); trainer catalogue saves carry no learned weights (not in telemetry); DOM/controller tests in TCK-161.

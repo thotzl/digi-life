@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.35] - 2026-11-03
+
+Epic TCK-196, phase R4 (frontend structure). Simulation unchanged.
+
+### Changed
+- The UI is built from view modules in a registry; each view cleans up its listeners, animation loops and dialogs when it is left. A new view is one module plus one registry entry. Shared dialog, preview and catalogue-picker components replace three copies (ref TCK-160).
+- Creature selection is tagged with its source (Ocean, fossil, trainer, catalogue), so a trainer sandbox id is no longer mistaken for an Ocean creature (ref TCK-160).
+- Organ drawing uses one painter per organ kind; world size and background come from the backend (ref TCK-160).
+
+### Fixed
+- Opening the Ocean always paused it; it now resumes if it was running (ref TCK-160).
+- Bite flashes were drawn at the wrong place; the hover radius ignored the creature size (ref TCK-160).
+- Saving to the catalogue stored fitness 0 and compiled instead of the creature's own weights (ref TCK-160).
+- A creature whose phenotype could not be loaded was requested again every frame (ref TCK-160).
+- Dialog styles accumulated with every opened dialog (ref TCK-160).
+
 ## [1.12.34] - 2026-11-03
 
 Epic TCK-196, phase R1. Golden master and all trainer references unchanged.

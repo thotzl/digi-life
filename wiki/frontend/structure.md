@@ -1,5 +1,5 @@
 ---
-sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/open/TCK-160-frontend-structure.md, frontend/core/router.ts, frontend/core/view.ts, frontend/state/selection.ts, frontend/views/index.ts]
+sources: [.agents/skills/client-rendering/SKILL.md, README.md, tickets/closed/TCK-115-master-architectural-refactoring.md, tickets/closed/TCK-128-main-menu-navigation-and-unified-diagnostics-sidebars.md, tickets/closed/TCK-141-frontend-hygiene.md, tickets/closed/FIX-131-hox-symmetry-visuals-reef-collision.md, tickets/closed/TCK-186-regression-safety-ci-runner-and-smoke-checks.md, tickets/closed/TCK-187-gene-spans-from-backend.md, tickets/closed/TCK-177-trainer-ui-progress-metrics.md, tickets/closed/TCK-160-frontend-structure.md, frontend/core/router.ts, frontend/core/view.ts, frontend/state/selection.ts, frontend/views/index.ts]
 ---
 
 # Frontend Structure

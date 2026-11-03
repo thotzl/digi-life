@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-160-frontend-structure.md]
+sources: [tickets/closed/TCK-160-frontend-structure.md]
 ---
 
 # Guide: add a view

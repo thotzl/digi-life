@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-160-frontend-structure.md, frontend/core/view.ts, frontend/core/scope.ts, frontend/core/router.ts, frontend/views/index.ts, frontend/state/selection.ts]
+sources: [tickets/closed/TCK-160-frontend-structure.md, frontend/core/view.ts, frontend/core/scope.ts, frontend/core/router.ts, frontend/views/index.ts, frontend/state/selection.ts]
 ---
 
 # Contract: frontend view
