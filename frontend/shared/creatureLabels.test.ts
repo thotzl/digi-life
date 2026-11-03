@@ -16,8 +16,10 @@ describe("shared labels (TCK-160)", () => {
   });
 
   it("warp slider mapping round-trips", () => {
-    for (let p = 1; p <= 12; p++) expect(warpToSlider(sliderToWarp(p))).toBe(p);
-    expect([warpLabel(3), warpLabel(11)]).toEqual(["3x", "50x"]);
+    for (let p = 1; p <= 11; p++) expect(warpToSlider(sliderToWarp(p))).toBe(p);
+    // The engine echoes the clamped warp (35) and older values above 10 (50, 9999): all map to the max position
+    expect([warpToSlider(35), warpToSlider(50), warpToSlider(9999)]).toEqual([11, 11, 11]);
+    expect([warpLabel(3), warpLabel(11)]).toEqual(["3x", "Max (35x)"]);
   });
 
   it("every backend organ kind has a painter", () => {

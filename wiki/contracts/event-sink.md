@@ -1,5 +1,5 @@
 ---
-sources: [tickets/open/TCK-156-engine-decomposition.md, src/server/engine/sink.rs, src/server/engine/mod.rs, src/server/ipc.rs]
+sources: [tickets/closed/TCK-156-engine-decomposition.md, src/server/engine/sink.rs, src/server/engine/mod.rs, src/server/ipc.rs]
 ---
 
 # Contract: event sink

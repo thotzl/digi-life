@@ -1,5 +1,6 @@
 // Training Room DOM (TCK-160): styled components and the layout builder returning element references.
 import { styled } from "../../core/styled";
+import { WARP_SLIDER_MAX } from "../../shared/warp";
 import { IconBack, IconElite, IconMutant, IconPlant, IconTrophy, IconWeights } from "../../components/Icons";
 
 // --- STYLED COMPONENTS ---
@@ -538,7 +539,7 @@ export function buildTrainerLayout(): TrainerLayout {
   // population, the grid shows the first N sandboxes (TCK-192)
   const population = slider("slider-population", "lbl-population", "Population", "100", { min: "0", max: "4", value: "2", step: "1" });
   const gridSize = slider("slider-grid-size", "lbl-grid-size", "Visible Sandboxes", "16", { min: "4", max: "100", value: "16", step: "1" });
-  const speedup = slider("slider-speedup", "lbl-speedup", "Warp Speedup", "1x", { min: "1", max: "12", value: "1", step: "1" });
+  const speedup = slider("slider-speedup", "lbl-speedup", "Warp Speedup", "1x", { min: "1", max: String(WARP_SLIDER_MAX), value: "1", step: "1" });
   const lblMode = Span({ id: "lbl-trainer-mode", children: "Standard" });
   const selectMode = ModeSelect({
     id: "select-trainer-mode",

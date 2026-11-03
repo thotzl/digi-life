@@ -10,7 +10,7 @@
 //! | `sink.rs` | `EventSink`, `TauriSink`, `VecSink` (buffer + `DATABASE_CHANGED` coalescing) |
 //! | `store.rs` | `EngineStore` (repository ports), `open_store` with in-memory fallback, `SnapshotWriter` |
 //! | `ocean_mode.rs` | `OceanMode` over the IO-free `sim::ocean::OceanSim` |
-//! | `trainer_mode.rs` | `TrainerMode` over `biology::trainer_sim::TrainerSim` |
+//! | `trainer_mode.rs` | `TrainerMode` over `trainer::sim::TrainerSim` |
 
 pub mod mode;
 pub mod ocean_mode;

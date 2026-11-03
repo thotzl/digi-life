@@ -14,7 +14,7 @@ Epic TCK-196 (plugin architecture rebuild), user GO 2026-11-02 "push und go - ma
 - [x] R0 TCK-197 (v1.12.29), TCK-189 (v1.12.28)
 - [x] R1 TCK-198 (v1.12.30), TCK-159 (v1.12.31), TCK-157 (v1.12.34)
 - [x] R2 TCK-199 (v1.12.32, absorbs TCK-155)
-- [ ] R3 TCK-200 (v1.12.33) done; TCK-156, TCK-201, TCK-158 next
+- [ ] R3 TCK-200 (v1.12.33), TCK-201 (v1.12.36), TCK-156 (v1.12.37) done; TCK-158 next
 - [ ] R4 TCK-160 (v1.12.35) done; TCK-161 next
 - [ ] R5 TCK-202, TCK-143
 - [ ] R6 TCK-203

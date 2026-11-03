@@ -1,5 +1,6 @@
 // Ocean view DOM (TCK-160): styled components and the layout builder returning element references.
 import { styled } from "../../core/styled";
+import { WARP_SLIDER_MAX } from "../../shared/warp";
 import { IconBack, IconDashboard, IconLog, IconPlus, IconReset } from "../../components/Icons";
 
 // --- STYLED COMPONENTS ---
@@ -340,7 +341,7 @@ export function buildOceanLayout(): OceanLayout {
   const btnReset = CyberButton({ id: "btn-reset", class: "btn-danger", children: [IconReset, "Reset Evolution"] });
   const btnToggleSim = CyberButton({ id: "btn-toggle-sim", children: "Pause Substrate" });
   const lblSpeed = Span({ id: "lbl-ocean-speedup", children: "1x" });
-  const sliderSpeed = SliderInput({ id: "slider-ocean-speedup", type: "range", min: "1", max: "12", value: "1", step: "1" });
+  const sliderSpeed = SliderInput({ id: "slider-ocean-speedup", type: "range", min: "1", max: String(WARP_SLIDER_MAX), value: "1", step: "1" });
   const roster = SpeciesListContainer({ id: "species-roster" });
   const btnClearLogs = ClearButton({ id: "btn-clear-console", children: "Clear Terminal" });
   const logs = LogStreamContainer({ id: "terminal-logs" });

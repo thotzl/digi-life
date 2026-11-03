@@ -1,11 +1,12 @@
 //! `TrainerMode` (TCK-156): the trainer as an engine mode. A thin wrapper over the IO-free `TrainerSim` (population,
-//! epochs, breeding; `biology::trainer_sim`): UI state (run state, warp, display count, selected sandbox, run id),
+//! epochs, breeding; `trainer::sim`): UI state (run state, warp, display count, selected sandbox, run id),
 //! persistence of elites and run state through `trainer_store`, telemetry.
 
 use std::time::{Duration, Instant};
 
-use crate::biology::scenarios::{Scenario, TrainingScenarioPlugin};
-use crate::biology::trainer_sim::{run_seed, GenomeRecord, TrainerEvent, TrainerParams, TrainerSim};
+use crate::trainer::mode::Scenario;
+use crate::trainer::breeder::GenomeRecord;
+use crate::trainer::sim::{run_seed, TrainerEvent, TrainerParams, TrainerSim};
 use crate::biology::trainer_store;
 use crate::config::AppConfig;
 use crate::persistence::LogDbError;

@@ -20,17 +20,6 @@ pub mod biology {
     pub mod trainer_store;
     pub mod creature_factory;
     pub mod metabolism;
-    /// Old path of the training modes and the room trait (moved to `crate::trainer`, TCK-201). Kept only for
-    /// `server/engine.rs` until it imports `crate::trainer` (TCK-156); do not use in new code.
-    pub mod scenarios {
-        pub use crate::trainer::mode::Scenario;
-        pub use crate::trainer::room::Room as TrainingScenarioPlugin;
-    }
-    /// Old path of `TrainerSim` (moved to `crate::trainer::sim`, TCK-201). Kept only for `server/engine.rs` until it
-    /// imports `crate::trainer` (TCK-156); do not use in new code.
-    pub mod trainer_sim {
-        pub use crate::trainer::sim::*;
-    }
 }
 pub mod shared {
     pub mod dto;

@@ -1,7 +1,7 @@
 {
   "productName": "BroodBattle",
   "mainBinaryName": "BroodBattle",
-  "version": "1.12.36",
+  "version": "1.12.37",
   "identifier": "de.pixlich.broodbattle",
   "build": {
     "beforeDevCommand": "npm run dev",

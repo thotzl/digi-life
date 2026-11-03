@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.37] - 2026-11-03
+
+Epic TCK-196, phase R3. Trainer, golden master and trainer references unchanged; the Ocean changes by design (seeded randomness, shared creature tick).
+
+### Changed
+- The engine is split into modes (Ocean, trainer) behind one interface, an event sink and storage ports; it runs headless in tests. The Ocean is a self-contained simulation on the shared creature tick with seeded randomness, so a restored Ocean continues exactly where it stopped (ref TCK-156).
+- The warp speed is capped at 35 steps per frame when it is set and the capped value is shown; the speed sliders offer 1x-10x and "Max (35x)" (the former 50x and Unlimited positions both ran at 35) (ref TCK-156).
+- The Ocean snapshot is written on a background thread; nutrient centres are saved with it (ref TCK-156).
+
+### Fixed
+- If the database could not be opened, the simulation thread died silently; it now runs on an in-memory store and reports the problem (ref TCK-156).
+- Re-entering the Training Room rebuilt the population from the database and lost the running generation (ref TCK-156).
+
 ## [1.12.36] - 2026-11-03
 
 Epic TCK-196, phase R3. Golden master and all trainer references unchanged.
