@@ -1,7 +1,7 @@
 ---
 id: TCK-146
 title: Creature Lifespan Source of Truth
-status: open
+status: closed
 priority: pool
 decision: pending
 assigned: unassigned
@@ -25,3 +25,6 @@ Decide which model is intended; remove the other.
 
 ## Findings (review 2026-10-19, base commit `998244e`)
 - **RV-B08 · P1 · static** — `src/server/engine.rs`: `max_age_ticks = mature_age * 12` (introduced in TCK-129). `creatureMaxAgeTicks` (36000) has no effect; real lifespan 3,600–32,400 ticks depending on the genome. Contradicts the config SSOT. Decide: config value, genome value, or a combination (e.g. genome factor capped by config).
+
+## Verification (2026-11-03, v1.12.41)
+- Absorbed by TCK-202: lifespan = mature age x `creatureLifespanMultiplier` (`DeathPolicy::lifespan`), the never-binding `creatureMaxAgeTicks` cap removed (correction 11).

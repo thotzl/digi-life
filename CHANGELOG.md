@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.41] - 2026-11-03
+
+Epic TCK-196, phase R5. **Intended model change (model version 7):** on the first start, trained creatures, catalogue and Ocean state are reset; the database is backed up first (`pixel_life_local.db.model-v6.bak.db`). New golden master and references. Training targets still met (small room 0.676, large room 0.408 on unseen layouts).
+
+### Fixed
+- Cold stress never applied because the thermal tolerance minimum was always far below the water temperature (ref TCK-202).
+- Trainer and Ocean used different eating distances and food-drift orders, so creatures bred in the trainer met different rules in the Ocean; one rule now applies everywhere (ref TCK-202).
+- Eyes, noses and thermal organs counted as limbs and sped creatures up (ref TCK-202).
+- Diet thresholds differed between naming, biting, photosynthesis and the UI; one classification (herbivore < 0.4 <= omnivore < 0.6 <= carnivore) is used everywhere (ref TCK-202).
+- Sensed and felt temperature came from two different models (ref TCK-202).
+- Creatures could be bitten after they had died in the same tick; two death thresholds were unified (ref TCK-202).
+- The hall of fame filled up with copies of the same genome (ref TCK-202).
+- Mutations could insert letters inside a gene promoter (ref TCK-202).
+- Lifespan had two sources; it is now maturity age x multiplier (ref TCK-202, TCK-146).
+
+### Changed
+- All simulation math uses the platform-independent math functions, so runs are identical on Windows, Linux and macOS (ref TCK-202).
+- Remaining fixed values (wall-contact cooldown, spawn margin, spore energy) come from config (ref TCK-202).
+
 ## [1.12.40] - 2026-11-03
 
 Post-fix of TCK-161 / TCK-160 (epic TCK-196). Simulation unchanged.
